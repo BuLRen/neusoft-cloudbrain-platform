@@ -8,27 +8,27 @@ spring:
     gateway:
       routes:
         - id: auth-service
-          uri: http://localhost:8081
+          uri: lb://auth-service
           predicates:
             - Path=/api/auth/**
         - id: registration-service
-          uri: http://localhost:8091
+          uri: lb://registration-service
           predicates:
             - Path=/api/registration/**
         - id: physician-service
-          uri: http://localhost:8092
+          uri: lb://physician-service
           predicates:
             - Path=/api/physician/**
         - id: medtech-service
-          uri: http://localhost:8093
+          uri: lb://medtech-service
           predicates:
             - Path=/api/medtech/**
         - id: pharmacy-service
-          uri: http://localhost:8094
+          uri: lb://pharmacy-service
           predicates:
             - Path=/api/pharmacy/**
         - id: ai-gateway-service
-          uri: http://localhost:8100
+          uri: lb://ai-gateway-service
           predicates:
             - Path=/api/ai/**
       globalcors:

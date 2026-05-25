@@ -141,6 +141,21 @@
                 <artifactId>common</artifactId>
                 <version>${project.version}</version>
             </dependency>
+
+            <!-- Nacos Service Discovery -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+                <version>2023.0.1.2</version>
+            </dependency>
+
+            <!-- Nacos Config Center -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+                <version>2023.0.1.2</version>
+            </dependency>
+
         </dependencies>
     </dependencyManagement>
 
@@ -163,6 +178,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <!-- Nacos Discovery -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
     </dependencies>
 
