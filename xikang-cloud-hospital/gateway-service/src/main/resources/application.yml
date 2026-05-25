@@ -1,0 +1,70 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      routes:
+        - id: auth-service
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/auth/**
+        - id: registration-service
+          uri: http://localhost:8091
+          predicates:
+            - Path=/api/registration/**
+        - id: physician-service
+          uri: http://localhost:8092
+          predicates:
+            - Path=/api/physician/**
+        - id: medtech-service
+          uri: http://localhost:8093
+          predicates:
+            - Path=/api/medtech/**
+        - id: pharmacy-service
+          uri: http://localhost:8094
+          predicates:
+            - Path=/api/pharmacy/**
+        - id: ai-gateway-service
+          uri: http://localhost:8100
+          predicates:
+            - Path=/api/ai/**
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            allowCredentials: false
+            maxAge: 3600
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 5000ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.xikang.gateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG
