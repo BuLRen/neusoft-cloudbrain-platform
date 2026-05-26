@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.pharmacy.mapper.PharmacyTransactionMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.PharmacyTransaction">
+        <id column="id" property="id"/>
+        <result column="type" property="type"/>
+        <result column="drug_id" property="drugId"/>
+        <result column="drug_name" property="drugName"/>
+        <result column="prescription_id" property="prescriptionId"/>
+        <result column="register_id" property="registerId"/>
+        <result column="quantity" property="quantity"/>
+        <result column="unit_price" property="unitPrice"/>
+        <result column="total_amount" property="totalAmount"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_name" property="operatorName"/>
+        <result column="reason" property="reason"/>
+        <result column="transaction_time" property="transactionTime"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, type, drug_id, drug_name, prescription_id, register_id, quantity,
+        unit_price, total_amount, operator_id, operator_name, reason, transaction_time, create_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM pharmacy_transaction WHERE id = #{id}
+    </select>
+
+    <select id="selectByDrugId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM pharmacy_transaction WHERE drug_id = #{drugId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM pharmacy_transaction WHERE type = #{type} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByDateRange" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM pharmacy_transaction
+        WHERE transaction_time BETWEEN #{startDate} AND #{endDate}
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM pharmacy_transaction WHERE register_id = #{registerId} ORDER BY create_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO pharmacy_transaction (
+            type, drug_id, drug_name, prescription_id, register_id, quantity,
+            unit_price, total_amount, operator_id, operator_name, reason, transaction_time
+        ) VALUES (
+            #{type}, #{drugId}, #{drugName}, #{prescriptionId}, #{registerId}, #{quantity},
+            #{unitPrice}, #{totalAmount}, #{operatorId}, #{operatorName}, #{reason}, #{transactionTime}
+        )
+    </insert>
+
+</mapper>

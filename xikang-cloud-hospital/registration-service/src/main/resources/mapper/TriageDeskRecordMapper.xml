@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.TriageDeskRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.registration.entity.TriageDeskRecord">
+        <id column="id" property="id"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="patient_phone" property="patientPhone"/>
+        <result column="symptoms" property="symptoms"/>
+        <result column="ai_triage_result" property="aiTriageResult"/>
+        <result column="recommended_department_id" property="recommendedDepartmentId"/>
+        <result column="recommended_department" property="recommendedDepartment"/>
+        <result column="recommended_physician_id" property="recommendedPhysicianId"/>
+        <result column="recommended_physician_name" property="recommendedPhysicianName"/>
+        <result column="risk_level" property="riskLevel"/>
+        <result column="ai_analysis" property="aiAnalysis"/>
+        <result column="status" property="status"/>
+        <result column="confirmed_department_id" property="confirmedDepartmentId"/>
+        <result column="confirmed_department" property="confirmedDepartment"/>
+        <result column="confirmed_physician_id" property="confirmedPhysicianId"/>
+        <result column="confirmed_physician_name" property="confirmedPhysicianName"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_name" property="operatorName"/>
+        <result column="confirm_remark" property="confirmRemark"/>
+        <result column="create_time" property="createTime"/>
+        <result column="confirm_time" property="confirmTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, patient_id, patient_name, patient_phone, symptoms, ai_triage_result,
+        recommended_department_id, recommended_department, recommended_physician_id, recommended_physician_name,
+        risk_level, ai_analysis, status, confirmed_department_id, confirmed_department,
+        confirmed_physician_id, confirmed_physician_name, operator_id, operator_name,
+        confirm_remark, create_time, confirm_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM triage_desk_record WHERE id = #{id}
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM triage_desk_record WHERE status = #{status} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectPending" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM triage_desk_record WHERE status IN (0, 1) ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM triage_desk_record WHERE patient_id = #{patientId} ORDER BY create_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO triage_desk_record (
+            patient_id, patient_name, patient_phone, symptoms, ai_triage_result,
+            recommended_department_id, recommended_department, recommended_physician_id, recommended_physician_name,
+            risk_level, ai_analysis, status, operator_id, operator_name
+        ) VALUES (
+            #{patientId}, #{patientName}, #{patientPhone}, #{symptoms}, #{aiTriageResult},
+            #{recommendedDepartmentId}, #{recommendedDepartment}, #{recommendedPhysicianId}, #{recommendedPhysicianName},
+            #{riskLevel}, #{aiAnalysis}, #{status}, #{operatorId}, #{operatorName}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE triage_desk_record SET
+            ai_triage_result = #{aiTriageResult},
+            recommended_department_id = #{recommendedDepartmentId},
+            recommended_department = #{recommendedDepartment},
+            recommended_physician_id = #{recommendedPhysicianId},
+            recommended_physician_name = #{recommendedPhysicianName},
+            risk_level = #{riskLevel},
+            ai_analysis = #{aiAnalysis},
+            status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE triage_desk_record SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="updateConfirmation">
+        UPDATE triage_desk_record SET
+            confirmed_department_id = #{departmentId},
+            confirmed_department = #{departmentName},
+            confirmed_physician_id = #{physicianId},
+            confirmed_physician_name = #{physicianName},
+            operator_id = #{operatorId},
+            operator_name = #{operatorName},
+            confirm_remark = #{remark},
+            status = 1,
+            confirm_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+</mapper>

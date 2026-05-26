@@ -1,5 +1,6 @@
 package com.xikang.ai.consult.controller;
 
+import com.xikang.ai.consult.entity.AiPreVisitRecord;
 import com.xikang.ai.consult.service.AiConsultService;
 import com.xikang.common.result.Result;
 import lombok.RequiredArgsConstructor;
@@ -8,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 /**
- * AI Consult Controller
+ * AI Consult Controller - AI预问诊控制器
  */
 @RestController
 @RequestMapping("/api/ai/consult")
@@ -18,29 +19,47 @@ public class AiConsultController {
     private final AiConsultService aiConsultService;
 
     /**
-     * Start consultation session
+     * 预问诊
      */
-    @PostMapping("/session")
-    public Result<Map<String, Object>> startSession(@RequestBody Map<String, Object> sessionRequest) {
-        Map<String, Object> session = aiConsultService.startSession(sessionRequest);
-        return Result.success(session);
+    @PostMapping("/previsit")
+    public Result<Map<String, Object>> previsit(@RequestBody Map<String, Object> patientInfo) {
+        Map<String, Object> result = aiConsultService.previsit(patientInfo);
+        return Result.success(result);
     }
 
     /**
-     * Send message in consultation
+     * 生成预问诊摘要
      */
-    @PostMapping("/message")
-    public Result<Map<String, Object>> sendMessage(@RequestBody Map<String, Object> messageRequest) {
-        Map<String, Object> response = aiConsultService.sendMessage(messageRequest);
+    @PostMapping("/summary")
+    public Result<Map<String, Object>> generateSummary(@RequestBody Map<String, Object> context) {
+        Map<String, Object> result = aiConsultService.generateSummary(context);
+        return Result.success(result);
+    }
+
+    /**
+     * 预问诊对话
+     */
+    @PostMapping("/chat")
+    public Result<Map<String, Object>> chat(@RequestBody Map<String, Object> chatRequest) {
+        Map<String, Object> response = aiConsultService.chat(chatRequest);
         return Result.success(response);
     }
 
     /**
-     * End consultation session
+     * 获取预问诊记录
      */
-    @PostMapping("/session/{sessionId}/end")
-    public Result<Void> endSession(@PathVariable String sessionId) {
-        aiConsultService.endSession(sessionId);
-        return Result.success();
+    @GetMapping("/record/{id}")
+    public Result<AiPreVisitRecord> getPreVisitRecord(@PathVariable Long id) {
+        AiPreVisitRecord record = aiConsultService.getPreVisitRecord(id);
+        return Result.success(record);
+    }
+
+    /**
+     * 按挂号ID获取预问诊记录
+     */
+    @GetMapping("/record/register/{registerId}")
+    public Result<AiPreVisitRecord> getPreVisitRecordByRegisterId(@PathVariable Long registerId) {
+        AiPreVisitRecord record = aiConsultService.getPreVisitRecordByRegisterId(registerId);
+        return Result.success(record);
     }
 }

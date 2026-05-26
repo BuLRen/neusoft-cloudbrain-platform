@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.pharmacy.mapper.PrescriptionMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.Prescription">
+        <id column="id" property="id"/>
+        <result column="register_id" property="registerId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="physician_id" property="physicianId"/>
+        <result column="physician_name" property="physicianName"/>
+        <result column="diagnosis" property="diagnosis"/>
+        <result column="total_amount" property="totalAmount"/>
+        <result column="dispensation_status" property="dispensationStatus"/>
+        <result column="dispensation_time" property="dispensationTime"/>
+        <result column="pharmacist" property="pharmacist"/>
+        <result column="remarks" property="remarks"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, register_id, patient_id, patient_name, physician_id, physician_name,
+        diagnosis, total_amount, dispensation_status, dispensation_time, pharmacist,
+        remarks, create_time, update_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM prescription WHERE id = #{id}
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM prescription WHERE register_id = #{registerId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByRegisterIdAndStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM prescription
+        WHERE register_id = #{registerId} AND dispensation_status = #{status} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM prescription WHERE patient_id = #{patientId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectPending" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM prescription WHERE dispensation_status = 0 ORDER BY create_time ASC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO prescription (
+            register_id, patient_id, patient_name, physician_id, physician_name,
+            diagnosis, total_amount, dispensation_status, remarks
+        ) VALUES (
+            #{registerId}, #{patientId}, #{patientName}, #{physicianId}, #{physicianName},
+            #{diagnosis}, #{totalAmount}, #{dispensationStatus}, #{remarks}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE prescription SET
+            diagnosis = #{diagnosis}, total_amount = #{totalAmount},
+            dispensation_status = #{dispensationStatus}, dispensation_time = #{dispensationTime},
+            pharmacist = #{pharmacist}, remarks = #{remarks}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateDispensationStatus">
+        UPDATE prescription SET dispensation_status = #{status} WHERE id = #{id}
+    </update>
+
+</mapper>

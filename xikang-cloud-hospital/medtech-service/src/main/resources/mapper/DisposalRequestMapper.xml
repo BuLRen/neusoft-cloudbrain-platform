@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.DisposalRequestMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.medtech.entity.DisposalRequest">
+        <id column="id" property="id"/>
+        <result column="register_id" property="registerId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="physician_id" property="physicianId"/>
+        <result column="physician_name" property="physicianName"/>
+        <result column="medical_technology_id" property="medicalTechnologyId"/>
+        <result column="medical_technology_name" property="medicalTechnologyName"/>
+        <result column="description" property="description"/>
+        <result column="quantity" property="quantity"/>
+        <result column="status" property="status"/>
+        <result column="execute_time" property="executeTime"/>
+        <result column="result" property="result"/>
+        <result column="remarks" property="remarks"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_name" property="operatorName"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, register_id, patient_id, patient_name, physician_id, physician_name,
+        medical_technology_id, medical_technology_name, description, quantity,
+        status, execute_time, result, remarks, operator_id, operator_name, create_time, update_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE id = #{id}
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE register_id = #{registerId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE patient_id = #{patientId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE status = #{status} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectPending" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE status IN (1, 2) ORDER BY create_time ASC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO disposal_request (
+            register_id, patient_id, patient_name, physician_id, physician_name,
+            medical_technology_id, medical_technology_name, description, quantity,
+            status, remarks, operator_id, operator_name
+        ) VALUES (
+            #{registerId}, #{patientId}, #{patientName}, #{physicianId}, #{physicianName},
+            #{medicalTechnologyId}, #{medicalTechnologyName}, #{description}, #{quantity},
+            #{status}, #{remarks}, #{operatorId}, #{operatorName}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE disposal_request SET
+            description = #{description}, quantity = #{quantity}, status = #{status},
+            execute_time = #{executeTime}, result = #{result},
+            remarks = #{remarks}, operator_id = #{operatorId}, operator_name = #{operatorName}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE disposal_request SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="updateResult">
+        UPDATE disposal_request SET result = #{result}, status = 3 WHERE id = #{id}
+    </update>
+
+</mapper>

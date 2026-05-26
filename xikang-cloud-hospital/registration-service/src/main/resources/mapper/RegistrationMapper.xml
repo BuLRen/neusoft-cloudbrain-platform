@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.RegistrationMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.registration.entity.Register">
+        <id column="id" property="id"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="patient_phone" property="patientPhone"/>
+        <result column="id_card" property="idCard"/>
+        <result column="department_id" property="departmentId"/>
+        <result column="department_name" property="departmentName"/>
+        <result column="physician_id" property="physicianId"/>
+        <result column="physician_name" property="physicianName"/>
+        <result column="scheduling_id" property="schedulingId"/>
+        <result column="visit_date" property="visitDate"/>
+        <result column="visit_time" property="visitTime"/>
+        <result column="complaint" property="complaint"/>
+        <result column="status" property="status"/>
+        <result column="register_type" property="registerType"/>
+        <result column="regist_level_id" property="registLevelId"/>
+        <result column="regist_level_name" property="registLevelName"/>
+        <result column="amount" property="amount"/>
+        <result column="pay_status" property="payStatus"/>
+        <result column="pay_method" property="payMethod"/>
+        <result column="ai_triage_result" property="aiTriageResult"/>
+        <result column="ai_pre_visit" property="aiPreVisit"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_name" property="operatorName"/>
+        <result column="remark" property="remark"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, patient_id, patient_name, patient_phone, id_card, department_id, department_name,
+        physician_id, physician_name, scheduling_id, visit_date, visit_time, complaint, status,
+        register_type, regist_level_id, regist_level_name, amount, pay_status, pay_method,
+        ai_triage_result, ai_pre_visit, operator_id, operator_name, remark, create_time, update_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE patient_id = #{patientId}
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE status = #{status}
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByDate" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE visit_date = #{date}
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByDepartmentAndDate" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE department_id = #{departmentId}
+        AND visit_date = #{date}
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByPayStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE pay_status = #{payStatus}
+        ORDER BY create_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO register (
+            patient_id, patient_name, patient_phone, id_card, department_id, department_name,
+            physician_id, physician_name, scheduling_id, visit_date, visit_time, complaint,
+            status, register_type, regist_level_id, regist_level_name, amount, pay_status,
+            pay_method, ai_triage_result, ai_pre_visit, operator_id, operator_name, remark
+        ) VALUES (
+            #{patientId}, #{patientName}, #{patientPhone}, #{idCard}, #{departmentId}, #{departmentName},
+            #{physicianId}, #{physicianName}, #{schedulingId}, #{visitDate}, #{visitTime}, #{complaint},
+            #{status}, #{registerType}, #{registLevelId}, #{registLevelName}, #{amount}, #{payStatus},
+            #{payMethod}, #{aiTriageResult}, #{aiPreVisit}, #{operatorId}, #{operatorName}, #{remark}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE register
+        SET patient_name = #{patientName},
+            patient_phone = #{patientPhone},
+            department_id = #{departmentId},
+            department_name = #{departmentName},
+            physician_id = #{physicianId},
+            physician_name = #{physicianName},
+            complaint = #{complaint},
+            status = #{status},
+            pay_status = #{payStatus},
+            remark = #{remark}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE register SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="updatePayStatus">
+        UPDATE register SET pay_status = #{payStatus} WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM register WHERE id = #{id}
+    </delete>
+
+</mapper>

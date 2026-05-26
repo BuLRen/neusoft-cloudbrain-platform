@@ -1,7 +1,10 @@
 package com.xikang.registration.mapper;
 
-import com.xikang.registration.entity.Registration;
+import com.xikang.registration.entity.Register;
 import org.apache.ibatis.annotations.Mapper;
+
+import java.time.LocalDate;
+import java.util.List;
 
 /**
  * Registration Mapper
@@ -9,11 +12,25 @@ import org.apache.ibatis.annotations.Mapper;
 @Mapper
 public interface RegistrationMapper {
 
-    Registration selectById(Long id);
+    Register selectById(Long id);
 
-    int insert(Registration registration);
+    List<Register> selectByPatientId(Long patientId);
 
-    int update(Registration registration);
+    List<Register> selectByStatus(Integer status);
+
+    List<Register> selectByDate(LocalDate date);
+
+    List<Register> selectByDepartmentAndDate(Long departmentId, LocalDate date);
+
+    List<Register> selectByPayStatus(Integer payStatus);
+
+    int insert(Register register);
+
+    int update(Register register);
+
+    int updateStatus(Long id, Integer status);
+
+    int updatePayStatus(Long id, Integer payStatus);
 
     int deleteById(Long id);
 }

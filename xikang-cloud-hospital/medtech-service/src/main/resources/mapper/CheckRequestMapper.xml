@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.CheckRequestMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.medtech.entity.CheckRequest">
+        <id column="id" property="id"/>
+        <result column="register_id" property="registerId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="physician_id" property="physicianId"/>
+        <result column="physician_name" property="physicianName"/>
+        <result column="medical_technology_id" property="medicalTechnologyId"/>
+        <result column="medical_technology_name" property="medicalTechnologyName"/>
+        <result column="clinical_diagnosis" property="clinicalDiagnosis"/>
+        <result column="specimen_type" property="specimenType"/>
+        <result column="status" property="status"/>
+        <result column="check_time" property="checkTime"/>
+        <result column="report_time" property="reportTime"/>
+        <result column="result" property="result"/>
+        <result column="ai_analysis" property="aiAnalysis"/>
+        <result column="report_url" property="reportUrl"/>
+        <result column="body_part" property="bodyPart"/>
+        <result column="findings" property="findings"/>
+        <result column="conclusion" property="conclusion"/>
+        <result column="impression" property="impression"/>
+        <result column="remarks" property="remarks"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_name" property="operatorName"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, register_id, patient_id, patient_name, physician_id, physician_name,
+        medical_technology_id, medical_technology_name, clinical_diagnosis, specimen_type,
+        status, check_time, report_time, result, ai_analysis, report_url, body_part,
+        findings, conclusion, impression, remarks, operator_id, operator_name, create_time, update_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM check_request WHERE id = #{id}
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM check_request WHERE register_id = #{registerId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM check_request WHERE patient_id = #{patientId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM check_request WHERE status = #{status} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectPending" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM check_request WHERE status IN (1, 2) ORDER BY create_time ASC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO check_request (
+            register_id, patient_id, patient_name, physician_id, physician_name,
+            medical_technology_id, medical_technology_name, clinical_diagnosis, specimen_type,
+            status, body_part, remarks, operator_id, operator_name
+        ) VALUES (
+            #{registerId}, #{patientId}, #{patientName}, #{physicianId}, #{physicianName},
+            #{medicalTechnologyId}, #{medicalTechnologyName}, #{clinicalDiagnosis}, #{specimenType},
+            #{status}, #{bodyPart}, #{remarks}, #{operatorId}, #{operatorName}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE check_request SET
+            clinical_diagnosis = #{clinicalDiagnosis}, specimen_type = #{specimenType}, status = #{status},
+            check_time = #{checkTime}, report_time = #{reportTime}, result = #{result},
+            ai_analysis = #{aiAnalysis}, report_url = #{reportUrl}, body_part = #{bodyPart},
+            findings = #{findings}, conclusion = #{conclusion}, impression = #{impression},
+            remarks = #{remarks}, operator_id = #{operatorId}, operator_name = #{operatorName}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE check_request SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="updateResult">
+        UPDATE check_request SET result = #{result}, ai_analysis = #{aiAnalysis}, status = 3 WHERE id = #{id}
+    </update>
+
+</mapper>

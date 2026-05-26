@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.pharmacy.mapper.PrescriptionDetailMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.PrescriptionDetail">
+        <id column="id" property="id"/>
+        <result column="prescription_id" property="prescriptionId"/>
+        <result column="drug_id" property="drugId"/>
+        <result column="drug_name" property="drugName"/>
+        <result column="specification" property="specification"/>
+        <result column="dosage" property="dosage"/>
+        <result column="quantity" property="quantity"/>
+        <result column="unit_price" property="unitPrice"/>
+        <result column="total_amount" property="totalAmount"/>
+        <result column="usage" property="usage"/>
+        <result column="frequency" property="frequency"/>
+        <result column="duration" property="duration"/>
+        <result column="remark" property="remark"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, prescription_id, drug_id, drug_name, specification, dosage, quantity,
+        unit_price, total_amount, usage, frequency, duration, remark, create_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM prescription_detail WHERE id = #{id}
+    </select>
+
+    <select id="selectByPrescriptionId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM prescription_detail WHERE prescription_id = #{prescriptionId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO prescription_detail (
+            prescription_id, drug_id, drug_name, specification, dosage, quantity,
+            unit_price, total_amount, usage, frequency, duration, remark
+        ) VALUES (
+            #{prescriptionId}, #{drugId}, #{drugName}, #{specification}, #{dosage}, #{quantity},
+            #{unitPrice}, #{totalAmount}, #{usage}, #{frequency}, #{duration}, #{remark}
+        )
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM prescription_detail WHERE id = #{id}
+    </delete>
+
+</mapper>
