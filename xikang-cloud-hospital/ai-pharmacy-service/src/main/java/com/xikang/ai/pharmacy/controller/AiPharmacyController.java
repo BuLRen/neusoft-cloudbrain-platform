@@ -1,14 +1,17 @@
 package com.xikang.ai.pharmacy.controller;
 
+import com.xikang.ai.pharmacy.entity.AiFollowUpPlan;
+import com.xikang.ai.pharmacy.entity.AiFollowUpRecord;
 import com.xikang.ai.pharmacy.service.AiPharmacyService;
 import com.xikang.common.result.Result;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
- * AI Pharmacy Controller
+ * AI Pharmacy Controller - AI药房控制器
  */
 @RestController
 @RequestMapping("/api/ai/pharmacy")
@@ -18,29 +21,67 @@ public class AiPharmacyController {
     private final AiPharmacyService aiPharmacyService;
 
     /**
-     * Check drug interactions
+     * 创建随访计划
      */
-    @PostMapping("/interaction")
-    public Result<Map<String, Object>> checkDrugInteractions(@RequestBody Map<String, Object> drugRequest) {
-        Map<String, Object> interactions = aiPharmacyService.checkDrugInteractions(drugRequest);
-        return Result.success(interactions);
+    @PostMapping("/followup")
+    public Result<Map<String, Object>> createFollowUpPlan(@RequestBody Map<String, Object> prescriptionInfo) {
+        Map<String, Object> result = aiPharmacyService.createFollowUpPlan(prescriptionInfo);
+        return Result.success(result);
     }
 
     /**
-     * Get medication guidance
+     * 获取用药指导
      */
-    @PostMapping("/guidance")
-    public Result<Map<String, Object>> getMedicationGuidance(@RequestBody Map<String, Object> medicationRequest) {
-        Map<String, Object> guidance = aiPharmacyService.getMedicationGuidance(medicationRequest);
-        return Result.success(guidance);
+    @PostMapping("/guide")
+    public Result<Map<String, Object>> getMedicationGuide(@RequestBody Map<String, Object> drugInfo) {
+        Map<String, Object> guide = aiPharmacyService.getMedicationGuide(drugInfo);
+        return Result.success(guide);
     }
 
     /**
-     * Check contraindications
+     * 处方审核
      */
-    @PostMapping("/contraindication")
-    public Result<Map<String, Object>> checkContraindications(@RequestBody Map<String, Object> patientInfo) {
-        Map<String, Object> contraindications = aiPharmacyService.checkContraindications(patientInfo);
-        return Result.success(contraindications);
+    @PostMapping("/review")
+    public Result<Map<String, Object>> reviewPrescription(@RequestBody Map<String, Object> prescription) {
+        Map<String, Object> result = aiPharmacyService.reviewPrescription(prescription);
+        return Result.success(result);
+    }
+
+    /**
+     * 记录随访反馈
+     */
+    @PostMapping("/followup/{planId}/feedback")
+    public Result<Void> recordFollowUpFeedback(
+            @PathVariable Long planId,
+            @RequestBody Map<String, Object> feedback) {
+        aiPharmacyService.recordFollowUpFeedback(planId, feedback);
+        return Result.success();
+    }
+
+    /**
+     * 获取随访计划
+     */
+    @GetMapping("/followup/{id}")
+    public Result<AiFollowUpPlan> getFollowUpPlan(@PathVariable Long id) {
+        AiFollowUpPlan plan = aiPharmacyService.getFollowUpPlan(id);
+        return Result.success(plan);
+    }
+
+    /**
+     * 获取患者的随访计划
+     */
+    @GetMapping("/followup/patient/{patientId}")
+    public Result<List<AiFollowUpPlan>> getPatientFollowUpPlans(@PathVariable Long patientId) {
+        List<AiFollowUpPlan> plans = aiPharmacyService.getPatientFollowUpPlans(patientId);
+        return Result.success(plans);
+    }
+
+    /**
+     * 获取随访记录
+     */
+    @GetMapping("/followup/{planId}/records")
+    public Result<List<AiFollowUpRecord>> getFollowUpRecords(@PathVariable Long planId) {
+        List<AiFollowUpRecord> records = aiPharmacyService.getFollowUpRecords(planId);
+        return Result.success(records);
     }
 }

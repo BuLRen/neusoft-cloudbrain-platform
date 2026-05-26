@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.pharmacy.mapper.DrugStockMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.DrugStock">
+        <id column="id" property="id"/>
+        <result column="drug_id" property="drugId"/>
+        <result column="batch_number" property="batchNumber"/>
+        <result column="quantity" property="quantity"/>
+        <result column="production_date" property="productionDate"/>
+        <result column="expiry_date" property="expiryDate"/>
+        <result column="status" property="status"/>
+        <result column="location" property="location"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, drug_id, batch_number, quantity, production_date, expiry_date, status, location, create_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_stock WHERE id = #{id}
+    </select>
+
+    <select id="selectByDrugId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_stock WHERE drug_id = #{drugId} ORDER BY expiry_date
+    </select>
+
+    <select id="selectByDrugIdAndStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_stock WHERE drug_id = #{drugId} AND status = 1 ORDER BY expiry_date
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO drug_stock (drug_id, batch_number, quantity, production_date, expiry_date, status, location)
+        VALUES (#{drugId}, #{batchNumber}, #{quantity}, #{productionDate}, #{expiryDate}, #{status}, #{location})
+    </insert>
+
+    <update id="update">
+        UPDATE drug_stock SET
+            batch_number = #{batchNumber}, quantity = #{quantity},
+            production_date = #{productionDate}, expiry_date = #{expiryDate},
+            status = #{status}, location = #{location}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateQuantity">
+        UPDATE drug_stock SET quantity = #{quantity} WHERE id = #{id}
+    </update>
+
+</mapper>

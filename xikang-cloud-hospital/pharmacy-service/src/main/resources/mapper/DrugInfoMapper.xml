@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.pharmacy.mapper.DrugInfoMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.DrugInfo">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="generic_name" property="genericName"/>
+        <result column="brand_name" property="brandName"/>
+        <result column="specification" property="specification"/>
+        <result column="dosage_form" property="dosageForm"/>
+        <result column="unit" property="unit"/>
+        <result column="manufacturer" property="manufacturer"/>
+        <result column="approval_number" property="approvalNumber"/>
+        <result column="price" property="price"/>
+        <result column="stock_quantity" property="stockQuantity"/>
+        <result column="low_stock_threshold" property="lowStockThreshold"/>
+        <result column="storage_conditions" property="storageConditions"/>
+        <result column="instructions" property="instructions"/>
+        <result column="contraindications" property="contraindications"/>
+        <result column="adverse_reactions" property="adverseReactions"/>
+        <result column="status" property="status"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, name, generic_name, brand_name, specification, dosage_form, unit, manufacturer,
+        approval_number, price, stock_quantity, low_stock_threshold, storage_conditions,
+        instructions, contraindications, adverse_reactions, status, create_time, update_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE id = #{id}
+    </select>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE status = 1 ORDER BY name
+    </select>
+
+    <select id="selectByKeyword" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_info
+        WHERE status = 1 AND (name LIKE CONCAT('%', #{keyword}, '%') OR generic_name LIKE CONCAT('%', #{keyword}, '%'))
+        ORDER BY name
+    </select>
+
+    <select id="selectByDosageForm" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE dosage_form = #{dosageForm} AND status = 1 ORDER BY name
+    </select>
+
+    <select id="selectLowStock" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_info
+        WHERE status = 1 AND stock_quantity &lt;= low_stock_threshold ORDER BY stock_quantity
+    </select>
+
+    <select id="selectByCode" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE approval_number = #{code}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO drug_info (
+            name, generic_name, brand_name, specification, dosage_form, unit, manufacturer,
+            approval_number, price, stock_quantity, low_stock_threshold, storage_conditions,
+            instructions, contraindications, adverse_reactions, status
+        ) VALUES (
+            #{name}, #{genericName}, #{brandName}, #{specification}, #{dosageForm}, #{unit}, #{manufacturer},
+            #{approvalNumber}, #{price}, #{stockQuantity}, #{lowStockThreshold}, #{storageConditions},
+            #{instructions}, #{contraindications}, #{adverseReactions}, #{status}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE drug_info SET
+            name = #{name}, generic_name = #{genericName}, brand_name = #{brandName},
+            specification = #{specification}, dosage_form = #{dosageForm}, unit = #{unit},
+            manufacturer = #{manufacturer}, approval_number = #{approvalNumber}, price = #{price},
+            stock_quantity = #{stockQuantity}, low_stock_threshold = #{lowStockThreshold},
+            storage_conditions = #{storageConditions}, instructions = #{instructions},
+            contraindications = #{contraindications}, adverse_reactions = #{adverseReactions}, status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStock">
+        UPDATE drug_info SET stock_quantity = #{quantity} WHERE id = #{id}
+    </update>
+
+    <update id="decreaseStock">
+        UPDATE drug_info SET stock_quantity = stock_quantity - #{quantity} WHERE id = #{id}
+    </update>
+
+    <update id="increaseStock">
+        UPDATE drug_info SET stock_quantity = stock_quantity + #{quantity} WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        UPDATE drug_info SET status = 0 WHERE id = #{id}
+    </delete>
+
+</mapper>

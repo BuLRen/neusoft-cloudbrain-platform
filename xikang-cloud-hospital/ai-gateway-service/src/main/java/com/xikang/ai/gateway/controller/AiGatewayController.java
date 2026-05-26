@@ -18,7 +18,7 @@ public class AiGatewayController {
     private final AiGatewayService aiGatewayService;
 
     /**
-     * Route AI request to appropriate service
+     * Route AI request to appropriate service (generic gateway endpoint)
      */
     @PostMapping("/route")
     public Result<Map<String, Object>> routeRequest(@RequestBody Map<String, Object> request) {

@@ -27,10 +27,30 @@ spring:
           uri: lb://pharmacy-service
           predicates:
             - Path=/api/pharmacy/**
+        - id: ai-triage-service
+          uri: lb://ai-triage-service
+          predicates:
+            - Path=/api/ai/triage/**
+        - id: ai-consult-service
+          uri: lb://ai-consult-service
+          predicates:
+            - Path=/api/ai/consult/**
+        - id: ai-diagnosis-service
+          uri: lb://ai-diagnosis-service
+          predicates:
+            - Path=/api/ai/diagnosis/**
+        - id: ai-pharmacy-service
+          uri: lb://ai-pharmacy-service
+          predicates:
+            - Path=/api/ai/pharmacy/**
         - id: ai-gateway-service
           uri: lb://ai-gateway-service
           predicates:
-            - Path=/api/ai/**
+            - Path=/api/ai/route/**
+        - id: ai-gateway-status
+          uri: lb://ai-gateway-service
+          predicates:
+            - Path=/api/ai/status
       globalcors:
         cors-configurations:
           '[/**]':

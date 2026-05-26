@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.InspectionRequestMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.medtech.entity.InspectionRequest">
+        <id column="id" property="id"/>
+        <result column="register_id" property="registerId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="physician_id" property="physicianId"/>
+        <result column="physician_name" property="physicianName"/>
+        <result column="medical_technology_id" property="medicalTechnologyId"/>
+        <result column="medical_technology_name" property="medicalTechnologyName"/>
+        <result column="specimen_type" property="specimenType"/>
+        <result column="specimen_time" property="specimenTime"/>
+        <result column="status" property="status"/>
+        <result column="result_time" property="resultTime"/>
+        <result column="result" property="result"/>
+        <result column="ai_analysis" property="aiAnalysis"/>
+        <result column="remarks" property="remarks"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_name" property="operatorName"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, register_id, patient_id, patient_name, physician_id, physician_name,
+        medical_technology_id, medical_technology_name, specimen_type, specimen_time,
+        status, result_time, result, ai_analysis, remarks, operator_id, operator_name, create_time, update_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE id = #{id}
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE register_id = #{registerId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE patient_id = #{patientId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE status = #{status} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectPending" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE status IN (1, 2) ORDER BY create_time ASC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO inspection_request (
+            register_id, patient_id, patient_name, physician_id, physician_name,
+            medical_technology_id, medical_technology_name, specimen_type,
+            status, remarks, operator_id, operator_name
+        ) VALUES (
+            #{registerId}, #{patientId}, #{patientName}, #{physicianId}, #{physicianName},
+            #{medicalTechnologyId}, #{medicalTechnologyName}, #{specimenType},
+            #{status}, #{remarks}, #{operatorId}, #{operatorName}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE inspection_request SET
+            specimen_type = #{specimenType}, specimen_time = #{specimenTime}, status = #{status},
+            result_time = #{resultTime}, result = #{result}, ai_analysis = #{aiAnalysis},
+            remarks = #{remarks}, operator_id = #{operatorId}, operator_name = #{operatorName}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE inspection_request SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="updateResult">
+        UPDATE inspection_request SET result = #{result}, ai_analysis = #{aiAnalysis}, status = 3 WHERE id = #{id}
+    </update>
+
+    <update id="updateSpecimenTime">
+        UPDATE inspection_request SET specimen_time = #{specimenTime} WHERE id = #{id}
+    </update>
+
+</mapper>
