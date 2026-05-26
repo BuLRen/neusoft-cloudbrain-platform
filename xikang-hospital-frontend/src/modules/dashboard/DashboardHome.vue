@@ -1,0 +1,73 @@
+<script setup lang="ts">
+import { useRouter } from 'vue-router'
+import PageHeader from '@/shared/components/PageHeader.vue'
+import GlassCard from '@/shared/components/GlassCard.vue'
+import StatusTag from '@/shared/components/StatusTag.vue'
+
+const router = useRouter()
+const modules = [
+  { title: '诊疗流程', owner: '人员A', path: '/physician', description: '医生接诊、病历、申请、确诊、开方。' },
+  { title: '入口与支撑流程', owner: '人员B', path: '/registration', description: '导诊、挂号、收费、执行、发药、随访。' },
+  { title: 'AI 组件区', owner: '共同', path: '/ai', description: 'AI 结果卡片和页面嵌入能力预留。' },
+]
+</script>
+
+<template>
+  <div class="dashboard u-page-grid">
+    <PageHeader
+      title="前端框架仪表盘"
+      description="当前阶段只提供框架、菜单、权限、视觉系统和占位路由。具体业务页面由后续小组成员在对应模块中开发。"
+      eyebrow="Xikang Cloud Hospital"
+    />
+
+    <section class="dashboard__hero">
+      <GlassCard v-for="item in modules" :key="item.title" class="dashboard__card" @click="router.push(item.path)">
+        <StatusTag :tone="item.owner === '共同' ? 'ai' : 'primary'">{{ item.owner }}</StatusTag>
+        <h2>{{ item.title }}</h2>
+        <p>{{ item.description }}</p>
+      </GlassCard>
+    </section>
+
+    <GlassCard class="dashboard__note">
+      <h2>开发约定</h2>
+      <p>页面开发时保持“一个页面一个组件”，共享能力放在 `shared`，路由、权限、布局和全局样式放在 `app`。业务页面不需要重复设计圆角、卡片、标题和状态样式。</p>
+    </GlassCard>
+  </div>
+</template>
+
+<style scoped>
+.dashboard__hero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.dashboard__card {
+  min-height: 168px;
+  padding: var(--space-5);
+  cursor: pointer;
+  transition: transform var(--duration-base) var(--ease-standard), box-shadow var(--duration-base) var(--ease-standard);
+}
+
+.dashboard__card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.dashboard__card h2 {
+  margin-block-start: var(--space-4);
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.dashboard__card p,
+.dashboard__note p {
+  margin-block-start: var(--space-3);
+  color: var(--color-text-muted);
+  line-height: 1.8;
+}
+
+.dashboard__note {
+  padding: var(--space-5);
+}
+</style>

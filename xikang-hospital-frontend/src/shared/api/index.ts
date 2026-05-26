@@ -1,0 +1,10 @@
+
+export * from './request'
+export * from './result'
+export * from './modules/auth'
+export * from './modules/registration'
+export * from './modules/physician'
+export * from './modules/medtech'
+export * from './modules/pharmacy'
+export * from './modules/ai'
+export * from './modules/common'
