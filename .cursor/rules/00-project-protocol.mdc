@@ -1,0 +1,26 @@
+---
+description: Core project protocol for all Cursor agents working on this repository.
+alwaysApply: true
+---
+
+# Project Agent Protocol
+
+This is an important medical/diagnosis-related frontend project.
+
+## Default behavior
+
+- Do not generate implementation code immediately for non-trivial tasks.
+- For architecture, feature, security, privacy, routing, state, API, or UI system changes, produce a plan first.
+- Wait for explicit approval before modifying files.
+- Prefer small, reviewable changes.
+- Never introduce new dependencies without explaining why.
+
+## Quality gate
+
+Before claiming a task is complete, check:
+
+- TypeScript passes.
+- Lint passes.
+- Tests are added or updated when behavior changes.
+- Loading, empty, error, and permission states are handled.
+- No patient-sensitive data is stored in URL, localStorage, console logs, or error messages.
