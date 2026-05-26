@@ -1,0 +1,74 @@
+
+@layer theme {
+  :root {
+    color-scheme: light;
+    --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --color-bg: #eef5ff;
+    --color-bg-soft: #f7fbff;
+    --color-surface: rgba(255, 255, 255, 0.72);
+    --color-surface-strong: rgba(255, 255, 255, 0.9);
+    --color-sidebar: rgba(255, 255, 255, 0.64);
+    --color-control: rgba(255, 255, 255, 0.66);
+    --color-control-hover: rgba(255, 255, 255, 0.84);
+    --color-menu-hover: rgba(31, 140, 255, 0.1);
+    --color-user-chip: rgba(255, 255, 255, 0.42);
+    --color-table-header: rgba(244, 249, 255, 0.82);
+    --color-border: rgba(70, 111, 160, 0.16);
+    --color-border-strong: rgba(70, 111, 160, 0.28);
+    --color-text: #102033;
+    --color-text-muted: #5f7288;
+    --color-text-soft: #8ba0b6;
+    --color-primary: #1f8cff;
+    --color-primary-strong: #006ce6;
+    --color-primary-soft: rgba(31, 140, 255, 0.14);
+    --color-success: #20b486;
+    --color-warning: #f59f00;
+    --color-danger: #ef4d5a;
+    --color-ai: #7c5cff;
+    --gradient-page: radial-gradient(circle at 10% 10%, rgba(31, 140, 255, 0.2), transparent 30%), radial-gradient(circle at 90% 0%, rgba(124, 92, 255, 0.18), transparent 28%), linear-gradient(135deg, #eef5ff 0%, #f8fbff 52%, #eef8f6 100%);
+    --gradient-primary: linear-gradient(135deg, #1f8cff 0%, #2fd8c4 100%);
+    --gradient-ai: linear-gradient(135deg, #7c5cff 0%, #1f8cff 100%);
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --radius-xl: 28px;
+    --radius-2xl: 36px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 18px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --shadow-sm: 0 8px 24px rgba(31, 73, 125, 0.08);
+    --shadow-md: 0 18px 48px rgba(31, 73, 125, 0.12);
+    --shadow-lg: 0 28px 80px rgba(31, 73, 125, 0.18);
+    --blur-glass: blur(22px) saturate(1.35);
+    --duration-fast: 140ms;
+    --duration-base: 220ms;
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --sidebar-width: 228px;
+    --header-height: 58px;
+    --shell-gap: 16px;
+  }
+
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --color-bg: #07111f;
+    --color-bg-soft: #0d1b2f;
+    --color-surface: rgba(15, 27, 45, 0.74);
+    --color-surface-strong: rgba(20, 34, 56, 0.92);
+    --color-sidebar: rgba(9, 20, 36, 0.82);
+    --color-control: rgba(20, 34, 56, 0.72);
+    --color-control-hover: rgba(33, 51, 77, 0.88);
+    --color-menu-hover: rgba(31, 140, 255, 0.16);
+    --color-user-chip: rgba(18, 31, 52, 0.72);
+    --color-table-header: rgba(18, 31, 52, 0.88);
+    --color-border: rgba(172, 203, 235, 0.16);
+    --color-border-strong: rgba(172, 203, 235, 0.28);
+    --color-text: #edf6ff;
+    --color-text-muted: #aac0d8;
+    --color-text-soft: #7690aa;
+    --gradient-page: radial-gradient(circle at 12% 8%, rgba(31, 140, 255, 0.18), transparent 28%), radial-gradient(circle at 88% 0%, rgba(124, 92, 255, 0.18), transparent 28%), linear-gradient(135deg, #07111f 0%, #0b1628 56%, #071a1c 100%);
+  }
+}

@@ -1,0 +1,28 @@
+
+@layer utilities {
+  .u-glass {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: var(--blur-glass);
+  }
+
+  .u-page-grid {
+    display: grid;
+    gap: var(--space-5);
+  }
+
+  .u-muted {
+    color: var(--color-text-muted);
+  }
+
+  .u-soft {
+    color: var(--color-text-soft);
+  }
+
+  .u-gradient-text {
+    color: transparent;
+    background: var(--gradient-primary);
+    background-clip: text;
+  }
+}
