@@ -7,15 +7,27 @@ import type { ApiResult, RequestOptions } from './result'
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 15000,
+  withCredentials: true,
 })
 
-request.interceptors.request.use((config) => {
-  const authStore = useAuthStore()
-  if (authStore.token) {
-    config.headers.Authorization = `Bearer ${authStore.token}`
-  }
-  return config
+const refreshClient = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  timeout: 15000,
+  withCredentials: true,
 })
+
+let refreshPromise: Promise<void> | null = null
+
+async function refreshSessionOnce() {
+  if (!refreshPromise) {
+    refreshPromise = refreshClient.post('/auth/refresh').then(() => undefined)
+  }
+  try {
+    await refreshPromise
+  } finally {
+    refreshPromise = null
+  }
+}
 
 request.interceptors.response.use(
   (response) => {
@@ -25,7 +37,21 @@ request.interceptors.response.use(
     }
     return response
   },
-  (error: AxiosError<ApiResult>) => {
+  async (error: AxiosError<ApiResult>) => {
+    const authStore = useAuthStore()
+    const originalRequest = error.config
+    const status = error.response?.status
+
+    if (status === 401 && originalRequest && !(originalRequest as any).__isRetryRequest) {
+      ;(originalRequest as any).__isRetryRequest = true
+      try {
+        await refreshSessionOnce()
+        return request.request(originalRequest)
+      } catch {
+        await authStore.logout()
+      }
+    }
+
     const message = error.response?.data?.message || error.message || '网络请求异常'
     return Promise.reject(new Error(message))
   },

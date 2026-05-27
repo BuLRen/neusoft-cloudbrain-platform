@@ -1,60 +1,351 @@
 package com.xikang.physician.service;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import com.xikang.physician.mapper.PhysicianMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * Physician Service
  */
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class PhysicianService {
 
-    /**
-     * Get diagnosis list by registration ID
-     */
+    private final PhysicianMapper physicianMapper;
+
+    public PhysicianService(PhysicianMapper physicianMapper) {
+        this.physicianMapper = physicianMapper;
+    }
+
+    public Map<String, Object> getPatients(String keyword, Integer page, Integer size) {
+        int currentPage = page == null || page < 1 ? 1 : page;
+        int pageSize = size == null || size < 1 ? 10 : size;
+        int offset = (currentPage - 1) * pageSize;
+        List<Map<String, Object>> records = physicianMapper.selectPatients(keyword, offset, pageSize).stream()
+            .map(this::withAiConsultSummary)
+            .toList();
+        long total = physicianMapper.countPatients(keyword);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("records", records);
+        result.put("total", total);
+        result.put("page", currentPage);
+        result.put("size", pageSize);
+        result.put("totalPages", (long) Math.ceil(total / (double) pageSize));
+        return result;
+    }
+
+    public Map<String, Object> getPatientStats() {
+        return physicianMapper.selectPatientStats();
+    }
+
+    public Map<String, Object> getMedicalRecord(Long registerId) {
+        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        if (record == null) {
+            return null;
+        }
+        Long medicalRecordId = toLong(record.get("id"));
+        record.put("diseases", physicianMapper.selectDiseasesByMedicalRecordId(medicalRecordId));
+        return record;
+    }
+
+    @Transactional
+    public Map<String, Object> createMedicalRecord(Map<String, Object> request) {
+        Map<String, Object> record = copyRecordFields(request);
+        physicianMapper.insertMedicalRecord(record);
+        Long medicalRecordId = toLong(record.get("id"));
+        syncRecordDiseases(medicalRecordId, diseaseIds(request));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", medicalRecordId);
+        result.put("registerId", toLong(request.get("registerId")));
+        return result;
+    }
+
+    @Transactional
+    public void updateMedicalRecord(Long id, Map<String, Object> request) {
+        Map<String, Object> record = copyRecordFields(request);
+        record.put("id", id);
+        physicianMapper.updateMedicalRecord(record);
+        syncRecordDiseases(id, diseaseIds(request));
+    }
+
+    public List<Map<String, Object>> getMedicalTechnologies(String techType, String keyword) {
+        return physicianMapper.selectMedicalTechnologies(techType, keyword);
+    }
+
+    @Transactional
+    public Map<String, Object> createCheckRequest(Map<String, Object> request) {
+        return createTechnologyRequest(request, "check");
+    }
+
+    @Transactional
+    public Map<String, Object> createInspectionRequest(Map<String, Object> request) {
+        return createTechnologyRequest(request, "inspection");
+    }
+
+    @Transactional
+    public Map<String, Object> createDisposalRequest(Map<String, Object> request) {
+        return createTechnologyRequest(request, "disposal");
+    }
+
+    public List<Map<String, Object>> getCheckResults(Long registerId) {
+        return physicianMapper.selectCheckResults(registerId).stream().map(this::withAiAnalysis).toList();
+    }
+
+    public List<Map<String, Object>> getInspectionResults(Long registerId) {
+        return physicianMapper.selectInspectionResults(registerId).stream().map(this::withAiAnalysis).toList();
+    }
+
+    public List<Map<String, Object>> getDiseases(String keyword) {
+        return physicianMapper.selectDiseases(keyword);
+    }
+
+    @Transactional
+    public void submitDiagnosis(Map<String, Object> request) {
+        physicianMapper.updateDiagnosis(request);
+        Long medicalRecordId = toLong(request.get("medicalRecordId"));
+        syncRecordDiseases(medicalRecordId, diseaseIds(request));
+    }
+
     public List<Map<String, Object>> getDiagnosisList(Long registrationId) {
-        // TODO: Implement actual retrieval logic
-        log.info("Getting diagnosis list for registration: {}", registrationId);
-        return List.of();
+        return physicianMapper.selectDiagnosisSuggestions(registrationId);
     }
 
-    /**
-     * Create diagnosis
-     */
     public Map<String, Object> createDiagnosis(Map<String, Object> diagnosisRequest) {
-        // TODO: Implement actual creation logic
-        log.info("Creating diagnosis: {}", diagnosisRequest);
+        submitDiagnosis(diagnosisRequest);
         Map<String, Object> result = new HashMap<>();
-        result.put("id", 1L);
-        result.put("status", "created");
+        result.put("status", "saved");
         return result;
     }
 
-    /**
-     * Get prescription list by registration ID
-     */
+    public List<Map<String, Object>> getDrugs(String keyword) {
+        return physicianMapper.selectDrugs(keyword);
+    }
+
+    public Map<String, Object> getDrug(Long id) {
+        return physicianMapper.selectDrugById(id);
+    }
+
     public List<Map<String, Object>> getPrescriptionList(Long registrationId) {
-        // TODO: Implement actual retrieval logic
-        log.info("Getting prescription list for registration: {}", registrationId);
+        return physicianMapper.selectPrescriptions(registrationId);
+    }
+
+    @Transactional
+    public Map<String, Object> createPrescription(Map<String, Object> prescriptionRequest) {
+        Long registerId = toLong(prescriptionRequest.get("registerId"));
+        List<Map<String, Object>> items = requestItems(prescriptionRequest);
+        List<Long> prescriptionIds = items.stream().map(item -> {
+            Map<String, Object> row = new HashMap<>(item);
+            row.put("registerId", registerId);
+            physicianMapper.insertPrescription(row);
+            return toLong(row.get("id"));
+        }).toList();
+
+        BigDecimal totalAmount = physicianMapper.selectPrescriptions(registerId).stream()
+            .map(item -> toDecimal(item.get("drugPrice")).multiply(new BigDecimal(String.valueOf(item.getOrDefault("drugNumber", "0")))))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("prescriptionIds", prescriptionIds);
+        result.put("totalAmount", totalAmount);
+        result.put("aiReviewResult", fallbackReview(registerId));
+        return result;
+    }
+
+    public void deletePrescription(Long id) {
+        physicianMapper.deletePrescription(id);
+    }
+
+    public List<Map<String, Object>> getExamSuggestions(Long registerId) {
+        return physicianMapper.selectExamSuggestions(registerId);
+    }
+
+    public List<Map<String, Object>> getDiagnosisSuggestions(Long registerId) {
+        return physicianMapper.selectDiagnosisSuggestions(registerId);
+    }
+
+    public Map<String, Object> getPrescriptionReview(Long registerId) {
+        return fallbackReview(registerId);
+    }
+
+    public Map<String, Object> getDifyWorkflowContracts() {
+        return Map.of(
+            "medicalRecord", Map.of(
+                "inputs", List.of("registerId", "patientInfo", "aiConsultSummary", "doctorNotes", "checkResults"),
+                "outputs", List.of("aiReadme", "aiPresent", "aiHistory", "aiAllergy", "aiPhysique", "aiDiagnosis", "confidenceScore", "generationNotes")
+            ),
+            "examSuggestion", Map.of(
+                "inputs", List.of("registerId", "chiefComplaint", "presentIllness", "physicalExam", "preliminaryDiagnosis", "allergyHistory"),
+                "outputs", List.of("techId", "techName", "suggestType", "suggestReason", "priority")
+            ),
+            "examAnalysis", Map.of(
+                "inputs", List.of("registerId", "analysisType", "originalResult", "medicalRecordSummary"),
+                "outputs", List.of("riskLevel", "analysisReport", "abnormalIndicators", "correlationAnalysis")
+            ),
+            "diagnosis", Map.of(
+                "inputs", List.of("registerId", "patientInfo", "medicalRecord", "checkResults", "inspectionResults"),
+                "outputs", List.of("diseaseName", "recommendIcd", "probability", "riskLevel", "treatmentDirection", "diagnosisBasis")
+            ),
+            "prescriptionReview", Map.of(
+                "inputs", List.of("registerId", "diagnosis", "allergyHistory", "prescriptionItems", "currentMedications"),
+                "outputs", List.of("reviewResult", "riskScore", "drugConflict", "allergyRisk", "duplicateDrug", "dosageCheck", "riskDetails")
+            )
+        );
+    }
+
+    public Map<String, Object> getCtModelOutputContract() {
+        return Map.of(
+            "input", Map.of(
+                "required", List.of("checkRequestId", "registerId", "dicomSeriesOrImageUri"),
+                "optional", List.of("age", "gender", "chiefComplaint", "checkPosition", "checkPurpose")
+            ),
+            "output", Map.of(
+                "hasAbnormality", "boolean",
+                "abnormalProbability", "number",
+                "riskLevel", List.of("normal", "attention", "warning", "danger"),
+                "findings", List.of(Map.of(
+                    "findingType", "string",
+                    "anatomicalLocation", "string",
+                    "size", "string",
+                    "severity", "string",
+                    "confidence", "number",
+                    "bbox", "optional",
+                    "maskUri", "optional"
+                )),
+                "aiImpression", "string",
+                "limitations", "string"
+            ),
+            "databaseMapping", Map.of(
+                "originalResult", "ai_exam_analysis.original_result",
+                "findings", "ai_exam_analysis.abnormal_indicators",
+                "riskLevel", "ai_exam_analysis.risk_level",
+                "aiImpression", "ai_exam_analysis.analysis_report",
+                "correlationAnalysis", "ai_exam_analysis.correlation_analysis"
+            )
+        );
+    }
+
+    private Map<String, Object> withAiConsultSummary(Map<String, Object> row) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("chiefComplaint", row.remove("chiefComplaint"));
+        summary.put("symptomDuration", row.remove("symptomDuration"));
+        summary.put("historySummary", row.remove("historySummary"));
+        summary.put("allergySummary", row.remove("allergySummary"));
+        summary.put("medicationSummary", row.remove("medicationSummary"));
+        summary.put("aiSummary", row.remove("aiSummary"));
+        summary.put("suggestedExam", row.remove("suggestedExam"));
+        row.put("aiConsultSummary", summary.values().stream().allMatch(Objects::isNull) ? null : summary);
+        return row;
+    }
+
+    private Map<String, Object> withAiAnalysis(Map<String, Object> row) {
+        Map<String, Object> analysis = new LinkedHashMap<>();
+        analysis.put("riskLevel", row.remove("riskLevel"));
+        analysis.put("analysisReport", row.remove("analysisReport"));
+        analysis.put("abnormalIndicators", row.remove("abnormalIndicators"));
+        analysis.put("correlationAnalysis", row.remove("correlationAnalysis"));
+        row.put("aiAnalysis", analysis.values().stream().allMatch(Objects::isNull) ? null : analysis);
+        return row;
+    }
+
+    private Map<String, Object> copyRecordFields(Map<String, Object> request) {
+        Map<String, Object> record = new HashMap<>();
+        record.put("registerId", toLong(request.get("registerId")));
+        record.put("readme", request.get("readme"));
+        record.put("present", request.get("present"));
+        record.put("presentTreat", request.get("presentTreat"));
+        record.put("history", request.get("history"));
+        record.put("allergy", request.get("allergy"));
+        record.put("physique", request.get("physique"));
+        record.put("proposal", request.get("proposal"));
+        return record;
+    }
+
+    private Map<String, Object> createTechnologyRequest(Map<String, Object> request, String type) {
+        Long registerId = toLong(request.get("registerId"));
+        List<Long> requestIds = requestItems(request).stream().map(item -> {
+            Map<String, Object> row = new HashMap<>(item);
+            row.put("registerId", registerId);
+            if ("check".equals(type)) {
+                physicianMapper.insertCheckRequest(row);
+            } else if ("inspection".equals(type)) {
+                physicianMapper.insertInspectionRequest(row);
+            } else {
+                physicianMapper.insertDisposalRequest(row);
+            }
+            return toLong(row.get("id"));
+        }).toList();
+        return Map.of("requestIds", requestIds);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> requestItems(Map<String, Object> request) {
+        Object items = request.get("items");
+        if (items instanceof List<?>) {
+            return ((List<?>) items).stream()
+                .filter(Map.class::isInstance)
+                .map(item -> (Map<String, Object>) item)
+                .collect(Collectors.toList());
+        }
         return List.of();
     }
 
-    /**
-     * Create prescription
-     */
-    public Map<String, Object> createPrescription(Map<String, Object> prescriptionRequest) {
-        // TODO: Implement actual creation logic
-        log.info("Creating prescription: {}", prescriptionRequest);
-        Map<String, Object> result = new HashMap<>();
-        result.put("id", 1L);
-        result.put("status", "created");
-        return result;
+    private void syncRecordDiseases(Long medicalRecordId, List<Long> diseaseIds) {
+        if (medicalRecordId == null) {
+            return;
+        }
+        physicianMapper.deleteMedicalRecordDiseases(medicalRecordId);
+        diseaseIds.forEach(diseaseId -> physicianMapper.insertMedicalRecordDisease(medicalRecordId, diseaseId));
+    }
+
+    private List<Long> diseaseIds(Map<String, Object> request) {
+        Object value = request.get("diseaseIds");
+        if (value instanceof List<?>) {
+            return ((List<?>) value).stream().map(this::toLong).filter(Objects::nonNull).toList();
+        }
+        return List.of();
+    }
+
+    private Map<String, Object> fallbackReview(Long registerId) {
+        Map<String, Object> stored = physicianMapper.selectLatestPrescriptionReview(registerId);
+        if (stored != null) {
+            return stored;
+        }
+        Map<String, Object> review = new LinkedHashMap<>();
+        review.put("reviewResult", "passed");
+        review.put("riskScore", 0);
+        review.put("riskDetails", null);
+        review.put("status", "not_called");
+        return review;
+    }
+
+    private Long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return Long.parseLong(text);
+        }
+        return null;
+    }
+
+    private BigDecimal toDecimal(Object value) {
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return new BigDecimal(text);
+        }
+        return BigDecimal.ZERO;
     }
 }

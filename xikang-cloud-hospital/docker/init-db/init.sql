@@ -6,17 +6,8 @@
 -- 时区: Asia/Shanghai
 -- ============================================================
 
--- 创建数据库
-CREATE DATABASE xikang_hospital
-    WITH
-    ENCODING = 'UTF8'
-    LC_COLLATE = 'zh_CN.UTF-8'
-    LC_CTYPE = 'zh_CN.UTF-8'
-    TEMPLATE = template0
-    CONNECTION LIMIT = -1;
-
--- 连接到数据库后执行后续所有 DDL
-\c xikang_hospital;
+-- docker-compose 已通过 POSTGRES_DB 创建 xikang_hospital。
+-- init 脚本会自动在该数据库内执行，避免重复 CREATE DATABASE 导致首次启动失败。
 
 -- 设置时区
 SET timezone = 'Asia/Shanghai';
@@ -805,3 +796,75 @@ COMMENT ON TABLE ai_follow_up_record IS 'AI随访反馈记录表';
 -- ============================================================
 -- 数据库初始化完成
 -- ============================================================
+
+-- ============================================================
+-- 演示数据：保障角色A医生工作站最小闭环可联调
+-- ============================================================
+INSERT INTO department (id, dept_code, dept_name, dept_type) VALUES
+    (1, 'NK', '内科', '临床科室'),
+    (2, 'HXNK', '呼吸内科', '临床科室'),
+    (3, 'FSK', '放射科', '医技科室'),
+    (4, 'JYK', '检验科', '医技科室'),
+    (5, 'CZK', '处置室', '医技科室')
+ON CONFLICT (dept_code) DO NOTHING;
+
+INSERT INTO regist_level (id, regist_code, regist_name, regist_fee, regist_quota, sequence_no) VALUES
+    (1, 'PT', '普通号', 5.00, 50, 1),
+    (2, 'ZJ', '专家号', 15.00, 20, 2)
+ON CONFLICT (regist_code) DO NOTHING;
+
+INSERT INTO scheduling (id, rule_name, week_rule) VALUES
+    (1, '周一至周五上午', '1上2上3上4上5上')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO settle_category (id, settle_code, settle_name, sequence_no) VALUES
+    (1, 'ZF', '自费', 1)
+ON CONFLICT (settle_code) DO NOTHING;
+
+INSERT INTO employee (id, deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (1, 1, 2, 1, '张医生', 'dev-password'),
+    (2, 3, NULL, NULL, '王放射', 'dev-password'),
+    (3, 4, NULL, NULL, '李检验', 'dev-password')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO disease (id, disease_code, disease_name, diseaseicd, disease_category) VALUES
+    (1, 'PJT', '偏头痛', 'G43.9', '神经系统疾病'),
+    (2, 'SXDGR', '上呼吸道感染', 'J06.9', '呼吸系统疾病'),
+    (3, 'FY', '肺炎', 'J18.9', '呼吸系统疾病')
+ON CONFLICT (diseaseicd) DO NOTHING;
+
+INSERT INTO medical_technology (id, tech_code, tech_name, tech_format, tech_price, tech_type, price_type, deptment_id) VALUES
+    (1, 'XJCT', '胸部CT', '平扫', 280.00, 'check', '检查费', 3),
+    (2, 'TLCT', '头颅CT', '平扫', 260.00, 'check', '检查费', 3),
+    (3, 'XCG', '血常规', '全血', 35.00, 'inspection', '检验费', 4),
+    (4, 'CRP', 'C反应蛋白', '血清', 45.00, 'inspection', '检验费', 4),
+    (5, 'WX', '雾化吸入', '次', 30.00, 'disposal', '处置费', 5)
+ON CONFLICT (tech_code) DO NOTHING;
+
+INSERT INTO drug_info (id, drug_code, drug_name, drug_format, drug_unit, manufacturer, drug_dosage, drug_type, drug_price, mnemonic_code) VALUES
+    (1, 'ASP001', '阿司匹林肠溶片', '100mg*30片/盒', '盒', '拜耳医药', '片剂', '西药', 25.80, 'ASPL'),
+    (2, 'BLF001', '布洛芬缓释胶囊', '0.3g*20粒/盒', '盒', '中美史克', '胶囊', '西药', 18.50, 'BLF'),
+    (3, 'AMX001', '阿莫西林胶囊', '0.25g*24粒/盒', '盒', '哈药集团', '胶囊', '西药', 16.00, 'AMXL')
+ON CONFLICT (drug_code) DO NOTHING;
+
+INSERT INTO register (
+    id, case_number, real_name, gender, birthdate, age, age_type, home_address,
+    visit_date, noon, deptment_id, employee_id, regist_level_id, settle_category_id,
+    is_book, regist_method, regist_money, visit_state
+) VALUES
+    (1001, 'BL20260523001', '张三', '男', '1990-05-15', 36, '年', '沈阳市和平区XX路XX号',
+     CURRENT_TIMESTAMP, '上午', 1, 1, 2, 1, '是', '现金', 15.00, 1),
+    (1002, 'BL20260523002', '李四', '女', '1988-08-02', 38, '年', '沈阳市沈河区XX街',
+     CURRENT_TIMESTAMP, '上午', 1, 1, 2, 1, '否', '微信', 15.00, 2)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO ai_consultation_record (
+    register_id, round_number, ai_question, patient_answer, consultation_state,
+    chief_complaint, symptom_duration, history_summary, allergy_summary,
+    medication_summary, ai_summary, suggested_exam, completion_time
+) VALUES
+    (1001, 3, '是否还有其他不适？', '伴有咳嗽和低热', 'completed',
+     '咳嗽、低热3天', '3天', '既往体健，无慢性病史', '青霉素过敏',
+     '近3天自行服用退热药，效果一般', '患者咳嗽低热3天，伴轻微胸闷，建议排查呼吸道感染。',
+     '建议完善胸部CT、血常规、C反应蛋白检查', CURRENT_TIMESTAMP)
+ON CONFLICT DO NOTHING;

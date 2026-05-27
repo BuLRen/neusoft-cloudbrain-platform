@@ -4,8 +4,12 @@ import { defaultRoutePath, loginRoutePath } from '@/shared/constants/app'
 import { useAuthStore } from '@/app/stores/auth'
 
 export function setupRouterGuard(router: Router) {
-  router.beforeEach((to) => {
+  router.beforeEach(async (to) => {
     const authStore = useAuthStore()
+
+    if (!authStore.sessionChecked) {
+      await authStore.loadSession()
+    }
 
     if (to.path === loginRoutePath && authStore.isAuthenticated) {
       return defaultRoutePath

@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: gateway-service
+  main:
+    web-application-type: reactive
   cloud:
     gateway:
       routes:
@@ -54,9 +56,8 @@ spring:
       globalcors:
         cors-configurations:
           '[/**]':
-            allowedOrigins: "*"
-            allowedMethods: "*"
-            allowedHeaders: "*"
+            allowedOrigins:
+              - "http://localhost:5173"
             allowedMethods:
               - GET
               - POST
@@ -65,7 +66,7 @@ spring:
               - OPTIONS
             allowedHeaders:
               - "*"
-            allowCredentials: false
+            allowCredentials: true
             maxAge: 3600
 
   data:
@@ -88,3 +89,8 @@ logging:
   level:
     com.xikang.gateway: DEBUG
     org.springframework.cloud.gateway: DEBUG
+
+jwt:
+  # 开发环境默认值；生产环境请通过环境变量/配置中心覆盖
+  secret: xikang-cloud-hospital-secret-key-for-jwt-token-generation
+  defaultExpirationMs: 86400000

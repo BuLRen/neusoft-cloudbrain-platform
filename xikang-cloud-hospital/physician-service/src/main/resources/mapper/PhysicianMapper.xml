@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.physician.mapper.PhysicianMapper">
+
+    <select id="selectPatients" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.age AS "age",
+            r.visit_date AS "visitDate",
+            r.visit_state AS "visitState",
+            r.noon AS "noon",
+            d.dept_name AS "deptName",
+            e.realname AS "physicianName",
+            ac.chief_complaint AS "chiefComplaint",
+            ac.symptom_duration AS "symptomDuration",
+            ac.history_summary AS "historySummary",
+            ac.allergy_summary AS "allergySummary",
+            ac.medication_summary AS "medicationSummary",
+            ac.ai_summary AS "aiSummary",
+            ac.suggested_exam AS "suggestedExam",
+            CASE WHEN ac.id IS NULL THEN FALSE ELSE TRUE END AS "hasAiConsultation"
+        FROM register r
+        LEFT JOIN department d ON d.id = r.deptment_id
+        LEFT JOIN employee e ON e.id = r.employee_id
+        LEFT JOIN LATERAL (
+            SELECT *
+            FROM ai_consultation_record acr
+            WHERE acr.register_id = r.id
+            ORDER BY acr.completion_time DESC NULLS LAST, acr.creation_time DESC
+            LIMIT 1
+        ) ac ON TRUE
+        WHERE r.visit_state IN (1, 2)
+        <if test="keyword != null and keyword != ''">
+            AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countPatients" resultType="long">
+        SELECT COUNT(*)
+        FROM register r
+        WHERE r.visit_state IN (1, 2)
+        <if test="keyword != null and keyword != ''">
+            AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </select>
+
+    <select id="selectPatientStats" resultType="map">
+        SELECT
+            COALESCE(SUM(CASE WHEN visit_state = 3 THEN 1 ELSE 0 END), 0) AS "totalVisited",
+            COALESCE(SUM(CASE WHEN visit_state IN (1, 2) THEN 1 ELSE 0 END), 0) AS "totalWaiting"
+        FROM register
+    </select>
+
+    <select id="selectMedicalRecordByRegisterId" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            readme AS "readme",
+            present AS "present",
+            present_treat AS "presentTreat",
+            history AS "history",
+            allergy AS "allergy",
+            physique AS "physique",
+            proposal AS "proposal",
+            careful AS "careful",
+            diagnosis AS "diagnosis",
+            cure AS "cure"
+        FROM medical_record
+        WHERE register_id = #{registerId}
+    </select>
+
+    <select id="selectDiseasesByMedicalRecordId" resultType="map">
+        SELECT
+            d.id AS "id",
+            d.disease_code AS "diseaseCode",
+            d.disease_name AS "diseaseName",
+            d.diseaseicd AS "diseaseIcd",
+            d.disease_category AS "diseaseCategory"
+        FROM medical_record_disease mrd
+        INNER JOIN disease d ON d.id = mrd.disease_id
+        WHERE mrd.medical_record_id = #{medicalRecordId}
+        ORDER BY d.disease_name
+    </select>
+
+    <insert id="insertMedicalRecord" parameterType="map" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO medical_record (
+            register_id, readme, present, present_treat, history, allergy, physique, proposal
+        ) VALUES (
+            #{registerId}, #{readme}, #{present}, #{presentTreat}, #{history}, #{allergy}, #{physique}, #{proposal}
+        )
+    </insert>
+
+    <update id="updateMedicalRecord" parameterType="map">
+        UPDATE medical_record
+        SET readme = #{readme},
+            present = #{present},
+            present_treat = #{presentTreat},
+            history = #{history},
+            allergy = #{allergy},
+            physique = #{physique},
+            proposal = #{proposal}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateDiagnosis" parameterType="map">
+        UPDATE medical_record
+        SET diagnosis = #{diagnosis},
+            cure = #{cure},
+            careful = #{careful}
+        WHERE id = #{medicalRecordId}
+    </update>
+
+    <delete id="deleteMedicalRecordDiseases">
+        DELETE FROM medical_record_disease WHERE medical_record_id = #{medicalRecordId}
+    </delete>
+
+    <insert id="insertMedicalRecordDisease">
+        INSERT INTO medical_record_disease (medical_record_id, disease_id)
+        VALUES (#{medicalRecordId}, #{diseaseId})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <select id="selectMedicalTechnologies" resultType="map">
+        SELECT
+            mt.id AS "id",
+            mt.tech_code AS "techCode",
+            mt.tech_name AS "techName",
+            mt.tech_format AS "techFormat",
+            mt.tech_price AS "techPrice",
+            mt.tech_type AS "techType",
+            mt.price_type AS "priceType",
+            mt.deptment_id AS "deptmentId",
+            d.dept_name AS "deptName"
+        FROM medical_technology mt
+        LEFT JOIN department d ON d.id = mt.deptment_id
+        WHERE mt.tech_type = #{techType}
+        <if test="keyword != null and keyword != ''">
+            AND (mt.tech_code ILIKE CONCAT('%', #{keyword}, '%') OR mt.tech_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY mt.tech_name
+    </select>
+
+    <insert id="insertCheckRequest" parameterType="map" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO check_request (register_id, medical_technology_id, check_info, check_position, check_remark)
+        VALUES (#{registerId}, #{medicalTechnologyId}, #{checkInfo}, #{checkPosition}, #{checkRemark})
+    </insert>
+
+    <insert id="insertInspectionRequest" parameterType="map" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO inspection_request (register_id, medical_technology_id, inspection_info, inspection_position, inspection_remark)
+        VALUES (#{registerId}, #{medicalTechnologyId}, #{inspectionInfo}, #{inspectionPosition}, #{inspectionRemark})
+    </insert>
+
+    <insert id="insertDisposalRequest" parameterType="map" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO disposal_request (register_id, medical_technology_id, disposal_info, disposal_position, disposal_remark)
+        VALUES (#{registerId}, #{medicalTechnologyId}, #{disposalInfo}, #{disposalPosition}, #{disposalRemark})
+    </insert>
+
+    <select id="selectCheckResults" resultType="map">
+        SELECT
+            cr.id AS "id",
+            mt.tech_name AS "techName",
+            cr.check_position AS "checkPosition",
+            cr.check_result AS "checkResult",
+            cr.check_state AS "checkState",
+            cr.check_time AS "checkTime",
+            cr.check_remark AS "checkRemark",
+            a.risk_level AS "riskLevel",
+            a.analysis_report AS "analysisReport",
+            a.abnormal_indicators AS "abnormalIndicators",
+            a.correlation_analysis AS "correlationAnalysis"
+        FROM check_request cr
+        INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+        LEFT JOIN ai_exam_analysis a ON a.check_request_id = cr.id
+        WHERE cr.register_id = #{registerId}
+        ORDER BY cr.creation_time DESC, cr.id DESC
+    </select>
+
+    <select id="selectInspectionResults" resultType="map">
+        SELECT
+            ir.id AS "id",
+            mt.tech_name AS "techName",
+            ir.inspection_position AS "inspectionPosition",
+            ir.inspection_result AS "inspectionResult",
+            ir.inspection_state AS "inspectionState",
+            ir.inspection_time AS "inspectionTime",
+            ir.inspection_remark AS "inspectionRemark",
+            a.risk_level AS "riskLevel",
+            a.analysis_report AS "analysisReport",
+            a.abnormal_indicators AS "abnormalIndicators",
+            a.correlation_analysis AS "correlationAnalysis"
+        FROM inspection_request ir
+        INNER JOIN medical_technology mt ON mt.id = ir.medical_technology_id
+        LEFT JOIN ai_exam_analysis a ON a.inspection_request_id = ir.id
+        WHERE ir.register_id = #{registerId}
+        ORDER BY ir.creation_time DESC, ir.id DESC
+    </select>
+
+    <select id="selectDiseases" resultType="map">
+        SELECT
+            id AS "id",
+            disease_code AS "diseaseCode",
+            disease_name AS "diseaseName",
+            diseaseicd AS "diseaseIcd",
+            disease_category AS "diseaseCategory"
+        FROM disease
+        <where>
+            <if test="keyword != null and keyword != ''">
+                disease_code ILIKE CONCAT('%', #{keyword}, '%')
+                OR disease_name ILIKE CONCAT('%', #{keyword}, '%')
+                OR diseaseicd ILIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+        ORDER BY disease_name
+        LIMIT 50
+    </select>
+
+    <select id="selectDrugs" resultType="map">
+        SELECT
+            id AS "id",
+            drug_code AS "drugCode",
+            drug_name AS "drugName",
+            drug_format AS "drugFormat",
+            drug_unit AS "drugUnit",
+            manufacturer AS "manufacturer",
+            drug_dosage AS "drugDosage",
+            drug_type AS "drugType",
+            drug_price AS "drugPrice",
+            mnemonic_code AS "mnemonicCode"
+        FROM drug_info
+        <where>
+            <if test="keyword != null and keyword != ''">
+                drug_code ILIKE CONCAT('%', #{keyword}, '%')
+                OR drug_name ILIKE CONCAT('%', #{keyword}, '%')
+                OR mnemonic_code ILIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+        ORDER BY drug_name
+        LIMIT 50
+    </select>
+
+    <select id="selectDrugById" resultType="map">
+        SELECT
+            id AS "id",
+            drug_code AS "drugCode",
+            drug_name AS "drugName",
+            drug_format AS "drugFormat",
+            drug_unit AS "drugUnit",
+            manufacturer AS "manufacturer",
+            drug_dosage AS "drugDosage",
+            drug_type AS "drugType",
+            drug_price AS "drugPrice",
+            mnemonic_code AS "mnemonicCode",
+            creation_date AS "creationDate"
+        FROM drug_info
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insertPrescription" parameterType="map" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO prescription (register_id, drug_id, drug_usage, drug_number)
+        VALUES (#{registerId}, #{drugId}, #{drugUsage}, #{drugNumber})
+    </insert>
+
+    <select id="selectPrescriptions" resultType="map">
+        SELECT
+            p.id AS "id",
+            p.register_id AS "registerId",
+            p.drug_id AS "drugId",
+            d.drug_name AS "drugName",
+            d.drug_format AS "drugFormat",
+            d.drug_unit AS "drugUnit",
+            d.drug_price AS "drugPrice",
+            p.drug_usage AS "drugUsage",
+            p.drug_number AS "drugNumber",
+            p.drug_state AS "drugState",
+            p.creation_time AS "creationTime"
+        FROM prescription p
+        INNER JOIN drug_info d ON d.id = p.drug_id
+        WHERE p.register_id = #{registerId}
+        ORDER BY p.creation_time DESC, p.id DESC
+    </select>
+
+    <delete id="deletePrescription">
+        DELETE FROM prescription WHERE id = #{id} AND drug_state = '未发'
+    </delete>
+
+    <select id="selectExamSuggestions" resultType="map">
+        SELECT
+            id AS "id",
+            tech_id AS "techId",
+            tech_name AS "techName",
+            suggest_type AS "suggestType",
+            suggest_reason AS "suggestReason",
+            priority AS "priority",
+            is_adopted AS "isAdopted"
+        FROM ai_exam_suggestion
+        WHERE register_id = #{registerId}
+        ORDER BY priority ASC, id DESC
+    </select>
+
+    <select id="selectDiagnosisSuggestions" resultType="map">
+        SELECT
+            id AS "id",
+            disease_id AS "diseaseId",
+            disease_name AS "diseaseName",
+            recommend_icd AS "recommendIcd",
+            probability AS "probability",
+            risk_level AS "riskLevel",
+            treatment_direction AS "treatmentDirection",
+            diagnosis_basis AS "diagnosisBasis",
+            is_adopted AS "isAdopted",
+            sort_order AS "sortOrder"
+        FROM ai_diagnosis_suggestion
+        WHERE register_id = #{registerId}
+        ORDER BY sort_order ASC, probability DESC NULLS LAST
+    </select>
+
+    <select id="selectLatestPrescriptionReview" resultType="map">
+        SELECT
+            id AS "reviewId",
+            review_result AS "reviewResult",
+            drug_conflict AS "drugConflict",
+            allergy_risk AS "allergyRisk",
+            duplicate_drug AS "duplicateDrug",
+            dosage_check AS "dosageCheck",
+            risk_score AS "riskScore",
+            risk_details AS "riskDetails",
+            doctor_action AS "doctorAction",
+            review_time AS "reviewTime"
+        FROM ai_prescription_review
+        WHERE register_id = #{registerId}
+        ORDER BY review_time DESC, id DESC
+        LIMIT 1
+    </select>
+</mapper>

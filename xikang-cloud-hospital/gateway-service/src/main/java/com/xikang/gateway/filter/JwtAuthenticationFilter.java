@@ -19,7 +19,8 @@ import reactor.core.publisher.Mono;
 @Component
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
-    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register";
+    private static final String ACCESS_COOKIE_NAME = "access_token";
+    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me";
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -31,7 +32,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        String token = extractToken(request);
+        String token = extractToken(exchange);
         if (token == null) {
             log.warn("No token found for path: {}", path);
             return unauthorized(exchange.getResponse());
@@ -66,6 +67,16 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             return authHeader.substring(7);
         }
         return null;
+    }
+
+    private String extractToken(ServerWebExchange exchange) {
+        // Prefer HttpOnly cookie token (recommended)
+        var cookie = exchange.getRequest().getCookies().getFirst(ACCESS_COOKIE_NAME);
+        if (cookie != null && cookie.getValue() != null && !cookie.getValue().isBlank()) {
+            return cookie.getValue();
+        }
+        // Fallback to Authorization Bearer token (useful for debugging)
+        return extractToken(exchange.getRequest());
     }
 
     private Mono<Void> unauthorized(ServerHttpResponse response) {

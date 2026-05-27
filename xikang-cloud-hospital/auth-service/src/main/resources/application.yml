@@ -6,9 +6,9 @@ spring:
     name: auth-service
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/xikang_auth
+    url: jdbc:postgresql://localhost:3307/xikang_hospital
     username: postgres
-    password: postgres
+    password: postgres123
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5
@@ -33,3 +33,10 @@ management:
 logging:
   level:
     com.xikang.auth: DEBUG
+
+jwt:
+  # 开发环境默认值；生产环境请通过环境变量/配置中心覆盖
+  secret: xikang-cloud-hospital-secret-key-for-jwt-token-generation
+  defaultExpirationMs: 86400000
+  accessExpirationMs: 900000
+  refreshExpirationMs: 604800000

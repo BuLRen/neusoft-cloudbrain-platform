@@ -6,9 +6,9 @@ spring:
     name: pharmacy-service
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/xikang_pharmacy
+    url: jdbc:postgresql://localhost:3307/xikang_hospital
     username: postgres
-    password: postgres
+    password: postgres123
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5
