@@ -1,4 +1,4 @@
-version: '3.8'
+name: xikang-cloud-hospital
 
 services:
   # PostgreSQL 数据库 - 端口 3307
@@ -30,7 +30,6 @@ services:
     environment:
       MODE: standalone
       PREFER_HOST_MODE: hostname
-      SPRING_DATASOURCE_PLATFORM: postgres
       JVM_XMS: 512m
       JVM_XMX: 512m
     ports:

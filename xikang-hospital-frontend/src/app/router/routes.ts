@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 import AppShell from '@/app/layouts/AppShell.vue'
 import DashboardHome from '@/modules/dashboard/DashboardHome.vue'
 import LoginPage from '@/modules/auth/LoginPage.vue'
+import PhysicianWorkspace from '@/modules/physician/PhysicianWorkspace.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
 import NotFoundPage from '@/modules/error/NotFoundPage.vue'
@@ -43,7 +44,7 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'physician',
         name: 'Physician',
-        component: placeholder,
+        component: PhysicianWorkspace,
         meta: { title: '医生工作站', description: '患者查看、病历、检查申请、确诊、处方', icon: 'FirstAidKit', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A' },
       },
       {

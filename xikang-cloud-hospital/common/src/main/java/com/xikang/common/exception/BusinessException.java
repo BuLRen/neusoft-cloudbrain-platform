@@ -1,11 +1,8 @@
 package com.xikang.common.exception;
 
-import lombok.Getter;
-
 /**
  * Business exception with error code
  */
-@Getter
 public class BusinessException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
@@ -28,5 +25,9 @@ public class BusinessException extends RuntimeException {
     public BusinessException(int code, String message, Throwable cause) {
         super(message, cause);
         this.code = code;
+    }
+
+    public int getCode() {
+        return code;
     }
 }
