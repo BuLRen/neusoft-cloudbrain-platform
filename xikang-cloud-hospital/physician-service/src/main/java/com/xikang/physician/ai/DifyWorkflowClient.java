@@ -9,6 +9,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
@@ -25,10 +26,18 @@ public class DifyWorkflowClient {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final DifyAiProperties properties;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
 
     public DifyWorkflowClient(DifyAiProperties properties) {
         this.properties = properties;
+        this.restTemplate = createRestTemplate(properties);
+    }
+
+    private static RestTemplate createRestTemplate(DifyAiProperties properties) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(properties.getConnectTimeoutMs());
+        factory.setReadTimeout(properties.getReadTimeoutMs());
+        return new RestTemplate(factory);
     }
 
     public boolean isReady() {

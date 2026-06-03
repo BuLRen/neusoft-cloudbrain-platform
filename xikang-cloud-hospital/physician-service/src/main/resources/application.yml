@@ -50,6 +50,8 @@ xikang:
       workflow-w4: ${DIFY_WORKFLOW_W4:}
       # 初步诊断开关：填 true/1 即可；不是 workflow id，也不是 app-xxx（Dify 请求体里无 workflow 字段）
       workflow-preliminary: ${DIFY_WORKFLOW_PRELIMINARY:true}
+      connect-timeout-ms: ${DIFY_CONNECT_TIMEOUT_MS:30000}
+      read-timeout-ms: ${DIFY_READ_TIMEOUT_MS:300000}
       preliminary-output-keys:
         output-structured: ${DIFY_PRELIM_OUTPUT_ROOT:output_structured}
         diagnosis-text: ${DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT:answer}

@@ -426,7 +426,7 @@ onMounted(() => {
               />
             </div>
           </ElFormItem>
-          <ElFormItem label="AI 建议疾病">
+          <ElFormItem label="智能诊断医生诊断结果">
             <ElSelect
               v-model="preliminaryForm.diseaseNames"
               multiple
@@ -438,7 +438,7 @@ onMounted(() => {
             />
             <p v-if="aiMeta.suggestedDiseases?.length" class="record-page__disease-hint">
               <span v-for="item in aiMeta.suggestedDiseases" :key="item.diseaseName" class="record-page__disease-tag">
-                <ElTag size="small" type="info">
+                <ElTag size="small" type="success">
                   {{ item.diseaseName }}
                   <template v-if="item.confidenceLevel">（{{ item.confidenceLevel }}）</template>
                 </ElTag>

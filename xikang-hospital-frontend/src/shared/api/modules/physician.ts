@@ -1,5 +1,7 @@
-
 import { http } from '../request'
+
+/** Dify 初步诊断 blocking 调用超时（与后端 read-timeout-ms 一致） */
+const PRELIMINARY_AI_TIMEOUT_MS = 5 * 60 * 1000
 import type { PageResult } from '../result'
 
 export interface AiConsultSummary {
@@ -252,7 +254,12 @@ export const physicianApi = {
     return http<StructuredRecord>({ url: '/physician/ai/w1/structure', method: 'POST', data })
   },
   aiPreliminaryDiagnosis(data: { registerId: number; text: string; preHandle: boolean; model: string }) {
-    return http<PreliminaryDiagnosisOutput>({ url: '/physician/ai/preliminary-diagnosis', method: 'POST', data })
+    return http<PreliminaryDiagnosisOutput>({
+      url: '/physician/ai/preliminary-diagnosis',
+      method: 'POST',
+      data,
+      timeout: PRELIMINARY_AI_TIMEOUT_MS,
+    })
   },
   savePreliminaryDiagnosis(data: {
     registerId: number

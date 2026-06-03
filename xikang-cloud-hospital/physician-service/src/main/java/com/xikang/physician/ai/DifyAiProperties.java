@@ -17,6 +17,10 @@ public class DifyAiProperties {
     private String workflowW4 = "";
     private String workflowPreliminary = "";
     private String ctInferenceUrl = "";
+    /** Dify blocking 工作流读取超时（毫秒），慢模型建议 300000（5 分钟） */
+    private int readTimeoutMs = 300_000;
+    /** 连接 Dify 超时（毫秒） */
+    private int connectTimeoutMs = 30_000;
     private PreliminaryOutputKeys preliminaryOutputKeys = new PreliminaryOutputKeys();
 
     public boolean isEnabled() {
@@ -97,6 +101,22 @@ public class DifyAiProperties {
 
     public void setCtInferenceUrl(String ctInferenceUrl) {
         this.ctInferenceUrl = ctInferenceUrl;
+    }
+
+    public int getReadTimeoutMs() {
+        return readTimeoutMs;
+    }
+
+    public void setReadTimeoutMs(int readTimeoutMs) {
+        this.readTimeoutMs = readTimeoutMs;
+    }
+
+    public int getConnectTimeoutMs() {
+        return connectTimeoutMs;
+    }
+
+    public void setConnectTimeoutMs(int connectTimeoutMs) {
+        this.connectTimeoutMs = connectTimeoutMs;
     }
 
     public PreliminaryOutputKeys getPreliminaryOutputKeys() {

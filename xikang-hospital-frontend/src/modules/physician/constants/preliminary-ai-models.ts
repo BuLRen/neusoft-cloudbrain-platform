@@ -20,7 +20,6 @@ export const PRELIMINARY_AI_MODEL_GROUPS: PreliminaryAiModelGroup[] = [
       { id: 'deepseek-v4-flash', label: 'deepseek-v4-flash', provider: 'deepseek', description: '快速响应' },
       { id: 'deepseek-v4-pro', label: 'deepseek-v4-pro', provider: 'deepseek', description: '更强推理' },
       { id: 'deepseek-chat', label: 'deepseek-chat', provider: 'deepseek' },
-      { id: 'deepseek-reasoner', label: 'deepseek-reasoner', provider: 'deepseek', description: '深度推理' },
     ],
   },
   {
@@ -29,8 +28,6 @@ export const PRELIMINARY_AI_MODEL_GROUPS: PreliminaryAiModelGroup[] = [
     models: [
       { id: 'qwen3.6-plus', label: 'qwen3.6-plus', provider: 'qwen' },
       { id: 'qwen3.6-flash', label: 'qwen3.6-flash', provider: 'qwen', description: '快速响应' },
-      { id: 'qwen3.5-plus', label: 'qwen3.5-plus', provider: 'qwen' },
-      { id: 'qwen3.5-flash', label: 'qwen3.5-flash', provider: 'qwen', description: '快速响应' },
     ],
   },
 ]

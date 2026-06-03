@@ -16,6 +16,7 @@ export default defineConfig({
       '/api/physician': {
         target: 'http://localhost:8092',
         changeOrigin: true,
+        timeout: 300_000,
       },
       '/api': {
         target: 'http://localhost:8080',
