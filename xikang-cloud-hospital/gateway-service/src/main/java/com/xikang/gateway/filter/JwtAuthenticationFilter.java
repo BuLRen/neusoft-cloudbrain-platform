@@ -20,7 +20,7 @@ import reactor.core.publisher.Mono;
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
     private static final String ACCESS_COOKIE_NAME = "access_token";
-    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me";
+    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/ws/voice,/api/voice/";
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {

@@ -33,3 +33,7 @@ management:
 logging:
   level:
     com.xikang.pharmacy: DEBUG
+
+services:
+  ai-pharmacy:
+    base-url: http://localhost:8104

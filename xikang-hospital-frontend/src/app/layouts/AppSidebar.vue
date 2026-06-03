@@ -11,6 +11,9 @@ const router = useRouter()
 const authStore = useAuthStore()
 const iconMap = { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User }
 
+// 患者角色时隐藏左侧菜单
+const isPatient = computed(() => authStore.role === 'patient')
+
 const menuRoutes = computed(() => {
   const root = router.options.routes.find((item) => item.path === '/')
   return (root?.children || []).filter((item) => {
@@ -26,7 +29,8 @@ function iconComponent(name?: string) {
 </script>
 
 <template>
-  <aside class="app-sidebar">
+  <!-- 患者角色时隐藏左侧菜单 -->
+  <aside v-if="!isPatient" class="app-sidebar">
     <RouterLink class="app-sidebar__brand" to="/dashboard">
       <span class="app-sidebar__logo">希</span>
       <span>

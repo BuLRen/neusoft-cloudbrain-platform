@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,7 @@ public class PharmacyService {
     private final PrescriptionDetailMapper prescriptionDetailMapper;
     private final DrugStockMapper drugStockMapper;
     private final PharmacyTransactionMapper pharmacyTransactionMapper;
+    private final AiPharmacyClient aiPharmacyClient;
 
     // ==================== 药品管理 ====================
 
@@ -238,13 +240,41 @@ public class PharmacyService {
             prescriptionMapper.update(prescription);
         }
 
-        log.info("发药成功 | registerId={}, prescriptionCount={}, itemCount={}", registerId, prescriptions.size(), totalItemCount);
+        List<Long> followUpPlanIds = new ArrayList<>();
+        List<Long> followUpFailedPrescriptionIds = new ArrayList<>();
+        for (Prescription prescription : prescriptions) {
+            if (prescription.getPatientId() == null) {
+                followUpFailedPrescriptionIds.add(prescription.getId());
+                log.warn("自动创建随访计划失败，处方缺少 patientId | registerId={}, prescriptionId={}", registerId, prescription.getId());
+                continue;
+            }
+            try {
+                Map<String, Object> followUpResult = aiPharmacyClient.createFollowUpPlan(
+                    prescription.getPatientId(),
+                    registerId,
+                    prescription.getId()
+                );
+                if (followUpResult.get("planId") instanceof Number planId) {
+                    followUpPlanIds.add(planId.longValue());
+                }
+            } catch (Exception e) {
+                followUpFailedPrescriptionIds.add(prescription.getId());
+                log.warn("自动创建随访计划失败 | registerId={}, prescriptionId={}", registerId, prescription.getId(), e);
+            }
+        }
+
+        log.info("发药成功 | registerId={}, prescriptionCount={}, itemCount={}, followUpCreatedCount={}, followUpFailedCount={}",
+            registerId, prescriptions.size(), totalItemCount, followUpPlanIds.size(), followUpFailedPrescriptionIds.size());
 
         Map<String, Object> result = new HashMap<>();
         result.put("prescriptionCount", prescriptions.size());
         result.put("itemCount", totalItemCount);
         result.put("dispensationTime", now);
         result.put("pharmacist", pharmacistName);
+        result.put("followUpCreatedCount", followUpPlanIds.size());
+        result.put("followUpFailedCount", followUpFailedPrescriptionIds.size());
+        result.put("followUpPlanIds", followUpPlanIds);
+        result.put("followUpFailedPrescriptionIds", followUpFailedPrescriptionIds);
         return result;
     }
 

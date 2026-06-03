@@ -34,9 +34,6 @@ public class AuthController {
 
         String accessToken = tokens.get("accessToken");
         String refreshToken = tokens.get("refreshToken");
-        if (accessToken == null || refreshToken == null) {
-            throw new IllegalStateException("登录成功但未生成token");
-        }
 
         ResponseCookie accessCookie = ResponseCookie.from(ACCESS_COOKIE_NAME, accessToken)
                 .httpOnly(true)
@@ -58,9 +55,12 @@ public class AuthController {
 
         Map<String, Object> body = Map.of(
                 "userId", tokens.get("userId"),
-                "role", tokens.get("role")
+                "role", tokens.get("role"),
+                "realName", tokens.get("realName"),
+                "token", accessToken,
+                "refreshToken", refreshToken
         );
-        return ResponseEntity.ok().headers(headers).body(Result.success(body));
+        return ResponseEntity.ok().headers(headers).body(Result.success("登录成功", body));
     }
 
     /**
@@ -88,9 +88,12 @@ public class AuthController {
         headers.add(HttpHeaders.SET_COOKIE, clearAccess.toString());
         headers.add(HttpHeaders.SET_COOKIE, clearRefresh.toString());
 
-        return ResponseEntity.ok().headers(headers).body(Result.success());
+        return ResponseEntity.ok().headers(headers).body(Result.success("登出成功", null));
     }
 
+    /**
+     * Refresh token
+     */
     @PostMapping("/refresh")
     public ResponseEntity<Result<Void>> refresh(
             @CookieValue(value = REFRESH_COOKIE_NAME, required = false) String refreshToken
@@ -98,9 +101,6 @@ public class AuthController {
         Map<String, String> refreshed = authService.refresh(refreshToken);
 
         String accessToken = refreshed.get("accessToken");
-        if (accessToken == null) {
-            throw new IllegalStateException("刷新成功但未生成access token");
-        }
 
         ResponseCookie accessCookie = ResponseCookie.from(ACCESS_COOKIE_NAME, accessToken)
                 .httpOnly(true)
@@ -111,14 +111,25 @@ public class AuthController {
 
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.SET_COOKIE, accessCookie.toString());
-        return ResponseEntity.ok().headers(headers).body(Result.success());
+        return ResponseEntity.ok().headers(headers).body(Result.success("刷新成功", null));
     }
 
+    /**
+     * Get current user info (for session check)
+     */
     @GetMapping("/me")
     public Result<Map<String, Object>> me(
-            @CookieValue(value = ACCESS_COOKIE_NAME, required = false) String accessToken
+            @RequestHeader(value = "Authorization", required = false) String authHeader
     ) {
-        Map<String, Object> result = authService.me(accessToken);
+        // Try to get token from Authorization header first
+        String token = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7);
+        }
+        if (token == null) {
+            return Result.error(401, "未授权");
+        }
+        Map<String, Object> result = authService.me(token);
         return Result.success(result);
     }
 
@@ -128,14 +139,18 @@ public class AuthController {
     @PostMapping("/register")
     public Result<Void> register(@RequestBody Map<String, String> registerRequest) {
         authService.register(registerRequest);
-        return Result.success();
+        return Result.success("注册成功", null);
     }
 
     /**
      * Validate token
      */
     @GetMapping("/validate")
-    public Result<Map<String, Object>> validateToken(@RequestHeader("Authorization") String token) {
+    public Result<Map<String, Object>> validateToken(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        String token = authHeader;
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
         Map<String, Object> result = authService.validateToken(token);
         return Result.success(result);
     }

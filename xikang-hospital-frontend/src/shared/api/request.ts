@@ -1,22 +1,33 @@
-
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/app/stores/auth'
 import type { ApiResult, RequestOptions } from './result'
 
 const request = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: '/api',
   timeout: 15000,
   withCredentials: true,
 })
 
 const refreshClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: '/api',
   timeout: 15000,
   withCredentials: true,
 })
 
 let refreshPromise: Promise<void> | null = null
+
+// 请求拦截器：添加 Authorization header
+request.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token') || ''
+    if (token && !config.headers.has('Authorization')) {
+      config.headers.set('Authorization', `Bearer ${token}`)
+    }
+    return config
+  },
+  (error) => Promise.reject(error),
+)
 
 async function refreshSessionOnce() {
   if (!refreshPromise) {

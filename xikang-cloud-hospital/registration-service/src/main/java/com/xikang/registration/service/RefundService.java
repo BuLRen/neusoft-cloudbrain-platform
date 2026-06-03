@@ -70,22 +70,29 @@ public class RefundService {
     public void refundByRegisterId(Long registerId, Long operatorId, String operatorName, String reason) {
         log.info("按挂号ID退费 | registerId={}, operatorId={}", registerId, operatorId);
 
-        List<ExpenseRecord> records = expenseRecordMapper.selectPendingByRegisterId(registerId);
+        List<ExpenseRecord> records = expenseRecordMapper.selectByRegisterId(registerId);
+        List<ExpenseRecord> paidRecords = records.stream()
+                .filter(record -> record.getStatus() != null && record.getStatus() == 1)
+                .toList();
 
-        for (ExpenseRecord record : records) {
-            if (record.getStatus() == 1) { // 只退已缴费的
-                record.setStatus(2);
-                record.setRefundTime(LocalDateTime.now());
-                record.setOperatorId(operatorId);
-                record.setOperatorName(operatorName);
-                record.setRemark(reason);
-                expenseRecordMapper.update(record);
-            }
+        if (paidRecords.isEmpty()) {
+            throw new BusinessException(400, "该挂号没有可退费的已缴费记录");
         }
 
-        // 更新挂号状态
-        registrationMapper.updatePayStatus(registerId, 2);
+        for (ExpenseRecord record : paidRecords) {
+            record.setStatus(2);
+            record.setRefundTime(LocalDateTime.now());
+            record.setOperatorId(operatorId);
+            record.setOperatorName(operatorName);
+            record.setRemark(reason);
+            expenseRecordMapper.update(record);
+        }
 
-        log.info("按挂号ID退费完成 | registerId={}, count={}", registerId, records.size());
+        List<ExpenseRecord> remainingUnrefunded = expenseRecordMapper.selectUnrefundedByRegisterId(registerId);
+        if (remainingUnrefunded.isEmpty()) {
+            registrationMapper.updatePayStatus(registerId, 2);
+        }
+
+        log.info("按挂号ID退费完成 | registerId={}, count={}", registerId, paidRecords.size());
     }
 }

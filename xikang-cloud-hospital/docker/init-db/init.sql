@@ -13,8 +13,35 @@
 SET timezone = 'Asia/Shanghai';
 
 -- ============================================================
--- 第 1 层：基础基础表（无外键依赖）
+-- 第 1 层：基础表（无外键依赖）
 -- ============================================================
+
+-- ============================================================
+-- 表: users (用户表)
+-- 说明: 系统用户表，用于登录认证（管理员、医生、挂号员、医技、药房、患者）
+-- user_type: 1-管理员, 2-医生, 3-挂号员, 4-医技人员, 5-药房人员, 6-患者
+-- ============================================================
+CREATE TABLE users (
+    id              BIGSERIAL      PRIMARY KEY,
+    username        VARCHAR(64)    NOT NULL UNIQUE,
+    password        VARCHAR(255)   NOT NULL,
+    real_name       VARCHAR(64)    DEFAULT NULL,
+    email           VARCHAR(128)   DEFAULT NULL,
+    phone           VARCHAR(20)    DEFAULT NULL,
+    status          INTEGER        NOT NULL DEFAULT 1,
+    user_type       INTEGER        NOT NULL DEFAULT 6,
+    remark          VARCHAR(255)   DEFAULT NULL,
+    create_time     TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+    update_time     TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_users_status CHECK (status IN (1, 0, -1))
+);
+
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_status ON users(status);
+CREATE INDEX idx_users_user_type ON users(user_type);
+
+COMMENT ON TABLE users IS '系统用户表（登录认证）';
+COMMENT ON COLUMN users.user_type IS '用户类型: 1-管理员, 2-医生, 3-挂号员, 4-医技人员, 5-药房人员, 6-患者';
 
 -- ============================================================
 -- 表: department (科室表)
@@ -798,34 +825,239 @@ COMMENT ON TABLE ai_follow_up_record IS 'AI随访反馈记录表';
 -- ============================================================
 
 -- ============================================================
--- 演示数据：保障角色A医生工作站最小闭环可联调
+-- 演示数据：完整科室、医生、挂号级别配置
 -- ============================================================
+
+-- 测试用户数据（用于登录认证）
+INSERT INTO users (username, password, real_name, user_type, status) VALUES
+    ('admin', 'admin123', '系统管理员', 1, 1),
+    ('doctor1', 'doctor123', '张医生', 2, 1),
+    ('reg001', 'reg123', '李收费', 3, 1),
+    ('medtech01', 'medtech123', '王技师', 4, 1),
+    ('pharma01', 'pharma123', '赵药师', 5, 1),
+    ('patient001', 'patient123', '患者小明', 6, 1)
+ON CONFLICT (username) DO NOTHING;
+
+-- 临床科室（20个）
 INSERT INTO department (id, dept_code, dept_name, dept_type) VALUES
     (1, 'NK', '内科', '临床科室'),
     (2, 'HXNK', '呼吸内科', '临床科室'),
-    (3, 'FSK', '放射科', '医技科室'),
-    (4, 'JYK', '检验科', '医技科室'),
-    (5, 'CZK', '处置室', '医技科室')
+    (3, 'XXNK', '心血管内科', '临床科室'),
+    (4, 'XHNK', '消化内科', '临床科室'),
+    (5, 'SJNK', '神经内科', '临床科室'),
+    (6, 'SNK', '肾内科', '临床科室'),
+    (7, 'NFMK', '内分泌科', '临床科室'),
+    (8, 'WK', '外科', '临床科室'),
+    (9, 'GC', '骨科', '临床科室'),
+    (10, 'FCHK', '妇产科', '临床科室'),
+    (11, 'EK', '儿科', '临床科室'),
+    (12, 'XSEK', '新生儿科', '临床科室'),
+    (13, 'YFK', '眼科', '临床科室'),
+    (14, 'EBHK', '耳鼻咽喉科', '临床科室'),
+    (15, 'KQK', '口腔科', '临床科室'),
+    (16, 'PFK', '皮肤科', '临床科室'),
+    (17, 'ZYK', '中医科', '临床科室'),
+    (18, 'ZLK', '肿瘤科', '临床科室'),
+    (19, 'JZK', '急诊科', '临床科室'),
+    (20, 'KFY', '康复医学科', '临床科室')
 ON CONFLICT (dept_code) DO NOTHING;
 
+-- 医技科室（10个）
+INSERT INTO department (id, dept_code, dept_name, dept_type) VALUES
+    (35, 'FSK', '放射科', '医技科室'),
+    (36, 'CSK', '超声科', '医技科室'),
+    (37, 'JYK', '检验科', '医技科室'),
+    (38, 'YXK', '输血科', '医技科室'),
+    (39, 'BLK', '病理科', '医技科室'),
+    (40, 'CZK', '处置室', '医技科室'),
+    (41, 'NJZX', '内镜中心', '医技科室'),
+    (42, 'SS', '手术室', '医技科室'),
+    (44, 'XDZX', '消毒供应中心', '医技科室'),
+    (45, 'YF', '药房', '医技科室')
+ON CONFLICT (dept_code) DO NOTHING;
+
+-- 挂号级别（3级）
 INSERT INTO regist_level (id, regist_code, regist_name, regist_fee, regist_quota, sequence_no) VALUES
     (1, 'PT', '普通号', 5.00, 50, 1),
-    (2, 'ZJ', '专家号', 15.00, 20, 2)
+    (2, 'ZJ', '专家号', 15.00, 30, 2),
+    (3, 'ZR', '主任医师号', 30.00, 15, 3)
 ON CONFLICT (regist_code) DO NOTHING;
 
+-- 排班规则
 INSERT INTO scheduling (id, rule_name, week_rule) VALUES
-    (1, '周一至周五上午', '1上2上3上4上5上')
-ON CONFLICT DO NOTHING;
+    (1, '周一至周五上午', '1上2上3上4上5上'),
+    (2, '周一至周五下午', '1下2下3下4下5下'),
+    (3, '周六上午', '6上')
+ON CONFLICT (id) DO NOTHING;
 
+-- 结算类别
 INSERT INTO settle_category (id, settle_code, settle_name, sequence_no) VALUES
-    (1, 'ZF', '自费', 1)
+    (1, 'ZF', '自费', 1),
+    (2, 'YB', '医保', 2)
 ON CONFLICT (settle_code) DO NOTHING;
 
-INSERT INTO employee (id, deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
-    (1, 1, 2, 1, '张医生', 'dev-password'),
-    (2, 3, NULL, NULL, '王放射', 'dev-password'),
-    (3, 4, NULL, NULL, '李检验', 'dev-password')
-ON CONFLICT DO NOTHING;
+-- 临床科室医生（20个科室 × 5人 = 100人）
+-- 科室1: 内科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (1, 1, 1, '内科张医生', 'dev-password'),
+    (1, 1, 2, '内科李医生', 'dev-password'),
+    (1, 1, 3, '内科王医生', 'dev-password'),
+    (1, 2, 1, '内科赵专家', 'dev-password'),
+    (1, 3, 1, '内科刘主任', 'dev-password');
+-- 科室2: 呼吸内科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (2, 1, 1, '呼吸内科周医生', 'dev-password'),
+    (2, 1, 2, '呼吸内科吴医生', 'dev-password'),
+    (2, 1, 3, '呼吸内科郑医生', 'dev-password'),
+    (2, 2, 1, '呼吸内科冯专家', 'dev-password'),
+    (2, 3, 1, '呼吸内科陈主任', 'dev-password');
+-- 科室3: 心血管内科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (3, 1, 1, '心血管内科孙医生', 'dev-password'),
+    (3, 1, 2, '心血管内科李医生', 'dev-password'),
+    (3, 1, 3, '心血管内科林医生', 'dev-password'),
+    (3, 2, 1, '心血管内科何专家', 'dev-password'),
+    (3, 3, 1, '心血管内科高主任', 'dev-password');
+-- 科室4: 消化内科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (4, 1, 1, '消化内科马医生', 'dev-password'),
+    (4, 1, 2, '消化内科朱医生', 'dev-password'),
+    (4, 1, 3, '消化内科秦医生', 'dev-password'),
+    (4, 2, 1, '消化内科尤专家', 'dev-password'),
+    (4, 3, 1, '消化内科许主任', 'dev-password');
+-- 科室5: 神经内科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (5, 1, 1, '神经内科施医生', 'dev-password'),
+    (5, 1, 2, '神经内科张医生', 'dev-password'),
+    (5, 1, 3, '神经内科蒋医生', 'dev-password'),
+    (5, 2, 1, '神经内科韩专家', 'dev-password'),
+    (5, 3, 1, '神经内科沈主任', 'dev-password');
+-- 科室6: 肾内科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (6, 1, 1, '肾内科唐医生', 'dev-password'),
+    (6, 1, 2, '肾内科冯医生', 'dev-password'),
+    (6, 1, 3, '肾内科董医生', 'dev-password'),
+    (6, 2, 1, '肾内科潘专家', 'dev-password'),
+    (6, 3, 1, '肾内科姜主任', 'dev-password');
+-- 科室7: 内分泌科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (7, 1, 1, '内分泌科苏医生', 'dev-password'),
+    (7, 1, 2, '内分泌科魏医生', 'dev-password'),
+    (7, 1, 3, '内分泌科卢医生', 'dev-password'),
+    (7, 2, 1, '内分泌科崔专家', 'dev-password'),
+    (7, 3, 1, '内分泌科蔡主任', 'dev-password');
+-- 科室8: 外科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (8, 1, 1, '外科丁医生', 'dev-password'),
+    (8, 1, 2, '外科沈医生', 'dev-password'),
+    (8, 1, 3, '外科徐医生', 'dev-password'),
+    (8, 2, 1, '外科蒋专家', 'dev-password'),
+    (8, 3, 1, '外科沈主任', 'dev-password');
+-- 科室9: 骨科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (9, 1, 1, '骨科卢医生', 'dev-password'),
+    (9, 1, 2, '骨科马医生', 'dev-password'),
+    (9, 1, 3, '骨科龚医生', 'dev-password'),
+    (9, 2, 1, '骨科秦专家', 'dev-password'),
+    (9, 3, 1, '骨科谢主任', 'dev-password');
+-- 科室10: 妇产科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (10, 1, 1, '妇产科苏医生', 'dev-password'),
+    (10, 1, 2, '妇产科韦医生', 'dev-password'),
+    (10, 1, 3, '妇产科严医生', 'dev-password'),
+    (10, 2, 1, '妇产科卫专家', 'dev-password'),
+    (10, 3, 1, '妇产科武主任', 'dev-password');
+-- 科室11: 儿科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (11, 1, 1, '儿科陶医生', 'dev-password'),
+    (11, 1, 2, '儿科俞医生', 'dev-password'),
+    (11, 1, 3, '儿科任医生', 'dev-password'),
+    (11, 2, 1, '儿科袁专家', 'dev-password'),
+    (11, 3, 1, '儿科柳主任', 'dev-password');
+-- 科室12: 新生儿科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (12, 1, 1, '新生儿科毕医生', 'dev-password'),
+    (12, 1, 2, '新生儿科郝医生', 'dev-password'),
+    (12, 1, 3, '新生儿科邬医生', 'dev-password'),
+    (12, 2, 1, '新生儿科安专家', 'dev-password'),
+    (12, 3, 1, '新生儿科常主任', 'dev-password');
+-- 科室13: 眼科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (13, 1, 1, '眼科乐医生', 'dev-password'),
+    (13, 1, 2, '眼科于医生', 'dev-password'),
+    (13, 1, 3, '眼科傅医生', 'dev-password'),
+    (13, 2, 1, '眼科康专家', 'dev-password'),
+    (13, 3, 1, '眼科陆主任', 'dev-password');
+-- 科室14: 耳鼻咽喉科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (14, 1, 1, '耳鼻咽喉科柴医生', 'dev-password'),
+    (14, 1, 2, '耳鼻咽喉科胡医生', 'dev-password'),
+    (14, 1, 3, '耳鼻咽喉科戴医生', 'dev-password'),
+    (14, 2, 1, '耳鼻咽喉科蔡专家', 'dev-password'),
+    (14, 3, 1, '耳鼻咽喉科谭主任', 'dev-password');
+-- 科室15: 口腔科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (15, 1, 1, '口腔科舒医生', 'dev-password'),
+    (15, 1, 2, '口腔科屈医生', 'dev-password'),
+    (15, 1, 3, '口腔科项医生', 'dev-password'),
+    (15, 2, 1, '口腔科纪专家', 'dev-password'),
+    (15, 3, 1, '口腔科梁主任', 'dev-password');
+-- 科室16: 皮肤科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (16, 1, 1, '皮肤科杜医生', 'dev-password'),
+    (16, 1, 2, '皮肤科阮医生', 'dev-password'),
+    (16, 1, 3, '皮肤科贝医生', 'dev-password'),
+    (16, 2, 1, '皮肤科明专家', 'dev-password'),
+    (16, 3, 1, '皮肤科程主任', 'dev-password');
+-- 科室17: 中医科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (17, 1, 1, '中医科卫医生', 'dev-password'),
+    (17, 1, 2, '中医科申医生', 'dev-password'),
+    (17, 1, 3, '中医科连医生', 'dev-password'),
+    (17, 2, 1, '中医科习专家', 'dev-password'),
+    (17, 3, 1, '中医科程主任', 'dev-password');
+-- 科室18: 肿瘤科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (18, 1, 1, '肿瘤科向医生', 'dev-password'),
+    (18, 1, 2, '肿瘤科丁医生', 'dev-password'),
+    (18, 1, 3, '肿瘤科茅医生', 'dev-password'),
+    (18, 2, 1, '肿瘤科左专家', 'dev-password'),
+    (18, 3, 1, '肿瘤科甘主任', 'dev-password');
+-- 科室19: 急诊科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (19, 1, 1, '急诊科龙医生', 'dev-password'),
+    (19, 1, 2, '急诊科万医生', 'dev-password'),
+    (19, 1, 3, '急诊科柯医生', 'dev-password'),
+    (19, 2, 1, '急诊科柯专家', 'dev-password'),
+    (19, 3, 1, '急诊科支主任', 'dev-password');
+-- 科室20: 康复医学科
+INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password) VALUES
+    (20, 1, 1, '康复科管医生', 'dev-password'),
+    (20, 1, 2, '康复科蔡医生', 'dev-password'),
+    (20, 1, 3, '康复科蒙医生', 'dev-password'),
+    (20, 2, 1, '康复科应专家', 'dev-password'),
+    (20, 3, 1, '康复科丁主任', 'dev-password');
+
+-- 医技科室人员（不挂号，执行检查/检验）
+INSERT INTO employee (deptment_id, realname, password) VALUES
+    (35, '放射科技师王一', 'dev-password'),
+    (35, '放射科技师李二', 'dev-password'),
+    (35, '放射科医生张三', 'dev-password'),
+    (36, '超声科技师赵四', 'dev-password'),
+    (36, '超声科医生钱五', 'dev-password'),
+    (37, '检验科技师孙六', 'dev-password'),
+    (37, '检验科医生周七', 'dev-password'),
+    (38, '输血科技师吴八', 'dev-password'),
+    (39, '病理科医生郑九', 'dev-password'),
+    (40, '处置室护士长冯十', 'dev-password'),
+    (40, '处置室护士李一', 'dev-password'),
+    (41, '内镜中心技师周二', 'dev-password'),
+    (41, '内镜中心医生陈二', 'dev-password'),
+    (42, '手术室护士长周三', 'dev-password'),
+    (42, '手术室麻醉师李三', 'dev-password'),
+    (44, '供应中心护士长王四', 'dev-password'),
+    (45, '药房药师张五', 'dev-password'),
+    (45, '药房药师赵六', 'dev-password');
 
 INSERT INTO disease (id, disease_code, disease_name, diseaseicd, disease_category) VALUES
     (1, 'PJT', '偏头痛', 'G43.9', '神经系统疾病'),

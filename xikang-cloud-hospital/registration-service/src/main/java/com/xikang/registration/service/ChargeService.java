@@ -74,13 +74,13 @@ public class ChargeService {
             expenseRecordMapper.update(item);
         }
 
-        // 4. 更新挂号记录的缴费状态
-        registrationMapper.updatePayStatus(registerId, 1);
+        // 4. 更新挂号记录的缴费状态（visit_state 改为 2 已缴费）
+        registrationMapper.updatePayStatus(registerId, 2);
 
-        // 5. 更新挂号状态（如果之前是待缴费状态，改为已缴费）
+        // 5. 更新挂号状态（如果之前是已挂号状态(1)，改为已缴费(2)）
         Register register = registrationMapper.selectById(registerId);
-        if (register != null && register.getStatus() == 0) {
-            registrationMapper.updateStatus(registerId, 1);
+        if (register != null && register.getVisitState() == 1) {
+            registrationMapper.updateStatus(registerId, 2);
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -106,13 +106,8 @@ public class ChargeService {
      * 查询患者的待缴费项目
      */
     public List<Map<String, Object>> getPendingChargesByPatient(Long patientId) {
-        // 先获取该患者的所有待缴费挂号
-        List<Register> registers = registrationMapper.selectByPayStatus(0);
-        return registers.stream()
-            .filter(r -> r.getPatientId().equals(patientId))
-            .flatMap(r -> expenseRecordMapper.selectPendingByRegisterId(r.getId()).stream())
-            .map(this::toMap)
-            .toList();
+        // expense_record 表使用 card_number 作为患者标识，此方法暂不实现
+        return List.of();
     }
 
     private Map<String, Object> toMap(ExpenseRecord record) {

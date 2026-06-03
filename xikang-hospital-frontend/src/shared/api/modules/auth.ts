@@ -1,17 +1,41 @@
-
 import { http } from '../request'
 
 export const authApi = {
-  get<T>(url: string, params?: Record<string, unknown>) {
-    return http<T>({ url, method: 'GET', params })
+  get<T>(url: string, params?: Record<string, unknown>, options?: { skipErrorMessage?: boolean }) {
+    const token = localStorage.getItem('access_token')
+    return http<T>({
+      url,
+      method: 'GET',
+      params,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      skipErrorMessage: options?.skipErrorMessage,
+    })
   },
-  post<T>(url: string, data?: unknown) {
-    return http<T>({ url, method: 'POST', data })
+  post<T>(url: string, data?: unknown, options?: { skipErrorMessage?: boolean }) {
+    const token = localStorage.getItem('access_token')
+    return http<T>({
+      url,
+      method: 'POST',
+      data,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      skipErrorMessage: options?.skipErrorMessage,
+    })
   },
   put<T>(url: string, data?: unknown) {
-    return http<T>({ url, method: 'PUT', data })
+    const token = localStorage.getItem('access_token')
+    return http<T>({
+      url,
+      method: 'PUT',
+      data,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
   },
   delete<T>(url: string) {
-    return http<T>({ url, method: 'DELETE' })
+    const token = localStorage.getItem('access_token')
+    return http<T>({
+      url,
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
   },
 }
