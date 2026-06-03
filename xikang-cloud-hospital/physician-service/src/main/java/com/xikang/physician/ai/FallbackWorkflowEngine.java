@@ -87,7 +87,6 @@ public class FallbackWorkflowEngine {
         String text = str(input.get("text"));
         boolean preHandle = Boolean.TRUE.equals(input.get("preHandle"));
         Long registerId = toLong(input.get("registerId"));
-        List<Map<String, Object>> catalog = listOfMaps(input.get("diseaseCatalog"));
 
         String chiefComplaint = preHandle ? extractChiefComplaintFromRecord(text) : extractChiefComplaint(text);
         String diagnosisText = inferPreliminaryImpression(chiefComplaint.isBlank() ? text : chiefComplaint);
@@ -96,16 +95,9 @@ public class FallbackWorkflowEngine {
             : "基于患者自然语言描述进行初步推断，建议结合查体与检查进一步确认。";
 
         List<Map<String, Object>> suggested = new ArrayList<>();
-        for (Map<String, Object> disease : catalog) {
-            String name = str(disease.get("diseaseName"));
-            if (diagnosisText.contains("呼吸道") && name.contains("呼吸道")) {
-                suggested.add(suggestedDisease(disease));
-                break;
-            }
-        }
-        if (suggested.isEmpty() && !catalog.isEmpty()) {
-            suggested.add(suggestedDisease(catalog.get(0)));
-        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("diseaseName", diagnosisText.contains("呼吸道") ? "急性呼吸道感染待排" : "症状待查");
+        suggested.add(row);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("registerId", registerId);
@@ -115,14 +107,6 @@ public class FallbackWorkflowEngine {
         out.put("suggestedDiseases", suggested);
         out.put("preHandle", preHandle);
         return out;
-    }
-
-    private static Map<String, Object> suggestedDisease(Map<String, Object> disease) {
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("diseaseId", disease.get("id") != null ? disease.get("id") : disease.get("diseaseId"));
-        row.put("diseaseName", disease.get("diseaseName"));
-        row.put("recommendIcd", disease.get("diseaseIcd") != null ? disease.get("diseaseIcd") : disease.get("recommendIcd"));
-        return row;
     }
 
     private static String extractChiefComplaintFromRecord(String text) {

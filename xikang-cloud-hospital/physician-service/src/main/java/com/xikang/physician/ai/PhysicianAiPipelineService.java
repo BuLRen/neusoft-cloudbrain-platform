@@ -68,17 +68,21 @@ public class PhysicianAiPipelineService {
 
         Map<String, Object> output;
         if (difyClient.isPreliminaryEnabled()) {
-            Map<String, Object> difyInputs = Map.of(
-                "text", text,
-                "preHandle", preHandle
-            );
+            String model = String.valueOf(request.getOrDefault("model", "")).trim();
+            Map<String, Object> difyInputs = new LinkedHashMap<>();
+            difyInputs.put("text", text);
+            difyInputs.put("preHandle", preHandle);
+            if (!model.isBlank()) {
+                difyInputs.put("model", model);
+            }
             String user = "physician-reg-" + registerId;
             String traceId = "prelim-" + registerId + "-" + System.currentTimeMillis();
             DifyWorkflowRunResult run = difyClient.runWorkflowBlocking(difyInputs, user, traceId);
-            output = preliminaryOutputMapper.toPreliminaryResult(run.getOutputs(), diseaseCatalog);
+            output = preliminaryOutputMapper.toPreliminaryResult(run.getOutputs());
             output.put("registerId", registerId);
             output.put("preHandle", preHandle);
             output.put("modelId", "dify-preliminary");
+            output.put("llmModel", model.isBlank() ? null : model);
             output.put("workflowRunId", run.getWorkflowRunId());
         } else {
             output = fallbackEngine.runPreliminaryDiagnosis(fallbackInput);
@@ -276,6 +280,7 @@ public class PhysicianAiPipelineService {
         meta.put("suggestedDiseases", output.get("suggestedDiseases"));
         meta.put("preHandle", output.get("preHandle"));
         meta.put("workflowRunId", output.get("workflowRunId"));
+        meta.put("llmModel", output.get("llmModel"));
 
         Map<String, Object> log = new HashMap<>();
         log.put("registerId", registerId);

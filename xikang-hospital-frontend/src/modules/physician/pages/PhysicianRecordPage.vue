@@ -12,20 +12,28 @@ import {
   ElMessageBox,
   ElOption,
   ElRadio,
+  ElRadioButton,
   ElRadioGroup,
   ElSelect,
   ElTag,
 } from 'element-plus'
 import {
   physicianApi,
-  type Disease,
   type MedicalRecord,
   type PreliminaryAiMeta,
   type StructuredRecord,
 } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import GlassCard from '@/shared/components/GlassCard.vue'
+import MarkdownContent from '../components/MarkdownContent.vue'
+import PreliminaryModelDrawer from '../components/PreliminaryModelDrawer.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
+import {
+  DEFAULT_PRELIMINARY_AI_MODEL,
+  findPreliminaryAiModel,
+} from '../constants/preliminary-ai-models'
+
+type DiagnosisViewMode = 'preview' | 'edit'
 
 type PreliminaryInputSource = 'current_record' | 'pre_consultation' | 'natural_language'
 
@@ -34,7 +42,6 @@ const registerId = computed(() => encounterStore.registerId)
 
 const loading = ref(false)
 const preliminaryLoading = ref(false)
-const diseases = ref<Disease[]>([])
 const structuredRecord = ref<StructuredRecord | null>(null)
 const w1InputMode = ref<'pre_consultation' | 'long_text' | 'doctor_form'>('pre_consultation')
 const w1LongText = ref('')
@@ -52,14 +59,21 @@ const recordForm = reactive({
 
 const preliminaryInputSource = ref<PreliminaryInputSource>('current_record')
 const naturalLanguageText = ref('')
+const diagnosisViewMode = ref<DiagnosisViewMode>('preview')
+const modelDrawerVisible = ref(false)
+const selectedAiModel = ref(DEFAULT_PRELIMINARY_AI_MODEL)
+
+const selectedAiModelLabel = computed(
+  () => findPreliminaryAiModel(selectedAiModel.value)?.label ?? selectedAiModel.value,
+)
 
 const preliminaryForm = reactive({
   diagnosisText: '',
-  diseaseIds: [] as number[],
+  diseaseNames: [] as string[],
 })
 
 const aiMeta = ref<PreliminaryAiMeta>({})
-const aiSnapshot = ref({ diagnosisText: '', diseaseIds: [] as number[] })
+const aiSnapshot = ref({ diagnosisText: '', diseaseNames: [] as string[] })
 
 const hasPreConsultation = computed(
   () =>
@@ -70,15 +84,25 @@ const hasPreConsultation = computed(
 )
 
 const doctorModified = computed(() => {
-  if (!aiSnapshot.value.diagnosisText && aiSnapshot.value.diseaseIds.length === 0) {
+  if (!aiSnapshot.value.diagnosisText && aiSnapshot.value.diseaseNames.length === 0) {
     return false
   }
   const textChanged = preliminaryForm.diagnosisText.trim() !== aiSnapshot.value.diagnosisText.trim()
-  const idsChanged =
-    preliminaryForm.diseaseIds.length !== aiSnapshot.value.diseaseIds.length ||
-    preliminaryForm.diseaseIds.some((id) => !aiSnapshot.value.diseaseIds.includes(id))
-  return textChanged || idsChanged
+  const namesChanged =
+    preliminaryForm.diseaseNames.length !== aiSnapshot.value.diseaseNames.length ||
+    preliminaryForm.diseaseNames.some((name, i) => name !== aiSnapshot.value.diseaseNames[i])
+  return textChanged || namesChanged
 })
+
+function diseaseNamesFromMeta(meta: PreliminaryAiMeta | undefined): string[] {
+  if (!meta) return []
+  if (meta.suggestedDiseaseNames?.length) {
+    return [...meta.suggestedDiseaseNames]
+  }
+  return (meta.suggestedDiseases || [])
+    .map((item) => item.diseaseName?.trim())
+    .filter((name): name is string => Boolean(name))
+}
 
 function buildRecordText(): string {
   const parts = [
@@ -139,11 +163,11 @@ function applyMedicalRecord(record: MedicalRecord | null) {
   recordForm.physique = record?.physique || ''
   recordForm.proposal = record?.proposal || ''
   preliminaryForm.diagnosisText = record?.preliminaryDiagnosis || ''
-  preliminaryForm.diseaseIds = record?.diseases?.map((item) => item.id) || []
+  preliminaryForm.diseaseNames = diseaseNamesFromMeta(record?.preliminaryAiMeta)
   aiMeta.value = record?.preliminaryAiMeta || {}
   aiSnapshot.value = {
     diagnosisText: aiMeta.value.aiDiagnosis || preliminaryForm.diagnosisText,
-    diseaseIds: [...preliminaryForm.diseaseIds],
+    diseaseNames: [...preliminaryForm.diseaseNames],
   }
 }
 
@@ -160,11 +184,7 @@ async function loadContext() {
   if (!registerId.value) return
   loading.value = true
   try {
-    const [record, diseaseOptions] = await Promise.all([
-      physicianApi.medicalRecord(registerId.value),
-      physicianApi.diseases(),
-    ])
-    diseases.value = diseaseOptions
+    const record = await physicianApi.medicalRecord(registerId.value)
     applyMedicalRecord(record)
   } finally {
     loading.value = false
@@ -209,26 +229,27 @@ async function generatePreliminaryDiagnosis() {
       registerId: registerId.value,
       text: payload.text,
       preHandle: payload.preHandle,
+      model: selectedAiModel.value,
     })
     preliminaryForm.diagnosisText = result.diagnosisText || ''
-    const suggestedIds = (result.suggestedDiseases || [])
-      .map((item) => item.diseaseId)
-      .filter((id): id is number => typeof id === 'number')
-    if (suggestedIds.length > 0) {
-      preliminaryForm.diseaseIds = suggestedIds
-    }
+    preliminaryForm.diseaseNames = (result.suggestedDiseases || [])
+      .map((item) => item.diseaseName?.trim())
+      .filter((name): name is string => Boolean(name))
     aiMeta.value = {
       aiDiagnosis: result.diagnosisText,
       diagnosisBasis: result.diagnosisBasis,
       confidence: result.confidence,
       modelId: result.modelId,
+      llmModel: result.llmModel ?? selectedAiModel.value,
       suggestedDiseases: result.suggestedDiseases,
+      suggestedDiseaseNames: [...preliminaryForm.diseaseNames],
       preHandle: result.preHandle,
     }
     aiSnapshot.value = {
       diagnosisText: result.diagnosisText || '',
-      diseaseIds: [...preliminaryForm.diseaseIds],
+      diseaseNames: [...preliminaryForm.diseaseNames],
     }
+    diagnosisViewMode.value = 'preview'
     ElMessage.success('初步诊断已生成，请审核后保存')
   } finally {
     preliminaryLoading.value = false
@@ -269,7 +290,7 @@ async function savePreliminaryDiagnosis() {
     await physicianApi.savePreliminaryDiagnosis({
       registerId: registerId.value,
       preliminaryDiagnosis: preliminaryForm.diagnosisText.trim(),
-      diseaseIds: preliminaryForm.diseaseIds,
+      suggestedDiseaseNames: preliminaryForm.diseaseNames,
     })
     ElMessage.success('初步诊断已保存')
     await loadContext()
@@ -371,7 +392,10 @@ onMounted(() => {
           class="record-page__long-text"
         />
 
-        <div class="record-page__toolbar">
+        <div class="record-page__toolbar record-page__toolbar--actions">
+          <ElButton class="record-page__model-btn" @click="modelDrawerVisible = true">
+            模型：{{ selectedAiModelLabel }}
+          </ElButton>
           <ElButton type="primary" :loading="preliminaryLoading" @click="generatePreliminaryDiagnosis">
             生成初步诊断
           </ElButton>
@@ -380,19 +404,46 @@ onMounted(() => {
           <ElTag v-else-if="aiMeta.aiDiagnosis" type="info">AI 生成</ElTag>
         </div>
 
+        <PreliminaryModelDrawer v-model:visible="modelDrawerVisible" v-model:model="selectedAiModel" />
+
         <ElForm label-position="top" class="preliminary-form">
           <ElFormItem label="初步诊断描述">
-            <ElInput v-model="preliminaryForm.diagnosisText" type="textarea" :rows="3" placeholder="可手工编辑 AI 建议或自行填写" />
-          </ElFormItem>
-          <ElFormItem label="关联疾病">
-            <ElSelect v-model="preliminaryForm.diseaseIds" multiple filterable placeholder="选择疾病（ICD）">
-              <ElOption
-                v-for="item in diseases"
-                :key="item.id"
-                :label="`${item.diseaseName} ${item.diseaseIcd || ''}`"
-                :value="item.id"
+            <div class="diagnosis-editor">
+              <ElRadioGroup v-model="diagnosisViewMode" size="small" class="diagnosis-editor__mode">
+                <ElRadioButton value="preview">Markdown 预览</ElRadioButton>
+                <ElRadioButton value="edit">编辑原文</ElRadioButton>
+              </ElRadioGroup>
+              <MarkdownContent
+                v-if="diagnosisViewMode === 'preview'"
+                :source="preliminaryForm.diagnosisText"
               />
-            </ElSelect>
+              <ElInput
+                v-else
+                v-model="preliminaryForm.diagnosisText"
+                type="textarea"
+                :rows="8"
+                placeholder="支持 Markdown 语法，可手工修改 AI 返回的原文"
+              />
+            </div>
+          </ElFormItem>
+          <ElFormItem label="AI 建议疾病">
+            <ElSelect
+              v-model="preliminaryForm.diseaseNames"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="工作流返回的疾病名称，可增删"
+              class="record-page__disease-names"
+            />
+            <p v-if="aiMeta.suggestedDiseases?.length" class="record-page__disease-hint">
+              <span v-for="item in aiMeta.suggestedDiseases" :key="item.diseaseName" class="record-page__disease-tag">
+                <ElTag size="small" type="info">
+                  {{ item.diseaseName }}
+                  <template v-if="item.confidenceLevel">（{{ item.confidenceLevel }}）</template>
+                </ElTag>
+              </span>
+            </p>
           </ElFormItem>
         </ElForm>
 
@@ -408,7 +459,10 @@ onMounted(() => {
           <ElDescriptionsItem v-if="aiMeta.confidence != null" label="置信度">
             {{ aiMeta.confidence }}%
           </ElDescriptionsItem>
-          <ElDescriptionsItem v-if="aiMeta.modelId" label="模型">
+          <ElDescriptionsItem v-if="aiMeta.llmModel" label="诊断模型">
+            {{ aiMeta.llmModel }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem v-else-if="aiMeta.modelId" label="来源">
             {{ aiMeta.modelId }}
           </ElDescriptionsItem>
         </ElDescriptions>
@@ -466,5 +520,46 @@ onMounted(() => {
 
 .record-page__ai-meta {
   margin-block-start: var(--space-4);
+}
+
+.record-page__disease-names {
+  width: 100%;
+}
+
+.record-page__disease-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+.record-page__disease-tag {
+  display: inline-flex;
+}
+
+.diagnosis-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.diagnosis-editor__mode {
+  align-self: flex-start;
+}
+
+.record-page__toolbar--actions {
+  align-items: center;
+}
+
+.record-page__model-btn {
+  border-color: var(--color-ai);
+  color: var(--color-ai);
+}
+
+.record-page__model-btn:hover {
+  background: rgba(124, 92, 255, 0.08);
+  border-color: var(--color-ai);
+  color: var(--color-ai);
 }
 </style>

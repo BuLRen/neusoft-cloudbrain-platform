@@ -78,7 +78,40 @@ public class PhysicianService {
         update.put("id", medicalRecordId);
         update.put("preliminaryDiagnosis", request.get("preliminaryDiagnosis"));
         physicianMapper.updateMedicalRecordPreliminary(update);
-        syncRecordDiseases(medicalRecordId, diseaseIds(request));
+        List<Long> ids = diseaseIds(request);
+        if (!ids.isEmpty()) {
+            syncRecordDiseases(medicalRecordId, ids);
+        }
+        persistPreliminaryDoctorSave(registerId, request);
+    }
+
+    private void persistPreliminaryDoctorSave(Long registerId, Map<String, Object> request) {
+        List<String> names = stringList(request.get("suggestedDiseaseNames"));
+        if (registerId == null || names.isEmpty()) {
+            return;
+        }
+        try {
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("suggestedDiseaseNames", names);
+            meta.put("savedBy", "doctor");
+            Map<String, Object> log = new HashMap<>();
+            log.put("registerId", registerId);
+            log.put("sourceType", "preliminary_diagnosis");
+            log.put("aiDiagnosis", request.get("preliminaryDiagnosis"));
+            log.put("modelId", "doctor-save");
+            log.put("doctorModification", JSON.writeValueAsString(meta));
+            physicianMapper.insertAiMedicalRecordLog(log);
+        } catch (Exception ignored) {
+            // ignore log persistence errors
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> stringList(Object value) {
+        if (value instanceof List<?> list) {
+            return list.stream().filter(Objects::nonNull).map(String::valueOf).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        }
+        return List.of();
     }
 
     @Transactional
@@ -223,8 +256,8 @@ public class PhysicianService {
                 "outputs", List.of("primaryDiagnosis", "differentialDiagnoses", "clinicalAdvice", "confidenceScore")
             ),
             "preliminaryDiagnosis", Map.of(
-                "inputs", List.of("registerId", "text", "preHandle"),
-                "outputs", List.of("diagnosisText", "diagnosisBasis", "confidence", "suggestedDiseases", "modelId")
+                "inputs", List.of("registerId", "text", "preHandle", "model"),
+                "outputs", List.of("diagnosisText", "diagnosisBasis", "confidence", "suggestedDiseases", "modelId", "llmModel")
             ),
             "ctModel", getCtModelOutputContract()
         );

@@ -37,23 +37,24 @@ logging:
 xikang:
   ai:
     dify:
-      # 启用后使用 DIFY_API_KEY 对应已发布的 Workflow App
-      enabled: true
+      # 总开关；真正调用 Dify 还需配置 api-key（每个 Workflow App 一个 app-xxx，见控制台「访问 API」）
+      enabled: ${DIFY_ENABLED:true}
       base-url: ${DIFY_BASE_URL:https://api.dify.ai}
-      api-key: ${DIFY_API_KEY:}
-      # W1–W4：非空表示尝试 Dify（与 preliminary 共用 Key 时会命中同一 App，建议仅开 preliminary）
+      # 与文档 curl 中 Authorization: Bearer {api_key} 相同，不要写在 workflow-preliminary 里
+      api-key: ${DIFY_API_KEY:app-GfJeWsUbsiHyusuRF7znNBul}
+      # W1–W4：非空表示尝试 Dify（与 preliminary 共用同一 api-key 时会命中同一 App）
       workflow-w1: ${DIFY_WORKFLOW_W1:}
       workflow-w2: ${DIFY_WORKFLOW_W2:}
       workflow-w2b: ${DIFY_WORKFLOW_W2B:}
       workflow-w3: ${DIFY_WORKFLOW_W3:}
       workflow-w4: ${DIFY_WORKFLOW_W4:}
-      # 初步诊断：非空即启用（非 URL 中的 workflow id）
-      workflow-preliminary: ${DIFY_WORKFLOW_PRELIMINARY:app-GfJeWsUbsiHyusuRF7znNBul}
+      # 初步诊断开关：填 true/1 即可；不是 workflow id，也不是 app-xxx（Dify 请求体里无 workflow 字段）
+      workflow-preliminary: ${DIFY_WORKFLOW_PRELIMINARY:true}
       preliminary-output-keys:
-        # 与 Dify「结束」节点输出变量名一致；留空则尝试通用 fallback 键名
-        diagnosis-text: ${DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT:text}
+        output-structured: ${DIFY_PRELIM_OUTPUT_ROOT:output_structured}
+        diagnosis-text: ${DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT:answer}
+        suggested-diseases: ${DIFY_PRELIM_OUTPUT_SUGGESTED_DISEASES:diseaseDetail}
         diagnosis-basis: ${DIFY_PRELIM_OUTPUT_BASIS:}
         confidence: ${DIFY_PRELIM_OUTPUT_CONFIDENCE:}
-        suggested-diseases: ${DIFY_PRELIM_OUTPUT_SUGGESTED_DISEASES:}
         parse-json-from-text: true
       ct-inference-url: ${CT_INFERENCE_URL:}

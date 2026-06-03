@@ -32,13 +32,23 @@
 ## Dify 初步诊断工作流
 
 Dify 官方接口：`POST {DIFY_BASE_URL}/v1/workflows/run`（`response_mode: blocking`）。  
-API Key 绑定**一个已发布的 Workflow App**；请求体仅传：
+**每个 Workflow App 只有一个 API Key**（`app-xxx`），放在请求头 `Authorization: Bearer {api_key}`；URL 和 body 里**没有** workflow id / 第二个 key。
+
+本项目配置对应关系：
+
+| 配置项 | 填什么 | 不是什么 |
+|--------|--------|----------|
+| `api-key` / `DIFY_API_KEY` | Dify 控制台「访问 API」里的 `app-xxx` | — |
+| `workflow-preliminary` / `DIFY_WORKFLOW_PRELIMINARY` | `true`（开关，非空即启用初步诊断 Dify） | 不是 `app-xxx`，不是 workflow UUID |
+
+请求体仅传：
 
 ```json
 {
   "inputs": {
     "text": "患者或病历文本",
-    "preHandle": true
+    "preHandle": true,
+    "model": "deepseek-v4-flash"
   },
   "response_mode": "blocking",
   "user": "physician-reg-{registerId}"
@@ -50,8 +60,8 @@ API Key 绑定**一个已发布的 Workflow App**；请求体仅传：
 | 变量 | 说明 |
 |------|------|
 | `DIFY_BASE_URL` | 如 `https://api.dify.ai` 或自托管根地址（勿重复 `/v1`） |
-| `DIFY_API_KEY` | Workflow App 的 API Key（`app-xxx`） |
-| `DIFY_WORKFLOW_PRELIMINARY` | 非空即启用初步诊断 Dify（开关，非 workflow id） |
+| `DIFY_API_KEY` | **必填**。Workflow App 的 API Key（`app-xxx`），与 curl 文档 `Bearer` 相同 |
+| `DIFY_WORKFLOW_PRELIMINARY` | 填 `true` 启用初步诊断；**不要**把 `app-xxx` 写在这里 |
 | `DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT` | Dify 结束节点「诊断文本」变量名，默认 `text` |
 | `DIFY_PRELIM_OUTPUT_BASIS` | 「依据」变量名（可选） |
 | `DIFY_PRELIM_OUTPUT_CONFIDENCE` | 「置信度」变量名（可选） |

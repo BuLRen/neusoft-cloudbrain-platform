@@ -109,12 +109,23 @@ public class DifyAiProperties {
 
     public static class PreliminaryOutputKeys {
 
-        /** Dify 结束节点变量名，默认 text（可为 JSON 字符串） */
-        private String diagnosisText = "text";
+        /** Dify 结束节点根变量，默认 output_structured */
+        private String outputStructured = "output_structured";
+        /** 嵌套内诊断正文，默认 answer */
+        private String diagnosisText = "answer";
         private String diagnosisBasis = "";
         private String confidence = "";
-        private String suggestedDiseases = "";
+        /** 嵌套内疾病列表，默认 diseaseDetail */
+        private String suggestedDiseases = "diseaseDetail";
         private boolean parseJsonFromText = true;
+
+        public String getOutputStructured() {
+            return outputStructured;
+        }
+
+        public void setOutputStructured(String outputStructured) {
+            this.outputStructured = outputStructured;
+        }
 
         public String getDiagnosisText() {
             return diagnosisText;

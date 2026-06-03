@@ -51,10 +51,14 @@ export interface PreliminaryAiMeta {
   diagnosisBasis?: string
   confidence?: number
   modelId?: string
+  llmModel?: string
+  suggestedDiseaseNames?: string[]
   suggestedDiseases?: Array<{
     diseaseId?: number
     diseaseName?: string
     recommendIcd?: string
+    symptoms?: string
+    confidenceLevel?: string
   }>
   preHandle?: boolean
 }
@@ -65,10 +69,13 @@ export interface PreliminaryDiagnosisOutput {
   diagnosisBasis?: string
   confidence?: number
   modelId?: string
+  llmModel?: string
   suggestedDiseases?: Array<{
     diseaseId?: number
     diseaseName?: string
     recommendIcd?: string
+    symptoms?: string
+    confidenceLevel?: string
   }>
   preHandle?: boolean
 }
@@ -244,10 +251,15 @@ export const physicianApi = {
   aiW1(data: Record<string, unknown>) {
     return http<StructuredRecord>({ url: '/physician/ai/w1/structure', method: 'POST', data })
   },
-  aiPreliminaryDiagnosis(data: { registerId: number; text: string; preHandle: boolean }) {
+  aiPreliminaryDiagnosis(data: { registerId: number; text: string; preHandle: boolean; model: string }) {
     return http<PreliminaryDiagnosisOutput>({ url: '/physician/ai/preliminary-diagnosis', method: 'POST', data })
   },
-  savePreliminaryDiagnosis(data: { registerId: number; preliminaryDiagnosis: string; diseaseIds: number[] }) {
+  savePreliminaryDiagnosis(data: {
+    registerId: number
+    preliminaryDiagnosis: string
+    diseaseIds?: number[]
+    suggestedDiseaseNames?: string[]
+  }) {
     return http<void>({ url: '/physician/medical-record/preliminary', method: 'POST', data })
   },
   aiW2(registerId: number) {
