@@ -69,11 +69,11 @@ const selectedAiModelLabel = computed(
 
 const preliminaryForm = reactive({
   diagnosisText: '',
-  diseaseNames: [] as string[],
+  doctorDiagnosis: '',
 })
 
 const aiMeta = ref<PreliminaryAiMeta>({})
-const aiSnapshot = ref({ diagnosisText: '', diseaseNames: [] as string[] })
+const aiSnapshot = ref({ diagnosisText: '', doctorDiagnosis: '' })
 
 const hasPreConsultation = computed(
   () =>
@@ -84,24 +84,40 @@ const hasPreConsultation = computed(
 )
 
 const doctorModified = computed(() => {
-  if (!aiSnapshot.value.diagnosisText && aiSnapshot.value.diseaseNames.length === 0) {
+  if (!aiSnapshot.value.diagnosisText && !aiSnapshot.value.doctorDiagnosis.trim()) {
     return false
   }
   const textChanged = preliminaryForm.diagnosisText.trim() !== aiSnapshot.value.diagnosisText.trim()
-  const namesChanged =
-    preliminaryForm.diseaseNames.length !== aiSnapshot.value.diseaseNames.length ||
-    preliminaryForm.diseaseNames.some((name, i) => name !== aiSnapshot.value.diseaseNames[i])
-  return textChanged || namesChanged
+  const diagnosisChanged =
+    preliminaryForm.doctorDiagnosis.trim() !== aiSnapshot.value.doctorDiagnosis.trim()
+  return textChanged || diagnosisChanged
 })
 
-function diseaseNamesFromMeta(meta: PreliminaryAiMeta | undefined): string[] {
-  if (!meta) return []
+function doctorDiagnosisFromMeta(meta: PreliminaryAiMeta | undefined): string {
+  if (!meta) return ''
   if (meta.suggestedDiseaseNames?.length) {
-    return [...meta.suggestedDiseaseNames]
+    return meta.suggestedDiseaseNames.join('、')
   }
-  return (meta.suggestedDiseases || [])
+  const fromDiseases = (meta.suggestedDiseases || [])
     .map((item) => item.diseaseName?.trim())
     .filter((name): name is string => Boolean(name))
+  return fromDiseases.join('、')
+}
+
+function doctorDiagnosisFromAiResult(
+  suggestedDiseases: PreliminaryAiMeta['suggestedDiseases'],
+): string {
+  return (suggestedDiseases || [])
+    .map((item) => item.diseaseName?.trim())
+    .filter((name): name is string => Boolean(name))
+    .join('、')
+}
+
+function suggestedDiseaseNamesForSave(text: string): string[] {
+  return text
+    .split(/[,，、;；\n]+/)
+    .map((name) => name.trim())
+    .filter(Boolean)
 }
 
 function buildRecordText(): string {
@@ -163,11 +179,11 @@ function applyMedicalRecord(record: MedicalRecord | null) {
   recordForm.physique = record?.physique || ''
   recordForm.proposal = record?.proposal || ''
   preliminaryForm.diagnosisText = record?.preliminaryDiagnosis || ''
-  preliminaryForm.diseaseNames = diseaseNamesFromMeta(record?.preliminaryAiMeta)
+  preliminaryForm.doctorDiagnosis = doctorDiagnosisFromMeta(record?.preliminaryAiMeta)
   aiMeta.value = record?.preliminaryAiMeta || {}
   aiSnapshot.value = {
     diagnosisText: aiMeta.value.aiDiagnosis || preliminaryForm.diagnosisText,
-    diseaseNames: [...preliminaryForm.diseaseNames],
+    doctorDiagnosis: preliminaryForm.doctorDiagnosis,
   }
 }
 
@@ -232,9 +248,8 @@ async function generatePreliminaryDiagnosis() {
       model: selectedAiModel.value,
     })
     preliminaryForm.diagnosisText = result.diagnosisText || ''
-    preliminaryForm.diseaseNames = (result.suggestedDiseases || [])
-      .map((item) => item.diseaseName?.trim())
-      .filter((name): name is string => Boolean(name))
+    preliminaryForm.doctorDiagnosis = doctorDiagnosisFromAiResult(result.suggestedDiseases)
+    const suggestedDiseaseNames = suggestedDiseaseNamesForSave(preliminaryForm.doctorDiagnosis)
     aiMeta.value = {
       aiDiagnosis: result.diagnosisText,
       diagnosisBasis: result.diagnosisBasis,
@@ -242,12 +257,12 @@ async function generatePreliminaryDiagnosis() {
       modelId: result.modelId,
       llmModel: result.llmModel ?? selectedAiModel.value,
       suggestedDiseases: result.suggestedDiseases,
-      suggestedDiseaseNames: [...preliminaryForm.diseaseNames],
+      suggestedDiseaseNames,
       preHandle: result.preHandle,
     }
     aiSnapshot.value = {
       diagnosisText: result.diagnosisText || '',
-      diseaseNames: [...preliminaryForm.diseaseNames],
+      doctorDiagnosis: preliminaryForm.doctorDiagnosis,
     }
     diagnosisViewMode.value = 'preview'
     ElMessage.success('初步诊断已生成，请审核后保存')
@@ -290,7 +305,7 @@ async function savePreliminaryDiagnosis() {
     await physicianApi.savePreliminaryDiagnosis({
       registerId: registerId.value,
       preliminaryDiagnosis: preliminaryForm.diagnosisText.trim(),
-      suggestedDiseaseNames: preliminaryForm.diseaseNames,
+      suggestedDiseaseNames: suggestedDiseaseNamesForSave(preliminaryForm.doctorDiagnosis),
     })
     ElMessage.success('初步诊断已保存')
     await loadContext()
@@ -393,7 +408,7 @@ onMounted(() => {
         />
 
         <div class="record-page__toolbar record-page__toolbar--actions">
-          <ElButton class="record-page__model-btn" @click="modelDrawerVisible = true">
+          <ElButton @click="modelDrawerVisible = true">
             模型：{{ selectedAiModelLabel }}
           </ElButton>
           <ElButton type="primary" :loading="preliminaryLoading" @click="generatePreliminaryDiagnosis">
@@ -427,14 +442,10 @@ onMounted(() => {
             </div>
           </ElFormItem>
           <ElFormItem label="智能诊断医生诊断结果">
-            <ElSelect
-              v-model="preliminaryForm.diseaseNames"
-              multiple
-              filterable
-              allow-create
-              default-first-option
-              placeholder="工作流返回的疾病名称，可增删"
-              class="record-page__disease-names"
+            <ElInput
+              v-model="preliminaryForm.doctorDiagnosis"
+              placeholder="填写或修改 AI 建议的诊断结果，多个诊断可用顿号、逗号分隔"
+              class="record-page__doctor-diagnosis"
             />
             <p v-if="aiMeta.suggestedDiseases?.length" class="record-page__disease-hint">
               <span v-for="item in aiMeta.suggestedDiseases" :key="item.diseaseName" class="record-page__disease-tag">
@@ -522,7 +533,7 @@ onMounted(() => {
   margin-block-start: var(--space-4);
 }
 
-.record-page__disease-names {
+.record-page__doctor-diagnosis {
   width: 100%;
 }
 
@@ -552,14 +563,12 @@ onMounted(() => {
   align-items: center;
 }
 
-.record-page__model-btn {
-  border-color: var(--color-ai);
-  color: var(--color-ai);
+.record-page__toolbar--actions :deep(.el-button--primary) {
+  background: var(--el-color-primary);
+  box-shadow: none;
 }
 
-.record-page__model-btn:hover {
-  background: rgba(124, 92, 255, 0.08);
-  border-color: var(--color-ai);
-  color: var(--color-ai);
+.record-page__toolbar--actions :deep(.el-button:hover:not(.is-disabled)) {
+  transform: none;
 }
 </style>
