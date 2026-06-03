@@ -36,9 +36,11 @@ public class DifyPreliminaryOutputMapper {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("diagnosisText", answer);
-        out.put("diagnosisBasis", buildDiagnosisBasis(source, suggested));
+        out.put("diagnosisBasis", buildDiagnosisBasis(suggested));
+        out.put("knowledgeBaseRecall", resolveKnowledgeBaseRecall(source));
         out.put("confidence", resolveOverallConfidence(source, suggested, keys));
         out.put("suggestedDiseases", suggested);
+        copyIfPresent(source, out, "isRecalled", "is_recalled");
         copyIfPresent(source, out, "clinicalSummary", "clinical_summary", "summary");
         copyIfPresent(source, out, "primaryDiagnosis", "primary_diagnosis", "primaryDiagnosis", "primaryDiagnoses");
         copyIfPresent(source, out, "redFlags", "red_flags", "redFlags");
@@ -171,11 +173,8 @@ public class DifyPreliminaryOutputMapper {
         }
     }
 
-    private static String buildDiagnosisBasis(Map<String, Object> source, List<Map<String, Object>> suggested) {
+    private static String buildDiagnosisBasis(List<Map<String, Object>> suggested) {
         List<String> parts = new ArrayList<>();
-        if (isKnowledgeRecalled(source.get("isRecalled"))) {
-            parts.add("知识库已召回相关内容");
-        }
         for (Map<String, Object> disease : suggested) {
             String name = str(disease.get("diseaseName"));
             if (name.isBlank()) {
@@ -192,6 +191,30 @@ public class DifyPreliminaryOutputMapper {
             }
         }
         return String.join("\n", parts);
+    }
+
+    private static String resolveKnowledgeBaseRecall(Map<String, Object> source) {
+        Object dedicated = firstPresent(
+            source,
+            null,
+            "knowledgeBaseRecall",
+            "knowledge_base_recall",
+            "kbRecall",
+            "recalledContent",
+            "recallContent",
+            "knowledgeRecall"
+        );
+        String text = str(dedicated);
+        if (!text.isBlank()) {
+            return text;
+        }
+        Object legacy = source.get("isRecalled");
+        if (legacy instanceof String legacyText && legacyText.trim().length() > 4
+            && !"true".equalsIgnoreCase(legacyText.trim())
+            && !"false".equalsIgnoreCase(legacyText.trim())) {
+            return legacyText.trim();
+        }
+        return "";
     }
 
     private static boolean isKnowledgeRecalled(Object value) {

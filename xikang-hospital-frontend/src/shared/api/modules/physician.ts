@@ -75,6 +75,9 @@ export interface PreliminaryAiMeta {
   clinicalSummary?: string
   primaryDiagnosis?: string
   diagnosisBasis?: string
+  /** 知识库召回原文，对应工作流 knowledgeBaseRecall */
+  knowledgeBaseRecall?: string
+  isRecalled?: boolean
   confidence?: number
   modelId?: string
   llmModel?: string
@@ -91,6 +94,8 @@ export interface PreliminaryDiagnosisOutput {
   clinicalSummary?: string
   primaryDiagnosis?: string
   diagnosisBasis?: string
+  knowledgeBaseRecall?: string
+  isRecalled?: boolean
   confidence?: number
   modelId?: string
   llmModel?: string

@@ -66,7 +66,7 @@ Dify 官方接口：`POST {DIFY_BASE_URL}/v1/workflows/run`（`response_mode: bl
 | `DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT` | 长文推理，默认映射 `answer` |
 | `DIFY_PRELIM_OUTPUT_SUGGESTED_DISEASES` | 疾病列表，默认映射 `diseaseDetail` |
 
-`output_structured` 内字段与前端一致：`clinicalSummary`、`primaryDiagnosis`、`answer`、`diseaseDetail[]`（`name`、`confidence`、`rank`、`rationale`、`keyEvidence`、`missingOrWeakEvidence`、`recommendedWorkup`）、`redFlags`、`excludedDiagnoses`、`confidence`、`isRecalled`。
+`output_structured` 内字段与前端一致：`clinicalSummary`、`primaryDiagnosis`、`answer`（长文仅存档）、`diseaseDetail[]`、`redFlags`、`excludedDiagnoses`、`confidence`、`isRecalled`（boolean）、`knowledgeBaseRecall`（知识库召回原文，展示在「技术与审计信息」）。
 
 `application.yml` 中设置 `xikang.ai.dify.enabled=true` 并填入上述变量。
 

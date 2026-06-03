@@ -276,6 +276,8 @@ public class PhysicianAiPipelineService {
         }
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("diagnosisBasis", output.get("diagnosisBasis"));
+        meta.put("knowledgeBaseRecall", output.get("knowledgeBaseRecall"));
+        meta.put("isRecalled", output.get("isRecalled"));
         meta.put("confidence", output.get("confidence"));
         meta.put("clinicalSummary", output.get("clinicalSummary"));
         meta.put("primaryDiagnosis", output.get("primaryDiagnosis"));

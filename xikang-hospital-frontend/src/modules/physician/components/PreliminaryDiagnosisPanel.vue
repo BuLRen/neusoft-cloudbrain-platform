@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -9,15 +9,10 @@ import {
   ElDescriptionsItem,
   ElFormItem,
   ElInput,
-  ElRadioButton,
-  ElRadioGroup,
   ElTag,
 } from 'element-plus'
 import type { PreliminaryAiMeta, SuggestedDiseaseItem } from '@/shared/api/modules/physician'
 import MarkdownContent from './MarkdownContent.vue'
-
-type DiagnosisViewMode = 'preview' | 'edit'
-
 const doctorDiagnosis = defineModel<string>('doctorDiagnosis', { required: true })
 const aiReasoningText = defineModel<string>('aiReasoningText', { required: true })
 
@@ -25,8 +20,6 @@ const props = defineProps<{
   aiMeta: PreliminaryAiMeta
   hasAiResult?: boolean
 }>()
-
-const diagnosisViewMode = ref<DiagnosisViewMode>('preview')
 
 function parseRank(rank: number | string | undefined): number {
   if (rank === undefined || rank === null) return Number.MAX_SAFE_INTEGER
@@ -107,6 +100,22 @@ function usePrimaryDiagnosis() {
     sortedDiseases.value.find((d, i) => isPrimaryDisease(d, i))?.diseaseName?.trim()
   if (primary) doctorDiagnosis.value = primary
 }
+
+const knowledgeBaseRecallDisplay = computed(() => {
+  const text = props.aiMeta.knowledgeBaseRecall?.trim()
+  if (text) return text
+  if (props.aiMeta.isRecalled === true) {
+    return '知识库已召回，但工作流未返回召回原文（请在 output_structured 中增加 knowledgeBaseRecall 字符串字段）。'
+  }
+  if (props.aiMeta.isRecalled === false) {
+    return '本次未从知识库召回内容。'
+  }
+  return ''
+})
+
+const showKnowledgeBaseRecall = computed(
+  () => Boolean(knowledgeBaseRecallDisplay.value.trim()),
+)
 </script>
 
 <template>
@@ -232,37 +241,21 @@ function usePrimaryDiagnosis() {
       </ElCollapseItem>
 
       <ElCollapseItem
-        v-if="aiReasoningText.trim()"
-        title="AI 完整推理（默认折叠，供质疑时查阅）"
+        v-if="aiMeta.diagnosisBasis?.trim()"
+        title="知识库召回内容"
         name="reasoning"
       >
-        <div class="prelim-panel__reasoning">
-          <ElRadioGroup v-model="diagnosisViewMode" size="small">
-            <ElRadioButton value="preview">Markdown 预览</ElRadioButton>
-            <ElRadioButton value="edit">编辑原文</ElRadioButton>
-          </ElRadioGroup>
-          <MarkdownContent
-            v-if="diagnosisViewMode === 'preview'"
-            :source="aiReasoningText"
-          />
-          <ElInput
-            v-else
-            v-model="aiReasoningText"
-            type="textarea"
-            :rows="10"
-            placeholder="AI 返回的完整分析，一般无需修改；修改后不会自动写入病历主字段"
-          />
-        </div>
+        <MarkdownContent :source="aiMeta.diagnosisBasis ?? ''" />
       </ElCollapseItem>
 
       <ElCollapseItem
-        v-if="aiMeta.diagnosisBasis || aiMeta.confidence != null || aiMeta.llmModel || aiMeta.modelId"
+        v-if="showKnowledgeBaseRecall || aiMeta.confidence != null || aiMeta.llmModel || aiMeta.modelId"
         title="技术与审计信息"
         name="audit"
       >
         <ElDescriptions :column="1" border size="small">
-          <ElDescriptionsItem v-if="aiMeta.diagnosisBasis" label="综合依据">
-            {{ aiMeta.diagnosisBasis }}
+          <ElDescriptionsItem v-if="showKnowledgeBaseRecall" label="知识库召回内容">
+            <pre class="prelim-panel__recall-text">{{ knowledgeBaseRecallDisplay }}</pre>
           </ElDescriptionsItem>
           <ElDescriptionsItem v-if="aiMeta.confidence != null" label="整体置信度">
             {{ aiMeta.confidence }}%
@@ -427,10 +420,18 @@ function usePrimaryDiagnosis() {
   border-bottom-color: var(--color-border);
 }
 
-.prelim-panel__reasoning {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+.prelim-panel__recall-text {
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-muted);
+}
+
+.prelim-panel__recall-text {
+  color: var(--color-text);
 }
 
 .prelim-panel__excluded-list {

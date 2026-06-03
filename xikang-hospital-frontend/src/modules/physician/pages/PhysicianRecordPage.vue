@@ -271,6 +271,8 @@ async function generatePreliminaryDiagnosis() {
       clinicalSummary: result.clinicalSummary,
       primaryDiagnosis: result.primaryDiagnosis,
       diagnosisBasis: result.diagnosisBasis,
+      knowledgeBaseRecall: result.knowledgeBaseRecall,
+      isRecalled: result.isRecalled,
       confidence: result.confidence,
       modelId: result.modelId,
       llmModel: result.llmModel ?? selectedAiModel.value,
