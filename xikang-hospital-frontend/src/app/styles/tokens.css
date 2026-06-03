@@ -49,7 +49,8 @@
     --ease-standard: cubic-bezier(0.2, 0, 0, 1);
     --sidebar-width: 228px;
     --header-height: 58px;
-    --shell-gap: 16px;
+    --shell-gap: 20px;
+    --page-max-width: 1320px;
   }
 
   [data-theme="dark"] {

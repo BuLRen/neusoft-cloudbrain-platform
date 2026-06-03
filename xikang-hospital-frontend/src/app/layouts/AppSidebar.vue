@@ -11,13 +11,21 @@ const router = useRouter()
 const authStore = useAuthStore()
 const iconMap = { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User }
 
+function isRouteAccessible(item: any) {
+  if (item?.meta?.hidden) return false
+  const roles = item?.meta?.roles
+  return !roles?.length || roles.includes(authStore.role)
+}
+
 const menuRoutes = computed(() => {
   const root = router.options.routes.find((item) => item.path === '/')
-  return (root?.children || []).filter((item) => {
-    if (item.meta?.hidden) return false
-    const roles = item.meta?.roles
-    return !roles?.length || roles.includes(authStore.role)
-  })
+  return (root?.children || [])
+    .filter(isRouteAccessible)
+    .map((item: any) => {
+      const children = (item.children || []).filter(isRouteAccessible)
+      return { ...item, children }
+    })
+    .filter((item: any) => !item.children?.length || item.children.length > 0)
 })
 
 function iconComponent(name?: string) {
@@ -36,10 +44,23 @@ function iconComponent(name?: string) {
     </RouterLink>
 
     <el-menu class="app-sidebar__menu" router :default-active="route.path">
-      <el-menu-item v-for="item in menuRoutes" :key="item.path" :index="`/${item.path}`">
-        <el-icon><component :is="iconComponent(item.meta?.icon)" /></el-icon>
-        <span>{{ item.meta?.title }}</span>
-      </el-menu-item>
+      <template v-for="item in menuRoutes" :key="item.path">
+        <el-sub-menu v-if="item.children?.length" :index="`/${item.path}`">
+          <template #title>
+            <el-icon><component :is="iconComponent(item.meta?.icon)" /></el-icon>
+            <span>{{ item.meta?.title }}</span>
+          </template>
+
+          <el-menu-item v-for="child in item.children" :key="child.path" :index="`/${item.path}/${child.path}`">
+            <span>{{ child.meta?.title }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <el-menu-item v-else :index="`/${item.path}`">
+          <el-icon><component :is="iconComponent(item.meta?.icon)" /></el-icon>
+          <span>{{ item.meta?.title }}</span>
+        </el-menu-item>
+      </template>
     </el-menu>
   </aside>
 </template>

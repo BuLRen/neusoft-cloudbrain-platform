@@ -23,9 +23,10 @@ defineProps<{
 <style scoped>
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-6);
+  padding-block: var(--space-2);
 }
 
 .page-header h1 {
@@ -52,8 +53,10 @@ defineProps<{
 
 .page-header__actions {
   display: flex;
+  flex-shrink: 0;
   flex-wrap: wrap;
   gap: var(--space-3);
   justify-content: flex-end;
+  padding-inline-start: var(--space-4);
 }
 </style>

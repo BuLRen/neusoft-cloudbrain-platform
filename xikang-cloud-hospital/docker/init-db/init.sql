@@ -287,6 +287,7 @@ CREATE TABLE medical_record (
     allergy         VARCHAR(512)    DEFAULT NULL,
     physique        VARCHAR(512)    DEFAULT NULL,
     proposal        VARCHAR(512)    DEFAULT NULL,
+    preliminary_diagnosis VARCHAR(512) DEFAULT NULL,
     careful         VARCHAR(512)    DEFAULT NULL,
     diagnosis       VARCHAR(512)    DEFAULT NULL,
     cure            VARCHAR(512)    DEFAULT NULL,
@@ -569,7 +570,7 @@ CREATE TABLE ai_medical_record_log (
         FOREIGN KEY (medical_record_id) REFERENCES medical_record(id)
         ON DELETE SET NULL,
 
-    CONSTRAINT chk_ai_mrlog_source CHECK (source_type IN ('consultation', 'dictation', 'exam')),
+    CONSTRAINT chk_ai_mrlog_source CHECK (source_type IN ('consultation', 'dictation', 'exam', 'preliminary_diagnosis')),
     CONSTRAINT chk_ai_mrlog_adopted CHECK (is_adopted IN (0, 1, 2))
 );
 
@@ -868,3 +869,8 @@ INSERT INTO ai_consultation_record (
      '近3天自行服用退热药，效果一般', '患者咳嗽低热3天，伴轻微胸闷，建议排查呼吸道感染。',
      '建议完善胸部CT、血常规、C反应蛋白检查', CURRENT_TIMESTAMP)
 ON CONFLICT DO NOTHING;
+
+-- 增量迁移：已有库可手动执行
+-- ALTER TABLE medical_record ADD COLUMN IF NOT EXISTS preliminary_diagnosis VARCHAR(512);
+-- ALTER TABLE ai_medical_record_log DROP CONSTRAINT IF EXISTS chk_ai_mrlog_source;
+-- ALTER TABLE ai_medical_record_log ADD CONSTRAINT chk_ai_mrlog_source CHECK (source_type IN ('consultation', 'dictation', 'exam', 'preliminary_diagnosis'));

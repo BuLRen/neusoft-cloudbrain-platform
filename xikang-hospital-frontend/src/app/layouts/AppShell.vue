@@ -30,9 +30,11 @@ import AppSidebar from './AppSidebar.vue'
   grid-template-rows: auto 1fr;
   gap: var(--shell-gap);
   min-width: 0;
+  padding-inline: var(--space-4);
 }
 
 .app-shell__content {
   min-width: 0;
+  padding-block-end: var(--space-4);
 }
 </style>

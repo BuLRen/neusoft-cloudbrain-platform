@@ -24,12 +24,53 @@ export interface PhysicianPatient {
   aiConsultSummary?: AiConsultSummary | null
 }
 
+export interface StructuredRecord {
+  registerId: number
+  patientInfo?: Record<string, unknown>
+  chiefComplaint?: string
+  symptomDuration?: string
+  presentIllness?: string
+  presentTreat?: string
+  history?: string
+  allergy?: string
+  physique?: string
+  preliminaryImpression?: string
+  rawSource?: { inputMode?: string; longText?: string }
+}
+
 export interface Disease {
   id: number
   diseaseCode?: string
   diseaseName: string
   diseaseIcd?: string
   diseaseCategory?: string
+}
+
+export interface PreliminaryAiMeta {
+  aiDiagnosis?: string
+  diagnosisBasis?: string
+  confidence?: number
+  modelId?: string
+  suggestedDiseases?: Array<{
+    diseaseId?: number
+    diseaseName?: string
+    recommendIcd?: string
+  }>
+  preHandle?: boolean
+}
+
+export interface PreliminaryDiagnosisOutput {
+  registerId?: number
+  diagnosisText?: string
+  diagnosisBasis?: string
+  confidence?: number
+  modelId?: string
+  suggestedDiseases?: Array<{
+    diseaseId?: number
+    diseaseName?: string
+    recommendIcd?: string
+  }>
+  preHandle?: boolean
 }
 
 export interface MedicalRecord {
@@ -42,10 +83,12 @@ export interface MedicalRecord {
   allergy?: string
   physique?: string
   proposal?: string
+  preliminaryDiagnosis?: string
   careful?: string
   diagnosis?: string
   cure?: string
   diseases?: Disease[]
+  preliminaryAiMeta?: PreliminaryAiMeta
 }
 
 export interface MedicalTechnology {
@@ -57,6 +100,15 @@ export interface MedicalTechnology {
   techType: 'check' | 'inspection' | 'disposal'
   priceType?: string
   deptName?: string
+}
+
+export interface AvailableExamination {
+  techId: number
+  techCode: string
+  techName: string
+  techType: string
+  category: string
+  techPrice?: number
 }
 
 export interface Drug {
@@ -110,6 +162,44 @@ export interface PrescriptionItem {
   drugState?: string
 }
 
+export interface W2Output {
+  preliminaryAssessment?: string
+  recommendedExaminations?: Array<{
+    techId: number
+    techName: string
+    techType: string
+    reason: string
+    priority: number
+  }>
+}
+
+export interface W3Output {
+  examSummaries?: Array<{
+    techName: string
+    keyFindings?: string[]
+    interpretation?: string
+    riskLevel?: string
+  }>
+  overallAnalysis?: string
+  explicitNonDiagnosis?: boolean
+}
+
+export interface W4Output {
+  primaryDiagnosis?: {
+    diseaseName?: string
+    recommendIcd?: string
+    probability?: number
+    diagnosisBasis?: string
+  }
+  differentialDiagnoses?: Array<{
+    diseaseName?: string
+    recommendIcd?: string
+    probability?: number
+    diagnosisBasis?: string
+  }>
+  clinicalAdvice?: string
+}
+
 export const physicianApi = {
   get<T>(url: string, params?: Record<string, unknown>) {
     return http<T>({ url, method: 'GET', params })
@@ -141,8 +231,49 @@ export const physicianApi = {
   diseases(keyword?: string) {
     return http<Disease[]>({ url: '/physician/diseases', method: 'GET', params: { keyword } })
   },
-  medicalTechnologies(techType: 'check' | 'inspection' | 'disposal', keyword?: string) {
-    return http<MedicalTechnology[]>({ url: '/physician/medical-technologies', method: 'GET', params: { techType, keyword } })
+  medicalTechnologies(techType?: 'check' | 'inspection' | 'disposal', keyword?: string) {
+    return http<MedicalTechnology[]>({
+      url: '/physician/medical-technologies',
+      method: 'GET',
+      params: { ...(techType ? { techType } : {}), ...(keyword ? { keyword } : {}) },
+    })
+  },
+  availableExaminations() {
+    return http<AvailableExamination[]>({ url: '/physician/ai/available-examinations', method: 'GET' })
+  },
+  aiW1(data: Record<string, unknown>) {
+    return http<StructuredRecord>({ url: '/physician/ai/w1/structure', method: 'POST', data })
+  },
+  aiPreliminaryDiagnosis(data: { registerId: number; text: string; preHandle: boolean }) {
+    return http<PreliminaryDiagnosisOutput>({ url: '/physician/ai/preliminary-diagnosis', method: 'POST', data })
+  },
+  savePreliminaryDiagnosis(data: { registerId: number; preliminaryDiagnosis: string; diseaseIds: number[] }) {
+    return http<void>({ url: '/physician/medical-record/preliminary', method: 'POST', data })
+  },
+  aiW2(registerId: number) {
+    return http<W2Output>({ url: '/physician/ai/w2/recommend', method: 'POST', data: { registerId } })
+  },
+  aiW2b(registerId: number, autoCreateRequests = true) {
+    return http<{ simulatedResults: Record<string, unknown>[] }>({
+      url: '/physician/ai/w2b/simulate',
+      method: 'POST',
+      data: { registerId, autoCreateRequests },
+    })
+  },
+  aiW3(registerId: number) {
+    return http<W3Output>({ url: '/physician/ai/w3/analyze', method: 'POST', data: { registerId } })
+  },
+  aiW4(registerId: number) {
+    return http<W4Output>({ url: '/physician/ai/w4/diagnose', method: 'POST', data: { registerId } })
+  },
+  aiPipelineRun(data: Record<string, unknown>) {
+    return http<{
+      w1: StructuredRecord
+      w2: W2Output
+      w2b: { simulatedResults: Record<string, unknown>[] }
+      w3: W3Output
+      w4: W4Output
+    }>({ url: '/physician/ai/pipeline/run', method: 'POST', data })
   },
   createCheckRequest(data: Record<string, unknown>) {
     return http<{ requestIds: number[] }>({ url: '/physician/check-request', method: 'POST', data })
@@ -166,7 +297,11 @@ export const physicianApi = {
     return http<Drug[]>({ url: '/physician/drugs', method: 'GET', params: { keyword } })
   },
   createPrescription(data: Record<string, unknown>) {
-    return http<{ prescriptionIds: number[]; totalAmount: number; aiReviewResult?: Record<string, unknown> }>({ url: '/physician/prescription', method: 'POST', data })
+    return http<{ prescriptionIds: number[]; totalAmount: number; confirmedDiagnosis?: string }>({
+      url: '/physician/prescription',
+      method: 'POST',
+      data,
+    })
   },
   prescriptions(registerId: number) {
     return http<PrescriptionItem[]>({ url: `/physician/prescription/${registerId}`, method: 'GET' })

@@ -1,5 +1,7 @@
 package com.xikang.physician.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.physician.mapper.PhysicianMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +19,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class PhysicianService {
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final PhysicianMapper physicianMapper;
 
@@ -53,7 +57,28 @@ public class PhysicianService {
         }
         Long medicalRecordId = toLong(record.get("id"));
         record.put("diseases", physicianMapper.selectDiseasesByMedicalRecordId(medicalRecordId));
+        record.put("preliminaryAiMeta", loadPreliminaryAiMeta(registerId));
         return record;
+    }
+
+    @Transactional
+    public void savePreliminaryDiagnosis(Map<String, Object> request) {
+        Long registerId = toLong(request.get("registerId"));
+        Map<String, Object> existing = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Long medicalRecordId;
+        if (existing == null) {
+            Map<String, Object> record = new HashMap<>();
+            record.put("registerId", registerId);
+            physicianMapper.insertMedicalRecord(record);
+            medicalRecordId = toLong(record.get("id"));
+        } else {
+            medicalRecordId = toLong(existing.get("id"));
+        }
+        Map<String, Object> update = new HashMap<>();
+        update.put("id", medicalRecordId);
+        update.put("preliminaryDiagnosis", request.get("preliminaryDiagnosis"));
+        physicianMapper.updateMedicalRecordPreliminary(update);
+        syncRecordDiseases(medicalRecordId, diseaseIds(request));
     }
 
     @Transactional
@@ -155,7 +180,7 @@ public class PhysicianService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("prescriptionIds", prescriptionIds);
         result.put("totalAmount", totalAmount);
-        result.put("aiReviewResult", fallbackReview(registerId));
+        result.put("confirmedDiagnosis", prescriptionRequest.get("confirmedDiagnosis"));
         return result;
     }
 
@@ -177,26 +202,31 @@ public class PhysicianService {
 
     public Map<String, Object> getDifyWorkflowContracts() {
         return Map.of(
-            "medicalRecord", Map.of(
-                "inputs", List.of("registerId", "patientInfo", "aiConsultSummary", "doctorNotes", "checkResults"),
-                "outputs", List.of("aiReadme", "aiPresent", "aiHistory", "aiAllergy", "aiPhysique", "aiDiagnosis", "confidenceScore", "generationNotes")
+            "w1Structure", Map.of(
+                "inputs", List.of("registerId", "inputMode", "longText", "doctorForm", "structuredRecord", "patientInfoFromRegister"),
+                "outputs", List.of("registerId", "patientInfo", "chiefComplaint", "symptomDuration", "presentIllness", "history", "allergy", "physique", "preliminaryImpression")
             ),
-            "examSuggestion", Map.of(
-                "inputs", List.of("registerId", "chiefComplaint", "presentIllness", "physicalExam", "preliminaryDiagnosis", "allergyHistory"),
-                "outputs", List.of("techId", "techName", "suggestType", "suggestReason", "priority")
+            "w2Recommend", Map.of(
+                "inputs", List.of("registerId", "structuredRecord", "availableExaminations"),
+                "outputs", List.of("preliminaryAssessment", "recommendedExaminations", "notRecommendedNote")
             ),
-            "examAnalysis", Map.of(
-                "inputs", List.of("registerId", "analysisType", "originalResult", "medicalRecordSummary"),
-                "outputs", List.of("riskLevel", "analysisReport", "abnormalIndicators", "correlationAnalysis")
+            "w2bSimulate", Map.of(
+                "inputs", List.of("registerId", "structuredRecord", "orderedExaminations", "simulationProfile"),
+                "outputs", List.of("simulatedResults")
             ),
-            "diagnosis", Map.of(
-                "inputs", List.of("registerId", "patientInfo", "medicalRecord", "checkResults", "inspectionResults"),
-                "outputs", List.of("diseaseName", "recommendIcd", "probability", "riskLevel", "treatmentDirection", "diagnosisBasis")
+            "w3Analyze", Map.of(
+                "inputs", List.of("registerId", "structuredRecord", "preliminaryAssessment", "allResults"),
+                "outputs", List.of("examSummaries", "overallAnalysis", "explicitNonDiagnosis")
             ),
-            "prescriptionReview", Map.of(
-                "inputs", List.of("registerId", "diagnosis", "allergyHistory", "prescriptionItems", "currentMedications"),
-                "outputs", List.of("reviewResult", "riskScore", "drugConflict", "allergyRisk", "duplicateDrug", "dosageCheck", "riskDetails")
-            )
+            "w4Diagnose", Map.of(
+                "inputs", List.of("registerId", "structuredRecord", "w3Output", "diseaseCatalog"),
+                "outputs", List.of("primaryDiagnosis", "differentialDiagnoses", "clinicalAdvice", "confidenceScore")
+            ),
+            "preliminaryDiagnosis", Map.of(
+                "inputs", List.of("registerId", "text", "preHandle"),
+                "outputs", List.of("diagnosisText", "diagnosisBasis", "confidence", "suggestedDiseases", "modelId")
+            ),
+            "ctModel", getCtModelOutputContract()
         );
     }
 
@@ -311,6 +341,27 @@ public class PhysicianService {
             return ((List<?>) value).stream().map(this::toLong).filter(Objects::nonNull).toList();
         }
         return List.of();
+    }
+
+    private Map<String, Object> loadPreliminaryAiMeta(Long registerId) {
+        Map<String, Object> log = physicianMapper.selectLatestAiMedicalRecordLogBySourceType(registerId, "preliminary_diagnosis");
+        if (log == null) {
+            return Map.of();
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("aiDiagnosis", log.get("aiDiagnosis"));
+        meta.put("modelId", log.get("modelId"));
+        Object raw = log.get("doctorModification");
+        if (raw instanceof String text && !text.isBlank()) {
+            try {
+                Map<String, Object> parsed = JSON.readValue(text, new TypeReference<>() {
+                });
+                meta.putAll(parsed);
+            } catch (Exception ignored) {
+                // ignore malformed meta
+            }
+        }
+        return meta;
     }
 
     private Map<String, Object> fallbackReview(Long registerId) {

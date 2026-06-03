@@ -13,6 +13,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/api/physician': {
+        target: 'http://localhost:8092',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,

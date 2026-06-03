@@ -50,9 +50,15 @@ public class PhysicianController {
         return Result.success(physicianService.getMedicalRecord(registerId));
     }
 
+    @PostMapping("/medical-record/preliminary")
+    public Result<Void> savePreliminaryDiagnosis(@RequestBody Map<String, Object> request) {
+        physicianService.savePreliminaryDiagnosis(request);
+        return Result.success("初步诊断已保存", null);
+    }
+
     @GetMapping("/medical-technologies")
     public Result<List<Map<String, Object>>> getMedicalTechnologies(
-        @RequestParam String techType,
+        @RequestParam(required = false) String techType,
         @RequestParam(required = false) String keyword
     ) {
         return Result.success(physicianService.getMedicalTechnologies(techType, keyword));
@@ -136,18 +142,4 @@ public class PhysicianController {
         return Result.success("删除成功", null);
     }
 
-    @GetMapping("/ai/prescription-review")
-    public Result<Map<String, Object>> getPrescriptionReview(@RequestParam Long registerId) {
-        return Result.success(physicianService.getPrescriptionReview(registerId));
-    }
-
-    @GetMapping("/ai/dify-workflow-contracts")
-    public Result<Map<String, Object>> getDifyWorkflowContracts() {
-        return Result.success(physicianService.getDifyWorkflowContracts());
-    }
-
-    @GetMapping("/ai/ct-model-contract")
-    public Result<Map<String, Object>> getCtModelOutputContract() {
-        return Result.success(physicianService.getCtModelOutputContract());
-    }
 }

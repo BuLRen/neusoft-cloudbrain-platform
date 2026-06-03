@@ -67,6 +67,7 @@
             allergy AS "allergy",
             physique AS "physique",
             proposal AS "proposal",
+            preliminary_diagnosis AS "preliminaryDiagnosis",
             careful AS "careful",
             diagnosis AS "diagnosis",
             cure AS "cure"
@@ -103,7 +104,14 @@
             history = #{history},
             allergy = #{allergy},
             physique = #{physique},
-            proposal = #{proposal}
+            proposal = #{proposal},
+            preliminary_diagnosis = #{preliminaryDiagnosis}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateMedicalRecordPreliminary" parameterType="map">
+        UPDATE medical_record
+        SET preliminary_diagnosis = #{preliminaryDiagnosis}
         WHERE id = #{id}
     </update>
 
@@ -138,11 +146,14 @@
             d.dept_name AS "deptName"
         FROM medical_technology mt
         LEFT JOIN department d ON d.id = mt.deptment_id
-        WHERE mt.tech_type = #{techType}
+        WHERE 1 = 1
+        <if test="techType != null and techType != ''">
+            AND mt.tech_type = #{techType}
+        </if>
         <if test="keyword != null and keyword != ''">
             AND (mt.tech_code ILIKE CONCAT('%', #{keyword}, '%') OR mt.tech_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
-        ORDER BY mt.tech_name
+        ORDER BY mt.tech_type, mt.tech_name
     </select>
 
     <insert id="insertCheckRequest" parameterType="map" useGeneratedKeys="true" keyProperty="id">
@@ -334,6 +345,184 @@
         FROM ai_prescription_review
         WHERE register_id = #{registerId}
         ORDER BY review_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectRegisterById" resultType="map">
+        SELECT
+            id AS "registerId",
+            case_number AS "caseNumber",
+            real_name AS "realName",
+            gender AS "gender",
+            age AS "age",
+            home_address AS "homeAddress"
+        FROM register
+        WHERE id = #{registerId}
+    </select>
+
+    <select id="selectLatestAiConsultation" resultType="map">
+        SELECT
+            chief_complaint AS "chiefComplaint",
+            symptom_duration AS "symptomDuration",
+            history_summary AS "historySummary",
+            allergy_summary AS "allergySummary",
+            medication_summary AS "medicationSummary",
+            ai_summary AS "aiSummary",
+            suggested_exam AS "suggestedExam"
+        FROM ai_consultation_record
+        WHERE register_id = #{registerId}
+        ORDER BY completion_time DESC NULLS LAST, creation_time DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectAvailableExaminations" resultType="map">
+        SELECT
+            mt.id AS "techId",
+            mt.tech_code AS "techCode",
+            mt.tech_name AS "techName",
+            mt.tech_type AS "techType",
+            CASE
+                WHEN mt.tech_code = 'XJCT' THEN 'imaging_ct_chest'
+                WHEN mt.tech_code = 'TLCT' THEN 'imaging_ct_brain'
+                WHEN mt.tech_type = 'inspection' THEN 'lab'
+                ELSE 'general_check'
+            END AS "category",
+            mt.tech_price AS "techPrice"
+        FROM medical_technology mt
+        WHERE mt.tech_type IN ('check', 'inspection')
+        ORDER BY mt.tech_type, mt.tech_name
+    </select>
+
+    <select id="selectOpenRequestsForSimulation" resultType="map">
+        SELECT *
+        FROM (
+            SELECT
+                cr.register_id AS "registerId",
+                cr.id AS "requestId",
+                cr.medical_technology_id AS "techId",
+                mt.tech_name AS "techName",
+                mt.tech_type AS "techType",
+                CASE
+                    WHEN mt.tech_code = 'XJCT' THEN 'imaging_ct_chest'
+                    WHEN mt.tech_code = 'TLCT' THEN 'imaging_ct_brain'
+                    WHEN mt.tech_type = 'inspection' THEN 'lab'
+                    ELSE 'general_check'
+                END AS "category"
+            FROM check_request cr
+            INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+            WHERE cr.register_id = #{registerId}
+              AND (cr.check_result IS NULL OR cr.check_state != '已完成')
+            UNION ALL
+            SELECT
+                ir.register_id AS "registerId",
+                ir.id AS "requestId",
+                ir.medical_technology_id AS "techId",
+                mt.tech_name AS "techName",
+                mt.tech_type AS "techType",
+                CASE
+                    WHEN mt.tech_code = 'XJCT' THEN 'imaging_ct_chest'
+                    WHEN mt.tech_code = 'TLCT' THEN 'imaging_ct_brain'
+                    WHEN mt.tech_type = 'inspection' THEN 'lab'
+                    ELSE 'general_check'
+                END AS "category"
+            FROM inspection_request ir
+            INNER JOIN medical_technology mt ON mt.id = ir.medical_technology_id
+            WHERE ir.register_id = #{registerId}
+              AND (ir.inspection_result IS NULL OR ir.inspection_state != '已完成')
+        ) pending
+        ORDER BY "techType", "techName"
+    </select>
+
+    <delete id="deleteExamSuggestionsByRegisterId">
+        DELETE FROM ai_exam_suggestion WHERE register_id = #{registerId}
+    </delete>
+
+    <insert id="insertExamSuggestion" parameterType="map">
+        INSERT INTO ai_exam_suggestion (register_id, tech_id, tech_name, suggest_type, suggest_reason, priority, model_id)
+        VALUES (#{registerId}, #{techId}, #{techName}, #{suggestType}, #{suggestReason}, #{priority}, #{modelId})
+    </insert>
+
+    <update id="updateCheckRequestResult">
+        UPDATE check_request
+        SET check_result = #{result},
+            check_state = #{state},
+            check_time = CURRENT_TIMESTAMP
+        WHERE register_id = #{registerId}
+          AND medical_technology_id = #{techId}
+    </update>
+
+    <update id="updateInspectionRequestResult">
+        UPDATE inspection_request
+        SET inspection_result = #{result},
+            inspection_state = #{state},
+            inspection_time = CURRENT_TIMESTAMP
+        WHERE register_id = #{registerId}
+          AND medical_technology_id = #{techId}
+    </update>
+
+    <delete id="deleteExamAnalysisByRegisterId">
+        DELETE FROM ai_exam_analysis WHERE register_id = #{registerId}
+    </delete>
+
+    <insert id="insertExamAnalysis" parameterType="map" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_exam_analysis (
+            register_id, analysis_type, original_result, abnormal_indicators,
+            risk_level, analysis_report, correlation_analysis, model_id
+        ) VALUES (
+            #{registerId}, #{analysisType}, #{originalResult}, #{abnormalIndicators},
+            #{riskLevel}, #{analysisReport}, #{correlationAnalysis}, #{modelId}
+        )
+    </insert>
+
+    <select id="selectExamAnalysisByRegisterId" resultType="map">
+        SELECT
+            id AS "id",
+            analysis_type AS "analysisType",
+            original_result AS "originalResult",
+            abnormal_indicators AS "abnormalIndicators",
+            risk_level AS "riskLevel",
+            analysis_report AS "analysisReport",
+            correlation_analysis AS "correlationAnalysis"
+        FROM ai_exam_analysis
+        WHERE register_id = #{registerId}
+        ORDER BY analysis_time DESC, id DESC
+    </select>
+
+    <delete id="deleteDiagnosisSuggestionsByRegisterId">
+        DELETE FROM ai_diagnosis_suggestion WHERE register_id = #{registerId}
+    </delete>
+
+    <insert id="insertDiagnosisSuggestion" parameterType="map">
+        INSERT INTO ai_diagnosis_suggestion (
+            register_id, disease_id, disease_name, recommend_icd, probability,
+            risk_level, treatment_direction, diagnosis_basis, sort_order, model_id
+        ) VALUES (
+            #{registerId}, #{diseaseId}, #{diseaseName}, #{recommendIcd}, #{probability},
+            #{riskLevel}, #{treatmentDirection}, #{diagnosisBasis}, #{sortOrder}, #{modelId}
+        )
+    </insert>
+
+    <insert id="insertAiMedicalRecordLog" parameterType="map">
+        INSERT INTO ai_medical_record_log (
+            register_id, source_type, ai_readme, ai_present, ai_history, ai_allergy, ai_physique, ai_diagnosis, model_id, doctor_modification
+        ) VALUES (
+            #{registerId}, #{sourceType}, #{aiReadme}, #{aiPresent}, #{aiHistory}, #{aiAllergy}, #{aiPhysique}, #{aiDiagnosis}, #{modelId}, #{doctorModification}
+        )
+    </insert>
+
+    <select id="selectLatestAiMedicalRecordLogBySourceType" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            source_type AS "sourceType",
+            ai_diagnosis AS "aiDiagnosis",
+            model_id AS "modelId",
+            doctor_modification AS "doctorModification",
+            generation_time AS "generationTime"
+        FROM ai_medical_record_log
+        WHERE register_id = #{registerId}
+          AND source_type = #{sourceType}
+        ORDER BY generation_time DESC, id DESC
         LIMIT 1
     </select>
 </mapper>

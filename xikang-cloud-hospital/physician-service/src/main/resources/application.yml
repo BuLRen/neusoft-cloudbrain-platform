@@ -33,3 +33,27 @@ management:
 logging:
   level:
     com.xikang.physician: DEBUG
+
+xikang:
+  ai:
+    dify:
+      # 启用后使用 DIFY_API_KEY 对应已发布的 Workflow App
+      enabled: true
+      base-url: ${DIFY_BASE_URL:https://api.dify.ai}
+      api-key: ${DIFY_API_KEY:}
+      # W1–W4：非空表示尝试 Dify（与 preliminary 共用 Key 时会命中同一 App，建议仅开 preliminary）
+      workflow-w1: ${DIFY_WORKFLOW_W1:}
+      workflow-w2: ${DIFY_WORKFLOW_W2:}
+      workflow-w2b: ${DIFY_WORKFLOW_W2B:}
+      workflow-w3: ${DIFY_WORKFLOW_W3:}
+      workflow-w4: ${DIFY_WORKFLOW_W4:}
+      # 初步诊断：非空即启用（非 URL 中的 workflow id）
+      workflow-preliminary: ${DIFY_WORKFLOW_PRELIMINARY:app-GfJeWsUbsiHyusuRF7znNBul}
+      preliminary-output-keys:
+        # 与 Dify「结束」节点输出变量名一致；留空则尝试通用 fallback 键名
+        diagnosis-text: ${DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT:text}
+        diagnosis-basis: ${DIFY_PRELIM_OUTPUT_BASIS:}
+        confidence: ${DIFY_PRELIM_OUTPUT_CONFIDENCE:}
+        suggested-diseases: ${DIFY_PRELIM_OUTPUT_SUGGESTED_DISEASES:}
+        parse-json-from-text: true
+      ct-inference-url: ${CT_INFERENCE_URL:}

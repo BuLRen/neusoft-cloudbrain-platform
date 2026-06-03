@@ -23,6 +23,8 @@ public interface PhysicianMapper {
 
     int updateMedicalRecord(Map<String, Object> record);
 
+    int updateMedicalRecordPreliminary(Map<String, Object> record);
+
     int updateDiagnosis(Map<String, Object> diagnosis);
 
     int deleteMedicalRecordDiseases(@Param("medicalRecordId") Long medicalRecordId);
@@ -58,4 +60,47 @@ public interface PhysicianMapper {
     List<Map<String, Object>> selectDiagnosisSuggestions(@Param("registerId") Long registerId);
 
     Map<String, Object> selectLatestPrescriptionReview(@Param("registerId") Long registerId);
+
+    Map<String, Object> selectRegisterById(@Param("registerId") Long registerId);
+
+    Map<String, Object> selectLatestAiConsultation(@Param("registerId") Long registerId);
+
+    List<Map<String, Object>> selectAvailableExaminations();
+
+    List<Map<String, Object>> selectOpenRequestsForSimulation(@Param("registerId") Long registerId);
+
+    int deleteExamSuggestionsByRegisterId(@Param("registerId") Long registerId);
+
+    int insertExamSuggestion(Map<String, Object> row);
+
+    int updateCheckRequestResult(
+        @Param("registerId") Long registerId,
+        @Param("techId") Long techId,
+        @Param("result") String result,
+        @Param("state") String state
+    );
+
+    int updateInspectionRequestResult(
+        @Param("registerId") Long registerId,
+        @Param("techId") Long techId,
+        @Param("result") String result,
+        @Param("state") String state
+    );
+
+    int deleteExamAnalysisByRegisterId(@Param("registerId") Long registerId);
+
+    int insertExamAnalysis(Map<String, Object> row);
+
+    List<Map<String, Object>> selectExamAnalysisByRegisterId(@Param("registerId") Long registerId);
+
+    int deleteDiagnosisSuggestionsByRegisterId(@Param("registerId") Long registerId);
+
+    int insertDiagnosisSuggestion(Map<String, Object> row);
+
+    int insertAiMedicalRecordLog(Map<String, Object> row);
+
+    Map<String, Object> selectLatestAiMedicalRecordLogBySourceType(
+        @Param("registerId") Long registerId,
+        @Param("sourceType") String sourceType
+    );
 }

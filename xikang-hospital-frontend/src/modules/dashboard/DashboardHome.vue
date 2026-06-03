@@ -6,7 +6,7 @@ import StatusTag from '@/shared/components/StatusTag.vue'
 
 const router = useRouter()
 const modules = [
-  { title: '诊疗流程', owner: '人员A', path: '/physician', description: '医生接诊、病历、申请、确诊、开方。' },
+  { title: '诊疗流程', owner: '人员A', path: '/physician/queue', description: '医生接诊、病历、申请、确诊、开方。' },
   { title: '入口与支撑流程', owner: '人员B', path: '/registration', description: '导诊、挂号、收费、执行、发药、随访。' },
   { title: 'AI 组件区', owner: '共同', path: '/ai', description: 'AI 结果卡片和页面嵌入能力预留。' },
 ]
