@@ -2,6 +2,7 @@ package com.xikang.registration.controller;
 
 import com.xikang.common.result.Result;
 import com.xikang.registration.entity.Department;
+import com.xikang.registration.entity.Employee;
 import com.xikang.registration.entity.RegistLevel;
 import com.xikang.registration.entity.SettleCategory;
 import com.xikang.registration.service.*;
@@ -28,6 +29,7 @@ public class RegistrationController {
     private final RegistLevelService registLevelService;
     private final SettleCategoryService settleCategoryService;
     private final ExpenseRecordService expenseRecordService;
+    private final EmployeeService employeeService;
 
     // ==================== 挂号相关接口 ====================
 
@@ -257,12 +259,43 @@ public class RegistrationController {
         return Result.success();
     }
 
-    /**
+/**
      * 删除挂号级别
      */
     @DeleteMapping("/regist-levels/{id}")
     public Result<Void> deleteRegistLevel(@PathVariable Long id) {
         registLevelService.deleteLevel(id);
         return Result.success();
+    }
+
+    // ==================== 医生相关接口 ====================
+
+    /**
+     * 获取科室医生列表
+     */
+    @GetMapping("/doctors/department/{departmentId}")
+    public Result<List<Employee>> getDoctorsByDepartment(@PathVariable Long departmentId) {
+        List<Employee> doctors = employeeService.getDoctorsByDepartment(departmentId);
+        return Result.success(doctors);
+    }
+
+    /**
+     * 根据科室和挂号级别获取医生列表
+     */
+    @GetMapping("/doctors/department/{departmentId}/level/{registLevelId}")
+    public Result<List<Employee>> getDoctorsByDepartmentAndLevel(
+            @PathVariable Long departmentId,
+            @PathVariable Long registLevelId) {
+        List<Employee> doctors = employeeService.getDoctorsByDepartmentAndLevel(departmentId, registLevelId);
+        return Result.success(doctors);
+    }
+
+    /**
+     * 获取医生详情
+     */
+    @GetMapping("/doctors/{id}")
+    public Result<Employee> getDoctor(@PathVariable Long id) {
+        Employee doctor = employeeService.getDoctor(id);
+        return Result.success(doctor);
     }
 }
