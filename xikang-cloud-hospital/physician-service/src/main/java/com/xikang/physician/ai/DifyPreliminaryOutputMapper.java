@@ -39,6 +39,10 @@ public class DifyPreliminaryOutputMapper {
         out.put("diagnosisBasis", buildDiagnosisBasis(source, suggested));
         out.put("confidence", resolveOverallConfidence(source, suggested, keys));
         out.put("suggestedDiseases", suggested);
+        copyIfPresent(source, out, "clinicalSummary", "clinical_summary", "summary");
+        copyIfPresent(source, out, "primaryDiagnosis", "primary_diagnosis", "primaryDiagnosis", "primaryDiagnoses");
+        copyIfPresent(source, out, "redFlags", "red_flags", "redFlags");
+        copyIfPresent(source, out, "excludedDiagnoses", "excluded_diagnoses", "excludedDiagnoses");
         return out;
     }
 
@@ -114,24 +118,106 @@ public class DifyPreliminaryOutputMapper {
             if (!confidence.isBlank()) {
                 row.put("confidenceLevel", confidence);
             }
+            Integer rank = normalizeRank(item.get("rank"));
+            if (rank != null) {
+                row.put("rank", rank);
+            }
+            copyScalar(item, row, "role");
+            copyScalar(item, row, "rationale", "rationary");
+            copyScalar(item, row, "diagnosisBasis");
+            copyScalar(item, row, "recommendIcd", "icd10", "icd");
+            copyStringList(item, row, "keyEvidence", "key_evidence");
+            copyStringList(item, row, "missingOrWeakEvidence", "missing_or_weak_evidence", "missingEvidence");
+            copyStringList(item, row, "recommendedWorkup", "recommended_workup", "workup");
             result.add(row);
         }
         return result;
     }
 
+    @SuppressWarnings("unchecked")
+    private static void copyIfPresent(Map<String, Object> source, Map<String, Object> target, String... keys) {
+        for (String key : keys) {
+            if (source.containsKey(key) && source.get(key) != null) {
+                target.put(keys[0], source.get(key));
+                return;
+            }
+        }
+    }
+
+    private static void copyScalar(Map<String, Object> from, Map<String, Object> to, String targetKey, String... sourceKeys) {
+        for (String key : sourceKeys) {
+            if (from.containsKey(key) && from.get(key) != null) {
+                to.put(targetKey, from.get(key));
+                return;
+            }
+        }
+        if (from.containsKey(targetKey) && from.get(targetKey) != null) {
+            to.put(targetKey, from.get(targetKey));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void copyStringList(Map<String, Object> from, Map<String, Object> to, String targetKey, String... sourceKeys) {
+        for (String key : sourceKeys) {
+            Object value = from.get(key);
+            if (value instanceof List<?> list && !list.isEmpty()) {
+                to.put(targetKey, list);
+                return;
+            }
+        }
+        Object direct = from.get(targetKey);
+        if (direct instanceof List<?> list && !list.isEmpty()) {
+            to.put(targetKey, list);
+        }
+    }
+
     private static String buildDiagnosisBasis(Map<String, Object> source, List<Map<String, Object>> suggested) {
         List<String> parts = new ArrayList<>();
-        String recalled = str(source.get("isRecalled"));
-        if (!recalled.isBlank()) {
-            parts.add("知识库召回：" + recalled);
+        if (isKnowledgeRecalled(source.get("isRecalled"))) {
+            parts.add("知识库已召回相关内容");
         }
         for (Map<String, Object> disease : suggested) {
+            String name = str(disease.get("diseaseName"));
+            if (name.isBlank()) {
+                continue;
+            }
+            String rationale = str(disease.get("rationale"));
+            if (!rationale.isBlank()) {
+                parts.add(name + " — " + rationale);
+                continue;
+            }
             String sym = str(disease.get("symptoms"));
             if (!sym.isBlank()) {
-                parts.add(str(disease.get("diseaseName")) + " — " + sym);
+                parts.add(name + " — " + sym);
             }
         }
         return String.join("\n", parts);
+    }
+
+    private static boolean isKnowledgeRecalled(Object value) {
+        if (Boolean.TRUE.equals(value)) {
+            return true;
+        }
+        String text = str(value);
+        return "true".equalsIgnoreCase(text) || "1".equals(text) || "是".equals(text);
+    }
+
+    private static Integer normalizeRank(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        String text = str(value);
+        if (text.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private static Double resolveOverallConfidence(

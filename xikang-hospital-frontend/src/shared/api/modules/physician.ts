@@ -48,37 +48,55 @@ export interface Disease {
   diseaseCategory?: string
 }
 
+/** AI 初步诊断 — 单条建议疾病（与工作流 diseaseDetail 对齐，部分字段待工作流补充） */
+export interface SuggestedDiseaseItem {
+  diseaseId?: number
+  diseaseName?: string
+  recommendIcd?: string
+  symptoms?: string
+  confidenceLevel?: string
+  /** 工作流 schema 为 string，后端会规范为 number */
+  rank?: number | string
+  role?: 'primary' | 'differential' | string
+  rationale?: string
+  diagnosisBasis?: string
+  keyEvidence?: string[]
+  missingOrWeakEvidence?: string[]
+  recommendedWorkup?: string[]
+}
+
+export interface ExcludedDiagnosisItem {
+  diseaseName?: string
+  reason?: string
+}
+
 export interface PreliminaryAiMeta {
   aiDiagnosis?: string
+  clinicalSummary?: string
+  primaryDiagnosis?: string
   diagnosisBasis?: string
   confidence?: number
   modelId?: string
   llmModel?: string
   suggestedDiseaseNames?: string[]
-  suggestedDiseases?: Array<{
-    diseaseId?: number
-    diseaseName?: string
-    recommendIcd?: string
-    symptoms?: string
-    confidenceLevel?: string
-  }>
+  suggestedDiseases?: SuggestedDiseaseItem[]
+  excludedDiagnoses?: ExcludedDiagnosisItem[]
+  redFlags?: string[]
   preHandle?: boolean
 }
 
 export interface PreliminaryDiagnosisOutput {
   registerId?: number
   diagnosisText?: string
+  clinicalSummary?: string
+  primaryDiagnosis?: string
   diagnosisBasis?: string
   confidence?: number
   modelId?: string
   llmModel?: string
-  suggestedDiseases?: Array<{
-    diseaseId?: number
-    diseaseName?: string
-    recommendIcd?: string
-    symptoms?: string
-    confidenceLevel?: string
-  }>
+  suggestedDiseases?: SuggestedDiseaseItem[]
+  excludedDiagnoses?: ExcludedDiagnosisItem[]
+  redFlags?: string[]
   preHandle?: boolean
 }
 

@@ -277,7 +277,11 @@ public class PhysicianAiPipelineService {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("diagnosisBasis", output.get("diagnosisBasis"));
         meta.put("confidence", output.get("confidence"));
+        meta.put("clinicalSummary", output.get("clinicalSummary"));
+        meta.put("primaryDiagnosis", output.get("primaryDiagnosis"));
         meta.put("suggestedDiseases", output.get("suggestedDiseases"));
+        meta.put("excludedDiagnoses", output.get("excludedDiagnoses"));
+        meta.put("redFlags", output.get("redFlags"));
         meta.put("preHandle", output.get("preHandle"));
         meta.put("workflowRunId", output.get("workflowRunId"));
         meta.put("llmModel", output.get("llmModel"));

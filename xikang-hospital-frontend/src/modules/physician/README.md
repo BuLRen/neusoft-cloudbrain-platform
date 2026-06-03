@@ -62,10 +62,11 @@ Dify 官方接口：`POST {DIFY_BASE_URL}/v1/workflows/run`（`response_mode: bl
 | `DIFY_BASE_URL` | 如 `https://api.dify.ai` 或自托管根地址（勿重复 `/v1`） |
 | `DIFY_API_KEY` | **必填**。Workflow App 的 API Key（`app-xxx`），与 curl 文档 `Bearer` 相同 |
 | `DIFY_WORKFLOW_PRELIMINARY` | 填 `true` 启用初步诊断；**不要**把 `app-xxx` 写在这里 |
-| `DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT` | Dify 结束节点「诊断文本」变量名，默认 `text` |
-| `DIFY_PRELIM_OUTPUT_BASIS` | 「依据」变量名（可选） |
-| `DIFY_PRELIM_OUTPUT_CONFIDENCE` | 「置信度」变量名（可选） |
-| `DIFY_PRELIM_OUTPUT_SUGGESTED_DISEASES` | 「建议疾病」变量名（可选，JSON 数组或字符串） |
+| `DIFY_PRELIM_OUTPUT_ROOT` | 结构化输出根键，默认 `output_structured` |
+| `DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT` | 长文推理，默认映射 `answer` |
+| `DIFY_PRELIM_OUTPUT_SUGGESTED_DISEASES` | 疾病列表，默认映射 `diseaseDetail` |
+
+`output_structured` 内字段与前端一致：`clinicalSummary`、`primaryDiagnosis`、`answer`、`diseaseDetail[]`（`name`、`confidence`、`rank`、`rationale`、`keyEvidence`、`missingOrWeakEvidence`、`recommendedWorkup`）、`redFlags`、`excludedDiagnoses`、`confidence`、`isRecalled`。
 
 `application.yml` 中设置 `xikang.ai.dify.enabled=true` 并填入上述变量。
 
