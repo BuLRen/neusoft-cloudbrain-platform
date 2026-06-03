@@ -7,15 +7,20 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import EmptyState from '@/shared/components/EmptyState.vue'
 import { useEncounterStore } from '@/app/stores/encounter'
 
-const props = defineProps<{
-  groupLabel: string
-  step: number
-  totalSteps: number
-  title: string
-  description?: string
-  prevPath?: string
-  nextPath?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    groupLabel: string
+    step: number
+    totalSteps: number
+    title: string
+    description?: string
+    prevPath?: string
+    nextPath?: string
+    /** 是否显示顶部「第 N 步」进度条，默认显示 */
+    showStepper?: boolean
+  }>(),
+  { showStepper: true },
+)
 
 const router = useRouter()
 const encounterStore = useEncounterStore()
@@ -53,10 +58,12 @@ const eyebrow = computed(() => `${props.groupLabel} · 第 ${props.step}/${props
     </GlassCard>
 
     <GlassCard class="step-layout__panel">
-      <ElSteps :active="step - 1" align-center finish-status="success">
-        <ElStep v-for="n in totalSteps" :key="n" :title="`第 ${n} 步`" />
-      </ElSteps>
-      <ElDivider />
+      <template v-if="showStepper">
+        <ElSteps :active="step - 1" align-center finish-status="success">
+          <ElStep v-for="n in totalSteps" :key="n" :title="`第 ${n} 步`" />
+        </ElSteps>
+        <ElDivider />
+      </template>
       <slot />
       <div class="step-layout__nav">
         <ElButton v-if="prevPath" @click="router.push(prevPath)">上一步</ElButton>

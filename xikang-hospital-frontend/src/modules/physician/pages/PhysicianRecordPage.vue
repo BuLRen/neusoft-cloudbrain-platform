@@ -3,22 +3,30 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
-  ElForm,
-  ElFormItem,
+  ElIcon,
   ElInput,
   ElMessage,
   ElMessageBox,
-  ElOption,
   ElRadio,
   ElRadioGroup,
-  ElSelect,
   ElTag,
 } from 'element-plus'
+import {
+  CirclePlusFilled,
+  Clock,
+  DocumentChecked,
+  EditPen,
+  Monitor,
+  Pouring,
+  Tickets,
+  User,
+  UserFilled,
+} from '@element-plus/icons-vue'
+import type { Component } from 'vue'
 import {
   physicianApi,
   type MedicalRecord,
   type PreliminaryAiMeta,
-  type StructuredRecord,
 } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import GlassCard from '@/shared/components/GlassCard.vue'
@@ -32,14 +40,49 @@ import {
 
 type PreliminaryInputSource = 'current_record' | 'pre_consultation' | 'natural_language'
 
+interface RecordFieldConfig {
+  key: 'readme' | 'present' | 'presentTreat' | 'history' | 'allergy' | 'physique' | 'proposal'
+  label: string
+  icon: Component
+  placeholder?: string
+  rows: number
+  fullWidth?: boolean
+}
+
+const RECORD_FIELDS: RecordFieldConfig[] = [
+  { key: 'readme', label: '主诉', icon: User, rows: 3 },
+  { key: 'present', label: '现病史', icon: EditPen, rows: 3 },
+  {
+    key: 'presentTreat',
+    label: '现病治疗情况',
+    icon: Monitor,
+    placeholder: '请描述目前的治疗情况、用药情况及效果',
+    rows: 3,
+  },
+  { key: 'history', label: '既往史', icon: Clock, rows: 3 },
+  { key: 'allergy', label: '过敏史', icon: CirclePlusFilled, rows: 3 },
+  {
+    key: 'physique',
+    label: '体格检查',
+    icon: UserFilled,
+    placeholder: '请填写体格检查结果',
+    rows: 3,
+  },
+  {
+    key: 'proposal',
+    label: '检查/检验建议',
+    icon: Pouring,
+    placeholder: '检查或检验项目建议（非初步诊断）',
+    rows: 3,
+    fullWidth: true,
+  },
+]
+
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
 
 const loading = ref(false)
 const preliminaryLoading = ref(false)
-const structuredRecord = ref<StructuredRecord | null>(null)
-const w1InputMode = ref<'pre_consultation' | 'long_text' | 'doctor_form'>('pre_consultation')
-const w1LongText = ref('')
 
 const recordForm = reactive({
   id: undefined as number | undefined,
@@ -202,15 +245,6 @@ function applyMedicalRecord(record: MedicalRecord | null) {
   }
 }
 
-function applyStructuredToRecordForm(record: StructuredRecord) {
-  recordForm.readme = record.chiefComplaint || recordForm.readme
-  recordForm.present = record.presentIllness || recordForm.present
-  recordForm.presentTreat = record.presentTreat || recordForm.presentTreat
-  recordForm.history = record.history || recordForm.history
-  recordForm.allergy = record.allergy || recordForm.allergy
-  recordForm.physique = record.physique || recordForm.physique
-}
-
 async function loadContext() {
   if (!registerId.value) return
   loading.value = true
@@ -220,23 +254,6 @@ async function loadContext() {
   } finally {
     loading.value = false
   }
-}
-
-async function runW1() {
-  if (!registerId.value) return
-  const payload: Record<string, unknown> = {
-    registerId: registerId.value,
-    inputMode: w1InputMode.value,
-    patientInfoFromRegister: encounterStore.patientSummary || undefined,
-  }
-  if (w1InputMode.value === 'long_text') {
-    payload.longText = w1LongText.value
-  } else if (w1InputMode.value === 'doctor_form') {
-    payload.doctorForm = { ...recordForm }
-  }
-  structuredRecord.value = await physicianApi.aiW1(payload)
-  applyStructuredToRecordForm(structuredRecord.value)
-  ElMessage.success('W1 病历字段已结构化；如需更新初步诊断请单独生成')
 }
 
 async function generatePreliminaryDiagnosis() {
@@ -350,56 +367,58 @@ onMounted(() => {
     group-label="门诊诊疗"
     :step="2"
     :total-steps="6"
+    :show-stepper="false"
     title="病历与初步诊断"
-    description="第二步：书写病历；在下方独立区域生成并确认 AI 初步诊断。"
     prev-path="/physician/queue"
     next-path="/physician/orders"
   >
     <div class="record-page">
-      <GlassCard class="record-page__card">
-        <h2 class="record-page__title">病历书写</h2>
-        <div class="record-page__toolbar">
-          <ElSelect v-model="w1InputMode" style="max-width: 220px">
-            <ElOption label="使用预问诊" value="pre_consultation" />
-            <ElOption label="患者长文本/语音转写" value="long_text" />
-            <ElOption label="医生按字段填写" value="doctor_form" />
-          </ElSelect>
-          <ElButton :loading="loading" @click="runW1">运行 W1</ElButton>
-          <ElButton type="primary" :loading="loading" @click="saveMedicalRecord">保存病历</ElButton>
+      <GlassCard class="record-page__card patient-record">
+        <header class="patient-record__header">
+          <div class="patient-record__intro">
+            <div class="patient-record__logo" aria-hidden="true">
+              <ElIcon :size="26"><Tickets /></ElIcon>
+            </div>
+            <div>
+              <h2 class="patient-record__title">患者病历</h2>
+              <p class="patient-record__subtitle">详细记录患者病情信息</p>
+            </div>
+          </div>
+          <ElButton
+            type="primary"
+            class="patient-record__save"
+            :loading="loading"
+            @click="saveMedicalRecord"
+          >
+            <ElIcon class="patient-record__save-icon"><DocumentChecked /></ElIcon>
+            保存病历
+          </ElButton>
+        </header>
+
+        <div class="patient-record__grid">
+          <section
+            v-for="field in RECORD_FIELDS"
+            :key="field.key"
+            class="patient-record__field"
+            :class="{ 'patient-record__field--full': field.fullWidth }"
+          >
+            <label class="patient-record__label" :for="`record-${field.key}`">
+              <ElIcon class="patient-record__label-icon" :size="18">
+                <component :is="field.icon" />
+              </ElIcon>
+              <span>{{ field.label }}</span>
+            </label>
+            <ElInput
+              :id="`record-${field.key}`"
+              v-model="recordForm[field.key]"
+              type="textarea"
+              :rows="field.rows"
+              :placeholder="field.placeholder"
+              resize="vertical"
+              class="patient-record__input"
+            />
+          </section>
         </div>
-
-        <ElInput
-          v-if="w1InputMode === 'long_text'"
-          v-model="w1LongText"
-          type="textarea"
-          :rows="3"
-          placeholder="粘贴患者口述或语音转写长文本……"
-          class="record-page__long-text"
-        />
-
-        <ElForm label-position="top" class="form-grid">
-          <ElFormItem label="主诉">
-            <ElInput v-model="recordForm.readme" />
-          </ElFormItem>
-          <ElFormItem label="现病史">
-            <ElInput v-model="recordForm.present" type="textarea" :rows="3" />
-          </ElFormItem>
-          <ElFormItem label="现病治疗情况">
-            <ElInput v-model="recordForm.presentTreat" type="textarea" :rows="2" />
-          </ElFormItem>
-          <ElFormItem label="既往史">
-            <ElInput v-model="recordForm.history" type="textarea" :rows="2" />
-          </ElFormItem>
-          <ElFormItem label="过敏史">
-            <ElInput v-model="recordForm.allergy" />
-          </ElFormItem>
-          <ElFormItem label="体格检查">
-            <ElInput v-model="recordForm.physique" type="textarea" :rows="2" />
-          </ElFormItem>
-          <ElFormItem label="检查/检验建议" class="form-grid__full">
-            <ElInput v-model="recordForm.proposal" type="textarea" :rows="2" placeholder="检查或检验项目建议（非初步诊断）" />
-          </ElFormItem>
-        </ElForm>
       </GlassCard>
 
       <GlassCard class="record-page__card record-page__card--preliminary">
@@ -462,13 +481,131 @@ onMounted(() => {
 }
 
 .record-page__card {
-  padding: var(--space-4);
+  padding: var(--space-5);
 }
 
 .record-page__title {
   margin: 0 0 var(--space-4);
   font-size: var(--font-size-lg);
   font-weight: 600;
+}
+
+.patient-record__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-block-end: var(--space-5);
+  padding-block-end: var(--space-5);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.patient-record__intro {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.patient-record__logo {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-success) 22%, var(--color-primary-soft));
+  color: var(--color-success);
+}
+
+.patient-record__title {
+  margin: 0;
+  font-size: var(--font-size-xl, 1.25rem);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-text);
+}
+
+.patient-record__subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.patient-record__save {
+  flex-shrink: 0;
+  padding-inline: var(--space-5);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+.patient-record__save-icon {
+  margin-inline-end: var(--space-1);
+}
+
+.patient-record__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5) var(--space-6);
+}
+
+.patient-record__field--full {
+  grid-column: 1 / -1;
+}
+
+.patient-record__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-3);
+  font-size: var(--font-size-base, 1rem);
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: default;
+}
+
+.patient-record__label-icon {
+  flex-shrink: 0;
+}
+
+.patient-record__input :deep(.el-textarea__inner) {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-control);
+  font-size: var(--font-size-base, 1rem);
+  line-height: 1.65;
+  color: var(--color-text);
+  box-shadow: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.patient-record__input :deep(.el-textarea__inner::placeholder) {
+  color: var(--color-text-soft);
+}
+
+.patient-record__input :deep(.el-textarea__inner:hover) {
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border-strong));
+}
+
+.patient-record__input :deep(.el-textarea__inner:focus) {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+@media (max-width: 900px) {
+  .patient-record__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-record__field--full {
+    grid-column: auto;
+  }
 }
 
 .record-page__toolbar {
@@ -485,16 +622,6 @@ onMounted(() => {
 
 .record-page__long-text {
   margin-block-end: var(--space-3);
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.form-grid__full {
-  grid-column: 1 / -1;
 }
 
 .record-page__toolbar--actions {
