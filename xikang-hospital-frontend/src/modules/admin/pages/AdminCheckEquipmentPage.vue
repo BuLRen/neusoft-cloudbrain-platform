@@ -2,7 +2,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
+  ElCard,
   ElDialog,
+  ElIcon,
   ElForm,
   ElFormItem,
   ElInput,
@@ -11,11 +13,13 @@ import {
   ElMessageBox,
   ElOption,
   ElSelect,
+  ElSpace,
   ElTable,
   ElTableColumn,
+  ElTag,
 } from 'element-plus'
+import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
-import GlassCard from '@/shared/components/GlassCard.vue'
 import {
   adminApi,
   type CheckEquipmentPayload,
@@ -49,6 +53,10 @@ const formRules = {
 }
 
 const formRef = ref<InstanceType<typeof ElForm>>()
+
+function formatPrice(value: number) {
+  return Number(value).toFixed(2)
+}
 
 function resetForm() {
   form.techCode = ''
@@ -143,50 +151,84 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="check-equipment u-page-grid">
+  <div class="check-equipment">
     <PageHeader
       title="检查设备"
-      description="维护检查类医技项目目录（编码、名称、规格、价格、执行科室）。医生开单与 AI 推荐均引用此数据。"
+      description="维护检查类医技项目目录，供医生开单与 AI 推荐使用。"
       eyebrow="管理端"
-    >
-      <template #actions>
-        <ElButton type="primary" @click="openCreate">新增检查项目</ElButton>
+    />
+
+    <ElCard class="check-equipment__card" shadow="never">
+      <template #header>
+        <div class="check-equipment__card-header">
+          <ElInput
+            v-model="keyword"
+            clearable
+            placeholder="搜索编码或名称"
+            class="check-equipment__search"
+            @keyup.enter="loadList"
+            @clear="loadList"
+          >
+            <template #prefix>
+              <ElIcon><Search /></ElIcon>
+            </template>
+          </ElInput>
+          <ElSpace wrap>
+            <ElButton :icon="Refresh" :loading="loading" @click="loadList">刷新</ElButton>
+            <ElButton type="primary" :icon="Plus" @click="openCreate">新增检查项目</ElButton>
+          </ElSpace>
+        </div>
       </template>
-    </PageHeader>
 
-    <GlassCard>
-      <div class="check-equipment__toolbar">
-        <ElInput
-          v-model="keyword"
-          clearable
-          placeholder="搜索编码或名称"
-          class="check-equipment__search"
-          @keyup.enter="loadList"
-        />
-        <ElButton :loading="loading" @click="loadList">查询</ElButton>
-      </div>
-
-      <ElTable v-loading="loading" :data="rows" empty-text="暂无检查项目，可点击右上角新增">
-        <ElTableColumn prop="techCode" label="编码" width="120" />
-        <ElTableColumn prop="techName" label="名称" min-width="140" />
-        <ElTableColumn prop="techFormat" label="规格" width="100" />
-        <ElTableColumn prop="techPrice" label="单价（元）" width="110" />
-        <ElTableColumn prop="priceType" label="费用分类" width="100" />
-        <ElTableColumn prop="deptName" label="执行科室" min-width="120" />
-        <ElTableColumn label="操作" width="160" fixed="right">
+      <ElTable
+        v-loading="loading"
+        :data="rows"
+        border
+        stripe
+        size="default"
+        class="check-equipment__table"
+        empty-text="暂无检查项目，请点击「新增检查项目」"
+        style="width: 100%"
+      >
+        <ElTableColumn type="index" label="#" width="56" align="center" />
+        <ElTableColumn prop="techCode" label="编码" width="120" show-overflow-tooltip />
+        <ElTableColumn prop="techName" label="名称" min-width="140" show-overflow-tooltip />
+        <ElTableColumn prop="techFormat" label="规格" width="100" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.techFormat || '—' }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="techPrice" label="单价（元）" width="120" align="right">
+          <template #default="{ row }">
+            {{ formatPrice(row.techPrice) }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="priceType" label="费用分类" width="110" align="center">
+          <template #default="{ row }">
+            <ElTag v-if="row.priceType" size="small" type="info">{{ row.priceType }}</ElTag>
+            <span v-else class="check-equipment__muted">—</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="deptName" label="执行科室" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.deptName || '—' }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="150" fixed="right" align="center">
           <template #default="{ row }">
             <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
             <ElButton link type="danger" @click="confirmDelete(row)">删除</ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
-    </GlassCard>
+    </ElCard>
 
     <ElDialog
       v-model="dialogVisible"
       :title="editingId == null ? '新增检查项目' : '编辑检查项目'"
       width="520px"
       destroy-on-close
+      align-center
     >
       <ElForm ref="formRef" :model="form" :rules="formRules" label-width="96px">
         <ElFormItem label="项目编码" prop="techCode">
@@ -199,13 +241,13 @@ onMounted(() => {
           <ElInput v-model="form.techFormat" placeholder="如 平扫" maxlength="64" />
         </ElFormItem>
         <ElFormItem label="单价" prop="techPrice">
-          <ElInputNumber v-model="form.techPrice" :min="0" :precision="2" :step="10" class="check-equipment__price" />
+          <ElInputNumber v-model="form.techPrice" :min="0" :precision="2" :step="10" class="check-equipment__field-full" />
         </ElFormItem>
         <ElFormItem label="费用分类">
           <ElInput v-model="form.priceType" placeholder="检查费" maxlength="64" />
         </ElFormItem>
         <ElFormItem label="执行科室">
-          <ElSelect v-model="form.deptmentId" clearable placeholder="选择科室" class="check-equipment__select">
+          <ElSelect v-model="form.deptmentId" clearable placeholder="选择科室" class="check-equipment__field-full">
             <ElOption v-for="d in departments" :key="d.id" :label="d.deptName" :value="d.id" />
           </ElSelect>
         </ElFormItem>
@@ -219,19 +261,41 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.check-equipment__toolbar {
+.check-equipment {
   display: flex;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.check-equipment__card {
+  border-radius: var(--radius-xl);
+}
+
+.check-equipment__card-header {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  margin-block-end: var(--space-4);
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .check-equipment__search {
-  max-width: 280px;
+  width: min(320px, 100%);
 }
 
-.check-equipment__price,
-.check-equipment__select {
+.check-equipment__table :deep(.el-table__body-wrapper) {
+  background: var(--color-surface-strong);
+}
+
+.check-equipment__table :deep(.el-table__header-wrapper th.el-table__cell) {
+  font-weight: 600;
+}
+
+.check-equipment__muted {
+  color: var(--color-text-muted);
+}
+
+.check-equipment__field-full {
   width: 100%;
 }
 </style>
