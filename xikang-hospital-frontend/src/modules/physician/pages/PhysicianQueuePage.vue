@@ -64,7 +64,7 @@ onMounted(() => {
 
 <template>
   <div class="physician-queue u-page-grid">
-    <PageHeader title="待诊接诊" description="第一步：选择待诊患者，进入后续诊疗流程。" eyebrow="门诊诊疗 · 第 1/6 步">
+    <PageHeader title="待诊接诊" description="选择待诊患者，进入后续诊疗流程。" eyebrow="门诊诊疗">
       <template #actions>
         <ElButton type="primary" @click="loadPatients">刷新患者</ElButton>
       </template>

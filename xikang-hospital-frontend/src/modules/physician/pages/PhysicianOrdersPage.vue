@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -14,8 +14,14 @@ import {
   ElTable,
   ElTableColumn,
 } from 'element-plus'
-import { physicianApi, type MedicalTechnology, type W2Output } from '@/shared/api/modules/physician'
+import {
+  physicianApi,
+  type MedicalRecord,
+  type MedicalTechnology,
+  type W2Output,
+} from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
+import ClinicalContextPanel from '../components/ClinicalContextPanel.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 
 type TechType = MedicalTechnology['techType']
@@ -48,6 +54,22 @@ const requestBasket = ref<BasketItem[]>([])
 
 const aiLoading = ref(false)
 const w2Output = ref<W2Output | null>(null)
+
+const contextLoading = ref(false)
+const medicalRecord = ref<MedicalRecord | null>(null)
+
+async function loadClinicalContext() {
+  if (!registerId.value) {
+    medicalRecord.value = null
+    return
+  }
+  contextLoading.value = true
+  try {
+    medicalRecord.value = await physicianApi.medicalRecord(registerId.value)
+  } finally {
+    contextLoading.value = false
+  }
+}
 
 function technologyOptionLabel(item: MedicalTechnology) {
   return `${item.techName} / ${TECH_TYPE_LABEL[item.techType]} / ${item.techPrice}元`
@@ -123,21 +145,25 @@ async function runW2() {
   }
 }
 
+watch(registerId, () => {
+  void loadClinicalContext()
+})
+
 onMounted(() => {
   void searchTechnologies()
+  void loadClinicalContext()
 })
 </script>
 
 <template>
   <PhysicianStepLayout
     group-label="门诊诊疗"
-    :step="3"
-    :total-steps="6"
     title="开立检查检验"
-    description="第三步：开立检查/检验/处置申请，可运行 W2 生成 AI 推荐。"
     prev-path="/physician/record"
     next-path="/physician/results"
   >
+    <ClinicalContextPanel :record="medicalRecord" :loading="contextLoading" />
+
     <div class="orders-grid">
       <section class="orders-panel orders-panel--form">
         <div class="inline-tools">

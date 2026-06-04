@@ -1,31 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElButton, ElDescriptions, ElDescriptionsItem, ElDivider, ElSteps, ElStep } from 'element-plus'
+import { ElButton, ElDescriptions, ElDescriptionsItem } from 'element-plus'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import EmptyState from '@/shared/components/EmptyState.vue'
 import { useEncounterStore } from '@/app/stores/encounter'
 
-const props = withDefaults(
-  defineProps<{
-    groupLabel: string
-    step: number
-    totalSteps: number
-    title: string
-    description?: string
-    prevPath?: string
-    nextPath?: string
-    /** 是否显示顶部「第 N 步」进度条，默认显示 */
-    showStepper?: boolean
-  }>(),
-  { showStepper: true },
-)
+const props = defineProps<{
+  groupLabel: string
+  title: string
+  description?: string
+  prevPath?: string
+  nextPath?: string
+}>()
 
 const router = useRouter()
 const encounterStore = useEncounterStore()
 
-const eyebrow = computed(() => `${props.groupLabel} · 第 ${props.step}/${props.totalSteps} 步`)
+const eyebrow = computed(() => props.groupLabel)
 </script>
 
 <template>
@@ -58,12 +51,6 @@ const eyebrow = computed(() => `${props.groupLabel} · 第 ${props.step}/${props
     </GlassCard>
 
     <GlassCard class="step-layout__panel">
-      <template v-if="showStepper">
-        <ElSteps :active="step - 1" align-center finish-status="success">
-          <ElStep v-for="n in totalSteps" :key="n" :title="`第 ${n} 步`" />
-        </ElSteps>
-        <ElDivider />
-      </template>
       <slot />
       <div class="step-layout__nav">
         <ElButton v-if="prevPath" @click="router.push(prevPath)">上一步</ElButton>
@@ -77,10 +64,6 @@ const eyebrow = computed(() => `${props.groupLabel} · 第 ${props.step}/${props
 .step-layout__summary,
 .step-layout__panel {
   padding: var(--space-5);
-}
-
-.step-layout__panel :deep(.el-steps) {
-  padding-inline: var(--space-2);
 }
 
 .step-layout__ai {

@@ -365,9 +365,6 @@ onMounted(() => {
 <template>
   <PhysicianStepLayout
     group-label="门诊诊疗"
-    :step="2"
-    :total-steps="6"
-    :show-stepper="false"
     title="病历与初步诊断"
     prev-path="/physician/queue"
     next-path="/physician/orders"

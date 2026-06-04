@@ -93,10 +93,8 @@ onMounted(() => {
 <template>
   <PhysicianStepLayout
     group-label="门诊诊疗"
-    :step="6"
-    :total-steps="6"
     title="开立处方"
-    description="第六步：选择药品并提交处方（审方由人员B负责）。"
+    description="选择药品并提交处方（审方由人员B负责）。"
     prev-path="/physician/diagnosis"
   >
     <div class="rx-grid">

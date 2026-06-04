@@ -58,10 +58,8 @@ onMounted(() => {
 <template>
   <PhysicianStepLayout
     group-label="门诊诊疗"
-    :step="5"
-    :total-steps="6"
     title="门诊确诊"
-    description="第五步：录入确诊信息，可运行 W4 获取 AI 辅助诊断建议。"
+    description="录入确诊信息，可运行 W4 获取 AI 辅助诊断建议。"
     prev-path="/physician/results"
     next-path="/physician/prescription"
   >

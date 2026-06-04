@@ -51,10 +51,8 @@ onMounted(() => {
 <template>
   <PhysicianStepLayout
     group-label="门诊诊疗"
-    :step="4"
-    :total-steps="6"
     title="查看结果"
-    description="第四步：查看检查/检验结果，可运行 W3 生成结构化分析（非最终诊断）。"
+    description="查看检查/检验结果，可运行 W3 生成结构化分析（非最终诊断）。"
     prev-path="/physician/orders"
     next-path="/physician/diagnosis"
   >
