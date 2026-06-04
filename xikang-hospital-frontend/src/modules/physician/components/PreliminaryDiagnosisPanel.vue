@@ -8,9 +8,11 @@ import {
   ElDescriptions,
   ElDescriptionsItem,
   ElFormItem,
+  ElIcon,
   ElInput,
   ElTag,
 } from 'element-plus'
+import { Warning } from '@element-plus/icons-vue'
 import type { PreliminaryAiMeta, SuggestedDiseaseItem } from '@/shared/api/modules/physician'
 import MarkdownContent from './MarkdownContent.vue'
 const doctorDiagnosis = defineModel<string>('doctorDiagnosis', { required: true })
@@ -132,15 +134,17 @@ const showKnowledgeBaseRecall = computed(
       </template>
     </ElAlert>
 
-    <ElAlert
-      v-for="(flag, idx) in aiMeta.redFlags || []"
-      :key="`flag-${idx}`"
-      type="error"
-      :closable="false"
-      show-icon
-      class="prelim-panel__red-flag"
-      :title="flag"
-    />
+    <section v-if="aiMeta.redFlags?.length" class="prelim-panel__attention">
+      <div class="prelim-panel__attention-head">
+        <ElIcon class="prelim-panel__attention-icon" :size="18"><Warning /></ElIcon>
+        <span class="prelim-panel__attention-title">需关注症状</span>
+      </div>
+      <ul class="prelim-panel__attention-list">
+        <li v-for="(flag, idx) in aiMeta.redFlags" :key="`flag-${idx}`">
+          {{ flag }}
+        </li>
+      </ul>
+    </section>
 
     <section v-if="sortedDiseases.length" class="prelim-panel__section">
       <div class="prelim-panel__section-head">
@@ -294,8 +298,41 @@ const showKnowledgeBaseRecall = computed(
   margin-inline-end: var(--space-2);
 }
 
-.prelim-panel__red-flag {
+.prelim-panel__attention {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 24%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-warning) 7%, var(--color-surface-strong));
+}
+
+.prelim-panel__attention-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-2);
+}
+
+.prelim-panel__attention-icon {
+  flex-shrink: 0;
+  color: var(--color-warning);
+}
+
+.prelim-panel__attention-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.prelim-panel__attention-list {
   margin: 0;
+  padding-inline-start: 1.25rem;
+  font-size: var(--font-size-sm);
+  line-height: 1.65;
+  color: var(--color-text-muted);
+}
+
+.prelim-panel__attention-list li + li {
+  margin-block-start: var(--space-1);
 }
 
 .prelim-panel__section-head {
