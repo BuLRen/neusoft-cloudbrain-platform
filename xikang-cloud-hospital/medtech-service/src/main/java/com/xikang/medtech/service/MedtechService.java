@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -257,10 +258,25 @@ public class MedtechService {
         return medicalTechnologyMapper.selectDepartmentOptions();
     }
 
-    public List<MedicalTechnology> listMedicalTechnologies(String techType, String keyword) {
+    public Map<String, Object> pageMedicalTechnologies(String techType, String keyword, Integer page, Integer size) {
         String normalizedType = normalizeTechType(techType);
         String normalizedKeyword = normalizeKeyword(keyword);
-        return medicalTechnologyMapper.selectList(normalizedType, normalizedKeyword);
+        int currentPage = page == null || page < 1 ? 1 : page;
+        int pageSize = size == null || size < 1 ? 10 : Math.min(size, 100);
+        int offset = (currentPage - 1) * pageSize;
+
+        List<MedicalTechnology> records = medicalTechnologyMapper.selectList(
+            normalizedType, normalizedKeyword, offset, pageSize
+        );
+        long total = medicalTechnologyMapper.countList(normalizedType, normalizedKeyword);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("records", records);
+        result.put("total", total);
+        result.put("page", currentPage);
+        result.put("size", pageSize);
+        result.put("totalPages", total == 0 ? 0 : (long) Math.ceil(total / (double) pageSize));
+        return result;
     }
 
     /**
@@ -339,6 +355,7 @@ public class MedtechService {
         input.setTechType(techType);
         input.setTechFormat(trimToNull(input.getTechFormat()));
         input.setPriceType(trimToNull(input.getPriceType()));
+        input.setAiCategoryCode(trimToNull(input.getAiCategoryCode()));
     }
 
     private static String normalizeTechType(String techType) {

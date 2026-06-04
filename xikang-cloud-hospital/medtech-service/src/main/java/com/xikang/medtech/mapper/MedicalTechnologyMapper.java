@@ -17,6 +17,13 @@ public interface MedicalTechnologyMapper {
 
     List<MedicalTechnology> selectList(
         @Param("techType") String techType,
+        @Param("keyword") String keyword,
+        @Param("offset") Integer offset,
+        @Param("size") Integer size
+    );
+
+    long countList(
+        @Param("techType") String techType,
         @Param("keyword") String keyword
     );
 

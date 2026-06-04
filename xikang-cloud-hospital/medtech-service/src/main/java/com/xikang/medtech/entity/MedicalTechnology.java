@@ -22,6 +22,7 @@ public class MedicalTechnology implements Serializable {
     private String techType;
     private String priceType;
     private Long deptmentId;
+    private String aiCategoryCode;
     /** 查询联表展示，非表字段 */
     private String deptName;
 }

@@ -11,6 +11,7 @@
         <result column="tech_type" property="techType"/>
         <result column="price_type" property="priceType"/>
         <result column="deptment_id" property="deptmentId"/>
+        <result column="ai_category_code" property="aiCategoryCode"/>
         <result column="dept_name" property="deptName"/>
     </resultMap>
 
@@ -24,6 +25,7 @@
             mt.tech_type,
             mt.price_type,
             mt.deptment_id,
+            mt.ai_category_code,
             d.dept_name
         FROM medical_technology mt
         LEFT JOIN department d ON d.id = mt.deptment_id
@@ -34,8 +36,7 @@
         WHERE mt.id = #{id}
     </select>
 
-    <select id="selectList" resultMap="BaseResultMap">
-        <include refid="Base_Select"/>
+    <sql id="List_Where">
         WHERE 1 = 1
         <if test="techType != null and techType != ''">
             AND mt.tech_type = #{techType}
@@ -46,7 +47,21 @@
                 OR mt.tech_name ILIKE CONCAT('%', #{keyword}, '%')
             )
         </if>
+    </sql>
+
+    <select id="selectList" resultMap="BaseResultMap">
+        <include refid="Base_Select"/>
+        <include refid="List_Where"/>
         ORDER BY mt.tech_type, mt.tech_name
+        <if test="offset != null and size != null">
+            LIMIT #{size} OFFSET #{offset}
+        </if>
+    </select>
+
+    <select id="countList" resultType="long">
+        SELECT COUNT(*)
+        FROM medical_technology mt
+        <include refid="List_Where"/>
     </select>
 
     <select id="selectByTechCode" resultMap="BaseResultMap">
@@ -68,9 +83,11 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO medical_technology (
-            tech_code, tech_name, tech_format, tech_price, tech_type, price_type, deptment_id
+            tech_code, tech_name, tech_format, tech_price, tech_type, price_type,
+            deptment_id, ai_category_code
         ) VALUES (
-            #{techCode}, #{techName}, #{techFormat}, #{techPrice}, #{techType}, #{priceType}, #{deptmentId}
+            #{techCode}, #{techName}, #{techFormat}, #{techPrice}, #{techType}, #{priceType},
+            #{deptmentId}, #{aiCategoryCode}
         )
     </insert>
 
@@ -81,7 +98,8 @@
             tech_price = #{techPrice},
             tech_type = #{techType},
             price_type = #{priceType},
-            deptment_id = #{deptmentId}
+            deptment_id = #{deptmentId},
+            ai_category_code = #{aiCategoryCode}
         WHERE id = #{id}
     </update>
 

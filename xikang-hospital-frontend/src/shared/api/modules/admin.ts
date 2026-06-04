@@ -1,4 +1,5 @@
 import { http } from '../request'
+import type { PageResult } from '../result'
 
 export interface MedicalTechnologyItem {
   id: number
@@ -17,12 +18,12 @@ export interface DepartmentOption {
   deptName: string
 }
 
-export type CheckEquipmentPayload = {
+export type ExaminationItemPayload = {
   techCode: string
   techName: string
   techFormat?: string
   techPrice: number
-  techType: 'check'
+  techType: 'check' | 'inspection' | 'disposal'
   priceType?: string
   deptmentId?: number
 }
@@ -32,31 +33,29 @@ export const adminApi = {
     return http<DepartmentOption[]>({ url: '/medtech/departments', method: 'GET' })
   },
 
-  listCheckEquipment(keyword?: string) {
-    return http<MedicalTechnologyItem[]>({
+  /** 医生开单可选的全部医技项目（分页） */
+  pageExaminationItems(params?: { techType?: string; keyword?: string; page?: number; size?: number }) {
+    return http<PageResult<MedicalTechnologyItem>>({
       url: '/medtech/medical-technologies',
       method: 'GET',
-      params: { type: 'check', keyword: keyword || undefined },
+      params: {
+        type: params?.techType,
+        keyword: params?.keyword || undefined,
+        page: params?.page ?? 1,
+        size: params?.size ?? 10,
+      },
     })
   },
 
-  createCheckEquipment(data: CheckEquipmentPayload) {
-    return http<MedicalTechnologyItem>({
-      url: '/medtech/medical-technologies',
-      method: 'POST',
-      data: { ...data, techType: 'check' },
-    })
+  createExaminationItem(data: ExaminationItemPayload) {
+    return http<MedicalTechnologyItem>({ url: '/medtech/medical-technologies', method: 'POST', data })
   },
 
-  updateCheckEquipment(id: number, data: Omit<CheckEquipmentPayload, 'techCode'>) {
-    return http<MedicalTechnologyItem>({
-      url: `/medtech/medical-technologies/${id}`,
-      method: 'PUT',
-      data: { ...data, techType: 'check' },
-    })
+  updateExaminationItem(id: number, data: Omit<ExaminationItemPayload, 'techCode'>) {
+    return http<MedicalTechnologyItem>({ url: `/medtech/medical-technologies/${id}`, method: 'PUT', data })
   },
 
-  deleteCheckEquipment(id: number) {
+  deleteExaminationItem(id: number) {
     return http<void>({ url: `/medtech/medical-technologies/${id}`, method: 'DELETE' })
   },
 }

@@ -151,14 +151,15 @@ public class MedtechController {
     }
 
     /**
-     * 获取医技项目列表
+     * 获取医技项目列表（医生开单可选的全部项目：不传 type 则返回全部）
      */
     @GetMapping("/medical-technologies")
-    public Result<List<MedicalTechnology>> getMedicalTechnologies(
+    public Result<Map<String, Object>> pageMedicalTechnologies(
             @RequestParam(required = false) String type,
-            @RequestParam(required = false) String keyword) {
-        List<MedicalTechnology> technologies = medtechService.listMedicalTechnologies(type, keyword);
-        return Result.success(technologies);
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return Result.success(medtechService.pageMedicalTechnologies(type, keyword, page, size));
     }
 
     /**

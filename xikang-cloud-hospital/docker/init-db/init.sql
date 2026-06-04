@@ -160,6 +160,7 @@ CREATE TABLE medical_technology (
     tech_type       VARCHAR(64)     NOT NULL,
     price_type      VARCHAR(64)     DEFAULT NULL,
     deptment_id     INTEGER         DEFAULT NULL,
+    ai_category_code VARCHAR(64)    DEFAULT NULL,
 
     CONSTRAINT fk_medtech_department
         FOREIGN KEY (deptment_id) REFERENCES department(id)
@@ -174,7 +175,8 @@ CREATE INDEX idx_medtech_type ON medical_technology(tech_type);
 CREATE INDEX idx_medtech_deptment_id ON medical_technology(deptment_id);
 
 COMMENT ON TABLE medical_technology IS '医技项目表（检查/检验/处置统一目录）';
-COMMENT ON COLUMN medical_technology.tech_type IS '项目类型: check-检查, inspection-检验, disposal-处置';
+COMMENT ON COLUMN medical_technology.tech_type IS '检查类型: check-检查, inspection-检验, disposal-处置';
+COMMENT ON COLUMN medical_technology.ai_category_code IS 'AI 推荐分类编码（可选）';
 
 -- ============================================================
 -- 第 2 层：员工表（依赖第 1 层）
@@ -834,12 +836,12 @@ INSERT INTO disease (id, disease_code, disease_name, diseaseicd, disease_categor
     (3, 'FY', '肺炎', 'J18.9', '呼吸系统疾病')
 ON CONFLICT (diseaseicd) DO NOTHING;
 
-INSERT INTO medical_technology (id, tech_code, tech_name, tech_format, tech_price, tech_type, price_type, deptment_id) VALUES
-    (1, 'XJCT', '胸部CT', '平扫', 280.00, 'check', '检查费', 3),
-    (2, 'TLCT', '头颅CT', '平扫', 260.00, 'check', '检查费', 3),
-    (3, 'XCG', '血常规', '全血', 35.00, 'inspection', '检验费', 4),
-    (4, 'CRP', 'C反应蛋白', '血清', 45.00, 'inspection', '检验费', 4),
-    (5, 'WX', '雾化吸入', '次', 30.00, 'disposal', '处置费', 5)
+INSERT INTO medical_technology (id, tech_code, tech_name, tech_format, tech_price, tech_type, price_type, deptment_id, ai_category_code) VALUES
+    (1, 'XJCT', '胸部CT', '平扫', 280.00, 'check', '检查费', 3, 'imaging_ct_chest'),
+    (2, 'TLCT', '头颅CT', '平扫', 260.00, 'check', '检查费', 3, 'imaging_ct_brain'),
+    (3, 'XCG', '血常规', '全血', 35.00, 'inspection', '检验费', 4, NULL),
+    (4, 'CRP', 'C反应蛋白', '血清', 45.00, 'inspection', '检验费', 4, NULL),
+    (5, 'WX', '雾化吸入', '次', 30.00, 'disposal', '处置费', 5, NULL)
 ON CONFLICT (tech_code) DO NOTHING;
 
 INSERT INTO drug_info (id, drug_code, drug_name, drug_format, drug_unit, manufacturer, drug_dosage, drug_type, drug_price, mnemonic_code) VALUES
@@ -870,7 +872,25 @@ INSERT INTO ai_consultation_record (
      '建议完善胸部CT、血常规、C反应蛋白检查', CURRENT_TIMESTAMP)
 ON CONFLICT DO NOTHING;
 
+-- ============================================================
+-- 同步 SERIAL 序列（种子数据显式指定 id 后必须执行，否则 INSERT 会主键冲突）
+-- ============================================================
+SELECT setval(pg_get_serial_sequence('department', 'id'), COALESCE((SELECT MAX(id) FROM department), 1), true);
+SELECT setval(pg_get_serial_sequence('regist_level', 'id'), COALESCE((SELECT MAX(id) FROM regist_level), 1), true);
+SELECT setval(pg_get_serial_sequence('scheduling', 'id'), COALESCE((SELECT MAX(id) FROM scheduling), 1), true);
+SELECT setval(pg_get_serial_sequence('settle_category', 'id'), COALESCE((SELECT MAX(id) FROM settle_category), 1), true);
+SELECT setval(pg_get_serial_sequence('employee', 'id'), COALESCE((SELECT MAX(id) FROM employee), 1), true);
+SELECT setval(pg_get_serial_sequence('disease', 'id'), COALESCE((SELECT MAX(id) FROM disease), 1), true);
+SELECT setval(pg_get_serial_sequence('medical_technology', 'id'), COALESCE((SELECT MAX(id) FROM medical_technology), 1), true);
+SELECT setval(pg_get_serial_sequence('drug_info', 'id'), COALESCE((SELECT MAX(id) FROM drug_info), 1), true);
+SELECT setval(pg_get_serial_sequence('register', 'id'), COALESCE((SELECT MAX(id) FROM register), 1), true);
+
 -- 增量迁移：已有库可手动执行
+-- ALTER TABLE medical_technology ADD COLUMN IF NOT EXISTS ai_category_code VARCHAR(64);
+-- ALTER TABLE medical_technology DROP COLUMN IF EXISTS check_category_id;
+-- DROP TABLE IF EXISTS check_category;
+-- 修复新增医技项目主键冲突（序列未跟上种子 id）：
+-- SELECT setval(pg_get_serial_sequence('medical_technology', 'id'), COALESCE((SELECT MAX(id) FROM medical_technology), 1), true);
 -- ALTER TABLE medical_record ADD COLUMN IF NOT EXISTS preliminary_diagnosis VARCHAR(512);
 -- ALTER TABLE ai_medical_record_log DROP CONSTRAINT IF EXISTS chk_ai_mrlog_source;
 -- ALTER TABLE ai_medical_record_log ADD CONSTRAINT chk_ai_mrlog_source CHECK (source_type IN ('consultation', 'dictation', 'exam', 'preliminary_diagnosis'));

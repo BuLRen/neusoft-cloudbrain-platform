@@ -381,12 +381,10 @@
             mt.tech_code AS "techCode",
             mt.tech_name AS "techName",
             mt.tech_type AS "techType",
-            CASE
-                WHEN mt.tech_code = 'XJCT' THEN 'imaging_ct_chest'
-                WHEN mt.tech_code = 'TLCT' THEN 'imaging_ct_brain'
-                WHEN mt.tech_type = 'inspection' THEN 'lab'
-                ELSE 'general_check'
-            END AS "category",
+            COALESCE(
+                NULLIF(TRIM(mt.ai_category_code), ''),
+                CASE WHEN mt.tech_type = 'inspection' THEN 'lab' ELSE 'general_check' END
+            ) AS "category",
             mt.tech_price AS "techPrice"
         FROM medical_technology mt
         WHERE mt.tech_type IN ('check', 'inspection')

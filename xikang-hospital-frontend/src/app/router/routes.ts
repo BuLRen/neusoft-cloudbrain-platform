@@ -146,7 +146,7 @@ export const routes: RouteRecordRaw[] = [
             path: 'check-equipment',
             name: 'AdminCheckEquipment',
             component: () => import('@/modules/admin/pages/AdminCheckEquipmentPage.vue'),
-            meta: { title: '检查设备', roles: ['admin'], requiresAuth: true },
+            meta: { title: '检查项目', roles: ['admin'], requiresAuth: true },
           },
         ],
       },
