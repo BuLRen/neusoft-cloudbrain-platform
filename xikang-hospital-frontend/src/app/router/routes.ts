@@ -131,8 +131,24 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'admin',
         name: 'Admin',
-        component: placeholder,
-        meta: { title: '管理员支撑', description: '医生排班、AI 分诊台、基础数据', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
+        component: RouteGroupView,
+        redirect: '/admin/check-equipment',
+        meta: {
+          title: '管理端',
+          description: '基础数据维护：检查设备、检验项目等',
+          icon: 'Setting',
+          roles: ['admin'],
+          requiresAuth: true,
+          owner: 'B',
+        },
+        children: [
+          {
+            path: 'check-equipment',
+            name: 'AdminCheckEquipment',
+            component: () => import('@/modules/admin/pages/AdminCheckEquipmentPage.vue'),
+            meta: { title: '检查设备', roles: ['admin'], requiresAuth: true },
+          },
+        ],
       },
       {
         path: 'ai',

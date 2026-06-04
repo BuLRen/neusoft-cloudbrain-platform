@@ -143,12 +143,21 @@ public class MedtechController {
     // ==================== 基础数据接口 ====================
 
     /**
+     * 科室下拉（维护医技项目执行科室）
+     */
+    @GetMapping("/departments")
+    public Result<List<Map<String, Object>>> listDepartments() {
+        return Result.success(medtechService.listDepartments());
+    }
+
+    /**
      * 获取医技项目列表
      */
     @GetMapping("/medical-technologies")
     public Result<List<MedicalTechnology>> getMedicalTechnologies(
-            @RequestParam(required = false) String type) {
-        List<MedicalTechnology> technologies = medtechService.getMedicalTechnologies(type);
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String keyword) {
+        List<MedicalTechnology> technologies = medtechService.listMedicalTechnologies(type, keyword);
         return Result.success(technologies);
     }
 
@@ -159,5 +168,34 @@ public class MedtechController {
     public Result<MedicalTechnology> getMedicalTechnology(@PathVariable Long id) {
         MedicalTechnology technology = medtechService.getMedicalTechnology(id);
         return Result.success(technology);
+    }
+
+    /**
+     * 新增医技项目
+     */
+    @PostMapping("/medical-technologies")
+    public Result<MedicalTechnology> createMedicalTechnology(@RequestBody MedicalTechnology request) {
+        MedicalTechnology created = medtechService.createMedicalTechnology(request);
+        return Result.success("医技项目创建成功", created);
+    }
+
+    /**
+     * 更新医技项目
+     */
+    @PutMapping("/medical-technologies/{id}")
+    public Result<MedicalTechnology> updateMedicalTechnology(
+            @PathVariable Long id,
+            @RequestBody MedicalTechnology request) {
+        MedicalTechnology updated = medtechService.updateMedicalTechnology(id, request);
+        return Result.success("医技项目更新成功", updated);
+    }
+
+    /**
+     * 删除医技项目
+     */
+    @DeleteMapping("/medical-technologies/{id}")
+    public Result<Void> deleteMedicalTechnology(@PathVariable Long id) {
+        medtechService.deleteMedicalTechnology(id);
+        return Result.success("医技项目已删除", null);
     }
 }

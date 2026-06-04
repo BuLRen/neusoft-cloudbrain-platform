@@ -9,10 +9,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * MedTech Service - 医技服务（检查/检验/处置）
@@ -246,21 +248,121 @@ public class MedtechService {
 
     // ==================== 基础数据 ====================
 
+    private static final Set<String> ALLOWED_TECH_TYPES = Set.of("check", "inspection", "disposal");
+
     /**
      * 获取医技项目列表
      */
-    public List<MedicalTechnology> getMedicalTechnologies(String type) {
-        if (type != null) {
-            return medicalTechnologyMapper.selectByType(type);
-        }
-        return medicalTechnologyMapper.selectAll();
+    public List<Map<String, Object>> listDepartments() {
+        return medicalTechnologyMapper.selectDepartmentOptions();
+    }
+
+    public List<MedicalTechnology> listMedicalTechnologies(String techType, String keyword) {
+        String normalizedType = normalizeTechType(techType);
+        String normalizedKeyword = normalizeKeyword(keyword);
+        return medicalTechnologyMapper.selectList(normalizedType, normalizedKeyword);
     }
 
     /**
      * 获取医技项目详情
      */
     public MedicalTechnology getMedicalTechnology(Long id) {
-        return medicalTechnologyMapper.selectById(id);
+        MedicalTechnology technology = medicalTechnologyMapper.selectById(id);
+        if (technology == null) {
+            throw new BusinessException(404, "医技项目不存在");
+        }
+        return technology;
+    }
+
+    @Transactional
+    public MedicalTechnology createMedicalTechnology(MedicalTechnology input) {
+        validateMedicalTechnology(input, null, true);
+        if (medicalTechnologyMapper.selectByTechCode(input.getTechCode(), null) != null) {
+            throw new BusinessException(400, "项目编码已存在");
+        }
+        medicalTechnologyMapper.insert(input);
+        return getMedicalTechnology(input.getId());
+    }
+
+    @Transactional
+    public MedicalTechnology updateMedicalTechnology(Long id, MedicalTechnology input) {
+        MedicalTechnology existing = getMedicalTechnology(id);
+        validateMedicalTechnology(input, existing, false);
+        if (medicalTechnologyMapper.selectByTechCode(input.getTechCode(), id) != null) {
+            throw new BusinessException(400, "项目编码已存在");
+        }
+        int refs = medicalTechnologyMapper.countReferences(id);
+        if (refs > 0 && !existing.getTechType().equals(input.getTechType())) {
+            throw new BusinessException(400, "该项目已被申请单引用，不能修改项目类型");
+        }
+        input.setId(id);
+        medicalTechnologyMapper.update(input);
+        return getMedicalTechnology(id);
+    }
+
+    @Transactional
+    public void deleteMedicalTechnology(Long id) {
+        getMedicalTechnology(id);
+        int refs = medicalTechnologyMapper.countReferences(id);
+        if (refs > 0) {
+            throw new BusinessException(400, "该项目已被申请单引用，无法删除");
+        }
+        medicalTechnologyMapper.deleteById(id);
+    }
+
+    private void validateMedicalTechnology(MedicalTechnology input, MedicalTechnology existing, boolean creating) {
+        if (input == null) {
+            throw new BusinessException(400, "请求体不能为空");
+        }
+        String techCode = trimToNull(input.getTechCode());
+        String techName = trimToNull(input.getTechName());
+        if (creating && (techCode == null || techCode.isEmpty())) {
+            throw new BusinessException(400, "项目编码不能为空");
+        }
+        if (techName == null || techName.isEmpty()) {
+            throw new BusinessException(400, "项目名称不能为空");
+        }
+        String techType = trimToNull(input.getTechType());
+        if (techType == null || !ALLOWED_TECH_TYPES.contains(techType)) {
+            throw new BusinessException(400, "项目类型无效，应为 check / inspection / disposal");
+        }
+        BigDecimal price = input.getTechPrice();
+        if (price == null || price.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(400, "单价不能为负数");
+        }
+        if (creating) {
+            input.setTechCode(techCode);
+        } else if (existing != null) {
+            input.setTechCode(existing.getTechCode());
+        }
+        input.setTechName(techName);
+        input.setTechType(techType);
+        input.setTechFormat(trimToNull(input.getTechFormat()));
+        input.setPriceType(trimToNull(input.getPriceType()));
+    }
+
+    private static String normalizeTechType(String techType) {
+        if (techType == null) {
+            return null;
+        }
+        String trimmed = techType.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String normalizeKeyword(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        String trimmed = keyword.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     // ==================== 转换方法 ====================
