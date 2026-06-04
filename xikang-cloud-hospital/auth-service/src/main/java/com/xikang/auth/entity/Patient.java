@@ -7,27 +7,25 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * User Entity
+ * Patient Entity - 患者档案表
  */
 @Data
-public class User implements Serializable {
+public class Patient implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    private Long id;
-    private String username;
-    private String password;
+    private Integer id;
     private String realName;
-    private String email;
-    private String phone;
     private String idCard;
     private String gender;
     private LocalDate birthdate;
+    private String phone;
     private String avatar;
-    private Integer patientId;
-    private Integer status;
-    private Integer userType;
-    private String remark;
+    private String homeAddress;
+    private String allergyHistory;
+    private String relation;
+    private Integer isPrimary;
+    private Integer delmark;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

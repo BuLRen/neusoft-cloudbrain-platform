@@ -9,11 +9,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +35,7 @@ public class RegistrationService {
     private final DepartmentMapper departmentMapper;
     private final SettleCategoryMapper settleCategoryMapper;
     private final ObjectMapper objectMapper;
+    private final RestTemplate restTemplate;
 
     // 用于生成病历号
     private static final AtomicLong caseCounter = new AtomicLong(System.currentTimeMillis() % 100000);
@@ -43,6 +46,11 @@ public class RegistrationService {
     @Transactional
     public Map<String, Object> createRegistration(Map<String, Object> request) {
         log.info("创建挂号 | request={}", request);
+
+        // 支持通过 patientId 自动获取患者信息
+        Integer patientIdParam = request.get("patientId") != null
+            ? ((Number) request.get("patientId")).intValue()
+            : null;
 
         String realName = (String) request.get("patientName");
         String gender = (String) request.get("gender");
@@ -55,6 +63,36 @@ public class RegistrationService {
             : null;
         String ageType = (String) request.get("ageType");
         String homeAddress = (String) request.get("homeAddress");
+
+        // 如果传了 patientId，通过 auth-service 获取患者信息
+        if (patientIdParam != null && (realName == null || realName.isBlank())) {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> patientInfo = restTemplate.getForObject(
+                    "http://auth-service/api/patient/" + patientIdParam,
+                    Map.class
+                );
+                if (patientInfo != null) {
+                    realName = (String) patientInfo.getOrDefault("realName", realName);
+                    gender = (String) patientInfo.getOrDefault("gender", gender);
+                    Object birthdateObj = patientInfo.get("birthdate");
+                    if (birthdateObj != null) {
+                        birthdate = LocalDate.parse(birthdateObj.toString());
+                    }
+                    cardNumber = (String) patientInfo.getOrDefault("idCard", cardNumber);
+                    homeAddress = (String) patientInfo.getOrDefault("homeAddress", homeAddress);
+                    log.info("从 patientId={} 获取患者信息成功: {}", patientIdParam, realName);
+                }
+            } catch (Exception e) {
+                log.warn("获取患者信息失败 patientId={}: {}", patientIdParam, e.getMessage());
+            }
+        }
+
+        // 计算年龄（如果没有传入且有出生日期）
+        if (age == null && birthdate != null) {
+            age = (int) ChronoUnit.YEARS.between(birthdate, LocalDate.now());
+            ageType = "年";
+        }
 
         Long deptmentId = ((Number) request.get("departmentId")).longValue();
         Long employeeId = request.get("physicianId") != null
@@ -137,6 +175,7 @@ public class RegistrationService {
         register.setRegistMethod(registMethod);
         register.setRegistMoney(registMoney);
         register.setVisitState(1); // 1=已挂号
+        register.setPatientId(patientIdParam != null ? patientIdParam.longValue() : null);
 
         registrationMapper.insert(register);
 
@@ -159,6 +198,7 @@ public class RegistrationService {
         result.put("settleCategoryName", settleCategory != null ? settleCategory.getName() : null);
         result.put("visitState", 1);
         result.put("visitStateName", "已挂号");
+        result.put("patientId", patientIdParam);
 
         return result;
     }

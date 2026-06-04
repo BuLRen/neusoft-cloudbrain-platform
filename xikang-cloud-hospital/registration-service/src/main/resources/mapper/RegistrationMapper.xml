@@ -37,7 +37,7 @@
 
     <select id="selectByPatientId" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM register WHERE card_number = #{patientId} OR real_name = #{patientId}
+        FROM register WHERE card_number = CAST(#{patientId} AS VARCHAR) OR real_name = CAST(#{patientId} AS VARCHAR)
         ORDER BY visit_date DESC
     </select>
 

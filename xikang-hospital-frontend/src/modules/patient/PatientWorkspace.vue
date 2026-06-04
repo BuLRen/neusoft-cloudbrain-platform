@@ -259,14 +259,14 @@ async function runTriage() {
         // 优先按 AI 推荐的挂号级别获取医生
         if (result.recommendedRegistLevelId) {
           doctors = await registrationApi.getDoctorsByDepartmentAndLevel(
-            result.recommendedDepartmentId,
+            result.recommendedDepartmentId!,
             result.recommendedRegistLevelId
           )
         }
 
         // 如果该级别没有医生，获取该科室所有医生
         if (!doctors.length) {
-          doctors = await registrationApi.getDoctorsByDepartment(result.recommendedDepartmentId)
+          doctors = await registrationApi.getDoctorsByDepartment(result.recommendedDepartmentId!)
         }
 
         if (doctors.length > 0) {

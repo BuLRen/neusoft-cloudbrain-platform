@@ -28,20 +28,35 @@ CREATE TABLE users (
     real_name       VARCHAR(64)    DEFAULT NULL,
     email           VARCHAR(128)   DEFAULT NULL,
     phone           VARCHAR(20)    DEFAULT NULL,
+    id_card         VARCHAR(18)    DEFAULT NULL,
+    gender          VARCHAR(6)     DEFAULT NULL,
+    birthdate       DATE           DEFAULT NULL,
+    avatar          VARCHAR(255)   DEFAULT NULL,
+    patient_id      INTEGER        DEFAULT NULL,
     status          INTEGER        NOT NULL DEFAULT 1,
     user_type       INTEGER        NOT NULL DEFAULT 6,
     remark          VARCHAR(255)   DEFAULT NULL,
     create_time     TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
     update_time     TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT chk_users_status CHECK (status IN (1, 0, -1))
+    CONSTRAINT chk_users_status CHECK (status IN (1, 0, -1)),
+    CONSTRAINT chk_users_gender CHECK (gender IS NULL OR gender IN ('男', '女'))
 );
 
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_users_status ON users(status);
 CREATE INDEX idx_users_user_type ON users(user_type);
+CREATE INDEX idx_users_id_card ON users(id_card);
 
 COMMENT ON TABLE users IS '系统用户表（登录认证）';
 COMMENT ON COLUMN users.user_type IS '用户类型: 1-管理员, 2-医生, 3-挂号员, 4-医技人员, 5-药房人员, 6-患者';
+COMMENT ON COLUMN users.id_card IS '身份证号，用于实名认证和医保关联';
+COMMENT ON COLUMN users.gender IS '性别: 男/女';
+COMMENT ON COLUMN users.birthdate IS '出生日期';
+COMMENT ON COLUMN users.avatar IS '头像URL';
+COMMENT ON COLUMN users.patient_id IS '关联的患者档案ID';
+
+-- users 表外键关联 patient 表（需要单独创建，因为 patient 在后面定义）
+-- ALTER TABLE users ADD CONSTRAINT fk_users_patient FOREIGN KEY (patient_id) REFERENCES patient(id) ON DELETE SET NULL;
 
 -- ============================================================
 -- 表: department (科室表)
@@ -125,6 +140,61 @@ CREATE TABLE settle_category (
 );
 
 COMMENT ON TABLE settle_category IS '结算类别表';
+
+-- ============================================================
+-- 表: patient (患者档案表)
+-- 说明: 患者详细信息档案，用于帮家人挂号场景
+-- ============================================================
+CREATE TABLE patient (
+    id              SERIAL          PRIMARY KEY,
+    real_name       VARCHAR(64)     NOT NULL,
+    id_card         VARCHAR(18)     NOT NULL,
+    gender          VARCHAR(6)      NOT NULL,
+    birthdate       DATE            NOT NULL,
+    phone           VARCHAR(20)     DEFAULT NULL,
+    avatar          VARCHAR(255)    DEFAULT NULL,
+    home_address    VARCHAR(255)    DEFAULT NULL,
+    allergy_history VARCHAR(512)    DEFAULT NULL,
+    relation        VARCHAR(16)     DEFAULT '本人',
+    is_primary      SMALLINT       NOT NULL DEFAULT 0,
+    delmark         SMALLINT       NOT NULL DEFAULT 1,
+    create_time     TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+    update_time     TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uk_patient_id_card UNIQUE (id_card),
+    CONSTRAINT chk_patient_gender CHECK (gender IN ('男', '女')),
+    CONSTRAINT chk_patient_relation CHECK (relation IN ('本人', '父亲', '母亲', '配偶', '子女', '祖父', '祖母', '外祖父', '外祖母', '兄弟', '姐妹', '其他')),
+    CONSTRAINT chk_patient_primary CHECK (is_primary IN (0, 1)),
+    CONSTRAINT chk_patient_delmark CHECK (delmark IN (0, 1))
+);
+
+CREATE INDEX idx_patient_id_card ON patient(id_card);
+
+COMMENT ON TABLE patient IS '患者档案表';
+COMMENT ON COLUMN patient.id_card IS '身份证号，唯一';
+COMMENT ON COLUMN patient.allergy_history IS '过敏史';
+COMMENT ON COLUMN patient.relation IS '与账号本人的关系: 本人、父亲、母亲、配偶、子女...';
+COMMENT ON COLUMN patient.is_primary IS '是否为本账号本人: 1-是, 0-否(家人)';
+
+-- ============================================================
+-- 表: user_patient_managed (用户管理患者关联表)
+-- 说明: 一个用户可以管理多个患者（本人+家人），用于帮家人挂号
+-- ============================================================
+CREATE TABLE user_patient_managed (
+    user_id         INTEGER         NOT NULL,
+    patient_id      INTEGER         NOT NULL,
+    create_time     TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (user_id, patient_id),
+
+    CONSTRAINT fk_upm_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_upm_patient FOREIGN KEY (patient_id) REFERENCES patient(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_upm_user ON user_patient_managed(user_id);
+CREATE INDEX idx_upm_patient ON user_patient_managed(patient_id);
+
+COMMENT ON TABLE user_patient_managed IS '用户管理的患者列表（本人+家人）';
 
 -- ============================================================
 -- 表: disease (疾病表)
@@ -1100,3 +1170,24 @@ INSERT INTO ai_consultation_record (
      '近3天自行服用退热药，效果一般', '患者咳嗽低热3天，伴轻微胸闷，建议排查呼吸道感染。',
      '建议完善胸部CT、血常规、C反应蛋白检查', CURRENT_TIMESTAMP)
 ON CONFLICT DO NOTHING;
+
+-- ============================================================
+-- 演示数据：患者档案和家庭成员管理
+-- ============================================================
+
+-- 患者档案数据
+INSERT INTO patient (id, real_name, id_card, gender, birthdate, phone, relation, is_primary, allergy_history) VALUES
+    (1, '患者小明', '210102199001011234', '男', '1990-01-01', '13800138000', '本人', 1, '青霉素过敏'),
+    (2, '张小华', '210102196503151234', '女', '1965-03-15', '13900139000', '母亲', 0, '无'),
+    (3, '李建国', '210102196203201234', '男', '1962-03-20', '13900139001', '父亲', 0, '磺胺类过敏')
+ON CONFLICT (id_card) DO NOTHING;
+
+-- 用户-患者管理关联数据
+INSERT INTO user_patient_managed (user_id, patient_id) VALUES
+    (6, 1),  -- patient001 管理本人（患者小明）
+    (6, 2),  -- patient001 管理母亲（张小华）
+    (6, 3)   -- patient001 管理父亲（李建国）
+ON CONFLICT DO NOTHING;
+
+-- 更新 users 表关联 patient_id（账号本人关联自己的患者档案）
+UPDATE users SET patient_id = 1 WHERE username = 'patient001';

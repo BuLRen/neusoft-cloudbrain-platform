@@ -1,7 +1,9 @@
 package com.xikang.auth.service;
 
+import com.xikang.auth.entity.Patient;
 import com.xikang.auth.entity.User;
 import com.xikang.auth.mapper.UserMapper;
+import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.utils.JwtUtils;
 import lombok.RequiredArgsConstructor;
@@ -10,8 +12,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Authentication Service
@@ -22,6 +27,7 @@ import java.util.Map;
 public class AuthService {
 
     private final UserMapper userMapper;
+    private final PatientService patientService;
 
     @Value("${jwt.accessExpirationMs:900000}")
     private long accessExpirationMs;
@@ -141,17 +147,34 @@ public class AuthService {
         String userIdStr = claims != null ? String.valueOf(claims.get("userId")) : null;
         String role = claims != null ? (String) claims.get("role") : "admin";
 
-        // Query real name from database
+        Long userId = null;
         String realName = null;
+        List<PatientInfo> patients = new ArrayList<>();
+
         User user = userMapper.selectByUsername(username);
         if (user != null) {
             realName = user.getRealName();
+            userId = user.getId();
+
+            // 获取患者列表
+            List<Patient> patientList = patientService.getPatientsByUserId(userId);
+            patients = patientList.stream()
+                    .map(p -> PatientInfo.builder()
+                            .patientId(p.getId())
+                            .realName(p.getRealName())
+                            .gender(p.getGender())
+                            .relation(p.getRelation())
+                            .isPrimary(p.getIsPrimary())
+                            .allergyHistory(p.getAllergyHistory())
+                            .build())
+                    .collect(Collectors.toList());
         }
 
         Map<String, Object> result = new HashMap<>();
         result.put("userId", userIdStr != null ? userIdStr : username);
         result.put("role", role);
         result.put("realName", realName != null ? realName : username);
+        result.put("patients", patients);
         return result;
     }
 

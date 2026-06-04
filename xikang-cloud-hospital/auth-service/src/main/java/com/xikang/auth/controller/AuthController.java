@@ -1,6 +1,9 @@
 package com.xikang.auth.controller;
 
 import com.xikang.auth.service.AuthService;
+import com.xikang.auth.service.PatientService;
+import com.xikang.auth.entity.Patient;
+import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
 import com.xikang.common.result.Result;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -8,7 +11,9 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Authentication Controller
@@ -22,6 +27,7 @@ public class AuthController {
     private static final String REFRESH_COOKIE_NAME = "refresh_token";
 
     private final AuthService authService;
+    private final PatientService patientService;
 
     /**
      * User login
@@ -34,6 +40,20 @@ public class AuthController {
 
         String accessToken = tokens.get("accessToken");
         String refreshToken = tokens.get("refreshToken");
+        Long userId = Long.parseLong(tokens.get("userId"));
+
+        // 获取患者列表
+        List<Patient> patientList = patientService.getPatientsByUserId(userId);
+        List<PatientInfo> patients = patientList.stream()
+                .map(p -> PatientInfo.builder()
+                        .patientId(p.getId())
+                        .realName(p.getRealName())
+                        .gender(p.getGender())
+                        .relation(p.getRelation())
+                        .isPrimary(p.getIsPrimary())
+                        .allergyHistory(p.getAllergyHistory())
+                        .build())
+                .collect(Collectors.toList());
 
         ResponseCookie accessCookie = ResponseCookie.from(ACCESS_COOKIE_NAME, accessToken)
                 .httpOnly(true)
@@ -58,7 +78,8 @@ public class AuthController {
                 "role", tokens.get("role"),
                 "realName", tokens.get("realName"),
                 "token", accessToken,
-                "refreshToken", refreshToken
+                "refreshToken", refreshToken,
+                "patients", patients
         );
         return ResponseEntity.ok().headers(headers).body(Result.success("登录成功", body));
     }

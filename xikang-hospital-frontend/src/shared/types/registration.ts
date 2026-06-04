@@ -84,7 +84,7 @@ export interface RegistrationForm {
 
 export interface RegistrationCreatePayload {
   patientId: number
-  patientName: string
+  patientName?: string  // 可选，后端会根据 patientId 自动获取
   patientPhone?: string
   idCard?: string
   departmentId: number

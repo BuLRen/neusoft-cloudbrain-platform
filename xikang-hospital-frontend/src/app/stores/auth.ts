@@ -3,14 +3,34 @@ import { defineStore } from 'pinia'
 import type { UserRole } from '@/shared/types/role'
 import { authApi } from '@/shared/api/modules/auth'
 
+export interface PatientInfo {
+  patientId: number
+  realName: string
+  gender: string
+  relation: string
+  isPrimary: number
+  allergyHistory?: string
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const userId = ref('')
   const role = ref<UserRole>('admin')
   const realName = ref('')
   const sessionChecked = ref(false)
   const token = ref('')
+  const patients = ref<PatientInfo[]>([])
+  const currentPatientId = ref<number | null>(null)
 
   const isAuthenticated = computed(() => Boolean(token.value))
+
+  // 当前选中的患者信息
+  const currentPatient = computed(() => {
+    if (!currentPatientId.value) {
+      // 默认返回本人
+      return patients.value.find(p => p.isPrimary === 1) || patients.value[0] || null
+    }
+    return patients.value.find(p => p.patientId === currentPatientId.value) || null
+  })
 
   async function loadSession() {
     try {
@@ -26,11 +46,20 @@ export const useAuthStore = defineStore('auth', () => {
         return
       }
 
-      const data = await authApi.get<{ userId: string; role: UserRole; realName: string }>('/auth/me', undefined, { skipErrorMessage: true })
+      const data = await authApi.get<{
+        userId: string
+        role: UserRole
+        realName: string
+        patients?: PatientInfo[]
+      }>('/auth/me', undefined, { skipErrorMessage: true })
       if (data) {
         userId.value = String(data.userId)
         role.value = data.role || 'admin'
         realName.value = data.realName || (data.role === 'patient' ? '患者' : '未知用户')
+        patients.value = data.patients || []
+        // 默认选中本人
+        const primaryPatient = patients.value.find(p => p.isPrimary === 1)
+        currentPatientId.value = primaryPatient?.patientId || null
       }
     } catch {
       // API 调用失败时，保留 localStorage 中的 token，不清除
@@ -49,6 +78,7 @@ export const useAuthStore = defineStore('auth', () => {
       token: string
       refreshToken: string
       realName: string
+      patients?: PatientInfo[]
     }>('/auth/login', { username, password })
 
     if (data) {
@@ -56,6 +86,10 @@ export const useAuthStore = defineStore('auth', () => {
       role.value = data.role || 'admin'
       realName.value = data.realName || (data.role === 'patient' ? '患者' : '未知用户')
       token.value = data.token || ''
+      patients.value = data.patients || []
+      // 默认选中本人
+      const primaryPatient = patients.value.find(p => p.isPrimary === 1)
+      currentPatientId.value = primaryPatient?.patientId || null
       if (data.token) {
         localStorage.setItem('access_token', data.token)
       }
@@ -74,9 +108,19 @@ export const useAuthStore = defineStore('auth', () => {
       role.value = 'admin'
       realName.value = ''
       token.value = ''
+      patients.value = []
+      currentPatientId.value = null
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
       sessionChecked.value = true
+    }
+  }
+
+  // 切换当前患者
+  function switchPatient(patientId: number) {
+    const patient = patients.value.find(p => p.patientId === patientId)
+    if (patient) {
+      currentPatientId.value = patientId
     }
   }
 
@@ -94,9 +138,13 @@ export const useAuthStore = defineStore('auth', () => {
     sessionChecked,
     isAuthenticated,
     token,
+    patients,
+    currentPatientId,
+    currentPatient,
     loadSession,
     login,
     logout,
     getToken,
+    switchPatient,
   }
 })

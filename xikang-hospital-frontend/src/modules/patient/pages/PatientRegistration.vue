@@ -5,8 +5,11 @@ import { ElMessage } from 'element-plus'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import { registrationApi, type DoctorInfo } from '@/shared/api/modules/registration'
+import { useAuthStore } from '@/app/stores/auth'
+import { Warning } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 // 步骤定义 - 按时间顺序：导诊 → 选择排班 → 确认挂号 → 预问诊
 const steps = [
@@ -159,7 +162,7 @@ async function sendForRecognition(pcmData: Int16Array) {
       headers: {
         'Content-Type': 'application/octet-stream',
       },
-      body: byteArray,
+      body: byteArray.buffer as ArrayBuffer,
     })
 
     const result = await response.json()
@@ -309,14 +312,14 @@ async function runTriage() {
         // 优先按 AI 推荐的挂号级别获取医生
         if (result.recommendedRegistLevelId) {
           doctors = await registrationApi.getDoctorsByDepartmentAndLevel(
-            result.recommendedDepartmentId,
+            result.recommendedDepartmentId!,
             result.recommendedRegistLevelId
           )
         }
 
         // 如果该级别没有医生，获取该科室所有医生
         if (!doctors.length) {
-          doctors = await registrationApi.getDoctorsByDepartment(result.recommendedDepartmentId)
+          doctors = await registrationApi.getDoctorsByDepartment(result.recommendedDepartmentId!)
         }
 
         if (doctors.length > 0) {
@@ -368,18 +371,37 @@ async function submitRegistration() {
     return
   }
   submitting.value = true
-  await new Promise(resolve => setTimeout(resolve, 1500))
-  registrationResult.value = {
-    id: Math.floor(Math.random() * 100000),
-    departmentName: selectedSchedule.value.departmentName,
-    physicianName: selectedSchedule.value.physicianName,
-    visitDate: selectedSchedule.value.workDate,
-    visitTime: selectedSchedule.value.timeSlot,
-    amount: selectedLevel.value.price,
-    statusName: '待缴费',
+  try {
+    // 调用真实的挂号接口
+    if (!authStore.currentPatientId) {
+      ElMessage.error('请先选择就诊人')
+      return
+    }
+    const result = await registrationApi.createRegistration({
+      patientId: authStore.currentPatientId,  // 传入患者ID
+      departmentId: selectedSchedule.value.departmentId,
+      physicianId: selectedSchedule.value.physicianId,
+      visitDate: selectedSchedule.value.workDate,
+      registLevelId: selectedLevel.value.id,
+    })
+
+    registrationResult.value = {
+      id: result.id,
+      departmentName: selectedSchedule.value.departmentName,
+      physicianName: selectedSchedule.value.physicianName,
+      visitDate: selectedSchedule.value.workDate,
+      visitTime: selectedSchedule.value.timeSlot,
+      amount: selectedLevel.value.price,
+      statusName: '待缴费',
+    }
+    ElMessage.success('挂号成功')
+  } catch (err: any) {
+    console.error('挂号失败:', err)
+    ElMessage.error(err?.message || '挂号失败，请重试')
+  } finally {
+    submitting.value = false
+    nextStep()
   }
-  submitting.value = false
-  nextStep()
 }
 
 // ========== Step 4: AI预问诊 ==========
@@ -731,6 +753,21 @@ const showSuccessCard = computed(() => {
           <div class="header-text">
             <h2>确认挂号信息</h2>
             <p>请核对以下信息，确认无误后提交挂号</p>
+          </div>
+        </div>
+
+        <!-- 患者信息提示 -->
+        <div class="patient-info-bar">
+          <div class="patient-info-left">
+            <span class="patient-info-label">就诊人：</span>
+            <span class="patient-info-value">{{ authStore.currentPatient?.realName }}</span>
+            <el-tag v-if="authStore.currentPatient?.relation" size="small" type="info">
+              {{ authStore.currentPatient.relation }}
+            </el-tag>
+          </div>
+          <div v-if="authStore.currentPatient?.allergyHistory" class="patient-info-right">
+            <el-icon><Warning /></el-icon>
+            <span class="allergy-warning">过敏史：{{ authStore.currentPatient.allergyHistory }}</span>
           </div>
         </div>
 
@@ -1349,6 +1386,46 @@ const showSuccessCard = computed(() => {
   font-size: 22px;
   font-weight: 700;
   color: var(--color-primary);
+}
+
+/* 患者信息提示栏 */
+.patient-info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+}
+
+.patient-info-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.patient-info-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.patient-info-value {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.patient-info-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.allergy-warning {
+  color: var(--color-danger);
 }
 
 /* ========== 确认信息 ========== */

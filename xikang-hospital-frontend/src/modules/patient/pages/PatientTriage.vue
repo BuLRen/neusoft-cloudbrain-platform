@@ -4,7 +4,6 @@ import { ElMessage } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
-import { registrationApi, type DoctorInfo } from '@/shared/api/modules/registration'
 
 const triageLoading = ref(false)
 const triageSymptoms = ref('')

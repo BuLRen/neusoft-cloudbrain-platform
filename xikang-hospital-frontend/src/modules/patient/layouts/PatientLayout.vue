@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/app/stores/auth'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
+import { ArrowDown, Check } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -19,6 +20,14 @@ const greeting = computed(() => {
   if (hour < 18) return '下午好'
   return '晚上好'
 })
+
+// 当前选中的患者信息
+const currentPatient = computed(() => authStore.currentPatient)
+
+// 切换患者
+function switchPatient(patientId: number) {
+  authStore.switchPatient(patientId)
+}
 
 // 快捷功能菜单
 const quickActions = [
@@ -54,13 +63,48 @@ const currentPageTitle = computed(() => {
       <div class="patient-header__content">
         <div class="patient-header__left">
           <div class="patient-avatar">
-            <span>{{ patientName[0] }}</span>
+            <span>{{ currentPatient?.realName?.[0] || patientName[0] }}</span>
           </div>
           <div class="patient-info">
-            <h2 class="patient-greeting">{{ greeting }}，{{ patientName }}</h2>
+            <div class="patient-info__top">
+              <h2 class="patient-greeting">{{ greeting }}，{{ currentPatient?.realName || patientName }}</h2>
+              <el-tag v-if="currentPatient?.relation" size="small" type="info">
+                {{ currentPatient.relation }}
+              </el-tag>
+            </div>
+            <div v-if="currentPatient?.allergyHistory" class="patient-allergy">
+              <span class="allergy-label">过敏史：</span>
+              <span class="allergy-value">{{ currentPatient.allergyHistory }}</span>
+            </div>
           </div>
         </div>
         <div class="patient-header__right">
+          <!-- 患者切换 - 放在显眼位置 -->
+          <el-dropdown v-if="authStore.patients.length > 0" @command="switchPatient" trigger="click">
+            <el-button type="primary" size="default" class="switch-patient-btn">
+              <span class="switch-icon">👥</span>
+              <span>{{ authStore.patients.length > 1 ? '切换患者' : '就诊人' }}</span>
+              <span class="current-patient-name">({{ currentPatient?.realName }})</span>
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="patient in authStore.patients"
+                  :key="patient.patientId"
+                  :command="patient.patientId"
+                >
+                  <div class="patient-item" :class="{ 'is-active': patient.patientId === authStore.currentPatientId }">
+                    <div class="patient-item-info">
+                      <span class="patient-item-name">{{ patient.realName }}</span>
+                      <span class="patient-item-relation">{{ patient.relation }}</span>
+                    </div>
+                    <el-icon v-if="patient.patientId === authStore.currentPatientId" class="check-icon"><Check /></el-icon>
+                  </div>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <div class="quick-actions">
             <button
               v-for="action in quickActions"
@@ -138,14 +182,35 @@ const currentPageTitle = computed(() => {
 
 .patient-info {
   display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.patient-info__top {
+  display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .patient-greeting {
   font-size: 18px;
   font-weight: 600;
   margin: 0;
+}
+
+.patient-allergy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 12px;
+}
+
+.allergy-label {
+  color: var(--color-text-muted);
+}
+
+.allergy-value {
+  color: var(--color-danger);
 }
 
 .patient-id {
@@ -156,6 +221,66 @@ const currentPageTitle = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+}
+
+/* 切换患者按钮 */
+.switch-patient-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.switch-icon {
+  font-size: 16px;
+}
+
+.current-patient-name {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* 下拉菜单中的患者项 */
+.patient-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.patient-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.patient-item-name {
+  font-weight: 600;
+}
+
+.patient-item-relation {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.patient-item.is-active .patient-item-name {
+  color: var(--color-primary);
+}
+
+.check-icon {
+  color: var(--color-primary);
+}
+
+.patient-relation {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin-left: var(--space-1);
+}
+
+.check-icon {
+  margin-left: var(--space-2);
+  color: var(--color-primary);
 }
 
 .quick-actions {

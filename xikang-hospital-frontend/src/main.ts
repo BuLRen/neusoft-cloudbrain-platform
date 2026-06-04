@@ -1,7 +1,7 @@
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { ElButton, ElIcon, ElMenu, ElMenuItem, ElRadioButton, ElRadioGroup, ElMessage, ElForm, ElFormItem, ElInput } from 'element-plus'
+import { ElButton, ElIcon, ElMenu, ElMenuItem, ElRadioButton, ElRadioGroup, ElMessage, ElForm, ElFormItem, ElInput, ElDropdown, ElDropdownMenu, ElDropdownItem } from 'element-plus'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
 import { router } from './app/router'
@@ -21,5 +21,8 @@ app.use(ElMessage)
 app.use(ElForm)
 app.use(ElFormItem)
 app.use(ElInput)
+app.use(ElDropdown)
+app.use(ElDropdownMenu)
+app.use(ElDropdownItem)
 
 app.mount('#app')
