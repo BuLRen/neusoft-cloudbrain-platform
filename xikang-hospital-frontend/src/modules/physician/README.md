@@ -77,7 +77,26 @@ Dify 官方接口：`POST {DIFY_BASE_URL}/v1/workflows/run`（`response_mode: bl
 3. 重启 `physician-service`，前端第 2 步 →「生成初步诊断」。
 4. 失败时响应为通用错误文案；服务端日志含 `workflow_run_id`，不含患者全文。
 
-### 其它 Dify（W1–W4）
+### Dify W2（开立检查检验推荐）
 
-- `DIFY_WORKFLOW_W1` … `DIFY_WORKFLOW_W4`：非空时尝试同一 API Key（与 preliminary 共用 Key 会命中同一 App，建议仅开启 preliminary）。
+与初步诊断类似：`POST /v1/workflows/run`，`response_mode: blocking`。
+
+| 配置项 | 说明 |
+|--------|------|
+| `DIFY_WORKFLOW_W2` | 填 `true` 启用 W2 Dify；**不要**填 `app-xxx` |
+| `DIFY_API_KEY_W2` | **推荐**。W2 Workflow App 的 API Key（与开始节点变量名无关） |
+| `DIFY_W2_OUTPUT_ROOT` | 可选。结束节点若用根变量包裹 JSON，填该变量名 |
+
+**Dify 开始节点变量（String）：**
+
+- `clinical_context_json` — 后端由病历 + 初步诊断 meta + 预问诊组装
+- `available_examinations_json` — 后端 `medical_technology` 可开项目列表
+
+**结束节点输出（与前端 `W2Output` 对齐）：** `preliminaryAssessment`、`recommendedExaminations[]`（含 `techCode`，后端映射 `techId`）、`notRecommendedNote`、`unmatchedSuggestions`。
+
+未配置 W2 或调用失败时走内置 `FallbackWorkflowEngine`。
+
+### 其它 Dify（W1、W3、W4）
+
+- `DIFY_WORKFLOW_W1` / `W3` / `W4`：非空时尝试旧版 `invokeWorkflow`（共用 `api-key` 时易命中错误 App，慎用）。
 - `CT_INFERENCE_URL`：外部 CT 推理服务，未配置则用内置模拟。

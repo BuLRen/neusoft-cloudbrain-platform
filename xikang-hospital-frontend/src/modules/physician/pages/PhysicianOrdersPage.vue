@@ -5,6 +5,7 @@ import {
   ElButton,
   ElCard,
   ElEmpty,
+  ElTag,
   ElForm,
   ElFormItem,
   ElInput,
@@ -19,6 +20,7 @@ import {
   type MedicalRecord,
   type MedicalTechnology,
   type W2Output,
+  type W2RecommendedExamination,
 } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import ClinicalContextPanel from '../components/ClinicalContextPanel.vue'
@@ -134,6 +136,28 @@ async function submitTechnologyRequest() {
   ElMessage.success('申请已提交')
 }
 
+function addW2RecommendationToBasket(item: W2RecommendedExamination) {
+  if (!item.techId) return
+  if (requestBasket.value.some((b) => b.medicalTechnologyId === item.techId)) {
+    ElMessage.warning('该项目已在申请篮中')
+    return
+  }
+  const techType = item.techType as TechType
+  if (techType !== 'check' && techType !== 'inspection' && techType !== 'disposal') {
+    ElMessage.warning('无法识别项目类型，请手工选择')
+    return
+  }
+  requestBasket.value.push({
+    medicalTechnologyId: item.techId,
+    techName: item.techName,
+    techType,
+    info: item.purpose?.trim() || item.reason?.trim() || '',
+    position: item.position?.trim() || '',
+    remark: item.remark?.trim() || '',
+  })
+  ElMessage.success(`已加入申请篮：${item.techName}`)
+}
+
 async function runW2() {
   if (!registerId.value) return
   aiLoading.value = true
@@ -211,13 +235,36 @@ onMounted(() => {
 
         <h3 class="orders-subtitle">W2 初步判断</h3>
         <ElAlert v-if="w2Output?.preliminaryAssessment" type="info" :closable="false" :title="w2Output.preliminaryAssessment" />
+        <ElAlert
+          v-if="w2Output?.notRecommendedNote"
+          type="warning"
+          :closable="false"
+          class="orders-ai-note"
+          :title="w2Output.notRecommendedNote"
+        />
 
         <h3 class="orders-subtitle">AI 推荐</h3>
         <ElEmpty v-if="!w2Output?.recommendedExaminations?.length" description="暂无 AI 推荐，可运行 W2" />
         <ElCard v-for="item in w2Output?.recommendedExaminations || []" :key="`w2-${item.techId}`" class="mini-card">
-          <strong>{{ item.techName }}</strong>
+          <div class="mini-card__head">
+            <strong>{{ item.techName }}</strong>
+            <ElTag size="small" type="info">P{{ item.priority }}</ElTag>
+          </div>
           <p>{{ item.reason }}</p>
+          <ElButton size="small" type="primary" plain @click="addW2RecommendationToBasket(item)">加入申请篮</ElButton>
         </ElCard>
+
+        <template v-if="w2Output?.unmatchedSuggestions?.length">
+          <h3 class="orders-subtitle">需人工核对</h3>
+          <ElAlert
+            v-for="(item, index) in w2Output.unmatchedSuggestions"
+            :key="`unmatched-${index}`"
+            type="warning"
+            :closable="false"
+            class="orders-ai-note"
+            :title="`${item.name}：${item.reason}`"
+          />
+        </template>
       </section>
     </div>
   </PhysicianStepLayout>
@@ -284,10 +331,25 @@ onMounted(() => {
   margin-block-start: var(--space-3);
 }
 
+.mini-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .mini-card p {
   margin-block-start: var(--space-2);
   color: var(--color-text-muted);
   line-height: 1.8;
+}
+
+.mini-card .el-button {
+  margin-block-start: var(--space-3);
+}
+
+.orders-ai-note {
+  margin-block-end: var(--space-3);
 }
 </style>
 

@@ -14,9 +14,11 @@ public class DifyAiConfigValidator {
     private static final Logger log = LoggerFactory.getLogger(DifyAiConfigValidator.class);
 
     private final DifyAiProperties properties;
+    private final DifyWorkflowClient difyClient;
 
-    public DifyAiConfigValidator(DifyAiProperties properties) {
+    public DifyAiConfigValidator(DifyAiProperties properties, DifyWorkflowClient difyClient) {
         this.properties = properties;
+        this.difyClient = difyClient;
     }
 
     @PostConstruct
@@ -34,6 +36,23 @@ public class DifyAiConfigValidator {
         if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
             log.warn(
                 "Dify 已启用但 api-key 为空，初步诊断将走 Fallback。请在环境变量设置 DIFY_API_KEY=app-xxx（与 Dify 文档 Bearer 一致）。"
+            );
+        }
+        String w2Switch = properties.getWorkflowW2();
+        if (w2Switch != null && w2Switch.startsWith("app-")) {
+            log.error(
+                "配置错误：workflow-w2 填了 API Key (app-xxx)。请设置 DIFY_WORKFLOW_W2=true，"
+                    + "并将 Key 放到 DIFY_API_KEY_W2（推荐）或 DIFY_API_KEY。"
+            );
+        }
+        if (properties.isW2WorkflowSwitchOn() && properties.resolveW2ApiKey().isBlank()) {
+            log.warn("workflow-w2 已启用但 api-key-w2 / api-key 为空，W2 将走内置 Fallback。");
+        } else if (difyClient.isW2Enabled()) {
+            log.info("W2 检查推荐：已启用 Dify Workflow（使用 api-key-w2）");
+        } else if (properties.isDifyBaseConfigured()) {
+            log.info(
+                "W2 检查推荐：未启用 Dify（workflow-w2={}，需为 true/1/yes 且配置 DIFY_API_KEY_W2）",
+                properties.getWorkflowW2()
             );
         }
     }

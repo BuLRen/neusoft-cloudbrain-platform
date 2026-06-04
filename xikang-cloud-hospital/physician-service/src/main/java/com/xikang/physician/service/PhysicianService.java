@@ -240,8 +240,13 @@ public class PhysicianService {
                 "outputs", List.of("registerId", "patientInfo", "chiefComplaint", "symptomDuration", "presentIllness", "history", "allergy", "physique", "preliminaryImpression")
             ),
             "w2Recommend", Map.of(
-                "inputs", List.of("registerId", "structuredRecord", "availableExaminations"),
-                "outputs", List.of("preliminaryAssessment", "recommendedExaminations", "notRecommendedNote")
+                "inputs", List.of("clinical_context_json", "available_examinations_json"),
+                "outputs", List.of(
+                    "preliminaryAssessment",
+                    "recommendedExaminations",
+                    "notRecommendedNote",
+                    "unmatchedSuggestions"
+                )
             ),
             "w2bSimulate", Map.of(
                 "inputs", List.of("registerId", "structuredRecord", "orderedExaminations", "simulationProfile"),

@@ -44,7 +44,9 @@ xikang:
       api-key: ${DIFY_API_KEY:app-GfJeWsUbsiHyusuRF7znNBul}
       # W1–W4：非空表示尝试 Dify（与 preliminary 共用同一 api-key 时会命中同一 App）
       workflow-w1: ${DIFY_WORKFLOW_W1:}
-      workflow-w2: ${DIFY_WORKFLOW_W2:}
+      # 填 true/1 启用 W2 Dify（检查推荐）；API Key 用 api-key-w2（独立 App）或回退 api-key
+      workflow-w2: ${DIFY_WORKFLOW_W2:true}
+      api-key-w2: ${DIFY_API_KEY_W2:app-XJXSvs3Z3jW4KqPAtK0B7Tcm}
       workflow-w2b: ${DIFY_WORKFLOW_W2B:}
       workflow-w3: ${DIFY_WORKFLOW_W3:}
       workflow-w4: ${DIFY_WORKFLOW_W4:}
@@ -59,4 +61,7 @@ xikang:
         diagnosis-basis: ${DIFY_PRELIM_OUTPUT_BASIS:}
         confidence: ${DIFY_PRELIM_OUTPUT_CONFIDENCE:}
         parse-json-from-text: true
+      w2-output-keys:
+        # 若 Dify 结束节点用根变量包裹输出，填变量名；平铺输出可留空
+        output-root: ${DIFY_W2_OUTPUT_ROOT:}
       ct-inference-url: ${CT_INFERENCE_URL:}

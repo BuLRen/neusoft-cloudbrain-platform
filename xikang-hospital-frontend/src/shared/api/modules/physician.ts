@@ -2,6 +2,8 @@ import { http } from '../request'
 
 /** Dify 初步诊断 blocking 调用超时（与后端 read-timeout-ms 一致） */
 const PRELIMINARY_AI_TIMEOUT_MS = 5 * 60 * 1000
+/** Dify W2 检查推荐 blocking 调用超时 */
+const W2_AI_TIMEOUT_MS = 5 * 60 * 1000
 import type { PageResult } from '../result'
 
 export interface AiConsultSummary {
@@ -194,15 +196,29 @@ export interface PrescriptionItem {
   drugState?: string
 }
 
+export interface W2RecommendedExamination {
+  techId: number
+  techName: string
+  techType: string
+  reason: string
+  priority: number
+  purpose?: string
+  position?: string
+  remark?: string
+}
+
+export interface W2UnmatchedSuggestion {
+  name: string
+  reason: string
+}
+
 export interface W2Output {
   preliminaryAssessment?: string
-  recommendedExaminations?: Array<{
-    techId: number
-    techName: string
-    techType: string
-    reason: string
-    priority: number
-  }>
+  recommendedExaminations?: W2RecommendedExamination[]
+  notRecommendedNote?: string
+  unmatchedSuggestions?: W2UnmatchedSuggestion[]
+  workflowRunId?: string
+  modelId?: string
 }
 
 export interface W3Output {
@@ -293,7 +309,12 @@ export const physicianApi = {
     return http<void>({ url: '/physician/medical-record/preliminary', method: 'POST', data })
   },
   aiW2(registerId: number) {
-    return http<W2Output>({ url: '/physician/ai/w2/recommend', method: 'POST', data: { registerId } })
+    return http<W2Output>({
+      url: '/physician/ai/w2/recommend',
+      method: 'POST',
+      data: { registerId },
+      timeout: W2_AI_TIMEOUT_MS,
+    })
   },
   aiW2b(registerId: number, autoCreateRequests = true) {
     return http<{ simulatedResults: Record<string, unknown>[] }>({

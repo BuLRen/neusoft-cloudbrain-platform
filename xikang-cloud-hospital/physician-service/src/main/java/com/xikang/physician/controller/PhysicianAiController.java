@@ -47,8 +47,20 @@ public class PhysicianAiController {
 
     @PostMapping("/w2/recommend")
     public Result<Map<String, Object>> runW2(@RequestBody Map<String, Object> request) {
-        Long registerId = toLong(request.get("registerId"));
-        return Result.success("W2 检查推荐完成", pipelineService.runW2(registerId));
+        try {
+            Long registerId = toLong(request.get("registerId"));
+            if (registerId == null) {
+                return Result.error("registerId 不能为空");
+            }
+            return Result.success("W2 检查推荐完成", pipelineService.runW2(registerId));
+        } catch (IllegalArgumentException ex) {
+            return Result.error(ex.getMessage());
+        } catch (DifyWorkflowException ex) {
+            if (ex.isPaused()) {
+                return Result.error("AI 工作流需人工介入，请手工选择检查项目");
+            }
+            return Result.error("AI 检查推荐失败，请稍后重试或手工开立");
+        }
     }
 
     @PostMapping("/w2b/simulate")

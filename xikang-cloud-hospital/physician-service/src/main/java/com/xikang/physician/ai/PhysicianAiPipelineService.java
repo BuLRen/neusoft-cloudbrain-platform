@@ -1,7 +1,10 @@
 package com.xikang.physician.ai;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.physician.mapper.PhysicianMapper;
 import com.xikang.physician.service.PhysicianService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,11 +19,17 @@ import java.util.Objects;
 @Service
 public class PhysicianAiPipelineService {
 
+    private static final Logger log = LoggerFactory.getLogger(PhysicianAiPipelineService.class);
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private final PhysicianMapper physicianMapper;
     private final PhysicianService physicianService;
     private final DifyWorkflowClient difyClient;
     private final DifyAiProperties difyProperties;
     private final DifyPreliminaryOutputMapper preliminaryOutputMapper;
+    private final DifyW2OutputMapper w2OutputMapper;
+    private final W2ClinicalContextBuilder w2ClinicalContextBuilder;
+    private final W2RecommendNormalizer w2RecommendNormalizer;
     private final FallbackWorkflowEngine fallbackEngine;
     private final CtInferenceService ctInferenceService;
 
@@ -30,6 +39,9 @@ public class PhysicianAiPipelineService {
         DifyWorkflowClient difyClient,
         DifyAiProperties difyProperties,
         DifyPreliminaryOutputMapper preliminaryOutputMapper,
+        DifyW2OutputMapper w2OutputMapper,
+        W2ClinicalContextBuilder w2ClinicalContextBuilder,
+        W2RecommendNormalizer w2RecommendNormalizer,
         FallbackWorkflowEngine fallbackEngine,
         CtInferenceService ctInferenceService
     ) {
@@ -38,6 +50,9 @@ public class PhysicianAiPipelineService {
         this.difyClient = difyClient;
         this.difyProperties = difyProperties;
         this.preliminaryOutputMapper = preliminaryOutputMapper;
+        this.w2OutputMapper = w2OutputMapper;
+        this.w2ClinicalContextBuilder = w2ClinicalContextBuilder;
+        this.w2RecommendNormalizer = w2RecommendNormalizer;
         this.fallbackEngine = fallbackEngine;
         this.ctInferenceService = ctInferenceService;
     }
@@ -106,19 +121,68 @@ public class PhysicianAiPipelineService {
 
     @Transactional
     public Map<String, Object> runW2(Long registerId) {
-        Map<String, Object> structured = loadStructuredRecord(registerId);
-        Map<String, Object> input = new LinkedHashMap<>();
-        input.put("registerId", registerId);
-        input.put("structuredRecord", structured);
-        input.put("availableExaminations", getAvailableExaminations());
+        if (registerId == null) {
+            throw new IllegalArgumentException("registerId 不能为空");
+        }
 
-        Map<String, Object> output = invokeWorkflow(
-            difyProperties.getWorkflowW2(),
-            input,
-            () -> fallbackEngine.runW2(input)
-        );
+        List<Map<String, Object>> availableExaminations = getAvailableExaminations();
+        Map<String, Object> output;
+
+        if (difyClient.isW2Enabled()) {
+            log.info("W2 registerId={} using Dify workflow (api-key-w2)", registerId);
+            output = runW2ViaDify(registerId, availableExaminations);
+        } else {
+            log.warn(
+                "W2 registerId={} using fallback (difyEnabled={}, w2Switch={}, w2ApiKeyConfigured={})",
+                registerId,
+                difyProperties.isDifyBaseConfigured(),
+                difyProperties.isW2WorkflowSwitchOn(),
+                !difyProperties.resolveW2ApiKey().isBlank()
+            );
+            Map<String, Object> input = new LinkedHashMap<>();
+            input.put("registerId", registerId);
+            input.put("structuredRecord", loadStructuredRecord(registerId));
+            input.put("availableExaminations", availableExaminations);
+            output = fallbackEngine.runW2(input);
+            output.put("modelId", "fallback-w2");
+        }
+
         persistW2(output, registerId);
         return output;
+    }
+
+    private Map<String, Object> runW2ViaDify(Long registerId, List<Map<String, Object>> availableExaminations) {
+        try {
+            Map<String, Object> clinicalContext = w2ClinicalContextBuilder.build(registerId);
+            Map<String, Object> difyInputs = new LinkedHashMap<>();
+            difyInputs.put("clinical_context_json", JSON.writeValueAsString(clinicalContext));
+            difyInputs.put("available_examinations_json", JSON.writeValueAsString(availableExaminations));
+
+            String user = "physician-reg-" + registerId;
+            String traceId = "w2-" + registerId + "-" + System.currentTimeMillis();
+            DifyWorkflowRunResult run = difyClient.runWorkflowBlockingWithApiKey(
+                difyProperties.resolveW2ApiKey(),
+                difyInputs,
+                user,
+                traceId
+            );
+
+            Map<String, Object> mapped = w2OutputMapper.toW2Result(run.getOutputs());
+            Map<String, Object> normalized = w2RecommendNormalizer.normalize(mapped, availableExaminations);
+            normalized.put("registerId", registerId);
+            normalized.put("modelId", "dify-w2");
+            normalized.put("workflowRunId", run.getWorkflowRunId());
+            log.info("W2 registerId={} Dify completed runId={} recommendations={}",
+                registerId,
+                run.getWorkflowRunId(),
+                listOfMaps(normalized.get("recommendedExaminations")).size());
+            return normalized;
+        } catch (DifyWorkflowException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.warn("W2 registerId={} Dify call failed: {}", registerId, ex.toString());
+            throw new DifyWorkflowException("W2 检查推荐工作流调用失败，请稍后重试");
+        }
     }
 
     @Transactional
@@ -334,6 +398,7 @@ public class PhysicianAiPipelineService {
 
     private void persistW2(Map<String, Object> output, Long registerId) {
         physicianMapper.deleteExamSuggestionsByRegisterId(registerId);
+        String modelId = String.valueOf(output.getOrDefault("modelId", resolveW2ModelIdLabel()));
         for (Map<String, Object> item : listOfMaps(output.get("recommendedExaminations"))) {
             Map<String, Object> row = new HashMap<>();
             row.put("registerId", registerId);
@@ -342,9 +407,13 @@ public class PhysicianAiPipelineService {
             row.put("suggestType", item.get("techType"));
             row.put("suggestReason", item.get("reason"));
             row.put("priority", item.getOrDefault("priority", 1));
-            row.put("modelId", difyClient.isReady() ? "dify-w2" : "fallback-w2");
+            row.put("modelId", modelId);
             physicianMapper.insertExamSuggestion(row);
         }
+    }
+
+    private String resolveW2ModelIdLabel() {
+        return difyClient.isW2Enabled() ? "dify-w2" : "fallback-w2";
     }
 
     private void createRequestsFromSuggestions(Long registerId) {

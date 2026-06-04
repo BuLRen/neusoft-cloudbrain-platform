@@ -41,8 +41,7 @@ public class DifyWorkflowClient {
     }
 
     public boolean isReady() {
-        return properties.isEnabled()
-            && properties.getBaseUrl() != null && !properties.getBaseUrl().isBlank()
+        return properties.isDifyBaseConfigured()
             && properties.getApiKey() != null && !properties.getApiKey().isBlank();
     }
 
@@ -52,17 +51,42 @@ public class DifyWorkflowClient {
             && !properties.getWorkflowPreliminary().isBlank();
     }
 
+    public boolean isW2Enabled() {
+        return properties.isDifyBaseConfigured()
+            && properties.isW2WorkflowSwitchOn()
+            && !properties.resolveW2ApiKey().isBlank();
+    }
+
     /**
-     * Blocking workflow run with explicit user id and optional trace id.
+     * Blocking workflow run with explicit user id and optional trace id (default API key).
      */
     public DifyWorkflowRunResult runWorkflowBlocking(Map<String, Object> inputs, String user, String traceId) {
         if (!isReady()) {
             throw new DifyWorkflowException("Dify 未启用或未配置 base-url / api-key");
         }
+        return runWorkflowBlockingWithApiKey(properties.getApiKey(), inputs, user, traceId);
+    }
+
+    /**
+     * Blocking workflow run using a specific Workflow App API key (e.g. W2 检查推荐).
+     */
+    public DifyWorkflowRunResult runWorkflowBlockingWithApiKey(
+        String apiKey,
+        Map<String, Object> inputs,
+        String user,
+        String traceId
+    ) {
+        if (!properties.isDifyBaseConfigured()) {
+            throw new DifyWorkflowException("Dify 未启用或未配置 base-url");
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new DifyWorkflowException("Dify API Key 未配置");
+        }
         String url = properties.getBaseUrl().replaceAll("/$", "") + "/v1/workflows/run";
+        log.info("Dify workflow blocking request traceId={}", traceId);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(properties.getApiKey());
+        headers.setBearerAuth(apiKey.trim());
         if (traceId != null && !traceId.isBlank()) {
             headers.set("X-Trace-Id", traceId);
         }

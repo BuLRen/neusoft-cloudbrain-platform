@@ -16,12 +16,15 @@ public class DifyAiProperties {
     private String workflowW3 = "";
     private String workflowW4 = "";
     private String workflowPreliminary = "";
+    /** W2 检查推荐 Workflow App 的 API Key（app-xxx）；为空时回退 api-key */
+    private String apiKeyW2 = "";
     private String ctInferenceUrl = "";
     /** Dify blocking 工作流读取超时（毫秒），慢模型建议 300000（5 分钟） */
     private int readTimeoutMs = 300_000;
     /** 连接 Dify 超时（毫秒） */
     private int connectTimeoutMs = 30_000;
     private PreliminaryOutputKeys preliminaryOutputKeys = new PreliminaryOutputKeys();
+    private W2OutputKeys w2OutputKeys = new W2OutputKeys();
 
     public boolean isEnabled() {
         return enabled;
@@ -93,6 +96,44 @@ public class DifyAiProperties {
 
     public void setWorkflowPreliminary(String workflowPreliminary) {
         this.workflowPreliminary = workflowPreliminary;
+    }
+
+    public String getApiKeyW2() {
+        return apiKeyW2;
+    }
+
+    public void setApiKeyW2(String apiKeyW2) {
+        this.apiKeyW2 = apiKeyW2;
+    }
+
+    public W2OutputKeys getW2OutputKeys() {
+        return w2OutputKeys;
+    }
+
+    public void setW2OutputKeys(W2OutputKeys w2OutputKeys) {
+        this.w2OutputKeys = w2OutputKeys == null ? new W2OutputKeys() : w2OutputKeys;
+    }
+
+    /**
+     * W2 开关：仅 {@code true}/{@code 1}/{@code yes}/{@code on} 视为启用（勿将 app-xxx 写在此项）。
+     */
+    public boolean isW2WorkflowSwitchOn() {
+        if (workflowW2 == null || workflowW2.isBlank()) {
+            return false;
+        }
+        String value = workflowW2.trim().toLowerCase();
+        return "true".equals(value) || "1".equals(value) || "yes".equals(value) || "on".equals(value);
+    }
+
+    public boolean isDifyBaseConfigured() {
+        return enabled && baseUrl != null && !baseUrl.isBlank();
+    }
+
+    public String resolveW2ApiKey() {
+        if (apiKeyW2 != null && !apiKeyW2.isBlank()) {
+            return apiKeyW2.trim();
+        }
+        return apiKey == null ? "" : apiKey.trim();
     }
 
     public String getCtInferenceUrl() {
@@ -185,6 +226,20 @@ public class DifyAiProperties {
 
         public void setParseJsonFromText(boolean parseJsonFromText) {
             this.parseJsonFromText = parseJsonFromText;
+        }
+    }
+
+    public static class W2OutputKeys {
+
+        /** Dify 结束节点根变量；为空则自动尝试 output_structured / 平铺字段 */
+        private String outputRoot = "";
+
+        public String getOutputRoot() {
+            return outputRoot;
+        }
+
+        public void setOutputRoot(String outputRoot) {
+            this.outputRoot = outputRoot;
         }
     }
 }
