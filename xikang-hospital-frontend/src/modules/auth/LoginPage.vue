@@ -17,6 +17,7 @@ const form = reactive({
   confirmPassword: '',
   realName: '',
   phone: '',
+  idCard: '',
 })
 
 async function handleLogin() {
@@ -56,6 +57,14 @@ async function handleRegister() {
     ElMessage.warning('用户名至少3个字符')
     return
   }
+  if (!form.idCard.trim()) {
+    ElMessage.warning('请输入身份证号')
+    return
+  }
+  if (form.idCard.length !== 18) {
+    ElMessage.warning('身份证号必须为18位')
+    return
+  }
   if (!form.password) {
     ElMessage.warning('请输入密码')
     return
@@ -77,12 +86,14 @@ async function handleRegister() {
       password: form.password,
       realName: form.realName || form.username,
       phone: form.phone,
+      idCard: form.idCard,
       userType: 6, // Patient by default
     })
     ElMessage.success('注册成功，请登录')
     isLogin.value = true
     form.password = ''
     form.confirmPassword = ''
+    form.idCard = ''
   } catch {
     // Error message is handled by request interceptor
   } finally {
@@ -97,6 +108,7 @@ function switchMode() {
   form.confirmPassword = ''
   form.realName = ''
   form.phone = ''
+  form.idCard = ''
 }
 </script>
 
@@ -135,6 +147,9 @@ function switchMode() {
           </el-form-item>
           <el-form-item label="真实姓名">
             <el-input v-model="form.realName" placeholder="请输入真实姓名（选填）" />
+          </el-form-item>
+          <el-form-item label="身份证号" required>
+            <el-input v-model="form.idCard" placeholder="请输入18位身份证号" maxlength="18" />
           </el-form-item>
           <el-form-item label="手机号">
             <el-input v-model="form.phone" placeholder="请输入手机号（选填）" />

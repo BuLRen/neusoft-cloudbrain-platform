@@ -9,11 +9,6 @@
         <result column="real_name" property="realName" jdbcType="VARCHAR"/>
         <result column="email" property="email" jdbcType="VARCHAR"/>
         <result column="phone" property="phone" jdbcType="VARCHAR"/>
-        <result column="id_card" property="idCard" jdbcType="VARCHAR"/>
-        <result column="gender" property="gender" jdbcType="VARCHAR"/>
-        <result column="birthdate" property="birthdate" jdbcType="DATE"/>
-        <result column="avatar" property="avatar" jdbcType="VARCHAR"/>
-        <result column="patient_id" property="patientId" jdbcType="INTEGER"/>
         <result column="status" property="status" jdbcType="INTEGER"/>
         <result column="user_type" property="userType" jdbcType="INTEGER"/>
         <result column="remark" property="remark" jdbcType="VARCHAR"/>
@@ -22,20 +17,20 @@
     </resultMap>
 
     <select id="selectByUsername" resultMap="BaseResultMap">
-        SELECT id, username, password, real_name, email, phone, id_card, gender, birthdate, avatar, patient_id, status, user_type, remark, create_time, update_time
+        SELECT id, username, password, real_name, email, phone, status, user_type, remark, create_time, update_time
         FROM users
         WHERE username = #{username} AND status = 1
     </select>
 
     <select id="selectById" resultMap="BaseResultMap">
-        SELECT id, username, password, real_name, email, phone, id_card, gender, birthdate, avatar, patient_id, status, user_type, remark, create_time, update_time
+        SELECT id, username, password, real_name, email, phone, status, user_type, remark, create_time, update_time
         FROM users
         WHERE id = #{id} AND status = 1
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO users (username, password, real_name, email, phone, id_card, gender, birthdate, avatar, patient_id, status, user_type, remark, create_time, update_time)
-        VALUES (#{username}, #{password}, #{realName}, #{email}, #{phone}, #{idCard}, #{gender}, #{birthdate}, #{avatar}, #{patientId}, #{status}, #{userType}, #{remark}, NOW(), NOW())
+        INSERT INTO users (username, password, real_name, email, phone, status, user_type, remark, create_time, update_time)
+        VALUES (#{username}, #{password}, #{realName}, #{email}, #{phone}, #{status}, #{userType}, #{remark}, NOW(), NOW())
     </insert>
 
     <update id="update">
@@ -53,5 +48,9 @@
     <delete id="deleteById">
         UPDATE users SET status = -1, update_time = NOW() WHERE id = #{id}
     </delete>
+
+    <update id="updatePassword">
+        UPDATE users SET password = #{newPassword}, update_time = NOW() WHERE id = #{id}
+    </update>
 
 </mapper>

@@ -37,16 +37,21 @@ public class PatientController {
     }
 
     /**
-     * 创建患者档案
+     * 添加家人（创建患者档案并建立关联）
+     * 会检查身份证号是否已存在，已存在则直接关联，不存在则新建
      */
-    @PostMapping
-    public Result<Patient> createPatient(@RequestBody Patient patient) {
-        Patient created = patientService.createPatient(patient);
-        return Result.success(created);
+    @PostMapping("/family")
+    public Result<Void> addFamilyMember(
+            @RequestParam Long userId,
+            @RequestBody Patient patient,
+            @RequestParam String relation
+    ) {
+        patientService.createPatientWithRelation(userId, patient, relation);
+        return Result.success();
     }
 
     /**
-     * 更新患者档案
+     * 更新患者档案（支持部分字段更新）
      */
     @PutMapping("/{patientId}")
     public Result<Void> updatePatient(@PathVariable Integer patientId, @RequestBody Patient patient) {

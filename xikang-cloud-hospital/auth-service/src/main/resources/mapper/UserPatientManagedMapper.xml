@@ -8,4 +8,14 @@
         WHERE user_id = #{userId}
     </select>
 
+    <insert id="insert">
+        INSERT INTO user_patient_managed (user_id, patient_id, relation, create_time)
+        VALUES (#{userId}, #{patientId}, #{relation}, NOW())
+    </insert>
+
+    <delete id="deleteByIds">
+        DELETE FROM user_patient_managed
+        WHERE user_id = #{userId} AND patient_id = #{patientId}
+    </delete>
+
 </mapper>

@@ -37,7 +37,6 @@ public class UserInfoResponse {
         private String realName;
         private String gender;
         private String relation;
-        private Integer isPrimary;
         private String allergyHistory;
     }
 }

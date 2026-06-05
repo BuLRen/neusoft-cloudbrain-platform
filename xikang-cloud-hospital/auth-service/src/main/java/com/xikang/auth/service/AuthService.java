@@ -3,6 +3,8 @@ package com.xikang.auth.service;
 import com.xikang.auth.entity.Patient;
 import com.xikang.auth.entity.User;
 import com.xikang.auth.mapper.UserMapper;
+import com.xikang.auth.mapper.PatientMapper;
+import com.xikang.auth.mapper.UserPatientManagedMapper;
 import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.utils.JwtUtils;
@@ -10,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -27,7 +30,9 @@ import java.util.stream.Collectors;
 public class AuthService {
 
     private final UserMapper userMapper;
+    private final PatientMapper patientMapper;
     private final PatientService patientService;
+    private final UserPatientManagedMapper userPatientManagedMapper;
 
     @Value("${jwt.accessExpirationMs:900000}")
     private long accessExpirationMs;
@@ -164,7 +169,6 @@ public class AuthService {
                             .realName(p.getRealName())
                             .gender(p.getGender())
                             .relation(p.getRelation())
-                            .isPrimary(p.getIsPrimary())
                             .allergyHistory(p.getAllergyHistory())
                             .build())
                     .collect(Collectors.toList());
@@ -172,6 +176,7 @@ public class AuthService {
 
         Map<String, Object> result = new HashMap<>();
         result.put("userId", userIdStr != null ? userIdStr : username);
+        result.put("username", username);  // 新增：返回登录用户名
         result.put("role", role);
         result.put("realName", realName != null ? realName : username);
         result.put("patients", patients);
@@ -180,12 +185,17 @@ public class AuthService {
 
     /**
      * User register (for patients and staff)
+     * 患者注册时自动创建 patient 档案并建立关联
      */
+    @Transactional
     public void register(Map<String, String> registerRequest) {
         String username = registerRequest.get("username");
         String password = registerRequest.get("password");
         String realName = registerRequest.get("realName");
         String phone = registerRequest.get("phone");
+        String idCard = registerRequest.get("idCard");
+        String gender = registerRequest.get("gender");
+        String birthdateStr = registerRequest.get("birthdate");
         String userTypeStr = registerRequest.get("userType");
 
         if (username == null || username.isBlank()) {
@@ -194,6 +204,9 @@ public class AuthService {
         if (password == null || password.isBlank()) {
             throw new BusinessException(400, "密码不能为空");
         }
+        if (idCard == null || idCard.isBlank()) {
+            throw new BusinessException(400, "身份证号不能为空");
+        }
 
         // Check if username already exists
         User existing = userMapper.selectByUsername(username);
@@ -201,18 +214,51 @@ public class AuthService {
             throw new BusinessException(409, "用户名已存在");
         }
 
+        // 检查身份证号是否已存在（已有则关联，不再新建）
+        Patient existingPatient = patientMapper.selectByIdCard(idCard);
+        Integer patientId;
+
+        if (existingPatient != null) {
+            // 身份证号已存在，直接关联
+            patientId = existingPatient.getId();
+            log.info("Patient already exists for idCard: {}, patientId: {}", idCard, patientId);
+        } else {
+            // 创建患者档案
+            Patient patient = new Patient();
+            patient.setRealName(realName != null ? realName : username);
+            patient.setIdCard(idCard);
+            patient.setGender(gender != null ? gender : "");
+            if (birthdateStr != null && !birthdateStr.isBlank()) {
+                patient.setBirthdate(java.time.LocalDate.parse(birthdateStr));
+            }
+            patient.setPhone(phone != null ? phone : "");
+            patient.setDelmark(1);
+            patient.setCreateTime(LocalDateTime.now());
+            patient.setUpdateTime(LocalDateTime.now());
+
+            patientMapper.insert(patient);
+            patientId = patient.getId();
+            log.info("Patient profile created for user: {}, patientId: {}", username, patientId);
+        }
+
+        // 创建用户
         User user = new User();
         user.setUsername(username);
-        user.setPassword(password); // Plain text for dev, BCrypt for production
+        user.setPassword(password);
         user.setRealName(realName != null ? realName : username);
         user.setPhone(phone);
-        user.setUserType(userTypeStr != null ? Integer.parseInt(userTypeStr) : 6); // Default to patient (6)
-        user.setStatus(1); // Active
+        user.setUserType(userTypeStr != null ? Integer.parseInt(userTypeStr) : 6);
+        user.setStatus(1);
         user.setCreateTime(LocalDateTime.now());
         user.setUpdateTime(LocalDateTime.now());
 
         userMapper.insert(user);
-        log.info("User registered successfully: {}", username);
+        Long userId = user.getId();
+        log.info("User registered successfully: {}, userId: {}", username, userId);
+
+        // 建立关联关系（本人）
+        userPatientManagedMapper.insert(userId, patientId, "本人");
+        log.info("User-Patient relation created: userId={}, patientId={}, relation=本人", userId, patientId);
     }
 
     /**
@@ -249,5 +295,46 @@ public class AuthService {
             case 5 -> "pharmacy";
             default -> "patient";
         };
+    }
+
+    /**
+     * Change user password
+     */
+    @Transactional
+    public void changePassword(String username, String oldPassword, String newPassword) {
+        if (username == null || username.isBlank()) {
+            throw new BusinessException(400, "用户名不能为空");
+        }
+        if (oldPassword == null || oldPassword.isBlank()) {
+            throw new BusinessException(400, "旧密码不能为空");
+        }
+        if (newPassword == null || newPassword.isBlank()) {
+            throw new BusinessException(400, "新密码不能为空");
+        }
+        if (newPassword.length() < 6) {
+            throw new BusinessException(400, "新密码长度不能少于6位");
+        }
+        if (oldPassword.equals(newPassword)) {
+            throw new BusinessException(400, "新密码不能与旧密码相同");
+        }
+
+        // Query user from database
+        User user = userMapper.selectByUsername(username);
+        if (user == null) {
+            throw new BusinessException(401, "用户不存在");
+        }
+
+        // Verify old password
+        if (!user.getPassword().equals(oldPassword)) {
+            throw new BusinessException(401, "旧密码错误");
+        }
+
+        // Update password
+        int rows = userMapper.updatePassword(user.getId(), newPassword);
+        if (rows == 0) {
+            throw new BusinessException(500, "密码更新失败");
+        }
+
+        log.info("User password changed successfully: {}", username);
     }
 }

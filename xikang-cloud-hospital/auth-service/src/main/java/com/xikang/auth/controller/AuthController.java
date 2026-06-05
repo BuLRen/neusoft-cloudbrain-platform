@@ -4,6 +4,7 @@ import com.xikang.auth.service.AuthService;
 import com.xikang.auth.service.PatientService;
 import com.xikang.auth.entity.Patient;
 import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
+import com.xikang.common.utils.JwtUtils;
 import com.xikang.common.result.Result;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -50,7 +51,6 @@ public class AuthController {
                         .realName(p.getRealName())
                         .gender(p.getGender())
                         .relation(p.getRelation())
-                        .isPrimary(p.getIsPrimary())
                         .allergyHistory(p.getAllergyHistory())
                         .build())
                 .collect(Collectors.toList());
@@ -75,6 +75,7 @@ public class AuthController {
 
         Map<String, Object> body = Map.of(
                 "userId", tokens.get("userId"),
+                "username", username,  // 新增：返回登录用户名
                 "role", tokens.get("role"),
                 "realName", tokens.get("realName"),
                 "token", accessToken,
@@ -174,5 +175,35 @@ public class AuthController {
         }
         Map<String, Object> result = authService.validateToken(token);
         return Result.success(result);
+    }
+
+    /**
+     * Change password
+     */
+    @PostMapping("/change-password")
+    public Result<Void> changePassword(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody Map<String, String> passwordRequest
+    ) {
+        String token = authHeader;
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        // Validate token and get username
+        if (!JwtUtils.validateToken(token)) {
+            return Result.error(401, "未授权，请重新登录");
+        }
+
+        String username = JwtUtils.getSubject(token);
+        if (username == null || username.isBlank()) {
+            return Result.error(401, "无效的令牌");
+        }
+
+        String oldPassword = passwordRequest.get("oldPassword");
+        String newPassword = passwordRequest.get("newPassword");
+
+        authService.changePassword(username, oldPassword, newPassword);
+        return Result.success("密码修改成功", null);
     }
 }

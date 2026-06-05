@@ -20,11 +20,6 @@ public class User implements Serializable {
     private String realName;
     private String email;
     private String phone;
-    private String idCard;
-    private String gender;
-    private LocalDate birthdate;
-    private String avatar;
-    private Integer patientId;
     private Integer status;
     private Integer userType;
     private String remark;

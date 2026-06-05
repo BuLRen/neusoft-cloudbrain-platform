@@ -12,8 +12,6 @@
         <result column="avatar" property="avatar" jdbcType="VARCHAR"/>
         <result column="home_address" property="homeAddress" jdbcType="VARCHAR"/>
         <result column="allergy_history" property="allergyHistory" jdbcType="VARCHAR"/>
-        <result column="relation" property="relation" jdbcType="VARCHAR"/>
-        <result column="is_primary" property="isPrimary" jdbcType="INTEGER"/>
         <result column="delmark" property="delmark" jdbcType="INTEGER"/>
         <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
         <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
@@ -21,47 +19,58 @@
 
     <select id="selectById" resultMap="BaseResultMap">
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
-               relation, is_primary, delmark, create_time, update_time
+               delmark, create_time, update_time
         FROM patient
         WHERE id = #{id} AND delmark = 1
     </select>
 
     <select id="selectByIdCard" resultMap="BaseResultMap">
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
-               relation, is_primary, delmark, create_time, update_time
+               delmark, create_time, update_time
         FROM patient
         WHERE id_card = #{idCard} AND delmark = 1
     </select>
 
     <select id="selectByUserId" resultMap="BaseResultMap">
         SELECT p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
-               p.allergy_history, p.relation, p.is_primary, p.delmark, p.create_time, p.update_time
+               p.allergy_history, p.delmark, p.create_time, p.update_time,
+               upm.relation as relation
         FROM patient p
         INNER JOIN user_patient_managed upm ON p.id = upm.patient_id
         WHERE upm.user_id = #{userId} AND p.delmark = 1
-        ORDER BY p.is_primary DESC, p.create_time ASC
+        ORDER BY CASE WHEN upm.relation = '本人' THEN 0 ELSE 1 END, p.create_time ASC
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO patient (real_name, id_card, gender, birthdate, phone, avatar, home_address,
-                           allergy_history, relation, is_primary, delmark, create_time, update_time)
+                           allergy_history, delmark, create_time, update_time)
         VALUES (#{realName}, #{idCard}, #{gender}, #{birthdate}, #{phone}, #{avatar}, #{homeAddress},
-                #{allergyHistory}, #{relation}, #{isPrimary}, 1, NOW(), NOW())
+                #{allergyHistory}, 1, NOW(), NOW())
     </insert>
 
     <update id="update">
         UPDATE patient
-        SET real_name = #{realName},
-            id_card = #{idCard},
-            gender = #{gender},
-            birthdate = #{birthdate},
-            phone = #{phone},
-            avatar = #{avatar},
-            home_address = #{homeAddress},
-            allergy_history = #{allergyHistory},
-            relation = #{relation},
-            is_primary = #{isPrimary},
+        <set>
+            <if test="realName != null and realName != ''">
+                real_name = #{realName},
+            </if>
+            <if test="gender != null and gender != ''">
+                gender = #{gender},
+            </if>
+            <if test="birthdate != null">
+                birthdate = #{birthdate},
+            </if>
+            <if test="phone != null">
+                phone = #{phone},
+            </if>
+            <if test="homeAddress != null">
+                home_address = #{homeAddress},
+            </if>
+            <if test="allergyHistory != null">
+                allergy_history = #{allergyHistory},
+            </if>
             update_time = NOW()
+        </set>
         WHERE id = #{id}
     </update>
 

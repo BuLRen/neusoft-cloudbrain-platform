@@ -14,6 +14,7 @@ export interface PatientInfo {
 
 export const useAuthStore = defineStore('auth', () => {
   const userId = ref('')
+  const username = ref('')  // 登录用户名
   const role = ref<UserRole>('admin')
   const realName = ref('')
   const sessionChecked = ref(false)
@@ -48,12 +49,14 @@ export const useAuthStore = defineStore('auth', () => {
 
       const data = await authApi.get<{
         userId: string
+        username: string  // 新增
         role: UserRole
         realName: string
         patients?: PatientInfo[]
       }>('/auth/me', undefined, { skipErrorMessage: true })
       if (data) {
         userId.value = String(data.userId)
+        username.value = data.username || ''
         role.value = data.role || 'admin'
         realName.value = data.realName || (data.role === 'patient' ? '患者' : '未知用户')
         patients.value = data.patients || []
@@ -71,18 +74,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(username: string, password: string) {
+  async function login(loginUsername: string, password: string) {
     const data = await authApi.post<{
       userId: string
+      username: string  // 新增
       role: UserRole
       token: string
       refreshToken: string
       realName: string
       patients?: PatientInfo[]
-    }>('/auth/login', { username, password })
+    }>('/auth/login', { username: loginUsername, password })
 
     if (data) {
       userId.value = String(data.userId)
+      username.value = data.username || loginUsername  // 从后端获取，如果没有就用登录时传入的
       role.value = data.role || 'admin'
       realName.value = data.realName || (data.role === 'patient' ? '患者' : '未知用户')
       token.value = data.token || ''
@@ -105,6 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
       await authApi.post('/auth/logout')
     } finally {
       userId.value = ''
+      username.value = ''
       role.value = 'admin'
       realName.value = ''
       token.value = ''
@@ -133,6 +139,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     userId,
+    username,  // 新增：登录用户名
     role,
     realName,
     sessionChecked,

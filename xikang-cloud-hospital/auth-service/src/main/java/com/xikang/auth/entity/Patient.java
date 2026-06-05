@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Patient Entity - 患者档案表
+ * Patient Entity - 患者档案表（本人+家人）
  */
 @Data
 public class Patient implements Serializable {
@@ -23,9 +23,9 @@ public class Patient implements Serializable {
     private String avatar;
     private String homeAddress;
     private String allergyHistory;
-    private String relation;
-    private Integer isPrimary;
     private Integer delmark;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+    // 关系（从 user_patient_managed 表联表查询获取）
+    private String relation;
 }

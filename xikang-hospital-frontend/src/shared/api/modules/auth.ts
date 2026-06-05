@@ -38,4 +38,12 @@ export const authApi = {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
   },
+
+  // Change password
+  changePassword(oldPassword: string, newPassword: string) {
+    return authApi.post('/auth/change-password', {
+      oldPassword,
+      newPassword,
+    })
+  },
 }
