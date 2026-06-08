@@ -103,6 +103,10 @@ async function searchTechnologies() {
   technologies.value = await physicianApi.medicalTechnologies(undefined, technologyKeyword.value || undefined)
 }
 
+function removeFromBasket(index: number) {
+  requestBasket.value.splice(index, 1)
+}
+
 function addTechnologyToBasket() {
   const technology = technologies.value.find((item) => item.id === requestDraft.medicalTechnologyId)
   if (!technology) return
@@ -334,6 +338,11 @@ onMounted(() => {
               </ElTableColumn>
               <ElTableColumn prop="position" label="部位/标本" min-width="100" />
               <ElTableColumn prop="info" label="目的" min-width="120" />
+              <ElTableColumn label="操作" width="80" fixed="right">
+                <template #default="{ $index }">
+                  <ElButton link type="danger" @click="removeFromBasket($index)">移除</ElButton>
+                </template>
+              </ElTableColumn>
             </ElTable>
           </section>
         </GlassCard>
@@ -352,12 +361,12 @@ onMounted(() => {
               @click="runW2"
             >
               <ElIcon class="orders-btn__icon"><MagicStick /></ElIcon>
-              运行 W2（AI 推荐）
+              智能开具检查单
             </ElButton>
           </header>
 
           <section class="orders-section">
-            <h3 class="orders-section__title">W2 初步判断</h3>
+            <h3 class="orders-section__title">AI 初步判断</h3>
             <div v-if="hasW2Assessment" class="orders-ai-assessments">
               <div
                 v-if="w2Output?.preliminaryAssessment"
@@ -374,14 +383,14 @@ onMounted(() => {
                 <p class="orders-ai-box__text">{{ w2Output.notRecommendedNote }}</p>
               </div>
             </div>
-            <p v-else class="orders-ai-placeholder">运行 W2 后，AI 将基于病历给出初步判断与注意事项</p>
+            <p v-else class="orders-ai-placeholder">运行此工作流后，AI 将基于病历与初步判断给出推荐的检查项目</p>
           </section>
 
           <section class="orders-section">
             <h3 class="orders-section__title">AI 推荐</h3>
             <ElEmpty
               v-if="!w2Output?.recommendedExaminations?.length"
-              description="暂无 AI 推荐，可运行 W2"
+              description="暂无 AI 推荐，请运行该工作流"
               class="orders-ai-empty"
             />
             <ul v-else class="orders-rec-list">
