@@ -59,8 +59,9 @@ Dify 官方接口：`POST {DIFY_BASE_URL}/v1/workflows/run`（`response_mode: bl
 
 | 变量 | 说明 |
 |------|------|
-| `DIFY_BASE_URL` | 如 `https://api.dify.ai` 或自托管根地址（勿重复 `/v1`） |
-| `DIFY_API_KEY` | **必填**。Workflow App 的 API Key（`app-xxx`），与 curl 文档 `Bearer` 相同 |
+| `DIFY_BASE_URL` | 本地/默认 Dify 根地址（W1–W4 等），如 `http://localhost`（勿重复 `/v1`） |
+| `DIFY_BASE_URL_PRELIMINARY` | 初步诊断专用 Dify 根地址，如 `https://api.dify.ai`；为空时回退 `DIFY_BASE_URL` |
+| `DIFY_API_KEY` | **必填**。初步诊断 Workflow App 的 API Key（`app-xxx`），与 curl 文档 `Bearer` 相同 |
 | `DIFY_WORKFLOW_PRELIMINARY` | 填 `true` 启用初步诊断；**不要**把 `app-xxx` 写在这里 |
 | `DIFY_PRELIM_OUTPUT_ROOT` | 结构化输出根键，默认 `output_structured` |
 | `DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT` | 长文推理，默认映射 `answer` |

@@ -8,7 +8,10 @@ import org.springframework.stereotype.Component;
 public class DifyAiProperties {
 
     private boolean enabled;
+    /** 本地/默认 Dify 根地址（W1–W4 等）；勿含 /v1 */
     private String baseUrl = "";
+    /** 初步诊断专用 Dify 根地址；为空时回退 base-url */
+    private String baseUrlPreliminary = "";
     private String apiKey = "";
     private String workflowW1 = "";
     private String workflowW2 = "";
@@ -40,6 +43,14 @@ public class DifyAiProperties {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getBaseUrlPreliminary() {
+        return baseUrlPreliminary;
+    }
+
+    public void setBaseUrlPreliminary(String baseUrlPreliminary) {
+        this.baseUrlPreliminary = baseUrlPreliminary;
     }
 
     public String getApiKey() {
@@ -127,6 +138,18 @@ public class DifyAiProperties {
 
     public boolean isDifyBaseConfigured() {
         return enabled && baseUrl != null && !baseUrl.isBlank();
+    }
+
+    /** 初步诊断实际使用的 Dify 根地址（优先 base-url-preliminary）。 */
+    public String resolvePreliminaryBaseUrl() {
+        if (baseUrlPreliminary != null && !baseUrlPreliminary.isBlank()) {
+            return baseUrlPreliminary.trim();
+        }
+        return baseUrl == null ? "" : baseUrl.trim();
+    }
+
+    public boolean isPreliminaryBaseConfigured() {
+        return enabled && !resolvePreliminaryBaseUrl().isBlank();
     }
 
     public String resolveW2ApiKey() {

@@ -46,7 +46,8 @@ public class DifyWorkflowClient {
     }
 
     public boolean isPreliminaryEnabled() {
-        return isReady()
+        return properties.isPreliminaryBaseConfigured()
+            && properties.getApiKey() != null && !properties.getApiKey().isBlank()
             && properties.getWorkflowPreliminary() != null
             && !properties.getWorkflowPreliminary().isBlank();
     }
@@ -58,17 +59,27 @@ public class DifyWorkflowClient {
     }
 
     /**
-     * Blocking workflow run with explicit user id and optional trace id (default API key).
+     * Blocking workflow run for preliminary diagnosis (uses {@code base-url-preliminary}).
      */
     public DifyWorkflowRunResult runWorkflowBlocking(Map<String, Object> inputs, String user, String traceId) {
-        if (!isReady()) {
-            throw new DifyWorkflowException("Dify 未启用或未配置 base-url / api-key");
+        if (!properties.isPreliminaryBaseConfigured()) {
+            throw new DifyWorkflowException("Dify 未启用或未配置 base-url-preliminary");
         }
-        return runWorkflowBlockingWithApiKey(properties.getApiKey(), inputs, user, traceId);
+        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
+            throw new DifyWorkflowException("Dify API Key 未配置");
+        }
+        return runWorkflowBlockingInternal(
+            properties.resolvePreliminaryBaseUrl(),
+            properties.getApiKey(),
+            inputs,
+            user,
+            traceId
+        );
     }
 
     /**
      * Blocking workflow run using a specific Workflow App API key (e.g. W2 检查推荐).
+     * Uses the default {@code base-url} for local/other workflows.
      */
     public DifyWorkflowRunResult runWorkflowBlockingWithApiKey(
         String apiKey,
@@ -82,8 +93,18 @@ public class DifyWorkflowClient {
         if (apiKey == null || apiKey.isBlank()) {
             throw new DifyWorkflowException("Dify API Key 未配置");
         }
-        String url = properties.getBaseUrl().replaceAll("/$", "") + "/v1/workflows/run";
-        log.info("Dify workflow blocking request traceId={}", traceId);
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
+    private DifyWorkflowRunResult runWorkflowBlockingInternal(
+        String baseUrl,
+        String apiKey,
+        Map<String, Object> inputs,
+        String user,
+        String traceId
+    ) {
+        String url = baseUrl.replaceAll("/$", "") + "/v1/workflows/run";
+        log.info("Dify workflow blocking request traceId={} baseUrl={}", traceId, baseUrl);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(apiKey.trim());
@@ -123,7 +144,12 @@ public class DifyWorkflowClient {
             return Map.of();
         }
         try {
-            DifyWorkflowRunResult result = runWorkflowBlocking(inputs, "physician-service", null);
+            DifyWorkflowRunResult result = runWorkflowBlockingWithApiKey(
+                properties.getApiKey(),
+                inputs,
+                "physician-service",
+                null
+            );
             return result.getOutputs();
         } catch (DifyWorkflowException ex) {
             log.warn("Dify workflow skipped: {}", ex.getMessage());
