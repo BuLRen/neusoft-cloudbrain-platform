@@ -6,8 +6,6 @@ import {
   ElIcon,
   ElInput,
   ElMessage,
-  ElOption,
-  ElSelect,
   ElTable,
   ElTableColumn,
   ElTag,
@@ -20,7 +18,6 @@ import {
   Odometer,
   Picture,
   Position,
-  Search,
   ShoppingCart,
   WarningFilled,
 } from '@element-plus/icons-vue'
@@ -35,6 +32,7 @@ import {
 import { useEncounterStore } from '@/app/stores/encounter'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import ClinicalContextPanel from '../components/ClinicalContextPanel.vue'
+import MedicalTechnologyPicker from '../components/MedicalTechnologyPicker.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 
 type TechType = MedicalTechnology['techType']
@@ -60,9 +58,9 @@ const TECH_TYPE_LABEL: Record<TechType, string> = {
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
 
-const technologyKeyword = ref('')
-const technologies = ref<MedicalTechnology[]>([])
 const requestDraft = reactive<RequestDraft>({ info: '', position: '', remark: '' })
+const selectedTechnology = ref<MedicalTechnology | null>(null)
+const technologyPickerRef = ref<InstanceType<typeof MedicalTechnologyPicker> | null>(null)
 const requestBasket = ref<BasketItem[]>([])
 
 const aiLoading = ref(false)
@@ -95,12 +93,8 @@ async function loadClinicalContext() {
   }
 }
 
-function technologyOptionLabel(item: MedicalTechnology) {
-  return `${item.techName} / ${TECH_TYPE_LABEL[item.techType]} / ${item.techPrice}元`
-}
-
-async function searchTechnologies() {
-  technologies.value = await physicianApi.medicalTechnologies(undefined, technologyKeyword.value || undefined)
+function onTechnologySelected(item: MedicalTechnology) {
+  selectedTechnology.value = item
 }
 
 function removeFromBasket(index: number) {
@@ -108,8 +102,11 @@ function removeFromBasket(index: number) {
 }
 
 function addTechnologyToBasket() {
-  const technology = technologies.value.find((item) => item.id === requestDraft.medicalTechnologyId)
-  if (!technology) return
+  const technology = selectedTechnology.value
+  if (!technology) {
+    ElMessage.warning('请先选择医技项目')
+    return
+  }
   requestBasket.value.push({
     medicalTechnologyId: technology.id,
     techName: technology.techName,
@@ -118,10 +115,12 @@ function addTechnologyToBasket() {
     position: requestDraft.position,
     remark: requestDraft.remark,
   })
+  selectedTechnology.value = null
   requestDraft.medicalTechnologyId = undefined
   requestDraft.info = ''
   requestDraft.position = ''
   requestDraft.remark = ''
+  technologyPickerRef.value?.reset()
 }
 
 function toRequestItems(items: BasketItem[], techType: TechType) {
@@ -200,7 +199,6 @@ watch(registerId, () => {
 })
 
 onMounted(() => {
-  void searchTechnologies()
   void loadClinicalContext()
 })
 </script>
@@ -223,27 +221,9 @@ onMounted(() => {
             </div>
             <div>
               <h2 class="orders-page__card-title">医技申请</h2>
-              <p class="orders-page__card-subtitle">查询项目并填写申请信息</p>
+              <p class="orders-page__card-subtitle">选择项目并填写申请信息</p>
             </div>
           </header>
-
-          <section class="orders-section">
-            <h3 class="orders-section__title">项目查询</h3>
-            <div class="orders-search">
-              <ElInput
-                v-model="technologyKeyword"
-                placeholder="搜索项目（名称或编码）"
-                class="orders-search__input"
-                clearable
-                @keyup.enter="searchTechnologies"
-              >
-                <template #prefix>
-                  <ElIcon class="orders-search__icon"><Search /></ElIcon>
-                </template>
-              </ElInput>
-              <ElButton class="orders-search__btn" @click="searchTechnologies">搜索</ElButton>
-            </div>
-          </section>
 
           <section class="orders-section orders-section--form">
             <h3 class="orders-section__title">申请信息</h3>
@@ -254,20 +234,13 @@ onMounted(() => {
                   项目<span class="orders-form__required">*</span>
                 </label>
                 <div class="orders-form__control">
-                  <ElSelect
-                    id="orders-tech-select"
+                  <MedicalTechnologyPicker
+                    ref="technologyPickerRef"
+                    input-id="orders-tech-select"
                     v-model="requestDraft.medicalTechnologyId"
-                    filterable
-                    placeholder="选择医技项目"
-                    class="orders-form__select"
-                  >
-                    <ElOption
-                      v-for="item in technologies"
-                      :key="item.id"
-                      :label="technologyOptionLabel(item)"
-                      :value="item.id"
-                    />
-                  </ElSelect>
+                    class="orders-form__picker"
+                    @select="onTechnologySelected"
+                  />
                 </div>
               </div>
 
@@ -512,51 +485,6 @@ onMounted(() => {
   block-size: 16px;
   border-radius: 2px;
   background: var(--color-success);
-}
-
-.orders-search {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-}
-
-.orders-search__input {
-  flex: 1;
-  min-width: 0;
-}
-
-.orders-search__input :deep(.el-input__wrapper) {
-  padding-inline: var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-control);
-  box-shadow: none;
-  border: 1px solid var(--color-border-strong);
-}
-
-.orders-search__input :deep(.el-input__wrapper:hover),
-.orders-search__input :deep(.el-input__wrapper.is-focus) {
-  border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border-strong));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 12%, transparent);
-}
-
-.orders-search__icon {
-  color: var(--color-text-soft);
-}
-
-.orders-search__btn {
-  flex-shrink: 0;
-  padding-inline: var(--space-5);
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--color-success) 55%, var(--color-border));
-  color: var(--color-success);
-  background: var(--color-surface-strong);
-  box-shadow: none;
-}
-
-.orders-search__btn:hover {
-  border-color: var(--color-success);
-  color: var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface-strong));
 }
 
 .orders-form {
