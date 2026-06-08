@@ -220,8 +220,8 @@ onMounted(() => {
               <ElIcon :size="24"><DocumentAdd /></ElIcon>
             </div>
             <div>
-              <h2 class="orders-page__card-title">医技申请</h2>
-              <p class="orders-page__card-subtitle">选择项目并填写申请信息</p>
+              <h2 class="orders-page__card-title">开具检查</h2>
+              <p class="orders-page__card-subtitle">选择检查项目并填写申请信息</p>
             </div>
           </header>
 
