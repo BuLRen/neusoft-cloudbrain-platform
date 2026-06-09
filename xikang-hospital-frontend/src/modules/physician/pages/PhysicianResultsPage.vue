@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElButton, ElCard, ElEmpty, ElMessage, ElTable, ElTableColumn } from 'element-plus'
 import { physicianApi, type CheckResult, type InspectionResult, type W3Output } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
+import ResultPayloadViewer from '@/shared/components/ResultPayloadViewer.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 
 const encounterStore = useEncounterStore()
@@ -64,9 +65,20 @@ onMounted(() => {
     <h3>检查结果</h3>
     <ElEmpty v-if="!checkResults.length" description="暂无检查结果" />
     <ElTable v-else :data="checkResults">
+      <ElTableColumn type="expand">
+        <template #default="{ row }">
+          <div class="result-expand">
+            <ResultPayloadViewer :raw="row.checkResult" />
+          </div>
+        </template>
+      </ElTableColumn>
       <ElTableColumn prop="techName" label="项目" />
-      <ElTableColumn prop="checkState" label="状态" />
-      <ElTableColumn prop="checkResult" label="结果" />
+      <ElTableColumn prop="checkState" label="状态" width="100" />
+      <ElTableColumn label="结果摘要" min-width="220">
+        <template #default="{ row }">
+          <ResultPayloadViewer :raw="row.checkResult" compact />
+        </template>
+      </ElTableColumn>
       <ElTableColumn label="AI 分析">
         <template #default="{ row }">
           <span>{{ row.aiAnalysis?.analysisReport || '-' }}</span>
@@ -111,6 +123,10 @@ onMounted(() => {
   margin-block-end: var(--space-4);
 }
 
+.result-expand {
+  padding: var(--space-3) var(--space-4);
+}
+
 .w3-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -123,4 +139,3 @@ onMounted(() => {
   line-height: 1.8;
 }
 </style>
-

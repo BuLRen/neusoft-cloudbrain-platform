@@ -4,15 +4,15 @@ import { http } from '../request'
 export interface CheckApplication {
   id: number
   registerId?: number
-  patientId?: number
   patientName?: string
   caseNumber?: string
   techName?: string
   position?: string
   info?: string
-  status?: number
   statusText?: string
-  reportTime?: string
+  checkState?: string
+  creationTime?: string
+  checkTime?: string
 }
 
 export const medtechApi = {
@@ -29,13 +29,16 @@ export const medtechApi = {
     return http<T>({ url, method: 'DELETE' })
   },
 
-  checkApplications(params?: { registrationId?: number; status?: number }) {
+  checkApplications(params?: { registrationId?: number; checkState?: string }) {
     return http<CheckApplication[]>({ url: '/medtech/check/applications', method: 'GET', params })
   },
   startCheck(id: number, operatorInfo?: Record<string, unknown>) {
     return http<void>({ url: `/medtech/check/start/${id}`, method: 'PUT', data: operatorInfo })
   },
-  submitCheckResult(id: number, data: { result: string; findings?: string; conclusion?: string; impression?: string; aiAnalysis?: string }) {
+  submitCheckResult(
+    id: number,
+    data: { values?: Record<string, unknown>; result?: string; checkResult?: string; checkRemark?: string; aiAnalysis?: string },
+  ) {
     return http<Record<string, unknown>>({ url: `/medtech/check/result/${id}`, method: 'PUT', data })
   },
   checkReport(id: number) {

@@ -148,6 +148,12 @@ export const routes: RouteRecordRaw[] = [
             component: () => import('@/modules/admin/pages/AdminCheckEquipmentPage.vue'),
             meta: { title: '检查项目', roles: ['admin'], requiresAuth: true },
           },
+          {
+            path: 'result-form',
+            name: 'AdminResultForm',
+            component: () => import('@/modules/admin/pages/AdminResultFormPage.vue'),
+            meta: { title: '结果表单配置', roles: ['admin'], requiresAuth: true },
+          },
         ],
       },
       {

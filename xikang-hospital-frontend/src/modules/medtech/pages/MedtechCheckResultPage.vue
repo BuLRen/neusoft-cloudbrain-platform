@@ -1,33 +1,47 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElButton, ElForm, ElFormItem, ElInput, ElMessage } from 'element-plus'
+import { ElAlert, ElButton, ElEmpty, ElMessage } from 'element-plus'
 import { medtechApi } from '@/shared/api/modules/medtech'
+import { resultFormApi } from '@/shared/api/modules/resultForm'
+import DynamicResultForm from '@/shared/components/DynamicResultForm.vue'
+import type { ResultFormSchema } from '@/shared/types/resultForm'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
 
 const route = useRoute()
 const router = useRouter()
 
 const loading = ref(false)
+const errorMessage = ref('')
+const schema = ref<ResultFormSchema | null>(null)
+const formValues = ref<Record<string, unknown>>({})
+const formRef = ref<InstanceType<typeof DynamicResultForm>>()
+
 const id = computed(() => Number(route.query.id || 0))
 
-const form = reactive({
-  result: '',
-  findings: '',
-  conclusion: '',
-  impression: '',
-})
-
-async function submit() {
+async function loadSchema() {
   if (!id.value) return
   loading.value = true
+  errorMessage.value = ''
   try {
-    await medtechApi.submitCheckResult(id.value, {
-      result: form.result,
-      findings: form.findings || undefined,
-      conclusion: form.conclusion || undefined,
-      impression: form.impression || undefined,
-    })
+    schema.value = await resultFormApi.resolveCheckForm({ checkRequestId: id.value })
+    formValues.value = { ...(schema.value.existingValues ?? {}) }
+  } catch {
+    schema.value = null
+    errorMessage.value = '结果表单加载失败，请稍后重试'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function submit() {
+  if (!id.value || !schema.value) return
+  const valid = await formRef.value?.validate()
+  if (!valid) return
+
+  loading.value = true
+  try {
+    await medtechApi.submitCheckResult(id.value, { values: formValues.value })
     ElMessage.success('结果已提交')
     router.push('/medtech/check-queue')
   } finally {
@@ -36,7 +50,7 @@ async function submit() {
 }
 
 onMounted(() => {
-  // 可选：后续可通过 checkReport 预填展示
+  void loadSchema()
 })
 </script>
 
@@ -45,37 +59,58 @@ onMounted(() => {
     :step="3"
     :total-steps="3"
     title="结果录入"
-    description="第三步：录入检查结果并提交。"
+    description="第三步：按项目配置动态录入检查结果。"
     prev-path="/medtech/check-start"
   >
-    <p style="color: var(--color-text-muted)">当前检查申请 ID：{{ id || '-' }}</p>
-    <ElForm label-position="top" class="form-grid">
-      <ElFormItem label="检查结果（result）">
-        <ElInput v-model="form.result" type="textarea" :rows="3" />
-      </ElFormItem>
-      <ElFormItem label="所见（findings）">
-        <ElInput v-model="form.findings" type="textarea" :rows="2" />
-      </ElFormItem>
-      <ElFormItem label="结论（conclusion）">
-        <ElInput v-model="form.conclusion" type="textarea" :rows="2" />
-      </ElFormItem>
-      <ElFormItem label="印象（impression）">
-        <ElInput v-model="form.impression" type="textarea" :rows="2" />
-      </ElFormItem>
-    </ElForm>
+    <div v-if="schema" class="result-meta">
+      <p><strong>检查项目：</strong>{{ schema.techName || '-' }}</p>
+      <p><strong>表单分类：</strong>{{ schema.categoryName || schema.categoryCode }}</p>
+      <p v-if="schema.extensionFieldCount" class="result-meta__hint">
+        含 {{ schema.baseFieldCount }} 个基础字段、{{ schema.extensionFieldCount }} 个项目扩展字段
+      </p>
+    </div>
+
+    <ElAlert
+      v-if="errorMessage"
+      type="error"
+      :title="errorMessage"
+      show-icon
+      :closable="false"
+      class="error-alert"
+    />
+
+    <ElEmpty v-else-if="!loading && !schema" description="未找到结果表单配置" />
+
+    <DynamicResultForm
+      v-else-if="schema"
+      ref="formRef"
+      v-loading="loading"
+      v-model="formValues"
+      :fields="schema.fields"
+      :base-field-count="schema.baseFieldCount"
+    />
+
     <div class="actions">
       <ElButton @click="router.push('/medtech/check-queue')">取消</ElButton>
-      <ElButton type="primary" :loading="loading" :disabled="!id" @click="submit">结果提交</ElButton>
+      <ElButton type="primary" :loading="loading" :disabled="!schema" @click="submit">结果提交</ElButton>
     </div>
   </MedtechStepLayout>
 </template>
 
 <style scoped>
-.form-grid {
+.result-meta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-  margin-block-start: var(--space-4);
+  gap: var(--space-1);
+  margin-block-end: var(--space-4);
+  color: var(--color-text-muted);
+}
+
+.result-meta__hint {
+  font-size: var(--font-size-sm);
+}
+
+.error-alert {
+  margin-block-end: var(--space-4);
 }
 
 .actions {
@@ -85,4 +120,3 @@ onMounted(() => {
   margin-block-start: var(--space-4);
 }
 </style>
-

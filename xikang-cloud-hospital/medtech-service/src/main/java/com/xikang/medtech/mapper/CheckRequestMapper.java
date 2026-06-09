@@ -16,17 +16,17 @@ public interface CheckRequestMapper {
 
     List<CheckRequest> selectByRegisterId(Long registerId);
 
-    List<CheckRequest> selectByPatientId(Long patientId);
-
-    List<CheckRequest> selectByStatus(Integer status);
+    List<CheckRequest> selectByCheckState(String checkState);
 
     List<CheckRequest> selectPending();
 
-    int insert(CheckRequest checkRequest);
+    int updateCheckState(@Param("id") Long id, @Param("checkState") String checkState);
 
-    int update(CheckRequest checkRequest);
+    int updateCheckStateWithEmployee(
+        @Param("id") Long id,
+        @Param("checkState") String checkState,
+        @Param("checkEmployeeId") Long checkEmployeeId
+    );
 
-    int updateStatus(@Param("id") Long id, @Param("status") Integer status);
-
-    int updateResult(@Param("id") Long id, @Param("result") String result, @Param("aiAnalysis") String aiAnalysis);
+    int updateResult(CheckRequest checkRequest);
 }

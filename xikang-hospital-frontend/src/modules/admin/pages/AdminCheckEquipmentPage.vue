@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ElButton,
   ElCard,
@@ -27,6 +28,8 @@ import {
   type ExaminationItemPayload,
   type MedicalTechnologyItem,
 } from '@/shared/api/modules/admin'
+
+const router = useRouter()
 
 const TECH_TYPE_LABEL: Record<MedicalTechnologyItem['techType'], string> = {
   check: '检查',
@@ -189,6 +192,10 @@ async function submitForm() {
   }
 }
 
+function goResultForm(row: MedicalTechnologyItem) {
+  router.push({ path: '/admin/result-form', query: { tab: 'tech', techId: String(row.id) } })
+}
+
 async function confirmDelete(row: MedicalTechnologyItem) {
   try {
     await ElMessageBox.confirm(`确定删除「${row.techName}」？已被开单引用的项目无法删除。`, '删除确认', {
@@ -278,8 +285,9 @@ onMounted(() => {
         <ElTableColumn prop="deptName" label="执行科室" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ row.deptName || '—' }}</template>
         </ElTableColumn>
-        <ElTableColumn label="操作" width="150" fixed="right" align="center">
+        <ElTableColumn label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
+            <ElButton v-if="row.techType === 'check'" link type="primary" @click="goResultForm(row)">结果表单</ElButton>
             <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
             <ElButton link type="danger" @click="confirmDelete(row)">删除</ElButton>
           </template>

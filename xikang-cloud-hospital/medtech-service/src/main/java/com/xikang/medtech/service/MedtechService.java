@@ -29,6 +29,7 @@ public class MedtechService {
     private final InspectionRequestMapper inspectionRequestMapper;
     private final DisposalRequestMapper disposalRequestMapper;
     private final MedicalTechnologyMapper medicalTechnologyMapper;
+    private final ResultFormService resultFormService;
     private final ObjectMapper objectMapper;
 
     // ==================== 检查相关 ====================
@@ -36,12 +37,12 @@ public class MedtechService {
     /**
      * 获取待检查患者列表
      */
-    public List<Map<String, Object>> getCheckApplications(Long registrationId, Integer status) {
+    public List<Map<String, Object>> getCheckApplications(Long registrationId, String checkState) {
         List<CheckRequest> requests;
         if (registrationId != null) {
             requests = checkRequestMapper.selectByRegisterId(registrationId);
-        } else if (status != null) {
-            requests = checkRequestMapper.selectByStatus(status);
+        } else if (checkState != null && !checkState.isBlank()) {
+            requests = checkRequestMapper.selectByCheckState(checkState.trim());
         } else {
             requests = checkRequestMapper.selectPending();
         }
@@ -58,10 +59,15 @@ public class MedtechService {
         if (request == null) {
             throw new BusinessException(404, "检查申请不存在");
         }
-        if (request.getStatus() != 1) {
+        if (!"待检查".equals(request.getCheckState())) {
             throw new BusinessException(400, "当前状态不允许开始检查");
         }
-        checkRequestMapper.updateStatus(id, 2); // 执行中
+        Long checkEmployeeId = extractLong(operatorInfo, "checkEmployeeId");
+        if (checkEmployeeId != null) {
+            checkRequestMapper.updateCheckStateWithEmployee(id, "检查中", checkEmployeeId);
+        } else {
+            checkRequestMapper.updateCheckState(id, "检查中");
+        }
     }
 
     /**
@@ -75,27 +81,23 @@ public class MedtechService {
         if (request == null) {
             throw new BusinessException(404, "检查申请不存在");
         }
+        if (!"检查中".equals(request.getCheckState())) {
+            throw new BusinessException(400, "当前状态不允许录入结果");
+        }
 
-        String result = (String) resultData.get("result");
-        String aiAnalysis = (String) resultData.get("aiAnalysis");
-        String findings = (String) resultData.get("findings");
-        String conclusion = (String) resultData.get("conclusion");
-        String impression = (String) resultData.get("impression");
+        String checkResult = resultFormService.buildResultPayload(request.getMedicalTechnologyId(), resultData);
 
-        // 更新检查结果
-        request.setResult(result);
-        request.setFindings(findings);
-        request.setConclusion(conclusion);
-        request.setImpression(impression);
-        request.setAiAnalysis(aiAnalysis);
-        request.setStatus(3); // 已完成
-        request.setReportTime(LocalDateTime.now());
-        checkRequestMapper.update(request);
+        request.setCheckResult(checkResult);
+        request.setCheckState("已完成");
+        request.setCheckTime(LocalDateTime.now());
+        request.setCheckRemark(trimToNull((String) resultData.get("checkRemark")));
+        request.setInputcheckEmployeeId(extractLong(resultData, "inputcheckEmployeeId"));
+        checkRequestMapper.updateResult(request);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "completed");
-        response.put("reportTime", request.getReportTime());
-        response.put("aiAnalysisTriggered", aiAnalysis != null);
+        response.put("checkTime", request.getCheckTime());
+        response.put("aiAnalysisTriggered", resultData.get("aiAnalysis") != null);
 
         return response;
     }
@@ -388,28 +390,26 @@ public class MedtechService {
         Map<String, Object> map = new HashMap<>();
         map.put("id", request.getId());
         map.put("registerId", request.getRegisterId());
-        map.put("patientId", request.getPatientId());
+        map.put("caseNumber", request.getCaseNumber());
         map.put("patientName", request.getPatientName());
-        map.put("physicianName", request.getPhysicianName());
-        map.put("medicalTechnologyName", request.getMedicalTechnologyName());
-        map.put("clinicalDiagnosis", request.getClinicalDiagnosis());
-        map.put("bodyPart", request.getBodyPart());
-        map.put("status", request.getStatus());
-        map.put("statusName", getCheckStatusName(request.getStatus()));
+        map.put("techName", request.getTechName());
+        map.put("position", request.getCheckPosition());
+        map.put("info", request.getCheckInfo());
+        map.put("statusText", request.getCheckState());
+        map.put("checkState", request.getCheckState());
         map.put("checkTime", request.getCheckTime());
-        map.put("reportTime", request.getReportTime());
-        map.put("createTime", request.getCreateTime());
+        map.put("creationTime", request.getCreationTime());
         return map;
     }
 
     private Map<String, Object> toCheckDetailMap(CheckRequest request) {
         Map<String, Object> map = toCheckMap(request);
-        map.put("result", request.getResult());
-        map.put("findings", request.getFindings());
-        map.put("conclusion", request.getConclusion());
-        map.put("impression", request.getImpression());
-        map.put("aiAnalysis", request.getAiAnalysis());
-        map.put("reportUrl", request.getReportUrl());
+        map.put("medicalTechnologyId", request.getMedicalTechnologyId());
+        map.put("checkResult", request.getCheckResult());
+        map.put("result", request.getCheckResult());
+        map.put("checkRemark", request.getCheckRemark());
+        map.put("resultPayload", resultFormService.parseResultPayload(request.getCheckResult()));
+        map.put("resultSummary", resultFormService.buildResultSummary(request.getCheckResult()));
         return map;
     }
 
@@ -447,7 +447,7 @@ public class MedtechService {
         return map;
     }
 
-    private String getCheckStatusName(Integer status) {
+    private String getInspectionStatusName(Integer status) {
         return switch (status) {
             case 0 -> "待缴费";
             case 1 -> "待执行";
@@ -458,11 +458,37 @@ public class MedtechService {
         };
     }
 
-    private String getInspectionStatusName(Integer status) {
-        return getCheckStatusName(status);
+    private String getDisposalStatusName(Integer status) {
+        return getInspectionStatusName(status);
     }
 
-    private String getDisposalStatusName(Integer status) {
-        return getCheckStatusName(status);
+    private static Long extractLong(Map<String, Object> data, String key) {
+        if (data == null) {
+            return null;
+        }
+        Object value = data.get(key);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Long.parseLong(text.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }

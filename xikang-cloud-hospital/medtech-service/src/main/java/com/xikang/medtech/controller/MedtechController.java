@@ -3,6 +3,7 @@ package com.xikang.medtech.controller;
 import com.xikang.common.result.Result;
 import com.xikang.medtech.entity.MedicalTechnology;
 import com.xikang.medtech.service.MedtechService;
+import com.xikang.medtech.service.ResultFormService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,6 +19,7 @@ import java.util.Map;
 public class MedtechController {
 
     private final MedtechService medtechService;
+    private final ResultFormService resultFormService;
 
     // ==================== 检查相关接口 ====================
 
@@ -27,8 +29,8 @@ public class MedtechController {
     @GetMapping("/check/applications")
     public Result<List<Map<String, Object>>> getCheckApplications(
             @RequestParam(required = false) Long registrationId,
-            @RequestParam(required = false) Integer status) {
-        List<Map<String, Object>> applications = medtechService.getCheckApplications(registrationId, status);
+            @RequestParam(required = false) String checkState) {
+        List<Map<String, Object>> applications = medtechService.getCheckApplications(registrationId, checkState);
         return Result.success(applications);
     }
 
@@ -61,6 +63,68 @@ public class MedtechController {
     public Result<Map<String, Object>> getCheckReport(@PathVariable Long id) {
         Map<String, Object> report = medtechService.getCheckReport(id);
         return Result.success(report);
+    }
+
+    /**
+     * 解析检查结果录入表单 schema
+     */
+    @GetMapping("/check/result-form/resolve")
+    public Result<Map<String, Object>> resolveCheckResultForm(
+            @RequestParam(required = false) Long checkRequestId,
+            @RequestParam(required = false) Long medicalTechnologyId) {
+        if (checkRequestId != null) {
+            return Result.success(resultFormService.resolveByCheckRequestId(checkRequestId));
+        }
+        if (medicalTechnologyId != null) {
+            return Result.success(resultFormService.resolveByMedicalTechnologyId(medicalTechnologyId));
+        }
+        return Result.error("请提供 checkRequestId 或 medicalTechnologyId");
+    }
+
+    /**
+     * 获取检查结果表单分类列表
+     */
+    @GetMapping("/result-form/categories")
+    public Result<List<Map<String, Object>>> listResultFormCategories() {
+        return Result.success(resultFormService.listCategories());
+    }
+
+    /**
+     * 获取分类通用字段
+     */
+    @GetMapping("/result-form/categories/{code}/fields")
+    public Result<List<Map<String, Object>>> listCategoryResultFormFields(@PathVariable String code) {
+        return Result.success(resultFormService.listCategoryFields(code));
+    }
+
+    /**
+     * 保存分类通用字段
+     */
+    @PutMapping("/result-form/categories/{code}/fields")
+    public Result<Void> saveCategoryResultFormFields(
+            @PathVariable String code,
+            @RequestBody List<Map<String, Object>> fields) {
+        resultFormService.saveCategoryFields(code, fields);
+        return Result.success("分类表单已保存", null);
+    }
+
+    /**
+     * 获取检查项目扩展字段上下文
+     */
+    @GetMapping("/result-form/tech/{techId}/extensions")
+    public Result<Map<String, Object>> getTechResultFormExtensions(@PathVariable Long techId) {
+        return Result.success(resultFormService.getTechExtensionContext(techId));
+    }
+
+    /**
+     * 保存检查项目扩展字段
+     */
+    @PutMapping("/result-form/tech/{techId}/extensions")
+    public Result<Void> saveTechResultFormExtensions(
+            @PathVariable Long techId,
+            @RequestBody List<Map<String, Object>> fields) {
+        resultFormService.saveTechExtensions(techId, fields);
+        return Result.success("项目扩展字段已保存", null);
     }
 
     // ==================== 检验相关接口 ====================
