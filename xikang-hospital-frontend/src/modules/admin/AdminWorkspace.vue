@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import {
   ElButton,
   ElDescriptions,
@@ -8,7 +8,6 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
-  ElInputNumber,
   ElMessage,
   ElOption,
   ElSelect,
@@ -22,35 +21,20 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { registrationApi } from '@/shared/api/modules/registration'
-import type { DepartmentOption, RegistLevelOption, SchedulingOption, SettleCategoryOption, TriageDeskRecord } from '@/shared/types/registration'
+import type { DepartmentOption, RegistLevelOption, SettleCategoryOption, TriageDeskRecord } from '@/shared/types/registration'
+import type { DoctorInfo } from '@/shared/api/modules/registration'
 
 const authStore = useAuthStore()
-const activeTab = ref('schedule')
+const activeTab = ref('triage')
 
 const departments = ref<DepartmentOption[]>([])
 const registLevels = ref<RegistLevelOption[]>([])
 const settleCategories = ref<SettleCategoryOption[]>([])
-const schedules = ref<SchedulingOption[]>([])
 const triagePending = ref<TriageDeskRecord[]>([])
 const selectedTriageId = ref<number | undefined>()
 const selectedTriage = ref<TriageDeskRecord | null>(null)
-const editingScheduleId = ref<number | undefined>()
-const editingScheduleStatus = ref<number>(1)
-
-const scheduleFilter = reactive({
-  departmentId: undefined as number | undefined,
-  date: new Date().toISOString().slice(0, 10),
-})
-
-const scheduleForm = reactive({
-  physicianId: undefined as number | undefined,
-  physicianName: '',
-  departmentId: undefined as number | undefined,
-  workDate: new Date().toISOString().slice(0, 10),
-  timeSlot: 'morning',
-  totalQuota: 20,
-  remark: '',
-})
+// 分诊确认使用的医生下拉（按所选科室动态拉取）
+const triageDoctors = ref<DoctorInfo[]>([])
 
 const triageConfirmForm = reactive({
   departmentId: undefined as number | undefined,
@@ -59,14 +43,6 @@ const triageConfirmForm = reactive({
   physicianName: '',
   remark: '',
 })
-
-const isEditingSchedule = computed(() => editingScheduleId.value !== undefined)
-
-function statusTone(status?: number) {
-  if (status === 1 || status === 2) return 'success'
-  if (status === 0) return 'warning'
-  return 'primary'
-}
 
 async function loadBaseData() {
   const [departmentList, levelList, settleList] = await Promise.all([
@@ -84,91 +60,45 @@ function updateTriageDepartmentName(departmentId?: number) {
   triageConfirmForm.departmentName = department?.name || triageConfirmForm.departmentName
 }
 
-async function loadSchedules() {
-  if (scheduleFilter.departmentId && scheduleFilter.date) {
-    schedules.value = await registrationApi.schedulingOptions(scheduleFilter.departmentId, scheduleFilter.date)
+// 加载当前分诊确认科室下的医生列表
+async function loadTriageDoctors(departmentId?: number) {
+  if (!departmentId) {
+    triageDoctors.value = []
     return
   }
-  if (scheduleFilter.date) {
-    schedules.value = await registrationApi.schedulingByDate(scheduleFilter.date)
+  try {
+    triageDoctors.value = await registrationApi.getDoctorsByDepartment(departmentId)
+  } catch {
+    triageDoctors.value = []
+  }
+}
+
+function updateTriagePhysicianName(physicianId?: number) {
+  if (!physicianId) {
+    triageConfirmForm.physicianName = ''
     return
   }
-  schedules.value = []
-}
-
-function resetScheduleForm() {
-  editingScheduleId.value = undefined
-  editingScheduleStatus.value = 1
-  scheduleForm.physicianId = undefined
-  scheduleForm.physicianName = ''
-  scheduleForm.departmentId = undefined
-  scheduleForm.workDate = new Date().toISOString().slice(0, 10)
-  scheduleForm.timeSlot = 'morning'
-  scheduleForm.totalQuota = 20
-  scheduleForm.remark = ''
-}
-
-function startEditingSchedule(schedule: SchedulingOption) {
-  editingScheduleId.value = schedule.id
-  editingScheduleStatus.value = schedule.status ?? 1
-  scheduleForm.physicianId = schedule.physicianId
-  scheduleForm.physicianName = schedule.physicianName || ''
-  scheduleForm.departmentId = schedule.departmentId
-  scheduleForm.workDate = schedule.workDate || new Date().toISOString().slice(0, 10)
-  scheduleForm.timeSlot = schedule.timeSlot || 'morning'
-  scheduleForm.totalQuota = schedule.totalQuota || 20
-  scheduleForm.remark = schedule.remark || ''
-}
-
-async function submitSchedule() {
-  if (!scheduleForm.physicianId || !scheduleForm.physicianName.trim() || !scheduleForm.departmentId) {
-    ElMessage.warning('请先填写医生、科室和日期')
-    return
+  const doctor = triageDoctors.value.find((d) => d.id === physicianId)
+  if (doctor) {
+    triageConfirmForm.physicianName = doctor.realname
   }
-
-  if (isEditingSchedule.value && editingScheduleId.value) {
-    await registrationApi.updateScheduling(editingScheduleId.value, {
-      totalQuota: scheduleForm.totalQuota,
-      remark: scheduleForm.remark || undefined,
-      status: editingScheduleStatus.value,
-    })
-    ElMessage.success('排班已更新')
-  } else {
-    const department = departments.value.find((item) => item.id === scheduleForm.departmentId)
-    await registrationApi.createScheduling({
-      physicianId: scheduleForm.physicianId,
-      physicianName: scheduleForm.physicianName,
-      departmentId: scheduleForm.departmentId,
-      departmentName: department?.name || '',
-      workDate: scheduleForm.workDate,
-      timeSlot: scheduleForm.timeSlot,
-      totalQuota: scheduleForm.totalQuota,
-      remark: scheduleForm.remark || undefined,
-    })
-    ElMessage.success('排班创建成功')
-  }
-
-  await loadSchedules()
-  resetScheduleForm()
 }
 
-async function updateScheduleStatus(id: number, status: number) {
-  await registrationApi.updateScheduling(id, { status })
-  if (editingScheduleId.value === id) {
-    editingScheduleStatus.value = status
-  }
-  ElMessage.success('排班状态已更新')
-  await loadSchedules()
-}
-
-async function deleteSchedule(id: number) {
-  await registrationApi.deleteScheduling(id)
-  if (editingScheduleId.value === id) {
-    resetScheduleForm()
-  }
-  ElMessage.success('排班已删除')
-  await loadSchedules()
-}
+// 监听科室切换，重新拉医生下拉；同时切换医生时清空姓名
+watch(
+  () => triageConfirmForm.departmentId,
+  (newId, oldId) => {
+    if (newId === oldId) return
+    if (triageConfirmForm.physicianId) {
+      const stillExists = triageDoctors.value.some((d) => d.id === triageConfirmForm.physicianId)
+      if (!stillExists) {
+        triageConfirmForm.physicianId = undefined
+        triageConfirmForm.physicianName = ''
+      }
+    }
+    loadTriageDoctors(newId)
+  },
+)
 
 async function loadTriagePending() {
   triagePending.value = await registrationApi.triagePending()
@@ -194,6 +124,8 @@ async function loadTriageDetail(id?: number) {
   triageConfirmForm.departmentName = selectedTriage.value.recommendedDepartment || ''
   triageConfirmForm.physicianId = selectedTriage.value.recommendedPhysicianId
   triageConfirmForm.physicianName = selectedTriage.value.recommendedPhysicianName || ''
+  // 加载该科室下的真实医生列表
+  await loadTriageDoctors(triageConfirmForm.departmentId)
 }
 
 async function confirmTriage() {
@@ -224,7 +156,7 @@ async function cancelTriage() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadBaseData(), loadSchedules(), loadTriagePending()])
+  await Promise.all([loadBaseData(), loadTriagePending()])
 })
 </script>
 
@@ -232,7 +164,7 @@ onMounted(async () => {
   <div class="admin-workspace u-page-grid">
     <PageHeader
       title="管理员支撑工作台"
-      description="当前范围仅覆盖后端已提供的能力：医生排班管理、AI 分诊台，以及基础数据查看。由于没有独立医生目录接口，新增排班时保留医生 ID / 姓名手输。"
+      description="当前范围覆盖管理员支撑能力：AI 分诊台处理，以及科室、挂号级别、结算类别等基础数据查看。"
       eyebrow="Role B / Admin"
     >
       <template #actions>
@@ -243,92 +175,6 @@ onMounted(async () => {
 
     <GlassCard class="flow-card">
       <ElTabs v-model="activeTab">
-        <ElTabPane label="医生排班" name="schedule">
-          <div class="split-grid">
-            <section>
-              <div class="section-title">
-                <h3>{{ isEditingSchedule ? `编辑排班 #${editingScheduleId}` : '新增排班' }}</h3>
-                <StatusTag :tone="isEditingSchedule ? 'warning' : 'primary'">{{ isEditingSchedule ? '编辑模式' : '新建模式' }}</StatusTag>
-              </div>
-              <p class="schedule-note">
-                {{ isEditingSchedule ? '当前后端更新接口只会保存号源、备注和状态；医生、科室、日期、时段仅作为上下文展示。' : '新增排班时需要手工输入医生 ID 和姓名。' }}
-              </p>
-              <ElForm label-position="top" class="form-grid">
-                <ElFormItem label="医生 ID">
-                  <ElInputNumber v-model="scheduleForm.physicianId" :min="1" :controls="false" class="field" :disabled="isEditingSchedule" />
-                </ElFormItem>
-                <ElFormItem label="医生姓名">
-                  <ElInput v-model="scheduleForm.physicianName" :disabled="isEditingSchedule" />
-                </ElFormItem>
-                <ElFormItem label="科室">
-                  <ElSelect v-model="scheduleForm.departmentId" filterable placeholder="选择科室" :disabled="isEditingSchedule">
-                    <ElOption v-for="item in departments" :key="item.id" :label="item.name" :value="item.id" />
-                  </ElSelect>
-                </ElFormItem>
-                <ElFormItem label="日期">
-                  <ElInput v-model="scheduleForm.workDate" type="date" :disabled="isEditingSchedule" />
-                </ElFormItem>
-                <ElFormItem label="时段">
-                  <ElSelect v-model="scheduleForm.timeSlot" :disabled="isEditingSchedule">
-                    <ElOption label="上午" value="morning" />
-                    <ElOption label="下午" value="afternoon" />
-                    <ElOption label="晚上" value="evening" />
-                    <ElOption label="全天" value="all_day" />
-                  </ElSelect>
-                </ElFormItem>
-                <ElFormItem label="总号源">
-                  <ElInputNumber v-model="scheduleForm.totalQuota" :min="1" class="field" />
-                </ElFormItem>
-                <ElFormItem v-if="isEditingSchedule" label="状态">
-                  <ElSelect v-model="editingScheduleStatus">
-                    <ElOption label="停用" :value="0" />
-                    <ElOption label="启用" :value="1" />
-                  </ElSelect>
-                </ElFormItem>
-                <ElFormItem label="备注" class="full-width">
-                  <ElInput v-model="scheduleForm.remark" type="textarea" :rows="3" />
-                </ElFormItem>
-              </ElForm>
-              <div class="actions">
-                <ElButton type="primary" @click="submitSchedule">{{ isEditingSchedule ? '保存排班' : '新增排班' }}</ElButton>
-                <ElButton v-if="isEditingSchedule" @click="resetScheduleForm">返回新建模式</ElButton>
-              </div>
-            </section>
-
-            <section>
-              <div class="section-title">
-                <h3>排班列表</h3>
-                <div class="actions actions--inline actions--compact">
-                  <ElSelect v-model="scheduleFilter.departmentId" clearable placeholder="筛选科室">
-                    <ElOption v-for="item in departments" :key="item.id" :label="item.name" :value="item.id" />
-                  </ElSelect>
-                  <ElInput v-model="scheduleFilter.date" type="date" />
-                  <ElButton @click="loadSchedules">查询</ElButton>
-                </div>
-              </div>
-              <ElTable :data="schedules">
-                <ElTableColumn prop="physicianName" label="医生" min-width="120" />
-                <ElTableColumn prop="departmentName" label="科室" min-width="120" />
-                <ElTableColumn prop="workDate" label="日期" min-width="120" />
-                <ElTableColumn prop="timeSlotName" label="时段" min-width="120" />
-                <ElTableColumn label="状态" min-width="120">
-                  <template #default="{ row }">
-                    <StatusTag :tone="statusTone(row.status)">{{ row.statusName || '-' }}</StatusTag>
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn label="操作" min-width="260" fixed="right">
-                  <template #default="{ row }">
-                    <ElButton link type="primary" @click="startEditingSchedule(row)">编辑</ElButton>
-                    <ElButton link type="primary" @click="updateScheduleStatus(row.id, 1)">启用</ElButton>
-                    <ElButton link @click="updateScheduleStatus(row.id, 0)">停用</ElButton>
-                    <ElButton link type="danger" @click="deleteSchedule(row.id)">删除</ElButton>
-                  </template>
-                </ElTableColumn>
-              </ElTable>
-            </section>
-          </div>
-        </ElTabPane>
-
         <ElTabPane label="AI 分诊台" name="triage">
           <div class="split-grid">
             <section>
@@ -362,31 +208,50 @@ onMounted(async () => {
               <h3>分诊确认</h3>
               <ElEmpty v-if="!selectedTriage" description="请选择一条分诊记录" />
               <template v-else>
-                <ElDescriptions :column="1" border>
+                <ElDescriptions :column="1" border class="triage-summary">
                   <ElDescriptionsItem label="患者">{{ selectedTriage.patientName || '-' }}</ElDescriptionsItem>
                   <ElDescriptionsItem label="症状">{{ selectedTriage.symptoms || '-' }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="推荐科室">{{ selectedTriage.recommendedDepartment || '-' }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="推荐医生">{{ selectedTriage.recommendedPhysicianName || '-' }}</ElDescriptionsItem>
+                  <ElDescriptionsItem label="AI 推荐科室">
+                    <span class="ai-chip">{{ selectedTriage.recommendedDepartment || '-' }}</span>
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="AI 推荐医生">
+                    <span class="ai-chip">{{ selectedTriage.recommendedPhysicianName || '-' }}</span>
+                  </ElDescriptionsItem>
                 </ElDescriptions>
                 <ElForm label-position="top" class="mt">
                   <ElFormItem label="确认科室">
-                    <ElSelect v-model="triageConfirmForm.departmentId" filterable placeholder="选择科室" @change="updateTriageDepartmentName">
-                    <ElOption
-                      v-for="item in departments"
-                      :key="item.id"
-                      :label="item.name"
-                      :value="item.id"
-                    />
-                  </ElSelect>
+                    <ElSelect
+                      v-model="triageConfirmForm.departmentId"
+                      filterable
+                      placeholder="选择科室"
+                      class="full-width"
+                      @change="updateTriageDepartmentName"
+                    >
+                      <ElOption
+                        v-for="item in departments"
+                        :key="item.id"
+                        :label="item.name"
+                        :value="item.id"
+                      />
+                    </ElSelect>
                   </ElFormItem>
-                  <ElFormItem label="确认科室名称">
-                    <ElInput v-model="triageConfirmForm.departmentName" />
-                  </ElFormItem>
-                  <ElFormItem label="确认医生 ID">
-                    <ElInputNumber v-model="triageConfirmForm.physicianId" :min="1" :controls="false" class="field" />
-                  </ElFormItem>
-                  <ElFormItem label="确认医生姓名">
-                    <ElInput v-model="triageConfirmForm.physicianName" />
+                  <ElFormItem label="确认医生">
+                    <ElSelect
+                      v-model="triageConfirmForm.physicianId"
+                      filterable
+                      clearable
+                      placeholder="请选择医生（按当前科室加载）"
+                      class="full-width"
+                      no-data-text="请先选择科室"
+                      @change="updateTriagePhysicianName"
+                    >
+                      <ElOption
+                        v-for="d in triageDoctors"
+                        :key="d.id"
+                        :label="`${d.realname}${d.registName ? ' / ' + d.registName : ''}`"
+                        :value="d.id"
+                      />
+                    </ElSelect>
                   </ElFormItem>
                   <ElFormItem label="备注">
                     <ElInput v-model="triageConfirmForm.remark" type="textarea" :rows="3" />
@@ -422,7 +287,11 @@ onMounted(async () => {
               </div>
               <ElTable :data="registLevels">
                 <ElTableColumn prop="name" label="名称" min-width="140" />
-                <ElTableColumn prop="price" label="价格" min-width="100" />
+                <ElTableColumn prop="price" label="价格" min-width="100" align="right">
+                  <template #default="{ row }">
+                    <span class="price-value">¥ {{ row.price }}</span>
+                  </template>
+                </ElTableColumn>
                 <ElTableColumn prop="description" label="说明" min-width="180" />
               </ElTable>
             </GlassCard>
@@ -446,6 +315,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.admin-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
 .flow-card,
 .inner-card {
   padding: var(--space-5);
@@ -453,8 +328,9 @@ onMounted(async () => {
 
 .split-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.85fr) minmax(0, 1fr);
+  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1fr);
   gap: var(--space-5);
+  align-items: start;
 }
 
 .base-grid {
@@ -463,24 +339,8 @@ onMounted(async () => {
   gap: var(--space-4);
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 var(--space-4);
-}
-
 .full-width {
-  grid-column: 1 / -1;
-}
-
-.field {
   width: 100%;
-}
-
-.schedule-note {
-  margin-block: var(--space-3) var(--space-4);
-  color: var(--color-text-muted);
-  line-height: 1.7;
 }
 
 .section-title,
@@ -492,58 +352,159 @@ onMounted(async () => {
   gap: var(--space-3);
 }
 
+.section-title h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
 .actions {
   flex-wrap: wrap;
-  justify-content: flex-start;
-  margin-block-start: var(--space-4);
-}
-
-.actions--inline {
   justify-content: flex-end;
-}
-
-.actions--compact {
-  margin-block-start: 0;
+  margin-block-start: var(--space-4);
+  gap: var(--space-2);
 }
 
 .triage-list {
   display: grid;
   gap: var(--space-3);
+  max-block-size: 480px;
+  overflow-y: auto;
+  padding-inline-end: 4px;
 }
 
 .triage-item {
+  position: relative;
   display: grid;
   gap: var(--space-2);
   width: 100%;
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  background: var(--color-surface-strong);
   color: var(--color-text);
   text-align: left;
   cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+.triage-item::before {
+  content: '';
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-block-end: var(--space-2);
+  inset-inline-start: 0;
+  inline-size: 3px;
+  border-radius: 0 2px 2px 0;
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.triage-item:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.triage-item:hover::before {
+  background: var(--gradient-primary);
 }
 
 .triage-item span {
   color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.triage-item strong {
+  font-size: 0.95rem;
+  color: var(--color-text);
 }
 
 .triage-item.is-active {
   border-color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
+  background: var(--color-primary-soft);
+  box-shadow: var(--shadow-md);
+}
+
+.triage-item.is-active::before {
+  background: var(--gradient-primary);
+}
+
+.item-meta {
+  justify-content: space-between;
+}
+
+.triage-summary {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.triage-summary :deep(.el-descriptions__label) {
+  font-weight: 600;
+  color: var(--color-text);
+  inline-size: 96px;
+  background: var(--color-table-header);
+}
+
+.ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-ai);
+  background: rgba(124, 92, 255, 0.1);
+  border: 1px solid rgba(124, 92, 255, 0.18);
+}
+
+.ai-chip::before {
+  content: '';
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 999px;
+  background: var(--gradient-ai);
 }
 
 .mt {
   margin-block-start: var(--space-4);
 }
 
+.price-value {
+  font-weight: 600;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
 .flow-card :deep(.el-tabs__content) {
   padding-block-start: var(--space-4);
 }
 
+.flow-card :deep(.el-tabs__header) {
+  margin-block-end: 0;
+}
+
+.flow-card :deep(.el-tabs__item) {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.inner-card :deep(.el-table) {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.inner-card :deep(.el-table tr:hover > td) {
+  background: var(--color-primary-soft) !important;
+}
+
 @media (max-width: 1200px) {
   .base-grid,
-  .form-grid,
   .split-grid {
     grid-template-columns: 1fr;
   }

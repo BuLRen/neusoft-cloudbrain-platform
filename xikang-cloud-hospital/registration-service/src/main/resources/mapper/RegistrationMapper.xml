@@ -4,6 +4,8 @@
 
     <resultMap id="BaseResultMap" type="com.xikang.registration.entity.Register">
         <id column="id" property="id"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="scheduling_id" property="schedulingId"/>
         <result column="case_number" property="caseNumber"/>
         <result column="real_name" property="realName"/>
         <result column="gender" property="gender"/>
@@ -25,7 +27,7 @@
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, case_number, real_name, gender, card_number, birthdate, age, age_type,
+        id, patient_id, scheduling_id, case_number, real_name, gender, card_number, birthdate, age, age_type,
         home_address, visit_date, noon, deptment_id, employee_id, regist_level_id,
         settle_category_id, is_book, regist_method, regist_money, visit_state
     </sql>
@@ -37,7 +39,7 @@
 
     <select id="selectByPatientId" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM register WHERE card_number = CAST(#{patientId} AS VARCHAR) OR real_name = CAST(#{patientId} AS VARCHAR)
+        FROM register WHERE patient_id = #{patientId}
         ORDER BY visit_date DESC
     </select>
 
@@ -68,11 +70,11 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO register (
-            case_number, real_name, gender, card_number, birthdate, age, age_type,
+            patient_id, scheduling_id, case_number, real_name, gender, card_number, birthdate, age, age_type,
             home_address, visit_date, noon, deptment_id, employee_id, regist_level_id,
             settle_category_id, is_book, regist_method, regist_money, visit_state
         ) VALUES (
-            #{caseNumber}, #{realName}, #{gender}, #{cardNumber}, #{birthdate}, #{age}, #{ageType},
+            #{patientId}, #{schedulingId}, #{caseNumber}, #{realName}, #{gender}, #{cardNumber}, #{birthdate}, #{age}, #{ageType},
             #{homeAddress}, #{visitDate}, #{noon}, #{deptmentId}, #{employeeId}, #{registLevelId},
             #{settleCategoryId}, #{isBook}, #{registMethod}, #{registMoney}, #{visitState}
         )
@@ -80,7 +82,9 @@
 
     <update id="update">
         UPDATE register
-        SET real_name = #{realName},
+        SET patient_id = #{patientId},
+            scheduling_id = #{schedulingId},
+            real_name = #{realName},
             gender = #{gender},
             card_number = #{cardNumber},
             birthdate = #{birthdate},

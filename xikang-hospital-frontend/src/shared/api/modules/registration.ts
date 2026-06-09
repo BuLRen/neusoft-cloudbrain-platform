@@ -204,3 +204,92 @@ export interface DoctorInfo {
   deptName?: string
   registName?: string
 }
+
+/**
+ * 排班 API - 调用 schedule-service
+ * 用于挂号时获取可用排班
+ */
+export const scheduleApi = {
+  /**
+   * 获取可用排班（供挂号使用）
+   * 调用 GET /api/schedule/available?departmentId={}&date={}
+   */
+  async schedulingOptions(departmentId: number, date: string): Promise<SchedulingOption[]> {
+    const response = await http<ScheduleResponse[]>({
+      url: '/schedule/available',
+      method: 'GET',
+      params: { departmentId, date }
+    })
+    // 转换格式以匹配前端期望
+    return response.map(item => ({
+      id: item.scheduleId || item.id,
+      physicianId: item.physicianId,
+      physicianName: item.physicianName || '',
+      departmentId: item.departmentId,
+      departmentName: item.departmentName || '',
+      workDate: item.workDate,
+      timeSlot: item.timeSlot,
+      timeSlotName: item.timeSlot === '上午' ? '上午' : item.timeSlot === '下午' ? '下午' : item.timeSlot === '晚上' ? '晚上' : item.timeSlot || '',
+      totalQuota: item.totalQuota,
+      usedQuota: item.usedQuota,
+      availableQuota: item.availableQuota,
+      status: item.status === '正常' ? 1 : item.status === '停诊' ? 0 : item.status === '满诊' ? 2 : 1,
+      statusName: item.status || '正常',
+      price: item.price,
+      registLevelId: item.registLevelId,
+      registLevelName: item.registLevelName,
+      physicianTitle: item.physicianTitle,
+    }))
+  },
+
+  /**
+   * 获取排班详情
+   * 调用 GET /api/schedule/detail/{scheduleId}
+   */
+  async schedulingDetail(scheduleId: number): Promise<SchedulingOption> {
+    const response = await http<ScheduleResponse>({
+      url: `/schedule/detail/${scheduleId}`,
+      method: 'GET'
+    })
+    return {
+      id: response.scheduleId || response.id,
+      physicianId: response.physicianId,
+      physicianName: response.physicianName || '',
+      departmentId: response.departmentId,
+      departmentName: response.departmentName || '',
+      workDate: response.workDate,
+      timeSlot: response.timeSlot,
+      timeSlotName: response.timeSlot === '上午' ? '上午' : response.timeSlot === '下午' ? '下午' : response.timeSlot === '晚上' ? '晚上' : response.timeSlot || '',
+      totalQuota: response.totalQuota,
+      usedQuota: response.usedQuota,
+      availableQuota: response.availableQuota,
+      status: response.status === '正常' ? 1 : response.status === '停诊' ? 0 : response.status === '满诊' ? 2 : 1,
+      statusName: response.status || '正常',
+      price: response.price,
+      registLevelId: response.registLevelId,
+      registLevelName: response.registLevelName,
+      physicianTitle: response.physicianTitle,
+    }
+  }
+}
+
+// schedule-service 返回的排班数据格式
+interface ScheduleResponse {
+  id?: number
+  scheduleId?: number
+  physicianId?: number
+  physicianName?: string
+  departmentId?: number
+  departmentName?: string
+  workDate?: string
+  timeSlot?: string
+  totalQuota?: number
+  usedQuota?: number
+  availableQuota?: number
+  price?: number
+  registLevelId?: number
+  registLevelName?: string
+  physicianTitle?: string
+  status?: string
+  remark?: string
+}

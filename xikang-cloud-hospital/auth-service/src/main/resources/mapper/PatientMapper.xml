@@ -12,6 +12,9 @@
         <result column="avatar" property="avatar" jdbcType="VARCHAR"/>
         <result column="home_address" property="homeAddress" jdbcType="VARCHAR"/>
         <result column="allergy_history" property="allergyHistory" jdbcType="VARCHAR"/>
+        <result column="account_balance" property="accountBalance" jdbcType="DECIMAL"/>
+        <result column="is_primary" property="isPrimary" jdbcType="INTEGER"/>
+        <result column="relation" property="relation" jdbcType="VARCHAR"/>
         <result column="delmark" property="delmark" jdbcType="INTEGER"/>
         <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
         <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
@@ -19,22 +22,23 @@
 
     <select id="selectById" resultMap="BaseResultMap">
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
-               delmark, create_time, update_time
+               account_balance, delmark, create_time, update_time
         FROM patient
         WHERE id = #{id} AND delmark = 1
     </select>
 
     <select id="selectByIdCard" resultMap="BaseResultMap">
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
-               delmark, create_time, update_time
+               account_balance, delmark, create_time, update_time
         FROM patient
         WHERE id_card = #{idCard} AND delmark = 1
     </select>
 
     <select id="selectByUserId" resultMap="BaseResultMap">
         SELECT p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
-               p.allergy_history, p.delmark, p.create_time, p.update_time,
-               upm.relation as relation
+               p.allergy_history, p.account_balance, p.delmark, p.create_time, p.update_time,
+               upm.relation as relation,
+               CASE WHEN upm.relation = '本人' THEN 1 ELSE 0 END as is_primary
         FROM patient p
         INNER JOIN user_patient_managed upm ON p.id = upm.patient_id
         WHERE upm.user_id = #{userId} AND p.delmark = 1
@@ -72,6 +76,24 @@
             update_time = NOW()
         </set>
         WHERE id = #{id}
+    </update>
+
+    <select id="selectBalanceById" resultType="java.math.BigDecimal">
+        SELECT account_balance FROM patient WHERE id = #{id} AND delmark = 1
+    </select>
+
+    <update id="rechargeBalance">
+        UPDATE patient
+        SET account_balance = account_balance + #{amount},
+            update_time = NOW()
+        WHERE id = #{id} AND delmark = 1
+    </update>
+
+    <update id="deductBalanceIfEnough">
+        UPDATE patient
+        SET account_balance = account_balance - #{amount},
+            update_time = NOW()
+        WHERE id = #{id} AND delmark = 1 AND account_balance >= #{amount}
     </update>
 
     <delete id="deleteById">

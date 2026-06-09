@@ -3,6 +3,7 @@ package com.xikang.auth.entity;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -23,6 +24,8 @@ public class Patient implements Serializable {
     private String avatar;
     private String homeAddress;
     private String allergyHistory;
+    private BigDecimal accountBalance;
+    private Integer isPrimary;
     private Integer delmark;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

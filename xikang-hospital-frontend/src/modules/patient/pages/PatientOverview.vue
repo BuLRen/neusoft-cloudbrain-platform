@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/app/stores/auth'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import { registrationApi } from '@/shared/api/modules/registration'
+import { patientApi } from '@/shared/api/modules/patient'
 import { Warning } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -36,12 +38,13 @@ const currentPatient = computed(() => authStore.currentPatient)
 
 // 加载今日待办数据
 async function loadTodayTasks() {
-  if (!authStore.currentPatientId) return
+  const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
+  if (!patientId) return
 
   loading.value = true
   try {
     // 获取患者的挂号列表
-    const registrations = await registrationApi.registrationsByPatient(authStore.currentPatientId)
+    const registrations = await registrationApi.registrationsByPatient(patientId)
     const today = new Date().toDateString()
     // 统计今日待就诊挂号数
     const pendingRegisters = registrations.filter((r: any) => {
@@ -49,6 +52,8 @@ async function loadTodayTasks() {
       return r.visitState === 1 && regDate === today
     })
     todayTasks.value.upcomingAppointments = pendingRegisters.length
+    const pendingCharges = await registrationApi.pendingChargesByPatient(patientId)
+    todayTasks.value.pendingCharges = pendingCharges.length
   } catch (e) {
     console.warn('加载今日待办失败:', e)
   } finally {
@@ -59,6 +64,29 @@ async function loadTodayTasks() {
 onMounted(() => {
   loadTodayTasks()
 })
+
+async function rechargeCurrentPatient() {
+  const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
+  if (!patientId) {
+    ElMessage.warning('请先选择就诊人')
+    return
+  }
+  try {
+    const { value } = await ElMessageBox.prompt('请输入充值金额', '账户充值', {
+      confirmButtonText: '确认充值',
+      cancelButtonText: '取消',
+      inputPattern: /^([1-9]\d{0,5})(\.\d{1,2})?$/,
+      inputErrorMessage: '请输入大于0的金额，最多两位小数',
+    })
+    const result = await patientApi.rechargeBalance(patientId, Number(value))
+    authStore.setPatientBalance(patientId, Number(result.accountBalance || 0))
+    ElMessage.success('充值成功')
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.warn('充值失败:', error)
+    }
+  }
+}
 
 function navigateTo(path: string) {
   router.push(path)
@@ -86,6 +114,24 @@ function navigateTo(path: string) {
           <span class="entry-title">{{ entry.title }}</span>
           <span class="entry-desc">{{ entry.desc }}</span>
         </button>
+      </div>
+    </GlassCard>
+
+    <!-- 账户余额卡片 -->
+    <GlassCard class="todo-card">
+      <template #header>
+        <div class="card-header">
+          <span class="card-icon">💳</span>
+          <span>账户余额</span>
+        </div>
+      </template>
+      <div class="balance-content">
+        <div>
+          <span class="balance-label">当前就诊人</span>
+          <strong class="balance-name">{{ currentPatient?.realName || '-' }}</strong>
+        </div>
+        <div class="balance-amount">¥{{ Number(currentPatient?.accountBalance || 0).toFixed(2) }}</div>
+        <button class="recharge-btn" @click="rechargeCurrentPatient">充值</button>
       </div>
     </GlassCard>
 
@@ -207,6 +253,42 @@ function navigateTo(path: string) {
   font-size: 11px;
   color: var(--color-text-muted);
   text-align: center;
+}
+
+.balance-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.balance-label {
+  display: block;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.balance-name {
+  color: var(--color-text);
+}
+
+.balance-amount {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.recharge-btn {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: #fff;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
 }
 
 /* 今日待办卡片 */

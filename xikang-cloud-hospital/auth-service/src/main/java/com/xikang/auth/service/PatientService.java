@@ -6,8 +6,12 @@ import com.xikang.auth.mapper.UserPatientManagedMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Patient Service - 患者管理服务
@@ -98,5 +102,54 @@ public class PatientService {
     public void deletePatient(Integer patientId) {
         patientMapper.deleteById(patientId);
         log.info("Patient deleted: id={}", patientId);
+    }
+
+    public BigDecimal getBalance(Integer patientId) {
+        BigDecimal balance = patientMapper.selectBalanceById(patientId);
+        if (balance == null) {
+            throw new com.xikang.common.exception.BusinessException(404, "患者不存在");
+        }
+        return balance;
+    }
+
+    @Transactional
+    public Map<String, Object> rechargeBalance(Integer patientId, BigDecimal amount) {
+        validateAmount(amount);
+        int updated = patientMapper.rechargeBalance(patientId, amount);
+        if (updated == 0) {
+            throw new com.xikang.common.exception.BusinessException(404, "患者不存在");
+        }
+        return balanceResult(patientId, true, "充值成功");
+    }
+
+    @Transactional
+    public Map<String, Object> deductBalance(Integer patientId, BigDecimal amount) {
+        validateAmount(amount);
+        int updated = patientMapper.deductBalanceIfEnough(patientId, amount);
+        if (updated == 0) {
+            BigDecimal balance = patientMapper.selectBalanceById(patientId);
+            if (balance == null) {
+                throw new com.xikang.common.exception.BusinessException(404, "患者不存在");
+            }
+            Map<String, Object> result = balanceResult(patientId, false, "余额不足");
+            result.put("accountBalance", balance);
+            return result;
+        }
+        return balanceResult(patientId, true, "扣款成功");
+    }
+
+    private void validateAmount(BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new com.xikang.common.exception.BusinessException(400, "金额必须大于0");
+        }
+    }
+
+    private Map<String, Object> balanceResult(Integer patientId, boolean success, String message) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("message", message);
+        result.put("patientId", patientId);
+        result.put("accountBalance", getBalance(patientId));
+        return result;
     }
 }

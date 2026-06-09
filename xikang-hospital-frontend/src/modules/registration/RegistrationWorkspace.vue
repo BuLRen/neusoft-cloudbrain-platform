@@ -22,7 +22,7 @@ import { useAuthStore } from '@/app/stores/auth'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
-import { registrationApi } from '@/shared/api/modules/registration'
+import { registrationApi, scheduleApi } from '@/shared/api/modules/registration'
 import type {
   DepartmentOption,
   ExpenseRecord,
@@ -148,7 +148,7 @@ async function loadScheduling() {
   }
   scheduleLoading.value = true
   try {
-    schedulingOptions.value = await registrationApi.schedulingOptions(registrationForm.departmentId, registrationForm.visitDate)
+    schedulingOptions.value = await scheduleApi.schedulingOptions(registrationForm.departmentId, registrationForm.visitDate)
     if (registrationForm.schedulingId) {
       const matched = schedulingOptions.value.find((item) => item.id === registrationForm.schedulingId)
       selectedSchedule.value = matched || null
@@ -163,12 +163,14 @@ async function applyScheduling(id?: number) {
     selectedSchedule.value = null
     registrationForm.physicianId = undefined
     registrationForm.physicianName = ''
+    registrationForm.registLevelId = undefined
     return
   }
-  selectedSchedule.value = await registrationApi.schedulingDetail(id)
+  selectedSchedule.value = await scheduleApi.schedulingDetail(id)
   registrationForm.physicianId = selectedSchedule.value.physicianId
   registrationForm.physicianName = selectedSchedule.value.physicianName || ''
   registrationForm.visitTime = selectedSchedule.value.timeSlotName || selectedSchedule.value.timeSlot || registrationForm.visitTime
+  registrationForm.registLevelId = selectedSchedule.value.registLevelId || registrationForm.registLevelId
 }
 
 async function submitRegistration() {
@@ -176,11 +178,12 @@ async function submitRegistration() {
     !registrationForm.patientId
     || !registrationForm.patientName.trim()
     || !registrationForm.departmentId
+    || !registrationForm.schedulingId
     || !registrationForm.visitDate
     || !registrationForm.registLevelId
     || !registrationForm.settleCategoryId
   ) {
-    ElMessage.warning('请先完善患者信息、科室、就诊日期、挂号级别和结算类别')
+    ElMessage.warning('请先完善患者信息、科室、可用排班、挂号级别和结算类别')
     return
   }
   loading.value = true
@@ -371,7 +374,7 @@ onMounted(async () => {
                   <ElInput v-model="registrationForm.visitDate" type="date" />
                 </ElFormItem>
                 <ElFormItem label="挂号级别">
-                  <ElSelect v-model="registrationForm.registLevelId" placeholder="选择挂号级别">
+                  <ElSelect v-model="registrationForm.registLevelId" placeholder="选择排班后自动带出挂号级别" :disabled="!!selectedSchedule">
                     <ElOption v-for="item in registLevels" :key="item.id" :label="`${item.name}${item.price ? ` / ${item.price}元` : ''}`" :value="item.id" />
                   </ElSelect>
                 </ElFormItem>
@@ -403,7 +406,7 @@ onMounted(async () => {
                 >
                   <strong>{{ item.physicianName || '待分配医生' }}</strong>
                   <span>{{ item.timeSlotName || item.timeSlot || '-' }}</span>
-                  <StatusTag :tone="levelTone(item.availableQuota ? '普通' : '专家')">余号 {{ item.availableQuota ?? '-' }}</StatusTag>
+                  <StatusTag :tone="levelTone(item.registLevelName)">{{ item.registLevelName || '挂号' }} · 余号 {{ item.availableQuota ?? '-' }}</StatusTag>
                 </button>
                 <ElEmpty v-if="!scheduleLoading && schedulingOptions.length === 0" description="选择科室与日期后查看排班" />
               </div>

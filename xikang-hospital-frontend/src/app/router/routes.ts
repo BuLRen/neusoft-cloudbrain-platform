@@ -17,6 +17,11 @@ import PhysicianWorkspace from '@/modules/physician/PhysicianWorkspace.vue'
 import MedicalTechWorkspace from '@/modules/medical-tech/MedicalTechWorkspace.vue'
 import PharmacyWorkspace from '@/modules/pharmacy/PharmacyWorkspace.vue'
 import AdminWorkspace from '@/modules/admin/AdminWorkspace.vue'
+import ScheduleManagement from '@/modules/admin/pages/ScheduleManagement.vue'
+import MasterDataManagement from '@/modules/admin/pages/MasterDataManagement.vue'
+import UserPermissionManagement from '@/modules/admin/pages/UserPermissionManagement.vue'
+import OperationsMonitoring from '@/modules/admin/pages/OperationsMonitoring.vue'
+import StatisticsReports from '@/modules/admin/pages/StatisticsReports.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
 import NotFoundPage from '@/modules/error/NotFoundPage.vue'
@@ -116,37 +121,67 @@ export const routes: RouteRecordRaw[] = [
         path: 'registration',
         name: 'Registration',
         component: RegistrationWorkspace,
-        meta: { title: '挂号收费', description: '窗口挂号、收费、退费、费用记录', icon: 'Tickets', roles: ['registration', 'admin'], requiresAuth: true, owner: 'B' },
+        meta: { title: '挂号收费', description: '窗口挂号、收费、退费、费用记录', icon: 'Tickets', roles: ['registration'], requiresAuth: true, owner: 'B' },
       },
       {
         path: 'physician',
         name: 'Physician',
         component: PhysicianWorkspace,
-        meta: { title: '医生工作站', description: '患者查看、病历、检查申请、确诊、处方', icon: 'FirstAidKit', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A' },
+        meta: { title: '医生工作站', description: '患者查看、病历、检查申请、确诊、处方', icon: 'FirstAidKit', roles: ['physician'], requiresAuth: true, owner: 'A' },
       },
       {
         path: 'medical-tech',
         name: 'MedicalTech',
         component: MedicalTechWorkspace,
-        meta: { title: '医技执行', description: '检查、检验、处置执行和结果录入', icon: 'Operation', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B' },
+        meta: { title: '医技执行', description: '检查、检验、处置执行和结果录入', icon: 'Operation', roles: ['medtech'], requiresAuth: true, owner: 'B' },
       },
       {
         path: 'pharmacy',
         name: 'Pharmacy',
         component: PharmacyWorkspace,
-        meta: { title: '药房管理', description: '发药、退药、药库、交易记录', icon: 'Box', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B' },
+        meta: { title: '药房管理', description: '发药、退药、药库、交易记录', icon: 'Box', roles: ['pharmacy'], requiresAuth: true, owner: 'B' },
       },
       {
         path: 'admin',
         name: 'Admin',
         component: AdminWorkspace,
-        meta: { title: '管理员支撑', description: '医生排班、AI 分诊台、基础数据', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
+        meta: { title: '管理员支撑', description: 'AI 分诊台、基础数据', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
+      },
+      {
+        path: 'schedule',
+        name: 'ScheduleManagement',
+        component: ScheduleManagement,
+        meta: { title: '智能排班', description: '智能排班管理、AI生成、号源管理', icon: 'Calendar', roles: ['admin'], requiresAuth: true, owner: 'B' },
+      },
+      {
+        path: 'admin/master-data',
+        name: 'MasterDataManagement',
+        component: MasterDataManagement,
+        meta: { title: '基础资料', description: '科室、医生、药品与项目主数据维护', icon: 'Box', roles: ['admin'], requiresAuth: true, owner: 'B' },
+      },
+      {
+        path: 'admin/users',
+        name: 'UserPermissionManagement',
+        component: UserPermissionManagement,
+        meta: { title: '用户权限', description: '账号、角色与权限范围治理', icon: 'User', roles: ['admin'], requiresAuth: true, owner: 'B' },
+      },
+      {
+        path: 'admin/monitoring',
+        name: 'OperationsMonitoring',
+        component: OperationsMonitoring,
+        meta: { title: '运营监控', description: '跨模块异常、预警和处理闭环', icon: 'Operation', roles: ['admin'], requiresAuth: true, owner: 'B' },
+      },
+      {
+        path: 'admin/reports',
+        name: 'StatisticsReports',
+        component: StatisticsReports,
+        meta: { title: '统计报表', description: '经营分析、趋势与工作量统计', icon: 'DataBoard', roles: ['admin'], requiresAuth: true, owner: 'B' },
       },
       {
         path: 'ai',
         name: 'AiComponents',
         component: placeholder,
-        meta: { title: 'AI 组件区', description: 'AI 结果卡片和嵌入组件预留区', icon: 'MagicStick', roles: ['admin', 'physician', 'registration', 'medtech', 'pharmacy', 'patient'], requiresAuth: true, owner: '共同' },
+        meta: { title: 'AI 组件区', description: 'AI 结果卡片和嵌入组件预留区', icon: 'MagicStick', roles: ['physician', 'registration', 'medtech', 'pharmacy', 'patient'], requiresAuth: true, owner: '共同' },
       },
       {
         path: '403',

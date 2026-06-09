@@ -6,7 +6,9 @@ import com.xikang.common.result.Result;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Patient Controller - 患者管理控制器
@@ -34,6 +36,30 @@ public class PatientController {
     public Result<Patient> getPatient(@PathVariable Integer patientId) {
         Patient patient = patientService.getPatientById(patientId);
         return Result.success(patient);
+    }
+
+    @GetMapping("/{patientId}/balance")
+    public Result<Map<String, Object>> getBalance(@PathVariable Integer patientId) {
+        return Result.success(Map.of(
+                "patientId", patientId,
+                "accountBalance", patientService.getBalance(patientId)
+        ));
+    }
+
+    @PostMapping("/{patientId}/balance/recharge")
+    public Result<Map<String, Object>> rechargeBalance(
+            @PathVariable Integer patientId,
+            @RequestBody Map<String, Object> request) {
+        BigDecimal amount = new BigDecimal(String.valueOf(request.get("amount")));
+        return Result.success(patientService.rechargeBalance(patientId, amount));
+    }
+
+    @PostMapping("/{patientId}/balance/deduct")
+    public Result<Map<String, Object>> deductBalance(
+            @PathVariable Integer patientId,
+            @RequestBody Map<String, Object> request) {
+        BigDecimal amount = new BigDecimal(String.valueOf(request.get("amount")));
+        return Result.success(patientService.deductBalance(patientId, amount));
     }
 
     /**

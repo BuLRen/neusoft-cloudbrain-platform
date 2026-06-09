@@ -2,14 +2,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User } from '@element-plus/icons-vue'
+import { Box, Calendar, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User } from '@element-plus/icons-vue'
 import { appName } from '@/shared/constants/app'
 import { useAuthStore } from '@/app/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const iconMap = { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User }
+const iconMap = { Box, Calendar, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User }
 
 // 患者角色时隐藏左侧菜单
 const isPatient = computed(() => authStore.role === 'patient')

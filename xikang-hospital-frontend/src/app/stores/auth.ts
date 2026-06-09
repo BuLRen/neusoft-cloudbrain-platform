@@ -9,7 +9,12 @@ export interface PatientInfo {
   gender: string
   relation: string
   isPrimary: number
+  idCard?: string
+  birthdate?: string
+  phone?: string
+  homeAddress?: string
   allergyHistory?: string
+  accountBalance?: number
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -23,6 +28,11 @@ export const useAuthStore = defineStore('auth', () => {
   const currentPatientId = ref<number | null>(null)
 
   const isAuthenticated = computed(() => Boolean(token.value))
+
+  function selectDefaultPatient() {
+    const defaultPatient = patients.value.find(p => p.isPrimary === 1) || patients.value[0] || null
+    currentPatientId.value = defaultPatient?.patientId || null
+  }
 
   // 当前选中的患者信息
   const currentPatient = computed(() => {
@@ -60,9 +70,7 @@ export const useAuthStore = defineStore('auth', () => {
         role.value = data.role || 'admin'
         realName.value = data.realName || (data.role === 'patient' ? '患者' : '未知用户')
         patients.value = data.patients || []
-        // 默认选中本人
-        const primaryPatient = patients.value.find(p => p.isPrimary === 1)
-        currentPatientId.value = primaryPatient?.patientId || null
+        selectDefaultPatient()
       }
     } catch {
       // API 调用失败时，保留 localStorage 中的 token，不清除
@@ -130,6 +138,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  function setPatientBalance(patientId: number, accountBalance: number) {
+    const patient = patients.value.find(p => p.patientId === patientId)
+    if (patient) {
+      patient.accountBalance = accountBalance
+    }
+  }
+
   function getToken() {
     if (!token.value) {
       token.value = localStorage.getItem('access_token') || ''
@@ -153,5 +168,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     getToken,
     switchPatient,
+    setPatientBalance,
   }
 })

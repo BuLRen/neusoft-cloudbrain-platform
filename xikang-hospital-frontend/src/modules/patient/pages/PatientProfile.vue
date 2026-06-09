@@ -39,11 +39,14 @@ interface PatientInfo {
   idCard: string
   gender: string
   birthdate: string
-  phone: string
+  phone?: string
   avatar?: string
   homeAddress?: string
   allergyHistory?: string
   delmark: number
+  relation?: string
+  isPrimary?: number
+  accountBalance?: number
 }
 
 const currentPatient = ref<PatientInfo | null>(null)
@@ -74,8 +77,12 @@ function maskPhone(phone: string): string {
 function maskEmail(email: string): string {
   if (!email || !email.includes('@')) return email
   const [name, domain] = email.split('@')
+  if (!name) return email
   return name.slice(0, 1) + '***@' + domain
 }
+// 保留 maskEmail 以备后续账号安全模块使用
+const maskers = { maskIdCard, maskPhone, maskEmail }
+void maskers
 
 // 计算年龄
 const age = computed(() => {
@@ -179,6 +186,25 @@ async function setDefaultMember(patientId: number) {
     ElMessage.success('已设为默认就诊人')
   } catch {
     ElMessage.error('操作失败')
+  }
+}
+
+async function rechargePatient(patient: PatientInfo) {
+  try {
+    const { value } = await ElMessageBox.prompt(`为 ${patient.realName} 充值`, '账户充值', {
+      confirmButtonText: '确认充值',
+      cancelButtonText: '取消',
+      inputPattern: /^([1-9]\d{0,5})(\.\d{1,2})?$/,
+      inputErrorMessage: '请输入大于0的金额，最多两位小数',
+    })
+    const result = await patientApi.rechargeBalance(patient.id, Number(value))
+    patient.accountBalance = Number(result.accountBalance || 0)
+    authStore.setPatientBalance(patient.id, patient.accountBalance)
+    ElMessage.success('充值成功')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('充值失败')
+    }
   }
 }
 
@@ -373,6 +399,16 @@ onMounted(() => {
                 <span class="field-value sensitive">{{ maskPhone(currentPatient?.phone || '') }}</span>
               </div>
             </div>
+            <div class="field-row">
+              <div class="field-item">
+                <label>账户余额</label>
+                <span class="field-value balance-value">¥{{ Number(currentPatient?.accountBalance || 0).toFixed(2) }}</span>
+              </div>
+              <div class="field-item">
+                <label>账户操作</label>
+                <button v-if="currentPatient" class="btn-outline" @click="rechargePatient(currentPatient)">充值</button>
+              </div>
+            </div>
           </template>
 
           <!-- 编辑模式 -->
@@ -469,7 +505,8 @@ onMounted(() => {
             </div>
             <div class="member-detail">
               <span>身份证: {{ maskIdCard(currentPatient.idCard) }}</span>
-              <span>手机: {{ maskPhone(currentPatient.phone) }}</span>
+              <span>手机: {{ maskPhone(currentPatient.phone || '') }}</span>
+              <span>余额: ¥{{ Number(currentPatient.accountBalance || 0).toFixed(2) }}</span>
             </div>
           </div>
         </div>
@@ -487,10 +524,12 @@ onMounted(() => {
             </div>
             <div class="member-detail">
               <span>身份证: {{ maskIdCard(member.idCard) }}</span>
-              <span>手机: {{ maskPhone(member.phone) }}</span>
+              <span>手机: {{ maskPhone(member.phone || '') }}</span>
+              <span>余额: ¥{{ Number(member.accountBalance || 0).toFixed(2) }}</span>
             </div>
           </div>
           <div class="member-actions">
+            <button class="btn-link" @click="rechargePatient(member)">充值</button>
             <button class="btn-link" @click="setDefaultMember(member.id)">设为默认</button>
             <button class="btn-link danger" @click="removeMember(member.id, member.realName)">删除</button>
           </div>
@@ -807,6 +846,11 @@ onMounted(() => {
 .field-value.sensitive {
   font-family: 'SF Mono', monospace;
   letter-spacing: 1px;
+}
+
+.balance-value {
+  font-weight: 700;
+  color: #667eea;
 }
 
 .empty-value {

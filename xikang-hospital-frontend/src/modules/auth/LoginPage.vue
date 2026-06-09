@@ -33,7 +33,9 @@ async function handleLogin() {
   submitting.value = true
   try {
     await authStore.login(form.username, form.password)
-    const redirect = route.query.redirect as string
+    // 只接受我们自己守卫塞进来的、同源路径 redirect；任何外部或空值都走默认首页
+    const rawRedirect = route.query.redirect
+    const redirect = typeof rawRedirect === 'string' && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : ''
     if (redirect) {
       router.push(redirect)
     } else if (authStore.role === 'patient') {

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.schedule.mapper.SchedulePlanMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.schedule.entity.SchedulePlan">
+        <id column="id" property="id"/>
+        <result column="plan_name" property="planName"/>
+        <result column="department_id" property="departmentId"/>
+        <result column="plan_month" property="planMonth"/>
+        <result column="status" property="status"/>
+        <result column="ai_generated" property="aiGenerated"/>
+        <result column="ai_version" property="aiVersion"/>
+        <result column="total_schedules" property="totalSchedules"/>
+        <result column="total_quota" property="totalQuota"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="created_time" property="createdTime"/>
+        <result column="published_time" property="publishedTime"/>
+        <result column="published_by" property="publishedBy"/>
+        <result column="delmark" property="delmark"/>
+        <result column="department_name" property="departmentName"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT sp.*, d.dept_name as department_name
+        FROM schedule_plan sp
+        LEFT JOIN department d ON sp.department_id = d.id
+        WHERE sp.delmark = 0
+        ORDER BY sp.created_time DESC
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT sp.*, d.dept_name as department_name
+        FROM schedule_plan sp
+        LEFT JOIN department d ON sp.department_id = d.id
+        WHERE sp.id = #{id} AND sp.delmark = 0
+    </select>
+
+    <select id="selectByDepartmentAndMonth" resultMap="BaseResultMap">
+        SELECT sp.*, d.dept_name as department_name
+        FROM schedule_plan sp
+        LEFT JOIN department d ON sp.department_id = d.id
+        WHERE sp.department_id = #{departmentId}
+          AND sp.plan_month = #{planMonth}
+          AND sp.delmark = 0
+        ORDER BY sp.created_time DESC
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT sp.*, d.dept_name as department_name
+        FROM schedule_plan sp
+        LEFT JOIN department d ON sp.department_id = d.id
+        WHERE sp.status = #{status}
+          AND sp.delmark = 0
+        ORDER BY sp.created_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO schedule_plan (
+            plan_name, department_id, plan_month, status, ai_generated,
+            ai_version, total_schedules, total_quota, created_by, delmark
+        ) VALUES (
+            #{planName}, #{departmentId}, #{planMonth}, #{status}, #{aiGenerated},
+            #{aiVersion}, #{totalSchedules}, #{totalQuota}, #{createdBy}, 0
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE schedule_plan
+        <set>
+            <if test="planName != null">plan_name = #{planName},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="aiGenerated != null">ai_generated = #{aiGenerated},</if>
+            <if test="aiVersion != null">ai_version = #{aiVersion},</if>
+            <if test="totalSchedules != null">total_schedules = #{totalSchedules},</if>
+            <if test="totalQuota != null">total_quota = #{totalQuota},</if>
+            <if test="createdBy != null">created_by = #{createdBy},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE schedule_plan SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="updatePublishInfo">
+        UPDATE schedule_plan
+        SET published_time = #{publishedTime},
+            published_by = #{publishedBy},
+            status = '已发布'
+        WHERE id = #{id}
+    </update>
+
+    <update id="deleteById">
+        UPDATE schedule_plan SET delmark = 1 WHERE id = #{id}
+    </update>
+
+</mapper>

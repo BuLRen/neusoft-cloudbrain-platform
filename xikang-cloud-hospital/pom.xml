@@ -27,6 +27,7 @@
         <module>physician-service</module>
         <module>medtech-service</module>
         <module>pharmacy-service</module>
+        <module>schedule-service</module>
         <module>ai-gateway-service</module>
         <module>ai-triage-service</module>
         <module>ai-consult-service</module>

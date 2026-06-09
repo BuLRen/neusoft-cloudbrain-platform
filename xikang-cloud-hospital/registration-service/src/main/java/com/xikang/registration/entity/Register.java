@@ -9,9 +9,10 @@ import java.time.LocalDateTime;
 
 /**
  * Register Entity - 挂号记录表
- * register: id, case_number, real_name, gender, card_number, birthdate, age, age_type,
- *           home_address, visit_date, noon, deptment_id, employee_id, regist_level_id,
- *           settle_category_id, is_book, regist_method, regist_money, visit_state
+ * register: id, patient_id, scheduling_id, case_number, real_name, gender, card_number,
+ *           birthdate, age, age_type, home_address, visit_date, noon, deptment_id,
+ *           employee_id, regist_level_id, settle_category_id, is_book, regist_method,
+ *           regist_money, visit_state
  */
 @Data
 public class Register implements Serializable {
@@ -19,6 +20,8 @@ public class Register implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Long id;
+    private Long patientId;       // patient_id (患者ID)
+    private Long schedulingId;    // scheduling_id (排班ID)
     private String caseNumber;     // case_number (病历号)
     private String realName;      // real_name (患者姓名)
     private String gender;        // gender
@@ -46,7 +49,6 @@ public class Register implements Serializable {
     private String aiTriageResult;
     private String aiPreVisit;
     private String complaint;
-    private Long patientId;
     private String patientPhone;
     private String idCard;
 }

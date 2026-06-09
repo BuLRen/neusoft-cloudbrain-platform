@@ -21,6 +21,8 @@ public interface ExpenseRecordMapper {
 
     List<ExpenseRecord> selectPendingByRegisterId(Long registerId);
 
+    List<ExpenseRecord> selectPendingByPatientId(Long patientId);
+
     List<ExpenseRecord> selectPendingByRegisterAndIds(Long registerId, List<Long> itemIds);
 
     List<ExpenseRecord> selectUnrefundedByRegisterId(Long registerId);

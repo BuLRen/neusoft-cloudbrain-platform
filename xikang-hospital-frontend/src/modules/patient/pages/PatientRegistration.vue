@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
-import { registrationApi, type DoctorInfo } from '@/shared/api/modules/registration'
+import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
 import { useAuthStore } from '@/app/stores/auth'
 import { Warning } from '@element-plus/icons-vue'
 
@@ -247,6 +247,16 @@ function selectCategory(cat: typeof symptomCategories[0]) {
 const selectedSchedule = ref<any>(null)
 const selectedLevel = ref<any>(null)
 const availableSchedules = ref<any[]>([])
+const scheduleLoading = ref(false)
+const scheduleDate = ref(formatDate(new Date()))
+const defaultSettleCategoryId = ref<number>()
+
+function formatDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 // ========== Step 3: 确认挂号 ==========
 const submitting = ref(false)
@@ -271,9 +281,12 @@ const stepStatus = computed(() => {
   })
 })
 
-function nextStep() {
+async function nextStep() {
   if (currentStep.value < steps.length - 1) {
     currentStep.value++
+    if (currentStep.value === 1) {
+      await loadAvailableSchedules()
+    }
   }
 }
 
@@ -356,13 +369,53 @@ async function runTriage() {
 }
 
 // ========== Step 2: 选择排班 ==========
+async function loadAvailableSchedules() {
+  const departmentId = triageResult.value?.recommendedDepartmentId
+  selectedSchedule.value = null
+  selectedLevel.value = null
+  availableSchedules.value = []
+  if (!departmentId) {
+    ElMessage.warning('AI 导诊未返回科室ID，暂时无法加载排班')
+    return
+  }
+  scheduleLoading.value = true
+  try {
+    const schedules = await scheduleApi.schedulingOptions(departmentId, scheduleDate.value)
+    availableSchedules.value = schedules.filter(item => item.status === 1 && (item.availableQuota || 0) > 0)
+  } catch (err: any) {
+    console.error('加载排班失败:', err)
+    ElMessage.error(err?.message || '加载排班失败')
+  } finally {
+    scheduleLoading.value = false
+  }
+}
+
+async function onScheduleDateChange() {
+  await loadAvailableSchedules()
+}
+
 function selectSchedule(schedule: any) {
+  if (!schedule.registLevelId) {
+    ElMessage.warning('该排班缺少挂号级别，暂不能选择')
+    return
+  }
   selectedSchedule.value = schedule
   selectedLevel.value = {
-    id: 1,
-    name: '专家号',
-    price: 30,
+    id: schedule.registLevelId,
+    name: schedule.registLevelName || '挂号',
+    price: schedule.price || 0,
   }
+}
+
+async function ensureDefaultSettleCategory() {
+  if (defaultSettleCategoryId.value) return defaultSettleCategoryId.value
+  const categories = await registrationApi.settleCategories()
+  const matched = categories.find(item => item.name?.includes('自费') || item.name?.includes('普通')) || categories[0]
+  if (!matched?.id) {
+    throw new Error('未配置结算类别，无法挂号')
+  }
+  defaultSettleCategoryId.value = matched.id
+  return matched.id
 }
 
 // ========== Step 3: 确认挂号 ==========
@@ -373,16 +426,30 @@ async function submitRegistration() {
   submitting.value = true
   try {
     // 调用真实的挂号接口
-    if (!authStore.currentPatientId) {
+    const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
+    if (!patientId) {
       ElMessage.error('请先选择就诊人')
       return
     }
+    const currentPatient = authStore.currentPatient
+    const settleCategoryId = await ensureDefaultSettleCategory()
     const result = await registrationApi.createRegistration({
-      patientId: authStore.currentPatientId,  // 传入患者ID
+      patientId,
+      patientName: currentPatient?.realName,
+      gender: currentPatient?.gender,
+      idCard: currentPatient?.idCard,
+      cardNumber: currentPatient?.idCard,
+      birthdate: currentPatient?.birthdate,
+      homeAddress: currentPatient?.homeAddress,
       departmentId: selectedSchedule.value.departmentId,
       physicianId: selectedSchedule.value.physicianId,
+      schedulingId: selectedSchedule.value.id,
       visitDate: selectedSchedule.value.workDate,
+      visitTime: selectedSchedule.value.timeSlot,
       registLevelId: selectedLevel.value.id,
+      settleCategoryId,
+      complaint: triageForm.value.symptoms,
+      aiTriageResult: triageResult.value,
     })
 
     registrationResult.value = {
@@ -391,16 +458,22 @@ async function submitRegistration() {
       physicianName: selectedSchedule.value.physicianName,
       visitDate: selectedSchedule.value.workDate,
       visitTime: selectedSchedule.value.timeSlot,
-      amount: selectedLevel.value.price,
-      statusName: '待缴费',
+      amount: result.amount ?? selectedLevel.value.price,
+      statusName: result.payStatusName || result.statusName || '待缴费',
+      paymentMessage: result.paymentMessage,
+      payStatus: result.payStatus,
+      accountBalance: result.accountBalance,
     }
-    ElMessage.success('挂号成功')
+    if (typeof result.accountBalance === 'number') {
+      authStore.setPatientBalance(patientId, result.accountBalance)
+    }
+    ElMessage.success(result.paymentMessage || '挂号成功')
+    await nextStep()
   } catch (err: any) {
     console.error('挂号失败:', err)
     ElMessage.error(err?.message || '挂号失败，请重试')
   } finally {
     submitting.value = false
-    nextStep()
   }
 }
 
@@ -463,6 +536,8 @@ function restart() {
   triageResult.value = null
   selectedSchedule.value = null
   selectedLevel.value = null
+  availableSchedules.value = []
+  scheduleDate.value = formatDate(new Date())
   registrationResult.value = null
   previsitForm.value = { chiefComplaint: '', presentIllness: '', pastHistory: '', allergyHistory: '' }
   previsitCompleted.value = false
@@ -485,6 +560,10 @@ function goHome() {
   }
   router.push('/patient/overview')
 }
+
+const currentBalance = computed(() => Number(authStore.currentPatient?.accountBalance || 0))
+const selectedFee = computed(() => Number(selectedLevel.value?.price || 0))
+const balanceEnough = computed(() => currentBalance.value >= selectedFee.value)
 
 // 计算属性判断是否显示挂号成功卡片
 const showSuccessCard = computed(() => {
@@ -694,7 +773,18 @@ const showSuccessCard = computed(() => {
           </div>
         </div>
 
-        <div v-if="availableSchedules.length > 0" class="schedule-list">
+        <div class="schedule-filter">
+          <label>就诊日期</label>
+          <input v-model="scheduleDate" class="form-input" type="date" @change="onScheduleDateChange" />
+          <button class="btn-outline" :disabled="scheduleLoading" @click="loadAvailableSchedules">
+            {{ scheduleLoading ? '加载中...' : '刷新排班' }}
+          </button>
+        </div>
+
+        <div v-if="scheduleLoading" class="empty-state">正在加载可用排班...</div>
+        <div v-else-if="availableSchedules.length === 0" class="empty-state">该科室当前日期暂无可挂号排班，请切换日期或返回重新导诊</div>
+
+        <div v-else class="schedule-list">
           <div
             v-for="schedule in availableSchedules"
             :key="schedule.id"
@@ -705,11 +795,12 @@ const showSuccessCard = computed(() => {
             <div class="schedule-main">
               <div class="schedule-doctor">
                 <span class="doctor-name">{{ schedule.physicianName }}</span>
-                <StatusTag tone="primary">{{ schedule.physicianTitle }}</StatusTag>
+                <StatusTag tone="primary">{{ schedule.physicianTitle || schedule.registLevelName || '医生' }}</StatusTag>
               </div>
               <div class="schedule-info">
                 <span>📅 {{ schedule.workDate }} {{ schedule.timeSlot }}</span>
                 <span>🏥 {{ schedule.departmentName }}</span>
+                <span>💳 {{ schedule.registLevelName || '挂号' }} ¥{{ schedule.price || 0 }}</span>
               </div>
             </div>
             <div class="schedule-status">
@@ -795,9 +886,21 @@ const showSuccessCard = computed(() => {
           <div class="confirm-total">
             <div class="total-label">
               <span>挂号费用</span>
-              <StatusTag tone="warning">待支付</StatusTag>
+              <StatusTag :tone="balanceEnough ? 'success' : 'warning'">
+                {{ balanceEnough ? '余额自动支付' : '余额不足，待缴费' }}
+              </StatusTag>
             </div>
             <span class="total-price">¥{{ selectedLevel?.price }}</span>
+          </div>
+          <div class="confirm-row">
+            <div class="confirm-item">
+              <label>账户余额</label>
+              <span>¥{{ currentBalance.toFixed(2) }}</span>
+            </div>
+            <div class="confirm-item">
+              <label>支付提示</label>
+              <span>{{ balanceEnough ? '确认后将直接从当前就诊人账户扣费' : '确认后生成待缴费记录，可充值后缴费' }}</span>
+            </div>
           </div>
         </div>
 
@@ -842,7 +945,15 @@ const showSuccessCard = computed(() => {
           </div>
           <div class="success-row highlight">
             <label>费用状态</label>
-            <StatusTag tone="warning">{{ registrationResult?.statusName }}</StatusTag>
+            <StatusTag :tone="registrationResult?.payStatus === 1 ? 'success' : 'warning'">{{ registrationResult?.statusName }}</StatusTag>
+          </div>
+          <div v-if="registrationResult?.paymentMessage" class="success-row">
+            <label>支付提示</label>
+            <span>{{ registrationResult.paymentMessage }}</span>
+          </div>
+          <div v-if="registrationResult?.accountBalance !== undefined" class="success-row">
+            <label>账户余额</label>
+            <span>¥{{ Number(registrationResult.accountBalance).toFixed(2) }}</span>
           </div>
         </div>
 

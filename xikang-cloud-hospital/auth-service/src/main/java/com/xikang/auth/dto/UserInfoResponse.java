@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -37,6 +38,8 @@ public class UserInfoResponse {
         private String realName;
         private String gender;
         private String relation;
+        private Integer isPrimary;
+        private BigDecimal accountBalance;
         private String allergyHistory;
     }
 }

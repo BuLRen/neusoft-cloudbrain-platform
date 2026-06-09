@@ -84,6 +84,7 @@ BEGIN
             avatar          VARCHAR(255)    DEFAULT NULL,
             home_address    VARCHAR(255)    DEFAULT NULL,
             allergy_history VARCHAR(512)    DEFAULT NULL,
+            account_balance DECIMAL(10,2)   NOT NULL DEFAULT 0.00,
             relation        VARCHAR(16)     DEFAULT '本人',
             is_primary      SMALLINT       NOT NULL DEFAULT 0,
             delmark         SMALLINT       NOT NULL DEFAULT 1,
@@ -93,6 +94,7 @@ BEGIN
             CONSTRAINT uk_patient_id_card UNIQUE (id_card),
             CONSTRAINT chk_patient_gender CHECK (gender IN ('男', '女')),
             CONSTRAINT chk_patient_relation CHECK (relation IN ('本人', '父亲', '母亲', '配偶', '子女', '祖父', '祖母', '外祖父', '外祖母', '兄弟', '姐妹', '其他')),
+            CONSTRAINT chk_patient_account_balance CHECK (account_balance >= 0),
             CONSTRAINT chk_patient_primary CHECK (is_primary IN (0, 1)),
             CONSTRAINT chk_patient_delmark CHECK (delmark IN (0, 1))
         );
@@ -102,6 +104,7 @@ BEGIN
         COMMENT ON TABLE patient IS '患者档案表';
         COMMENT ON COLUMN patient.id_card IS '身份证号，唯一';
         COMMENT ON COLUMN patient.allergy_history IS '过敏史';
+        COMMENT ON COLUMN patient.account_balance IS '患者账户余额';
         COMMENT ON COLUMN patient.relation IS '与账号本人的关系';
         COMMENT ON COLUMN patient.is_primary IS '是否为本账号本人: 1-是, 0-否(家人)';
     END IF;
@@ -117,6 +120,7 @@ BEGIN
         CREATE TABLE user_patient_managed (
             user_id         INTEGER         NOT NULL,
             patient_id      INTEGER         NOT NULL,
+            relation        VARCHAR(16)     DEFAULT '本人',
             create_time     TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
 
             PRIMARY KEY (user_id, patient_id),

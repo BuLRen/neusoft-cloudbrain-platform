@@ -5,11 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.registration.entity.*;
 import com.xikang.registration.mapper.*;
+import com.xikang.registration.feign.AuthPatientFeignClient;
+import com.xikang.registration.feign.ScheduleFeignClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -30,12 +31,13 @@ import java.util.concurrent.atomic.AtomicLong;
 public class RegistrationService {
 
     private final RegistrationMapper registrationMapper;
-    private final SchedulingMapper schedulingMapper;
     private final RegistLevelMapper registLevelMapper;
     private final DepartmentMapper departmentMapper;
     private final SettleCategoryMapper settleCategoryMapper;
+    private final ExpenseRecordMapper expenseRecordMapper;
     private final ObjectMapper objectMapper;
-    private final RestTemplate restTemplate;
+    private final ScheduleFeignClient scheduleFeignClient;
+    private final AuthPatientFeignClient authPatientFeignClient;
 
     // 用于生成病历号
     private static final AtomicLong caseCounter = new AtomicLong(System.currentTimeMillis() % 100000);
@@ -66,26 +68,21 @@ public class RegistrationService {
 
         // 如果传了 patientId，通过 auth-service 获取患者信息
         if (patientIdParam != null && (realName == null || realName.isBlank())) {
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> patientInfo = restTemplate.getForObject(
-                    "http://auth-service/api/patient/" + patientIdParam,
-                    Map.class
-                );
-                if (patientInfo != null) {
-                    realName = (String) patientInfo.getOrDefault("realName", realName);
-                    gender = (String) patientInfo.getOrDefault("gender", gender);
-                    Object birthdateObj = patientInfo.get("birthdate");
-                    if (birthdateObj != null) {
-                        birthdate = LocalDate.parse(birthdateObj.toString());
-                    }
-                    cardNumber = (String) patientInfo.getOrDefault("idCard", cardNumber);
-                    homeAddress = (String) patientInfo.getOrDefault("homeAddress", homeAddress);
-                    log.info("从 patientId={} 获取患者信息成功: {}", patientIdParam, realName);
-                }
-            } catch (Exception e) {
-                log.warn("获取患者信息失败 patientId={}: {}", patientIdParam, e.getMessage());
+            Map<String, Object> patientInfo = authPatientFeignClient.getPatient(patientIdParam);
+            Map<String, Object> patientData = unwrapMapData(patientInfo, "获取患者信息失败");
+            realName = getString(patientData, "realName", realName);
+            gender = getString(patientData, "gender", gender);
+            Object birthdateObj = patientData.get("birthdate");
+            if (birthdateObj != null) {
+                birthdate = LocalDate.parse(birthdateObj.toString());
             }
+            cardNumber = getString(patientData, "idCard", cardNumber);
+            homeAddress = getString(patientData, "homeAddress", homeAddress);
+            log.info("从 patientId={} 获取患者信息成功: {}", patientIdParam, realName);
+        }
+
+        if (realName == null || realName.isBlank()) {
+            throw new BusinessException(400, "患者姓名不能为空，请先完善就诊人信息");
         }
 
         // 计算年龄（如果没有传入且有出生日期）
@@ -102,11 +99,15 @@ public class RegistrationService {
         Long settleCategoryId = request.get("settleCategoryId") != null
             ? ((Number) request.get("settleCategoryId")).longValue()
             : null;
+        Long schedulingId = request.get("schedulingId") != null
+            ? ((Number) request.get("schedulingId")).longValue()
+            : null;
 
         String visitDateText = request.get("visitDate") != null
             ? request.get("visitDate").toString()
             : null;
-        String noon = (String) request.getOrDefault("noon", "上午");
+        String visitTime = request.get("visitTime") != null ? request.get("visitTime").toString() : null;
+        String noon = request.get("noon") != null ? request.get("noon").toString() : (visitTime != null ? visitTime : "上午");
         String isBook = (String) request.getOrDefault("isBook", "否");
         String registMethod = (String) request.getOrDefault("registMethod", "线上");
         String aiTriageResult = null;
@@ -128,6 +129,9 @@ public class RegistrationService {
         if (registLevelId == null) {
             throw new BusinessException(400, "请选择挂号级别");
         }
+        if (schedulingId == null) {
+            throw new BusinessException(400, "请选择可用排班");
+        }
 
         LocalDateTime visitDate = visitDateText != null && !visitDateText.isBlank()
             ? LocalDateTime.parse(visitDateText + " 00:00:00", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
@@ -145,12 +149,16 @@ public class RegistrationService {
             throw new BusinessException(400, "挂号级别不存在");
         }
 
+        Map<String, Object> schedule = getScheduleData(schedulingId);
+        validateSchedule(schedule, schedulingId, deptmentId, employeeId, registLevelId, visitDate.toLocalDate(), noon);
+
         // 获取结算类别
         SettleCategory settleCategory = settleCategoryId != null
             ? settleCategoryMapper.selectById(settleCategoryId)
             : null;
 
-        BigDecimal registMoney = registLevel.getPrice() != null ? registLevel.getPrice() : BigDecimal.ZERO;
+        BigDecimal schedulePrice = toBigDecimal(schedule.get("price"));
+        BigDecimal registMoney = schedulePrice != null ? schedulePrice : (registLevel.getPrice() != null ? registLevel.getPrice() : BigDecimal.ZERO);
 
         // 生成病历号
         String caseNumber = generateCaseNumber();
@@ -176,8 +184,12 @@ public class RegistrationService {
         register.setRegistMoney(registMoney);
         register.setVisitState(1); // 1=已挂号
         register.setPatientId(patientIdParam != null ? patientIdParam.longValue() : null);
+        register.setSchedulingId(schedulingId);
 
         registrationMapper.insert(register);
+        ExpenseRecord registrationFee = createRegistrationFee(register, patientIdParam, realName, registLevel, registMoney, operatorId);
+        Map<String, Object> payment = tryBalancePayment(patientIdParam, registrationFee, registMoney);
+        deductScheduleQuota(schedulingId, register.getId());
 
         log.info("挂号成功 | registerId={}, patient={}, department={}", register.getId(), realName, department.getName());
 
@@ -189,15 +201,26 @@ public class RegistrationService {
         result.put("departmentId", deptmentId);
         result.put("departmentName", department.getName());
         result.put("employeeId", employeeId);
+        result.put("physicianId", employeeId);
+        result.put("physicianName", schedule.get("physicianName"));
+        result.put("schedulingId", schedulingId);
         result.put("visitDate", visitDate);
+        result.put("visitTime", noon);
         result.put("noon", noon);
         result.put("registLevelId", registLevelId);
         result.put("registLevelName", registLevel.getName());
         result.put("registMoney", registMoney);
+        result.put("amount", registMoney);
         result.put("settleCategoryId", settleCategoryId);
         result.put("settleCategoryName", settleCategory != null ? settleCategory.getName() : null);
         result.put("visitState", 1);
         result.put("visitStateName", "已挂号");
+        result.put("status", 1);
+        result.put("statusName", payment.get("payStatusName"));
+        result.put("payStatus", payment.get("payStatus"));
+        result.put("payStatusName", payment.get("payStatusName"));
+        result.put("paymentMessage", payment.get("paymentMessage"));
+        result.put("accountBalance", payment.get("accountBalance"));
         result.put("patientId", patientIdParam);
 
         return result;
@@ -248,38 +271,25 @@ public class RegistrationService {
         }
 
         registrationMapper.updateStatus(id, 4); // visit_state=4 已退号
+        if (register.getSchedulingId() != null) {
+            returnScheduleQuota(register.getSchedulingId());
+        }
         log.info("退号成功 | registerId={}", id);
     }
 
     /**
-     * 获取排班可用号源（兼容方法，scheduling表不存储号源）
+     * 获取排班详情（调用 schedule-service）
      */
-    public Map<String, Object> getSchedulingAvailable(Long schedulingId) {
-        Scheduling scheduling = schedulingMapper.selectById(schedulingId);
-        if (scheduling == null) {
-            throw new BusinessException(404, "排班不存在");
-        }
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("id", scheduling.getId());
-        result.put("ruleName", scheduling.getRuleName());
-        result.put("weekRule", scheduling.getWeekRule());
-
-        return result;
+    public Map<String, Object> getSchedulingAvailable(Long scheduleId) {
+        return getScheduleData(scheduleId);
     }
 
     /**
-     * 获取科室的可用排班（兼容方法）
+     * 获取科室的可用排班（调用 schedule-service）
      */
     public List<Map<String, Object>> getAvailableScheduling(Long departmentId, LocalDate date) {
-        List<Scheduling> schedulings = schedulingMapper.selectAvailableByDepartmentAndDate(departmentId, date);
-        return schedulings.stream().map(s -> {
-            Map<String, Object> map = new HashMap<>();
-            map.put("id", s.getId());
-            map.put("ruleName", s.getRuleName());
-            map.put("weekRule", s.getWeekRule());
-            return map;
-        }).toList();
+        Map<String, Object> response = scheduleFeignClient.getAvailable(departmentId, date.toString());
+        return unwrapListData(response);
     }
 
     /**
@@ -289,15 +299,181 @@ public class RegistrationService {
         return registLevelMapper.selectAll();
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getScheduleData(Long schedulingId) {
+        Map<String, Object> response = scheduleFeignClient.getDetail(schedulingId);
+        Object data = response != null ? response.get("data") : null;
+        if (!(data instanceof Map<?, ?> dataMap)) {
+            throw new BusinessException(400, "排班不存在");
+        }
+        return (Map<String, Object>) dataMap;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> unwrapListData(Map<String, Object> response) {
+        Object data = response != null ? response.get("data") : null;
+        if (data == null) {
+            return List.of();
+        }
+        if (!(data instanceof List<?> list)) {
+            throw new BusinessException(500, "排班服务返回格式异常");
+        }
+        return (List<Map<String, Object>>) list;
+    }
+
+    private void validateSchedule(Map<String, Object> schedule, Long schedulingId, Long departmentId,
+                                  Long physicianId, Long registLevelId, LocalDate visitDate, String visitTime) {
+        if (!"正常".equals(String.valueOf(schedule.get("status")))) {
+            throw new BusinessException(400, "该排班不可挂号");
+        }
+        Integer availableQuota = toInteger(schedule.get("availableQuota"));
+        if (availableQuota == null || availableQuota <= 0) {
+            throw new BusinessException(400, "该排班号源不足");
+        }
+        requireEquals("排班科室与挂号科室不一致", departmentId, toLong(schedule.get("departmentId")));
+        requireEquals("排班医生与挂号医生不一致", physicianId, toLong(schedule.get("physicianId")));
+        requireEquals("排班挂号级别与所选级别不一致", registLevelId, toLong(schedule.get("registLevelId")));
+
+        Object workDateObj = schedule.get("workDate");
+        LocalDate scheduleDate = workDateObj instanceof LocalDate date ? date : LocalDate.parse(String.valueOf(workDateObj));
+        if (!visitDate.equals(scheduleDate)) {
+            throw new BusinessException(400, "排班日期与就诊日期不一致");
+        }
+        String timeSlot = String.valueOf(schedule.get("timeSlot"));
+        if (!timeSlot.equals(visitTime)) {
+            throw new BusinessException(400, "排班时段与就诊时段不一致");
+        }
+    }
+
+    private void deductScheduleQuota(Long schedulingId, Long registerId) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("scheduleId", schedulingId);
+        body.put("count", 1);
+        body.put("registerId", registerId);
+        Map<String, Object> response = scheduleFeignClient.deductQuota(body);
+        Map<String, Object> data = unwrapMapData(response, "号源扣减失败");
+        if (!Boolean.TRUE.equals(data.get("success"))) {
+            throw new BusinessException(400, String.valueOf(data.getOrDefault("message", "号源扣减失败")));
+        }
+    }
+
+    private void returnScheduleQuota(Long schedulingId) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("scheduleId", schedulingId);
+        body.put("count", 1);
+        Map<String, Object> response = scheduleFeignClient.returnQuota(body);
+        Map<String, Object> data = unwrapMapData(response, "号源退还失败");
+        if (!Boolean.TRUE.equals(data.get("success"))) {
+            throw new BusinessException(400, String.valueOf(data.getOrDefault("message", "号源退还失败")));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> unwrapMapData(Map<String, Object> response, String errorMessage) {
+        Object data = response != null ? response.get("data") : null;
+        if (!(data instanceof Map<?, ?> dataMap)) {
+            throw new BusinessException(500, errorMessage);
+        }
+        return (Map<String, Object>) dataMap;
+    }
+
+    private void requireEquals(String message, Long expected, Long actual) {
+        if (expected == null || actual == null || !expected.equals(actual)) {
+            throw new BusinessException(400, message);
+        }
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number number) return number.longValue();
+        return Long.parseLong(value.toString());
+    }
+
+    private Integer toInteger(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number number) return number.intValue();
+        return Integer.parseInt(value.toString());
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) return null;
+        if (value instanceof BigDecimal decimal) return decimal;
+        if (value instanceof Number number) return BigDecimal.valueOf(number.doubleValue());
+        return new BigDecimal(value.toString());
+    }
+
+    private ExpenseRecord createRegistrationFee(Register register, Integer patientId, String patientName,
+                                                RegistLevel registLevel, BigDecimal registMoney, Long operatorId) {
+        ExpenseRecord record = new ExpenseRecord();
+        record.setRegisterId(register.getId());
+        record.setPatientId(patientId != null ? patientId.longValue() : null);
+        record.setPatientName(patientName);
+        record.setCategoryName("挂号费");
+        record.setItemId(registLevel.getId());
+        record.setItemName(registLevel.getName() + "挂号费");
+        record.setItemCode("REGISTRATION_FEE");
+        record.setQuantity(1);
+        record.setUnitPrice(registMoney);
+        record.setTotalAmount(registMoney);
+        record.setStatus(0);
+        record.setOperatorId(operatorId);
+        record.setOperatorName(register.getRegistMethod());
+        record.setRemark("挂号自动生成费用");
+        expenseRecordMapper.insert(record);
+        return record;
+    }
+
+    private Map<String, Object> tryBalancePayment(Integer patientId, ExpenseRecord feeRecord, BigDecimal amount) {
+        Map<String, Object> result = new HashMap<>();
+        if (patientId == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            result.put("payStatus", 0);
+            result.put("payStatusName", "待缴费");
+            result.put("paymentMessage", "请到收费处缴费");
+            return result;
+        }
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("amount", amount);
+        body.put("businessType", "REGISTRATION");
+        body.put("businessId", feeRecord.getRegisterId());
+
+        Map<String, Object> response = authPatientFeignClient.deductBalance(patientId, body);
+        Map<String, Object> data = unwrapMapData(response, "余额扣款失败");
+        result.put("accountBalance", data.get("accountBalance"));
+        if (Boolean.TRUE.equals(data.get("success"))) {
+            feeRecord.setStatus(1);
+            feeRecord.setPayTime(LocalDateTime.now());
+            feeRecord.setOperatorName("患者余额");
+            feeRecord.setRemark("患者账户余额自动支付");
+            expenseRecordMapper.update(feeRecord);
+            result.put("payStatus", 1);
+            result.put("payStatusName", "已缴费");
+            result.put("paymentMessage", "余额支付成功");
+            return result;
+        }
+
+        result.put("payStatus", 0);
+        result.put("payStatusName", "待缴费");
+        result.put("paymentMessage", String.valueOf(data.getOrDefault("message", "余额不足，请充值后缴费")));
+        return result;
+    }
+
     private String generateCaseNumber() {
         String dateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         long seq = caseCounter.incrementAndGet() % 1000;
         return "BL" + dateStr + String.format("%03d", seq);
     }
 
+    private String getString(Map<String, Object> data, String key, String defaultValue) {
+        Object value = data.get(key);
+        return value != null ? value.toString() : defaultValue;
+    }
+
     private Map<String, Object> toMap(Register register) {
         Map<String, Object> map = new HashMap<>();
         map.put("id", register.getId());
+        map.put("patientId", register.getPatientId());
+        map.put("schedulingId", register.getSchedulingId());
         map.put("caseNumber", register.getCaseNumber());
         map.put("realName", register.getRealName());
         map.put("gender", register.getGender());
@@ -307,6 +483,7 @@ public class RegistrationService {
         map.put("ageType", register.getAgeType());
         map.put("homeAddress", register.getHomeAddress());
         map.put("visitDate", register.getVisitDate());
+        map.put("visitTime", register.getNoon());
         map.put("noon", register.getNoon());
         map.put("deptmentId", register.getDeptmentId());
         map.put("employeeId", register.getEmployeeId());

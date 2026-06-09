@@ -51,6 +51,8 @@ public class AuthController {
                         .realName(p.getRealName())
                         .gender(p.getGender())
                         .relation(p.getRelation())
+                        .isPrimary(p.getIsPrimary())
+                        .accountBalance(p.getAccountBalance())
                         .allergyHistory(p.getAllergyHistory())
                         .build())
                 .collect(Collectors.toList());

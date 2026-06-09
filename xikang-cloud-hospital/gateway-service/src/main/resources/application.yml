@@ -29,6 +29,10 @@ spring:
           uri: lb://pharmacy-service
           predicates:
             - Path=/api/pharmacy/**
+        - id: schedule-service
+          uri: lb://schedule-service
+          predicates:
+            - Path=/api/schedule/**
         - id: ai-triage-service
           uri: lb://ai-triage-service
           predicates:

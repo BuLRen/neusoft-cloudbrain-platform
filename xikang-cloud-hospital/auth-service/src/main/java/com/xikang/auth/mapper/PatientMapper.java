@@ -4,6 +4,7 @@ import com.xikang.auth.entity.Patient;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -36,6 +37,12 @@ public interface PatientMapper {
      * 更新患者
      */
     int update(Patient patient);
+
+    BigDecimal selectBalanceById(@Param("id") Integer id);
+
+    int rechargeBalance(@Param("id") Integer id, @Param("amount") BigDecimal amount);
+
+    int deductBalanceIfEnough(@Param("id") Integer id, @Param("amount") BigDecimal amount);
 
     /**
      * 删除患者

@@ -106,8 +106,8 @@ public class ChargeService {
      * 查询患者的待缴费项目
      */
     public List<Map<String, Object>> getPendingChargesByPatient(Long patientId) {
-        // expense_record 表使用 card_number 作为患者标识，此方法暂不实现
-        return List.of();
+        List<ExpenseRecord> records = expenseRecordMapper.selectPendingByPatientId(patientId);
+        return records.stream().map(this::toMap).toList();
     }
 
     private Map<String, Object> toMap(ExpenseRecord record) {

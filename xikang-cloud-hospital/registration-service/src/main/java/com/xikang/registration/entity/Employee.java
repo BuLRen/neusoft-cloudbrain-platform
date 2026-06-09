@@ -11,7 +11,6 @@ public class Employee {
     private Long id;
     private Long deptmentId;
     private Long registLevelId;
-    private Long schedulingId;
     private String realname;
     private Integer delmark;
 

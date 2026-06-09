@@ -33,7 +33,7 @@ export interface SettleCategoryOption {
 }
 
 export interface SchedulingOption {
-  id: number
+  id?: number
   physicianId?: number
   physicianName?: string
   departmentId?: number
@@ -48,6 +48,10 @@ export interface SchedulingOption {
   statusName?: string
   remark?: string
   createTime?: string
+  price?: number
+  registLevelId?: number
+  registLevelName?: string
+  physicianTitle?: string
 }
 
 export interface SchedulingQuota {
@@ -87,6 +91,10 @@ export interface RegistrationCreatePayload {
   patientName?: string  // 可选，后端会根据 patientId 自动获取
   patientPhone?: string
   idCard?: string
+  cardNumber?: string
+  gender?: string
+  birthdate?: string
+  homeAddress?: string
   departmentId: number
   physicianId?: number
   physicianName?: string
@@ -116,6 +124,10 @@ export interface RegistrationCreateResult {
   amount?: number
   status?: number
   statusName?: string
+  payStatus?: number
+  payStatusName?: string
+  accountBalance?: number
+  paymentMessage?: string
 }
 
 export interface RegistrationRecord {

@@ -1,5 +1,4 @@
 import { http } from '../request'
-import type { ApiResult } from '../result'
 
 export interface PatientInfo {
   id: number
@@ -11,7 +10,10 @@ export interface PatientInfo {
   avatar?: string
   homeAddress?: string
   allergyHistory?: string
+  accountBalance?: number
   delmark: number
+  relation?: string
+  isPrimary?: number
   createTime?: string
   updateTime?: string
 }
@@ -71,6 +73,32 @@ export const patientApi = {
     return http<void>({
       method: 'DELETE',
       url: `/patient/${patientId}`,
+    })
+  },
+
+  /**
+   * 设置默认就诊人
+   */
+  async setDefaultPatient(patientId: number, userId: number): Promise<void> {
+    return http<void>({
+      method: 'PUT',
+      url: `/patient/${patientId}/default`,
+      params: { userId },
+    })
+  },
+
+  async getBalance(patientId: number): Promise<{ patientId: number; accountBalance: number }> {
+    return http<{ patientId: number; accountBalance: number }>({
+      method: 'GET',
+      url: `/patient/${patientId}/balance`,
+    })
+  },
+
+  async rechargeBalance(patientId: number, amount: number): Promise<{ patientId: number; accountBalance: number }> {
+    return http<{ patientId: number; accountBalance: number }>({
+      method: 'POST',
+      url: `/patient/${patientId}/balance/recharge`,
+      data: { amount },
     })
   },
 }
