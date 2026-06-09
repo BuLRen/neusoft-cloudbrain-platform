@@ -17,6 +17,9 @@ const refreshClient = axios.create({
 })
 
 let refreshPromise: Promise<void> | null = null
+const sessionExpiredMessageKey = 'session_expired_message'
+const sessionExpiredMessage = '登录已过期，请重新登录'
+const skipAuthHandlingPaths = ['/auth/login', '/auth/register', '/auth/logout']
 // 标记：401 触发的跳转只执行一次，避免多个并发请求反复 push
 let sessionExpiredRedirecting = false
 
@@ -25,11 +28,21 @@ function isOnLoginPage() {
   return window.location.pathname === loginRoutePath
 }
 
+function shouldSkipAuthHandling(config?: (AxiosRequestConfig & RequestOptions) | null) {
+  const url = config?.url || ''
+  return Boolean(config?.skipAuthHandling || skipAuthHandlingPaths.some(path => url.startsWith(path)))
+}
+
 function forceRedirectToLogin() {
-  if (sessionExpiredRedirecting || isOnLoginPage()) return
+  if (sessionExpiredRedirecting) return
   sessionExpiredRedirecting = true
-  // 直接走 location 替换，避免和 router 守卫竞争
-  window.location.replace(loginRoutePath)
+  if (typeof window !== 'undefined') {
+    sessionStorage.setItem(sessionExpiredMessageKey, sessionExpiredMessage)
+    if (!isOnLoginPage()) {
+      // 直接走 location 替换，避免和 router 守卫竞争
+      window.location.replace(loginRoutePath)
+    }
+  }
 }
 
 // 请求拦截器：添加 Authorization header
@@ -59,13 +72,14 @@ request.interceptors.response.use(
   (response) => {
     const body = response.data as ApiResult
     if (body && typeof body.code === 'number' && body.code !== 200) {
+      const config = response.config as AxiosRequestConfig & RequestOptions
       const authStore = useAuthStore()
       if (body.code === 401) {
-        if (authStore.isAuthenticated) {
-          authStore.logout().catch(() => undefined)
+        if (!shouldSkipAuthHandling(config)) {
+          authStore.clearSession()
+          forceRedirectToLogin()
         }
-        forceRedirectToLogin()
-        return Promise.reject(new Error(body.message || '登录已失效，请重新登录'))
+        return Promise.reject(new Error(body.message || sessionExpiredMessage))
       }
       return Promise.reject(new Error(body.message || '请求失败'))
     }
@@ -78,26 +92,26 @@ request.interceptors.response.use(
     const bodyCode = error.response?.data?.code
     const isAuthFailure = status === 401 || bodyCode === 401
 
+    if (isAuthFailure && shouldSkipAuthHandling(originalRequest as AxiosRequestConfig & RequestOptions)) {
+      return Promise.reject(new Error(error.response?.data?.message || sessionExpiredMessage))
+    }
+
     if (isAuthFailure && originalRequest && !(originalRequest as any).__isRetryRequest) {
       ;(originalRequest as any).__isRetryRequest = true
       try {
         await refreshSessionOnce()
         return request.request(originalRequest)
       } catch {
-        if (authStore.isAuthenticated) {
-          await authStore.logout()
-        }
+        authStore.clearSession()
         forceRedirectToLogin()
-        return Promise.reject(new Error('登录已失效，请重新登录'))
+        return Promise.reject(new Error(sessionExpiredMessage))
       }
     }
 
     if (isAuthFailure) {
-      if (authStore.isAuthenticated) {
-        await authStore.logout()
-      }
+      authStore.clearSession()
       forceRedirectToLogin()
-      return Promise.reject(new Error('登录已失效，请重新登录'))
+      return Promise.reject(new Error(sessionExpiredMessage))
     }
 
     const message = error.response?.data?.message || error.message || '网络请求异常'
@@ -110,8 +124,9 @@ export async function http<T>(config: AxiosRequestConfig & RequestOptions): Prom
     const response = await request.request<ApiResult<T>>(config)
     return response.data.data
   } catch (error) {
-    if (!config.skipErrorMessage) {
-      ElMessage.error(error instanceof Error ? error.message : '请求失败')
+    const message = error instanceof Error ? error.message : '请求失败'
+    if (!config.skipErrorMessage && !(sessionExpiredRedirecting && message === sessionExpiredMessage)) {
+      ElMessage.error(message)
     }
     throw error
   }

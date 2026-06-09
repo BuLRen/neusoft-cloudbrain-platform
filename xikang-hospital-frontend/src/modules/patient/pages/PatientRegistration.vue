@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
+import type { RegistrationRecord } from '@/shared/types/registration'
 import { useAuthStore } from '@/app/stores/auth'
 import { Warning } from '@element-plus/icons-vue'
 
-const router = useRouter()
 const authStore = useAuthStore()
 
 // 步骤定义 - 按时间顺序：导诊 → 选择排班 → 确认挂号 → 预问诊
@@ -18,6 +17,10 @@ const steps = [
   { key: 'confirm', title: '确认挂号', icon: '✅', desc: '确认并提交' },
   { key: 'previsit', title: 'AI预问诊', icon: '💬', desc: '采集病史信息（可选）' },
 ]
+
+const pageMode = ref<'list' | 'wizard'>('list')
+const registrations = ref<RegistrationRecord[]>([])
+const registrationLoading = ref(false)
 
 // 当前步骤索引
 const currentStep = ref(0)
@@ -302,6 +305,46 @@ function goToStep(index: number) {
   }
 }
 
+async function loadRegistrations() {
+  const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
+  if (!patientId) return
+  registrationLoading.value = true
+  try {
+    registrations.value = await registrationApi.registrationsByPatient(patientId)
+  } catch (err) {
+    console.error('加载我的挂号失败:', err)
+    ElMessage.error('加载我的挂号失败')
+  } finally {
+    registrationLoading.value = false
+  }
+}
+
+function startRegistration() {
+  pageMode.value = 'wizard'
+  restart()
+}
+
+function backToList() {
+  pageMode.value = 'list'
+  loadRegistrations()
+}
+
+function registrationStatusTone(record: RegistrationRecord): 'success' | 'warning' | 'danger' {
+  if (record.status === 3) return 'danger'
+  if (record.payStatus === 1 || record.status === 1 || record.status === 2) return 'success'
+  return 'warning'
+}
+
+function registrationStatusText(record: RegistrationRecord) {
+  return record.statusName || record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费')
+}
+
+function formatVisitTime(record: RegistrationRecord) {
+  return [record.visitDate, record.visitTime].filter(Boolean).join(' ') || record.createTime || '-'
+}
+
+onMounted(loadRegistrations)
+
 // ========== Step 1: AI导诊 ==========
 async function runTriage() {
   if (!triageForm.value.symptoms.trim()) {
@@ -468,6 +511,7 @@ async function submitRegistration() {
       authStore.setPatientBalance(patientId, result.accountBalance)
     }
     ElMessage.success(result.paymentMessage || '挂号成功')
+    await loadRegistrations()
     await nextStep()
   } catch (err: any) {
     console.error('挂号失败:', err)
@@ -486,10 +530,6 @@ async function runPrevisit() {
   await new Promise(resolve => setTimeout(resolve, 1500))
   previsitCompleted.value = true
   previsitLoading.value = false
-}
-
-function skipPrevisit() {
-  goHome()
 }
 
 function riskTone(level?: string) {
@@ -544,23 +584,6 @@ function restart() {
   currentCategory.value = null
 }
 
-function goHome() {
-  // 停止录音
-  if (audioProcessor) {
-    audioProcessor.disconnect()
-    audioProcessor = null
-  }
-  if (sourceNode) {
-    sourceNode.disconnect()
-    sourceNode = null
-  }
-  if (audioContext) {
-    audioContext.close()
-    audioContext = null
-  }
-  router.push('/patient/overview')
-}
-
 const currentBalance = computed(() => Number(authStore.currentPatient?.accountBalance || 0))
 const selectedFee = computed(() => Number(selectedLevel.value?.price || 0))
 const balanceEnough = computed(() => currentBalance.value >= selectedFee.value)
@@ -573,8 +596,46 @@ const showSuccessCard = computed(() => {
 
 <template>
   <div class="registration-wizard">
+    <div v-if="pageMode === 'list'" class="registration-list-page">
+      <div class="list-toolbar">
+        <div>
+          <h2>我的挂号</h2>
+          <p>这里展示当前就诊人的挂号记录，就诊时间、科室医生、费用状态都会集中显示。</p>
+        </div>
+        <button class="btn-primary" @click="startRegistration">预约新挂号</button>
+      </div>
+
+      <div v-if="registrationLoading" class="empty-state">正在加载挂号记录...</div>
+      <div v-else-if="registrations.length === 0" class="empty-state rich-empty">
+        <strong>暂无挂号记录</strong>
+        <span>完成预约后，挂号单会出现在这里，后续医生开具的病历、检查、处方也可以继续从电子病历入口查看。</span>
+        <button class="btn-primary" @click="startRegistration">去预约挂号</button>
+      </div>
+      <div v-else class="registration-record-list">
+        <div v-for="record in registrations" :key="record.id" class="registration-record-card">
+          <div class="record-main">
+            <div class="record-title-row">
+              <strong>{{ record.departmentName || '未分配科室' }}</strong>
+              <StatusTag :tone="registrationStatusTone(record)">{{ registrationStatusText(record) }}</StatusTag>
+            </div>
+            <div class="record-meta">
+              <span>挂号单号：{{ record.id }}</span>
+              <span>就诊时间：{{ formatVisitTime(record) }}</span>
+              <span>医生：{{ record.physicianName || '待分配' }}</span>
+              <span>挂号级别：{{ record.registLevelName || '-' }}</span>
+            </div>
+            <p v-if="record.complaint" class="record-complaint">主诉：{{ record.complaint }}</p>
+          </div>
+          <div class="record-side">
+            <span class="record-amount">¥{{ Number(record.amount || 0).toFixed(2) }}</span>
+            <span class="record-pay">{{ record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费') }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 步骤进度条 -->
-    <div class="step-timeline">
+    <div v-if="pageMode === 'wizard'" class="step-timeline">
       <div class="timeline-track">
         <div
           class="timeline-progress"
@@ -603,7 +664,7 @@ const showSuccessCard = computed(() => {
     </div>
 
     <!-- 步骤内容区域 -->
-    <div class="step-content">
+    <div v-if="pageMode === 'wizard'" class="step-content">
 
       <!-- Step 1: AI导诊 -->
       <div v-if="currentStep === 0" class="step-card">
@@ -741,7 +802,7 @@ const showSuccessCard = computed(() => {
         </div>
 
         <div class="step-actions">
-          <button class="btn-outline" @click="goHome">取消</button>
+          <button class="btn-outline" @click="backToList">返回我的挂号</button>
           <!-- 导诊结果出来后按钮变成"下一步"，点击跳到下一页 -->
           <button
             v-if="triageResult"
@@ -1004,7 +1065,7 @@ const showSuccessCard = computed(() => {
           </div>
 
           <div class="step-actions center">
-            <button class="btn-outline" @click="skipPrevisit">稍后再说</button>
+            <button class="btn-outline" @click="backToList">稍后再说，查看我的挂号</button>
             <button
               class="btn-primary"
               :disabled="!previsitForm.chiefComplaint.trim() || previsitLoading"
@@ -1023,7 +1084,7 @@ const showSuccessCard = computed(() => {
           </div>
           <div class="step-actions center">
             <button class="btn-outline" @click="restart">继续挂号</button>
-            <button class="btn-primary" @click="goHome">返回首页</button>
+            <button class="btn-primary" @click="backToList">查看我的挂号</button>
           </div>
         </div>
       </div>
@@ -1038,6 +1099,116 @@ const showSuccessCard = computed(() => {
   flex-direction: column;
   gap: var(--space-6);
   width: 100%;
+}
+
+.registration-list-page {
+  width: 80%;
+  margin: 0 10%;
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+}
+
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.list-toolbar h2 {
+  margin: 0 0 var(--space-2);
+  font-size: 22px;
+}
+
+.list-toolbar p {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.7;
+}
+
+.registration-record-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.registration-record-card {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+
+.record-main {
+  flex: 1;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.record-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.record-title-row strong {
+  font-size: 17px;
+}
+
+.record-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.record-complaint {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.record-side {
+  min-width: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--color-border);
+}
+
+.record-amount {
+  color: var(--color-primary);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.record-pay {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.rich-empty {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: center;
+}
+
+.rich-empty span {
+  max-width: 560px;
+  line-height: 1.7;
 }
 
 /* ========== 时间轴进度条 ========== */

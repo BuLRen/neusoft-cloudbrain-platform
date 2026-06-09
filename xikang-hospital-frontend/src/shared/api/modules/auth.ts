@@ -1,7 +1,7 @@
 import { http } from '../request'
 
 export const authApi = {
-  get<T>(url: string, params?: Record<string, unknown>, options?: { skipErrorMessage?: boolean }) {
+  get<T>(url: string, params?: Record<string, unknown>, options?: { skipErrorMessage?: boolean; skipAuthHandling?: boolean }) {
     const token = localStorage.getItem('access_token')
     return http<T>({
       url,
@@ -9,9 +9,10 @@ export const authApi = {
       params,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       skipErrorMessage: options?.skipErrorMessage,
+      skipAuthHandling: options?.skipAuthHandling,
     })
   },
-  post<T>(url: string, data?: unknown, options?: { skipErrorMessage?: boolean }) {
+  post<T>(url: string, data?: unknown, options?: { skipErrorMessage?: boolean; skipAuthHandling?: boolean }) {
     const token = localStorage.getItem('access_token')
     return http<T>({
       url,
@@ -19,6 +20,7 @@ export const authApi = {
       data,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       skipErrorMessage: options?.skipErrorMessage,
+      skipAuthHandling: options?.skipAuthHandling,
     })
   },
   put<T>(url: string, data?: unknown) {

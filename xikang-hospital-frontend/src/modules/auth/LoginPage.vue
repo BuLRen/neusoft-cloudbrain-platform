@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { appName } from '@/shared/constants/app'
 import { useAuthStore } from '@/app/stores/auth'
@@ -18,6 +18,14 @@ const form = reactive({
   realName: '',
   phone: '',
   idCard: '',
+})
+
+onMounted(() => {
+  const expiredMessage = sessionStorage.getItem('session_expired_message')
+  if (expiredMessage) {
+    sessionStorage.removeItem('session_expired_message')
+    ElMessage.warning(expiredMessage)
+  }
 })
 
 async function handleLogin() {

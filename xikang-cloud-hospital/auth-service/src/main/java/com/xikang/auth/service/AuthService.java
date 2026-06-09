@@ -53,6 +53,9 @@ public class AuthService {
             throw new BusinessException(400, "密码不能为空");
         }
 
+        username = username.trim();
+        password = password.trim();
+
         // Query user from database
         User user = userMapper.selectByUsername(username);
         if (user == null) {

@@ -19,7 +19,7 @@
     <select id="selectByUsername" resultMap="BaseResultMap">
         SELECT id, username, password, real_name, email, phone, status, user_type, remark, create_time, update_time
         FROM users
-        WHERE username = #{username} AND status = 1
+        WHERE username = #{username}
     </select>
 
     <select id="selectById" resultMap="BaseResultMap">

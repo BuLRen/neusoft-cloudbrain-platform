@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/app/stores/auth'
+import { loginRoutePath } from '@/shared/constants/app'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import { ArrowDown, Check } from '@element-plus/icons-vue'
@@ -31,13 +32,24 @@ function switchPatient(patientId: number) {
 
 // 快捷功能菜单
 const quickActions = [
-  { key: 'prescription', label: '我的处方', icon: '💊', path: '/patient/prescription' },
   { key: 'registration', label: '我的挂号', icon: '📋', path: '/patient/registration' },
+  { key: 'records', label: '电子病历', icon: '📄', path: '/patient/records' },
+  { key: 'prescription', label: '我的处方', icon: '💊', path: '/patient/prescription' },
   { key: 'profile', label: '个人中心', icon: '👤', path: '/patient/profile' },
 ]
 
+const currentBalance = computed(() => Number(currentPatient.value?.accountBalance || 0))
+
 function navigateTo(path: string) {
   router.push(path)
+}
+
+async function logout() {
+  try {
+    await authStore.logout()
+  } finally {
+    router.replace({ path: loginRoutePath, query: {} })
+  }
 }
 
 const currentPageTitle = computed(() => {
@@ -79,6 +91,10 @@ const currentPageTitle = computed(() => {
           </div>
         </div>
         <div class="patient-header__right">
+          <button class="balance-pill" @click="navigateTo('/patient/profile')">
+            <span class="balance-pill__label">账户余额</span>
+            <span class="balance-pill__amount">¥{{ currentBalance.toFixed(2) }}</span>
+          </button>
           <!-- 患者切换 - 放在显眼位置 -->
           <el-dropdown v-if="authStore.patients.length > 0" @command="switchPatient" trigger="click">
             <el-button type="primary" size="default" class="switch-patient-btn">
@@ -116,7 +132,7 @@ const currentPageTitle = computed(() => {
               <span class="quick-action-label">{{ action.label }}</span>
             </button>
           </div>
-          <el-button class="logout-btn" text @click="authStore.logout(); router.push('/login')">
+          <el-button class="logout-btn" text @click="logout">
             退出
           </el-button>
         </div>
@@ -221,6 +237,29 @@ const currentPageTitle = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+}
+
+.balance-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-soft);
+  cursor: pointer;
+}
+
+.balance-pill__label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.balance-pill__amount {
+  color: var(--color-primary);
+  font-size: 15px;
+  font-weight: 700;
 }
 
 /* 切换患者按钮 */

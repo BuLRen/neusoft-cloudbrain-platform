@@ -1,10 +1,37 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import { registrationApi } from '@/shared/api/modules/registration'
+import type { RegistrationRecord } from '@/shared/types/registration'
+import { useAuthStore } from '@/app/stores/auth'
 
-// 就诊记录（待后端实现后通过 API 获取）
-const records = ref<any[]>([])
+const authStore = useAuthStore()
+const records = ref<RegistrationRecord[]>([])
+const loading = ref(false)
+
+async function loadRecords() {
+  const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
+  if (!patientId) return
+  loading.value = true
+  try {
+    records.value = await registrationApi.registrationsByPatient(patientId)
+  } catch (error) {
+    console.warn('加载电子病历失败:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+function formatDate(record: RegistrationRecord) {
+  return record.visitDate || record.createTime?.slice(0, 10) || '-'
+}
+
+function statusText(record: RegistrationRecord) {
+  return record.statusName || record.payStatusName || '待就诊'
+}
+
+onMounted(loadRecords)
 </script>
 
 <template>
@@ -12,26 +39,33 @@ const records = ref<any[]>([])
     <GlassCard class="records-list">
       <div class="list-header">
         <h2>就诊记录</h2>
-        <p>查看您的历史就诊信息、病历和处方</p>
+        <p>按一次挂号/就诊形成一份电子病历入口，医生开具病历、检查、处方后可继续对接展示。</p>
       </div>
 
-      <div class="record-items">
+      <div v-if="loading" class="empty-state">
+        <p>正在加载电子病历...</p>
+      </div>
+
+      <div v-else class="record-items">
         <div v-for="record in records" :key="record.id" class="record-item">
           <div class="record-date">
-            <span class="date-day">{{ record.date.split('-')[2] }}</span>
-            <span class="date-month">{{ record.date.slice(0, 7) }}</span>
+            <span class="date-day">{{ formatDate(record).split('-')[2] || '-' }}</span>
+            <span class="date-month">{{ formatDate(record).slice(0, 7) }}</span>
           </div>
           <div class="record-info">
             <div class="record-main">
-              <span class="record-dept">{{ record.department }}</span>
-              <span class="record-doctor">{{ record.doctor }}</span>
+              <span class="record-dept">{{ record.departmentName || '未分配科室' }}</span>
+              <span class="record-doctor">{{ record.physicianName || '待分配医生' }}</span>
+              <StatusTag tone="primary">{{ statusText(record) }}</StatusTag>
             </div>
             <div class="record-diagnosis">
-              <StatusTag tone="warning">{{ record.diagnosis }}</StatusTag>
+              <span>挂号单号：{{ record.id }}</span>
+              <span v-if="record.complaint">主诉：{{ record.complaint }}</span>
             </div>
             <div class="record-tags">
-              <StatusTag v-if="record.hasPrescription" tone="primary">有处方</StatusTag>
-              <StatusTag v-if="record.hasReport" tone="neutral">有报告</StatusTag>
+              <StatusTag tone="warning">病历待医生端对接</StatusTag>
+              <StatusTag tone="neutral">检查报告待对接</StatusTag>
+              <StatusTag tone="primary">处方入口已预留</StatusTag>
             </div>
           </div>
           <div class="record-actions">
@@ -40,8 +74,9 @@ const records = ref<any[]>([])
         </div>
       </div>
 
-      <div v-if="!records.length" class="empty-state">
-        <p>暂无就诊记录</p>
+      <div v-if="!loading && !records.length" class="empty-state">
+        <p>暂无电子病历</p>
+        <span>完成挂号后会先形成就诊入口，医生开具诊断、处方、检查单后再补充完整内容。</span>
       </div>
     </GlassCard>
   </div>
@@ -134,8 +169,17 @@ const records = ref<any[]>([])
   color: var(--color-text-muted);
 }
 
+.record-diagnosis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
 .record-tags {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 

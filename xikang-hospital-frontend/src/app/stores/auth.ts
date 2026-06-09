@@ -73,9 +73,7 @@ export const useAuthStore = defineStore('auth', () => {
         selectDefaultPatient()
       }
     } catch {
-      // API 调用失败时，保留 localStorage 中的 token，不清除
-      // 这样下次刷新页面时可以再次尝试
-      // 如果 token 无效，后端会返回 401，下次 API 调用时会自动清除
+      // 401 会由请求拦截器清理 session；网络异常则保留当前状态，等待下次请求重试
       console.warn('Session load failed, will retry on next request')
     } finally {
       sessionChecked.value = true
@@ -113,20 +111,24 @@ export const useAuthStore = defineStore('auth', () => {
     sessionChecked.value = true
   }
 
+  function clearSession() {
+    userId.value = ''
+    username.value = ''
+    role.value = 'admin'
+    realName.value = ''
+    token.value = ''
+    patients.value = []
+    currentPatientId.value = null
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+    sessionChecked.value = true
+  }
+
   async function logout() {
     try {
-      await authApi.post('/auth/logout')
+      await authApi.post('/auth/logout', undefined, { skipErrorMessage: true, skipAuthHandling: true })
     } finally {
-      userId.value = ''
-      username.value = ''
-      role.value = 'admin'
-      realName.value = ''
-      token.value = ''
-      patients.value = []
-      currentPatientId.value = null
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      sessionChecked.value = true
+      clearSession()
     }
   }
 
@@ -166,6 +168,7 @@ export const useAuthStore = defineStore('auth', () => {
     loadSession,
     login,
     logout,
+    clearSession,
     getToken,
     switchPatient,
     setPatientBalance,
