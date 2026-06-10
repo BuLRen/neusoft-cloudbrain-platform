@@ -13,13 +13,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Component
 public class DifyWorkflowClient {
@@ -120,57 +115,7 @@ public class DifyWorkflowClient {
         }
 
         Map<String, Object> outputs = parseOutputs(data.path("outputs"));
-        // #region agent log
-        agentLog(
-            "DifyWorkflowClient.java:parseBlockingResponse",
-            "Dify workflow outputs parsed",
-            Map.of(
-                "workflowRunId", workflowRunId == null ? "" : workflowRunId,
-                "outputKeys", outputs.keySet().stream().sorted().collect(Collectors.toList()),
-                "structuredSubKeys", describeStructuredSubKeys(outputs),
-                "outputsJsonPreview", data.path("outputs").toString().substring(0, Math.min(500, data.path("outputs").toString().length()))
-            ),
-            "F"
-        );
-        // #endregion
         return new DifyWorkflowRunResult(status, outputs, error, workflowRunId, elapsed);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<String> describeStructuredSubKeys(Map<String, Object> outputs) {
-        if (outputs == null || outputs.isEmpty()) {
-            return List.of();
-        }
-        for (String key : new String[] { "structured_output", "structuredOutput", "output_structured" }) {
-            Object value = outputs.get(key);
-            if (value instanceof Map<?, ?> map) {
-                return map.keySet().stream().map(String::valueOf).sorted().collect(Collectors.toList());
-            }
-            if (value instanceof String text) {
-                return List.of("string:" + text.substring(0, Math.min(80, text.length())));
-            }
-        }
-        return List.of();
-    }
-
-    private static void agentLog(String location, String message, Map<String, Object> data, String hypothesisId) {
-        try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("sessionId", "95b2d9");
-            payload.put("location", location);
-            payload.put("message", message);
-            payload.put("data", data);
-            payload.put("timestamp", System.currentTimeMillis());
-            payload.put("hypothesisId", hypothesisId);
-            Files.writeString(
-                Path.of("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-95b2d9.log"),
-                MAPPER.writeValueAsString(payload) + System.lineSeparator(),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.APPEND
-            );
-        } catch (Exception ignored) {
-            // ignore debug logging failures
-        }
     }
 
     @SuppressWarnings("unchecked")

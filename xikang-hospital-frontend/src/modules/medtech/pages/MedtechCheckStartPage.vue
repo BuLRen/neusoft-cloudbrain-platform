@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElDescriptions, ElDescriptionsItem, ElDialog, ElEmpty, ElMessage, ElSwitch } from 'element-plus'
 import { medtechApi, type CheckReport } from '@/shared/api/modules/medtech'
@@ -71,9 +71,6 @@ async function loadPage() {
 }
 
 async function runSimulation() {
-  // #region agent log
-  fetch('http://127.0.0.1:7351/ingest/40a86613-9d86-4846-bc86-2da24038373a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95b2d9'},body:JSON.stringify({sessionId:'95b2d9',location:'MedtechCheckStartPage.vue:runSimulation:entry',message:'runSimulation clicked',data:{id:id.value,canSimulate:canSimulate.value,isCt:isCt.value,isNormal:isNormal.value},timestamp:Date.now(),hypothesisId:'D,E'})}).catch(()=>{});
-  // #endregion
   if (!id.value || !canSimulate.value) return
   simulating.value = true
   simulateError.value = ''
@@ -86,9 +83,6 @@ async function runSimulation() {
     structuredOutput.value = resolveSimulationDisplayOutput(result, {
       defaultCheckName: report.value?.techName,
     })
-    // #region agent log
-    fetch('http://127.0.0.1:7351/ingest/40a86613-9d86-4846-bc86-2da24038373a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95b2d9'},body:JSON.stringify({sessionId:'95b2d9',runId:'post-fix',location:'MedtechCheckStartPage.vue:runSimulation:result',message:'simulate API returned',data:{source:result.source,rawStructuredKeys:result.structuredOutput?Object.keys(result.structuredOutput):[],resolvedItemsLen:structuredOutput.value?.resultItems?.length??null,resolvedCheckName:structuredOutput.value?.checkName??null,hasDisplayable:hasDisplayableStructuredOutput(structuredOutput.value),hasSimulatedValues:!!result.simulatedValues,hasResultText:!!result.resultText},timestamp:Date.now(),hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
     if (result.simulatedValues) {
       formValues.value = { ...formValues.value, ...result.simulatedValues }
     }
@@ -96,46 +90,23 @@ async function runSimulation() {
       ElMessage.success('CT 影像分析完成，请确认后提交')
     } else if (result.source === 'workflow') {
       ElMessage.success('模拟检查完成（Dify 工作流），请确认后提交')
-      openResultDialog('runSimulation-workflow')
+      openResultDialog()
     } else {
       const hint = result.difyError ? `Dify 调用失败：${result.difyError}` : '未检测到 Dify 配置'
       ElMessage.warning(`模拟检查完成（内置模拟）。${hint}`)
-      openResultDialog('runSimulation-fallback')
+      openResultDialog()
     }
-  } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7351/ingest/40a86613-9d86-4846-bc86-2da24038373a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95b2d9'},body:JSON.stringify({sessionId:'95b2d9',location:'MedtechCheckStartPage.vue:runSimulation:catch',message:'simulate API failed',data:{error:err instanceof Error?err.message:String(err)},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
+  } catch {
     simulateError.value = isCt.value ? 'CT 影像分析失败，请稍后重试或手动录入' : '模拟检查失败，请稍后重试或手动录入'
   } finally {
     simulating.value = false
   }
 }
 
-function openResultDialog(caller = 'manual') {
-  const willOpen = hasDisplayableStructuredOutput(structuredOutput.value)
-  // #region agent log
-  fetch('http://127.0.0.1:7351/ingest/40a86613-9d86-4846-bc86-2da24038373a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95b2d9'},body:JSON.stringify({sessionId:'95b2d9',runId:'post-fix',location:'MedtechCheckStartPage.vue:openResultDialog',message:'openResultDialog invoked',data:{caller,itemsLen:structuredOutput.value?.resultItems?.length??0,checkName:structuredOutput.value?.checkName??null,willOpen,dialogVisibleBefore:dialogVisible.value},timestamp:Date.now(),hypothesisId:'A,B'})}).catch(()=>{});
-  // #endregion
-  if (!willOpen) return
+function openResultDialog() {
+  if (!hasDisplayableStructuredOutput(structuredOutput.value)) return
   dialogVisible.value = true
-  // #region agent log
-  fetch('http://127.0.0.1:7351/ingest/40a86613-9d86-4846-bc86-2da24038373a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95b2d9'},body:JSON.stringify({sessionId:'95b2d9',runId:'post-fix',location:'MedtechCheckStartPage.vue:openResultDialog:after',message:'dialogVisible set true',data:{caller,dialogVisibleAfter:dialogVisible.value},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
 }
-
-watch(dialogVisible, (visible) => {
-  if (!visible) return
-  requestAnimationFrame(() => {
-    const overlay = document.querySelector('.el-overlay')
-    const dialog = document.querySelector('.el-dialog')
-    const overlayStyle = overlay instanceof HTMLElement ? getComputedStyle(overlay) : null
-    const dialogStyle = dialog instanceof HTMLElement ? getComputedStyle(dialog) : null
-    // #region agent log
-    fetch('http://127.0.0.1:7351/ingest/40a86613-9d86-4846-bc86-2da24038373a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95b2d9'},body:JSON.stringify({sessionId:'95b2d9',location:'MedtechCheckStartPage.vue:watch:dialogVisible',message:'dialog DOM probe after visible=true',data:{overlayCount:document.querySelectorAll('.el-overlay').length,dialogCount:document.querySelectorAll('.el-dialog').length,overlayDisplay:overlayStyle?.display??null,overlayVisibility:overlayStyle?.visibility??null,overlayOpacity:overlayStyle?.opacity??null,overlayZIndex:overlayStyle?.zIndex??null,dialogDisplay:dialogStyle?.display??null,dialogVisibility:dialogStyle?.visibility??null,dialogOpacity:dialogStyle?.opacity??null,dialogZIndex:dialogStyle?.zIndex??null},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-  })
-})
 
 async function submit() {
   if (!id.value || !schema.value) return
@@ -208,7 +179,7 @@ onMounted(() => {
           >
             {{ isCt ? '运行 CT 影像分析' : '运行模拟检查' }}
           </ElButton>
-          <ElButton v-if="canViewResult" @click="() => openResultDialog('view-result-button')">查看结果</ElButton>
+          <ElButton v-if="canViewResult" @click="openResultDialog">查看结果</ElButton>
         </div>
         <ElAlert
           v-if="simulateError"

@@ -10,15 +10,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -113,9 +107,6 @@ public class CheckSimulationService {
     ) {
         Map<String, Object> structuredOutput = outputMapper.extractStructuredOutput(outputs);
         Map<String, Object> simulatedValues = outputMapper.mapToFormValues(outputs, fields);
-        // #region agent log
-        logAgentExtraction(outputs, structuredOutput, simulatedValues, source);
-        // #endregion
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("source", source);
@@ -258,42 +249,6 @@ public class CheckSimulationService {
             lastElapsed,
             error
         );
-    }
-
-    private static final ObjectMapper DEBUG_MAPPER = new ObjectMapper();
-
-    private static void logAgentExtraction(
-        Map<String, Object> outputs,
-        Map<String, Object> structuredOutput,
-        Map<String, Object> simulatedValues,
-        String source
-    ) {
-        try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("sessionId", "95b2d9");
-            payload.put("location", "CheckSimulationService.java:buildSimulationResponse");
-            payload.put("message", "structured output extraction result");
-            payload.put(
-                "data",
-                Map.of(
-                    "source", source == null ? "" : source,
-                    "outputKeys", outputs == null ? List.of() : outputs.keySet().stream().sorted().collect(Collectors.toList()),
-                    "structuredKeys", structuredOutput == null ? List.of() : structuredOutput.keySet().stream().sorted().collect(Collectors.toList()),
-                    "resultItemsLen", structuredOutput != null && structuredOutput.get("resultItems") instanceof List<?> list ? list.size() : 0,
-                    "simulatedValueKeys", simulatedValues == null ? List.of() : simulatedValues.keySet().stream().sorted().collect(Collectors.toList())
-                )
-            );
-            payload.put("timestamp", System.currentTimeMillis());
-            payload.put("hypothesisId", "F");
-            Files.writeString(
-                Path.of("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-95b2d9.log"),
-                DEBUG_MAPPER.writeValueAsString(payload) + System.lineSeparator(),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.APPEND
-            );
-        } catch (Exception ignored) {
-            // ignore debug logging failures
-        }
     }
 
     private record DifyInvocation(
