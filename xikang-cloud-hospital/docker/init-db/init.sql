@@ -64,10 +64,11 @@ COMMENT ON COLUMN users.patient_id IS '关联的患者档案ID';
 -- ============================================================
 CREATE TABLE department (
     id              SERIAL          PRIMARY KEY,
-    dept_code       VARCHAR(64)     NOT NULL,
-    dept_name       VARCHAR(64)     NOT NULL,
-    dept_type       VARCHAR(64)     DEFAULT NULL,
-    delmark         SMALLINT        NOT NULL DEFAULT 1,
+    dept_code        VARCHAR(64)     NOT NULL,
+    dept_name        VARCHAR(64)     NOT NULL,
+    dept_type        VARCHAR(64)     DEFAULT NULL,
+    dept_description TEXT            DEFAULT NULL,
+    delmark          SMALLINT        NOT NULL DEFAULT 1,
 
     CONSTRAINT uk_department_dept_code UNIQUE (dept_code),
     CONSTRAINT chk_department_delmark CHECK (delmark IN (0, 1))
@@ -78,6 +79,7 @@ COMMENT ON COLUMN department.id IS '主键ID';
 COMMENT ON COLUMN department.dept_code IS '科室编码，如: SJNK(神经内科)';
 COMMENT ON COLUMN department.dept_name IS '科室名称';
 COMMENT ON COLUMN department.dept_type IS '科室类型: 临床科室、医技科室等';
+COMMENT ON COLUMN department.dept_description IS '科室简介，用于患者端科室导航展示';
 COMMENT ON COLUMN department.delmark IS '软删除标记: 0-有效, 1-已删除（与 mapper 中 WHERE delmark = 0 约定一致）';
 
 -- ============================================================
@@ -958,28 +960,28 @@ ON CONFLICT (username) DO NOTHING;
 -- 临床科室（20个）
 -- 说明：mapper 约定 delmark = 0 = 有效，delmark = 1 = 已删除
 -- schema 默认值是 1，所以必须显式指定 delmark = 0，否则会被当作"已删除"
-INSERT INTO department (id, dept_code, dept_name, dept_type, delmark) VALUES
-    (1, 'NK', '内科', '临床科室', 0),
-    (2, 'HXNK', '呼吸内科', '临床科室', 0),
-    (3, 'XXNK', '心血管内科', '临床科室', 0),
-    (4, 'XHNK', '消化内科', '临床科室', 0),
-    (5, 'SJNK', '神经内科', '临床科室', 0),
-    (6, 'SNK', '肾内科', '临床科室', 0),
-    (7, 'NFMK', '内分泌科', '临床科室', 0),
-    (8, 'WK', '外科', '临床科室', 0),
-    (9, 'GC', '骨科', '临床科室', 0),
-    (10, 'FCHK', '妇产科', '临床科室', 0),
-    (11, 'EK', '儿科', '临床科室', 0),
-    (12, 'XSEK', '新生儿科', '临床科室', 0),
-    (13, 'YFK', '眼科', '临床科室', 0),
-    (14, 'EBHK', '耳鼻咽喉科', '临床科室', 0),
-    (15, 'KQK', '口腔科', '临床科室', 0),
-    (16, 'PFK', '皮肤科', '临床科室', 0),
-    (17, 'ZYK', '中医科', '临床科室', 0),
-    (18, 'ZLK', '肿瘤科', '临床科室', 0),
-    (19, 'JZK', '急诊科', '临床科室', 0),
-    (20, 'KFY', '康复医学科', '临床科室', 0)
-ON CONFLICT (dept_code) DO NOTHING;
+INSERT INTO department (id, dept_code, dept_name, dept_type, dept_description, delmark) VALUES
+    (1, 'NK', '内科', '临床科室', '常见内科疾病、慢病复诊、发热乏力等综合性问题的首选科室。', 0),
+    (2, 'HXNK', '呼吸内科', '临床科室', '关注咳嗽、气喘、肺炎、慢阻肺、支气管炎等呼吸系统疾病。', 0),
+    (3, 'XXNK', '心血管内科', '临床科室', '处理胸闷胸痛、心悸、高血压、冠心病、心律失常等问题。', 0),
+    (4, 'XHNK', '消化内科', '临床科室', '面向胃痛腹胀、反酸、腹泻、肝胆胰及消化道相关疾病。', 0),
+    (5, 'SJNK', '神经内科', '临床科室', '关注头痛头晕、失眠、肢体麻木、脑血管和神经系统疾病。', 0),
+    (6, 'SNK', '肾内科', '临床科室', '处理水肿、尿检异常、肾炎、肾功能异常及慢性肾病管理。', 0),
+    (7, 'NFMK', '内分泌科', '临床科室', '面向糖尿病、甲状腺疾病、代谢异常、肥胖和骨质疏松等问题。', 0),
+    (8, 'WK', '外科', '临床科室', '处理体表包块、外伤、腹部外科疾病及需要手术评估的问题。', 0),
+    (9, 'GC', '骨科', '临床科室', '关注关节疼痛、骨折损伤、颈肩腰腿痛、运动损伤等骨骼肌肉问题。', 0),
+    (10, 'FCHK', '妇产科', '临床科室', '提供妇科疾病、孕产期咨询、月经异常和女性健康管理服务。', 0),
+    (11, 'EK', '儿科', '临床科室', '面向儿童发热、咳嗽、腹泻、过敏、生长发育等常见问题。', 0),
+    (12, 'XSEK', '新生儿科', '临床科室', '关注新生儿喂养、黄疸、早产儿随访和出生后健康评估。', 0),
+    (13, 'YFK', '眼科', '临床科室', '处理视力下降、眼红眼痛、干眼、白内障、青光眼等眼部问题。', 0),
+    (14, 'EBHK', '耳鼻咽喉科', '临床科室', '面向鼻炎、咽喉不适、耳鸣听力下降、扁桃体和鼻窦问题。', 0),
+    (15, 'KQK', '口腔科', '临床科室', '提供牙痛、龋齿、牙周问题、口腔黏膜和口腔保健服务。', 0),
+    (16, 'PFK', '皮肤科', '临床科室', '处理皮疹、瘙痒、痤疮、湿疹、过敏和感染性皮肤问题。', 0),
+    (17, 'ZYK', '中医科', '临床科室', '结合中医辨证，提供慢病调理、体质调养和康复辅助服务。', 0),
+    (18, 'ZLK', '肿瘤科', '临床科室', '面向肿瘤筛查咨询、治疗评估、复查随访和症状管理。', 0),
+    (19, 'JZK', '急诊科', '临床科室', '处理突发不适、急性疼痛、外伤和需要快速评估的急症情况。', 0),
+    (20, 'KFY', '康复医学科', '临床科室', '提供术后、卒中、骨伤和慢病后的功能恢复与康复指导。', 0)
+ON CONFLICT (dept_code) DO UPDATE SET dept_description = EXCLUDED.dept_description;
 
 -- 医技科室（10个）
 INSERT INTO department (id, dept_code, dept_name, dept_type, delmark) VALUES

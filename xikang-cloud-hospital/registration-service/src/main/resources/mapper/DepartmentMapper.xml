@@ -7,11 +7,12 @@
         <result column="dept_name" property="name"/>
         <result column="dept_code" property="code"/>
         <result column="dept_type" property="type"/>
+        <result column="dept_description" property="description"/>
         <result column="delmark" property="delmark"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, dept_name, dept_code, dept_type, delmark
+        id, dept_name, dept_code, dept_type, dept_description, delmark
     </sql>
 
     <select id="selectAll" resultMap="BaseResultMap">
@@ -37,13 +38,13 @@
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO department (dept_name, dept_code, dept_type, delmark)
-        VALUES (#{name}, #{code}, #{type}, 0)
+        INSERT INTO department (dept_name, dept_code, dept_type, dept_description, delmark)
+        VALUES (#{name}, #{code}, #{type}, #{description}, 0)
     </insert>
 
     <update id="update">
         UPDATE department
-        SET dept_name = #{name}, dept_code = #{code}, dept_type = #{type}
+        SET dept_name = #{name}, dept_code = #{code}, dept_type = #{type}, dept_description = #{description}
         WHERE id = #{id}
     </update>
 

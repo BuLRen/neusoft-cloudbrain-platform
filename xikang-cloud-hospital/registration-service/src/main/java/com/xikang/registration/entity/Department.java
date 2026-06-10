@@ -16,5 +16,6 @@ public class Department implements Serializable {
     private String name;           // dept_name
     private String code;           // dept_code
     private String type;           // dept_type
+    private String description;    // dept_description
     private Integer delmark;       // 0=有效/1=删除
 }

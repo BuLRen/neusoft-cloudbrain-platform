@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/app/stores/auth'
 import GlassCard from '@/shared/components/GlassCard.vue'
-import { registrationApi, type DoctorInfo } from '@/shared/api/modules/registration'
+import { registrationApi } from '@/shared/api/modules/registration'
 import type { DepartmentOption } from '@/shared/types/registration'
 import { Warning } from '@element-plus/icons-vue'
 
@@ -17,10 +17,11 @@ const medicalServices = [
   { key: 'followup', title: '随访管理', desc: '提交用药反馈，查看复诊和康复随访安排', icon: '📅', path: '/patient/followup' },
 ]
 
-const healthServices = [
-  { key: 'previsit', title: 'AI 预问诊', desc: '挂号后补充主诉、病史和过敏史，辅助医生接诊', icon: '💬', path: '/patient/registration' },
-  { key: 'triage', title: '智能导诊', desc: '不确定科室时，先描述症状获取推荐', icon: '🤖', path: '/patient/registration' },
-  { key: 'profile', title: '就诊人管理', desc: '维护本人和家人的基础信息、过敏史与账户余额', icon: '👤', path: '/patient/profile' },
+const visitPreparations = [
+  { title: '确认就诊人信息', desc: '请核对本人或家属的姓名、证件号、联系方式是否正确。' },
+  { title: '完善健康资料', desc: '如有过敏史、既往病史、长期用药，请提前维护。' },
+  { title: '整理病情描述', desc: '记录症状出现时间、持续情况、诱因和已用药物。' },
+  { title: '保留检查资料', desc: '如近期有检查检验报告，可在就诊时提供给医生参考。' },
 ]
 
 const guideSteps = [
@@ -32,42 +33,55 @@ const guideSteps = [
 
 const departments = ref<DepartmentOption[]>([])
 const departmentLoading = ref(false)
-const selectedDepartment = ref<DepartmentOption | null>(null)
-const departmentDoctors = ref<DoctorInfo[]>([])
-const doctorLoading = ref(false)
+const doctorCountMap = ref<Record<number, number>>({})
+const departmentPage = ref(1)
+const departmentsPerPage = 8
 
 const currentPatient = computed(() => authStore.currentPatient)
-const visibleDepartments = computed(() => departments.value.slice(0, 8))
+const totalDepartmentPages = computed(() => Math.max(1, Math.ceil(departments.value.length / departmentsPerPage)))
+const visibleDepartments = computed(() => {
+  const start = (departmentPage.value - 1) * departmentsPerPage
+  return departments.value.slice(start, start + departmentsPerPage)
+})
+
+function getDoctorCount(departmentId: number) {
+  return doctorCountMap.value[departmentId] ?? 0
+}
 
 async function loadDepartments() {
   departmentLoading.value = true
   try {
-    departments.value = await registrationApi.departments()
-    selectedDepartment.value = departments.value[0] || null
-    if (selectedDepartment.value) {
-      await loadDepartmentDoctors(selectedDepartment.value)
-    }
+    departments.value = await registrationApi.departments('临床科室')
+    departmentPage.value = 1
+    await loadDoctorCounts(departments.value)
   } catch (error) {
     console.warn('加载科室失败:', error)
     departments.value = []
-    selectedDepartment.value = null
-    departmentDoctors.value = []
+    doctorCountMap.value = {}
   } finally {
     departmentLoading.value = false
   }
 }
 
-async function loadDepartmentDoctors(department: DepartmentOption) {
-  selectedDepartment.value = department
-  departmentDoctors.value = []
-  doctorLoading.value = true
-  try {
-    departmentDoctors.value = await registrationApi.getDoctorsByDepartment(department.id)
-  } catch (error) {
-    console.warn('加载科室医生失败:', error)
-    departmentDoctors.value = []
-  } finally {
-    doctorLoading.value = false
+async function loadDoctorCounts(departmentList: DepartmentOption[]) {
+  const countEntries = await Promise.all(
+    departmentList.map(async (department) => {
+      try {
+        const doctors = await registrationApi.getDoctorsByDepartment(department.id)
+        return [department.id, doctors.length] as const
+      } catch (error) {
+        console.warn(`加载${department.name}医生数量失败:`, error)
+        return [department.id, 0] as const
+      }
+    }),
+  )
+  doctorCountMap.value = Object.fromEntries(countEntries)
+}
+
+function changeDepartmentPage(direction: number) {
+  const nextPage = departmentPage.value + direction
+  if (nextPage >= 1 && nextPage <= totalDepartmentPages.value) {
+    departmentPage.value = nextPage
   }
 }
 
@@ -131,55 +145,35 @@ onMounted(loadDepartments)
 
     <GlassCard class="department-card">
       <template #header>
-        <div class="section-heading">
-          <div class="card-header">
-            <span class="card-icon">🏥</span>
-            <span>科室导航</span>
+        <div class="section-heading department-heading">
+          <div>
+            <div class="card-header">
+              <span class="card-icon">🏥</span>
+              <span>临床科室导航</span>
+            </div>
+            <p>展示数据库中已维护的全部临床科室，可根据科室简介选择方向后进入挂号流程。</p>
           </div>
-          <p>已明确就诊方向时，可先查看科室简介和医生信息，再进入现有导诊挂号流程。</p>
+          <div v-if="departments.length" class="department-total">共 {{ departments.length }} 个科室</div>
         </div>
       </template>
       <div v-if="departmentLoading" class="empty-panel">正在加载科室...</div>
-      <div v-else-if="!visibleDepartments.length" class="empty-panel">暂无科室数据，请先在后台维护科室信息。</div>
-      <div v-else class="department-layout">
+      <div v-else-if="!visibleDepartments.length" class="empty-panel">暂无临床科室数据，请先在后台维护科室信息。</div>
+      <div v-else class="department-panel">
         <div class="department-grid">
-          <button
-            v-for="department in visibleDepartments"
-            :key="department.id"
-            class="department-item"
-            :class="{ 'is-active': selectedDepartment?.id === department.id }"
-            @click="loadDepartmentDoctors(department)"
-          >
-            <strong>{{ department.name }}</strong>
-            <span>{{ department.description || '暂无简介，点击查看科室医生' }}</span>
-          </button>
+          <article v-for="department in visibleDepartments" :key="department.id" class="department-item">
+            <div class="department-item__top">
+              <strong>{{ department.name }}</strong>
+              <span>{{ getDoctorCount(department.id) }} 位医生</span>
+            </div>
+            <p>{{ department.description }}</p>
+            <button class="department-register-btn" @click="navigateTo('/patient/registration')">去挂号</button>
+          </article>
         </div>
 
-        <div class="department-detail">
-          <div class="department-detail__header">
-            <div>
-              <span class="detail-kicker">当前科室</span>
-              <h3>{{ selectedDepartment?.name || '未选择科室' }}</h3>
-            </div>
-            <button class="detail-register-btn" :disabled="!selectedDepartment" @click="navigateTo('/patient/registration')">
-              去挂号
-            </button>
-          </div>
-          <p class="department-description">
-            {{ selectedDepartment?.description || '该科室暂无简介，后续可在科室主数据中维护。' }}
-          </p>
-          <div class="doctor-section-title">科室医生</div>
-          <div v-if="doctorLoading" class="doctor-empty">正在加载医生...</div>
-          <div v-else-if="!departmentDoctors.length" class="doctor-empty">暂无医生数据，请先维护该科室医生。</div>
-          <div v-else class="doctor-list">
-            <div v-for="doctor in departmentDoctors" :key="doctor.id" class="doctor-card">
-              <div class="doctor-avatar">{{ doctor.realname?.[0] || '医' }}</div>
-              <div>
-                <strong>{{ doctor.realname }}</strong>
-                <span>{{ doctor.registName || '医生' }}</span>
-              </div>
-            </div>
-          </div>
+        <div v-if="totalDepartmentPages > 1" class="department-pagination">
+          <button :disabled="departmentPage === 1" @click="changeDepartmentPage(-1)">上一页</button>
+          <span>{{ departmentPage }} / {{ totalDepartmentPages }}</span>
+          <button :disabled="departmentPage === totalDepartmentPages" @click="changeDepartmentPage(1)">下一页</button>
         </div>
       </div>
     </GlassCard>
@@ -189,25 +183,20 @@ onMounted(loadDepartments)
         <template #header>
           <div class="section-heading">
             <div class="card-header">
-              <span class="card-icon">🌿</span>
-              <span>健康管理</span>
+              <span class="card-icon">🧳</span>
+              <span>就诊前准备</span>
             </div>
-            <p>管理预问诊、就诊人和随访信息，形成连续的个人健康服务入口。</p>
+            <p>挂号和就诊前可提前核对信息、整理资料，帮助医生更快了解病情。</p>
           </div>
         </template>
-        <div class="health-service-list">
-          <button
-            v-for="service in healthServices"
-            :key="service.key"
-            class="health-service-item"
-            @click="navigateTo(service.path)"
-          >
-            <span>{{ service.icon }}</span>
+        <div class="preparation-list">
+          <div v-for="(item, index) in visitPreparations" :key="item.title" class="preparation-item">
+            <span>{{ index + 1 }}</span>
             <div>
-              <strong>{{ service.title }}</strong>
-              <p>{{ service.desc }}</p>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.desc }}</p>
             </div>
-          </button>
+          </div>
         </div>
       </GlassCard>
 
@@ -298,8 +287,7 @@ onMounted(loadDepartments)
 }
 
 .primary-action,
-.secondary-action,
-.detail-register-btn {
+.secondary-action {
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-5);
   font-weight: 700;
@@ -307,8 +295,7 @@ onMounted(loadDepartments)
   transition: all var(--duration-base) var(--ease-standard);
 }
 
-.primary-action,
-.detail-register-btn {
+.primary-action {
   border: 0;
   background: var(--color-primary);
   color: #fff;
@@ -321,15 +308,9 @@ onMounted(loadDepartments)
 }
 
 .primary-action:hover,
-.secondary-action:hover,
-.detail-register-btn:hover:not(:disabled) {
+.secondary-action:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
-}
-
-.detail-register-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .hero-flow {
@@ -418,10 +399,7 @@ onMounted(loadDepartments)
   transition: all var(--duration-base) var(--ease-standard);
 }
 
-.service-item:hover,
-.health-service-item:hover,
-.department-item:hover,
-.department-item.is-active {
+.service-item:hover {
   border-color: var(--color-primary);
   background: var(--color-primary-soft);
   transform: translateY(-2px);
@@ -452,122 +430,121 @@ onMounted(loadDepartments)
   background: var(--color-surface);
 }
 
-.department-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: var(--space-4);
+.department-heading {
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
+}
+
+.department-total {
+  padding: var(--space-2) var(--space-3);
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.department-panel {
+  display: grid;
+  gap: var(--space-4);
 }
 
 .department-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
 }
 
 .department-item {
   display: grid;
-  gap: var(--space-2);
-  min-height: 96px;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-3);
+  min-height: 210px;
   padding: var(--space-4);
-  text-align: left;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  cursor: pointer;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, var(--color-surface) 100%);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
   transition: all var(--duration-base) var(--ease-standard);
 }
 
-.department-item.is-active {
-  box-shadow: 0 8px 24px rgba(31, 140, 255, 0.12);
+.department-item:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  transform: translateY(-2px);
 }
 
-.department-item strong {
-  font-size: 15px;
-  color: var(--color-text);
-}
-
-.department-item span {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.department-detail {
-  display: grid;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, var(--color-primary-soft) 0%, rgba(255, 255, 255, 0.82) 100%);
-}
-
-.department-detail__header {
+.department-item__top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
 }
 
-.detail-kicker {
-  color: var(--color-text-muted);
+.department-item strong {
+  color: var(--color-text);
+  font-size: 17px;
+}
+
+.department-item__top span {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(31, 140, 255, 0.1);
+  color: var(--color-primary);
   font-size: 12px;
+  font-weight: 700;
 }
 
-.department-detail h3 {
-  margin: var(--space-1) 0 0;
-  font-size: 22px;
-}
-
-.department-description {
+.department-item p {
   margin: 0;
   color: var(--color-text-muted);
+  font-size: 13px;
   line-height: 1.8;
 }
 
-.doctor-section-title {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.doctor-list {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.doctor-card {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid rgba(255, 255, 255, 0.7);
+.department-register-btn {
+  width: 100%;
+  border: 0;
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.76);
-}
-
-.doctor-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-primary);
   color: #fff;
   font-weight: 700;
-  background: var(--gradient-primary);
+  cursor: pointer;
+  transition: all var(--duration-base) var(--ease-standard);
 }
 
-.doctor-card div:last-child {
-  display: grid;
-  gap: 2px;
+.department-register-btn:hover {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
-.doctor-card strong {
+.department-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.department-pagination button {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
   color: var(--color-text);
+  cursor: pointer;
 }
 
-.doctor-card span {
+.department-pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.department-pagination span {
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .bottom-grid {
@@ -576,39 +553,45 @@ onMounted(loadDepartments)
   gap: var(--space-5);
 }
 
-.health-service-list,
+.preparation-list,
 .guide-list {
   display: grid;
   gap: var(--space-3);
 }
 
-.health-service-item {
+.preparation-item {
   display: flex;
   gap: var(--space-3);
-  width: 100%;
+  align-items: flex-start;
   padding: var(--space-4);
-  text-align: left;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  cursor: pointer;
-  transition: all var(--duration-base) var(--ease-standard);
 }
 
-.health-service-item > span {
-  font-size: 24px;
+.preparation-item > span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.health-service-item div {
+.preparation-item div {
   display: grid;
   gap: var(--space-1);
 }
 
-.health-service-item strong {
+.preparation-item strong {
   color: var(--color-text);
 }
 
-.health-service-item p,
+.preparation-item p,
 .guide-item p {
   margin: 0;
   color: var(--color-text-muted);
@@ -658,12 +641,12 @@ onMounted(loadDepartments)
 
 @media (max-width: 1200px) {
   .hero-content,
-  .department-layout,
   .bottom-grid {
     grid-template-columns: 1fr;
   }
 
-  .service-grid {
+  .service-grid,
+  .department-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
