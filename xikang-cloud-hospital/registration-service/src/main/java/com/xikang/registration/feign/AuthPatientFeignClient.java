@@ -19,4 +19,7 @@ public interface AuthPatientFeignClient {
 
     @PostMapping("/api/patient/{patientId}/balance/deduct")
     Map<String, Object> deductBalance(@PathVariable("patientId") Integer patientId, @RequestBody Map<String, Object> body);
+
+    @PostMapping("/api/patient/{patientId}/balance/refund")
+    Map<String, Object> refundBalance(@PathVariable("patientId") Integer patientId, @RequestBody Map<String, Object> body);
 }

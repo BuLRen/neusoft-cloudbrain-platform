@@ -2,6 +2,7 @@ package com.xikang.registration.mapper;
 
 import com.xikang.registration.entity.Register;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -28,9 +29,9 @@ public interface RegistrationMapper {
 
     int update(Register register);
 
-    int updateStatus(Long id, Integer status);
+    int updateStatus(@Param("id") Long id, @Param("visitState") Integer status);
 
-    int updatePayStatus(Long id, Integer payStatus);
+    int updatePayStatus(@Param("id") Long id, @Param("visitState") Integer payStatus);
 
     int deleteById(Long id);
 }

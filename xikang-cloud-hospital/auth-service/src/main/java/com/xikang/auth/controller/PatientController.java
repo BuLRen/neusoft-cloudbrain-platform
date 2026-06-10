@@ -1,6 +1,7 @@
 package com.xikang.auth.controller;
 
 import com.xikang.auth.entity.Patient;
+import com.xikang.auth.entity.PatientBalanceTransaction;
 import com.xikang.auth.service.PatientService;
 import com.xikang.common.result.Result;
 import lombok.RequiredArgsConstructor;
@@ -51,7 +52,31 @@ public class PatientController {
             @PathVariable Integer patientId,
             @RequestBody Map<String, Object> request) {
         BigDecimal amount = new BigDecimal(String.valueOf(request.get("amount")));
-        return Result.success(patientService.rechargeBalance(patientId, amount));
+        return Result.success(patientService.rechargeBalance(
+                patientId,
+                amount,
+                strOrNull(request.get("businessType")),
+                longOrNull(request.get("businessId")),
+                longOrNull(request.get("operatorId")),
+                strOrNull(request.get("operatorName")),
+                strOrNull(request.get("remark"))
+        ));
+    }
+
+    @PostMapping("/{patientId}/balance/refund")
+    public Result<Map<String, Object>> refundBalance(
+            @PathVariable Integer patientId,
+            @RequestBody Map<String, Object> request) {
+        BigDecimal amount = new BigDecimal(String.valueOf(request.get("amount")));
+        return Result.success(patientService.refundBalance(
+                patientId,
+                amount,
+                strOrNull(request.get("businessType")),
+                longOrNull(request.get("businessId")),
+                longOrNull(request.get("operatorId")),
+                strOrNull(request.get("operatorName")),
+                strOrNull(request.get("remark"))
+        ));
     }
 
     @PostMapping("/{patientId}/balance/deduct")
@@ -59,12 +84,29 @@ public class PatientController {
             @PathVariable Integer patientId,
             @RequestBody Map<String, Object> request) {
         BigDecimal amount = new BigDecimal(String.valueOf(request.get("amount")));
-        return Result.success(patientService.deductBalance(patientId, amount));
+        return Result.success(patientService.deductBalance(
+                patientId,
+                amount,
+                strOrNull(request.get("businessType")),
+                longOrNull(request.get("businessId")),
+                longOrNull(request.get("operatorId")),
+                strOrNull(request.get("operatorName")),
+                strOrNull(request.get("remark"))
+        ));
+    }
+
+    /**
+     * 查询患者钱包流水（type 可选：RECHARGE / DEDUCT / REFUND）
+     */
+    @GetMapping("/{patientId}/balance/transactions")
+    public Result<List<PatientBalanceTransaction>> listBalanceTransactions(
+            @PathVariable Integer patientId,
+            @RequestParam(value = "type", required = false) String transactionType) {
+        return Result.success(patientService.listBalanceTransactions(patientId, transactionType));
     }
 
     /**
      * 添加家人（创建患者档案并建立关联）
-     * 会检查身份证号是否已存在，已存在则直接关联，不存在则新建
      */
     @PostMapping("/family")
     public Result<Void> addFamilyMember(
@@ -93,5 +135,19 @@ public class PatientController {
     public Result<Void> deletePatient(@PathVariable Integer patientId) {
         patientService.deletePatient(patientId);
         return Result.success();
+    }
+
+    private static String strOrNull(Object value) {
+        if (value == null) return null;
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    private static Long longOrNull(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number number) return number.longValue();
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) return null;
+        return Long.parseLong(text);
     }
 }

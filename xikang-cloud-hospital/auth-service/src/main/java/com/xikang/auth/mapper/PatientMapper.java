@@ -38,11 +38,15 @@ public interface PatientMapper {
      */
     int update(Patient patient);
 
-    BigDecimal selectBalanceById(@Param("id") Integer id);
+    /**
+     * 行级锁查询患者（用于钱包流水事务内取余额）
+     */
+    Patient selectByIdForUpdate(@Param("id") Integer id);
 
-    int rechargeBalance(@Param("id") Integer id, @Param("amount") BigDecimal amount);
-
-    int deductBalanceIfEnough(@Param("id") Integer id, @Param("amount") BigDecimal amount);
+    /**
+     * 覆盖式更新患者余额（事务内与流水写入搭配使用）
+     */
+    int updateBalance(@Param("id") Integer id, @Param("accountBalance") BigDecimal accountBalance);
 
     /**
      * 删除患者

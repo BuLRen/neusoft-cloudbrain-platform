@@ -46,9 +46,9 @@ public class RegistrationController {
      * 取消挂号（退号）
      */
     @PutMapping("/{id}/cancel")
-    public Result<Void> cancelRegister(@PathVariable Long id) {
-        registrationService.cancelRegistration(id);
-        return Result.success();
+    public Result<Map<String, Object>> cancelRegister(@PathVariable Long id) {
+        Map<String, Object> result = registrationService.cancelRegistration(id);
+        return Result.success(result);
     }
 
     /**
@@ -82,6 +82,15 @@ public class RegistrationController {
     // ==================== 收费相关接口 ====================
 
     /**
+     * 患者自助缴费
+     */
+    @PostMapping("/{id}/pay")
+    public Result<Map<String, Object>> payRegistration(@PathVariable Long id) {
+        Map<String, Object> result = chargeService.payRegistration(id);
+        return Result.success(result);
+    }
+
+    /**
      * 收费
      */
     @PostMapping("/charge")
@@ -94,7 +103,7 @@ public class RegistrationController {
      * 退费
      */
     @PostMapping("/refund")
-    public Result<Void> refund(@RequestBody Map<String, Object> request) {
+    public Result<Map<String, Object>> refund(@RequestBody Map<String, Object> request) {
         Long expenseRecordId = ((Number) request.get("expenseRecordId")).longValue();
         Long operatorId = request.get("operatorId") != null
             ? ((Number) request.get("operatorId")).longValue()
@@ -102,15 +111,15 @@ public class RegistrationController {
         String operatorName = (String) request.get("operatorName");
         String reason = (String) request.getOrDefault("reason", "用户申请退费");
 
-        refundService.refund(expenseRecordId, operatorId, operatorName, reason);
-        return Result.success();
+        Map<String, Object> result = refundService.refund(expenseRecordId, operatorId, operatorName, reason);
+        return Result.success(result);
     }
 
     /**
      * 按挂号ID退费（全部退费）
      */
     @PostMapping("/refund/register/{registerId}")
-    public Result<Void> refundByRegisterId(
+    public Result<Map<String, Object>> refundByRegisterId(
             @PathVariable Long registerId,
             @RequestBody Map<String, Object> request) {
         Long operatorId = request.get("operatorId") != null
@@ -119,8 +128,8 @@ public class RegistrationController {
         String operatorName = (String) request.get("operatorName");
         String reason = (String) request.getOrDefault("reason", "用户申请退费");
 
-        refundService.refundByRegisterId(registerId, operatorId, operatorName, reason);
-        return Result.success();
+        Map<String, Object> result = refundService.refundByRegisterId(registerId, operatorId, operatorName, reason);
+        return Result.success(result);
     }
 
     /**

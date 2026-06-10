@@ -33,11 +33,13 @@ public class RegistrationService {
     private final RegistrationMapper registrationMapper;
     private final RegistLevelMapper registLevelMapper;
     private final DepartmentMapper departmentMapper;
+    private final EmployeeMapper employeeMapper;
     private final SettleCategoryMapper settleCategoryMapper;
     private final ExpenseRecordMapper expenseRecordMapper;
     private final ObjectMapper objectMapper;
     private final ScheduleFeignClient scheduleFeignClient;
     private final AuthPatientFeignClient authPatientFeignClient;
+    private final RefundService refundService;
 
     // 用于生成病历号
     private static final AtomicLong caseCounter = new AtomicLong(System.currentTimeMillis() % 100000);
@@ -189,6 +191,8 @@ public class RegistrationService {
         registrationMapper.insert(register);
         ExpenseRecord registrationFee = createRegistrationFee(register, patientIdParam, realName, registLevel, registMoney, operatorId);
         Map<String, Object> payment = tryBalancePayment(patientIdParam, registrationFee, registMoney);
+        // 清理同一挂号单上重复的待缴费 REGISTRATION_FEE，避免前端再次"去缴费"或"取消挂号"时把多条一起扣/退
+        invalidateDuplicateRegistrationFees(register.getId(), registrationFee.getId());
         deductScheduleQuota(schedulingId, register.getId());
 
         log.info("挂号成功 | registerId={}, patient={}, department={}", register.getId(), realName, department.getName());
@@ -216,7 +220,7 @@ public class RegistrationService {
         result.put("visitState", 1);
         result.put("visitStateName", "已挂号");
         result.put("status", 1);
-        result.put("statusName", payment.get("payStatusName"));
+        result.put("statusName", getStateName(1));
         result.put("payStatus", payment.get("payStatus"));
         result.put("payStatusName", payment.get("payStatusName"));
         result.put("paymentMessage", payment.get("paymentMessage"));
@@ -234,7 +238,9 @@ public class RegistrationService {
         if (register == null) {
             throw new BusinessException(404, "挂号记录不存在");
         }
-        return toMap(register);
+        Map<String, Object> result = toMap(register);
+        result.put("expenseRecords", expenseRecordMapper.selectByRegisterId(id).stream().map(this::toExpenseRecordMap).toList());
+        return result;
     }
 
     /**
@@ -257,7 +263,7 @@ public class RegistrationService {
      * 取消挂号（退号）
      */
     @Transactional
-    public void cancelRegistration(Long id) {
+    public Map<String, Object> cancelRegistration(Long id) {
         log.info("取消挂号 | registerId={}", id);
 
         Register register = registrationMapper.selectById(id);
@@ -265,16 +271,40 @@ public class RegistrationService {
             throw new BusinessException(404, "挂号记录不存在");
         }
 
-        // 校验状态：只有已挂号(1)或医生接诊(2)可以取消
+        if (register.getVisitState() == null) {
+            throw new BusinessException(400, "挂号状态异常");
+        }
+        if (register.getVisitState() == 4) {
+            throw new BusinessException(400, "该挂号已退号");
+        }
         if (register.getVisitState() > 2) {
             throw new BusinessException(400, "该挂号状态不允许取消");
         }
 
-        registrationMapper.updateStatus(id, 4); // visit_state=4 已退号
+        Map<String, Object> refundResult = refundService.refundRegistrationFee(
+                id,
+                register.getPatientId(),
+                "患者退号",
+                "患者取消挂号自动退款"
+        );
+
+        registrationMapper.updateStatus(id, 4);
         if (register.getSchedulingId() != null) {
             returnScheduleQuota(register.getSchedulingId());
         }
-        log.info("退号成功 | registerId={}", id);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("registerId", id);
+        result.put("status", 4);
+        result.put("statusName", "已退号");
+        result.put("refundAmount", refundResult.getOrDefault("refundAmount", BigDecimal.ZERO));
+        result.put("refundTime", refundResult.get("refundTime"));
+        result.put("accountBalance", refundResult.get("accountBalance"));
+        result.put("paymentMessage", refundResult.getOrDefault("message", "取消成功"));
+        result.put("refunded", Boolean.TRUE.equals(refundResult.get("success")));
+
+        log.info("退号成功 | registerId={}, refunded={}", id, result.get("refunded"));
+        return result;
     }
 
     /**
@@ -436,6 +466,9 @@ public class RegistrationService {
         body.put("amount", amount);
         body.put("businessType", "REGISTRATION");
         body.put("businessId", feeRecord.getRegisterId());
+        body.put("operatorId", patientId);
+        body.put("operatorName", "患者余额");
+        body.put("remark", "挂号时自动使用余额支付");
 
         Map<String, Object> response = authPatientFeignClient.deductBalance(patientId, body);
         Map<String, Object> data = unwrapMapData(response, "余额扣款失败");
@@ -464,6 +497,29 @@ public class RegistrationService {
         return "BL" + dateStr + String.format("%03d", seq);
     }
 
+    /**
+     * 清理同一挂号单上重复的待缴费 REGISTRATION_FEE。
+     * 保留 keepId（通常是本次新建的那条），把其他 status=0 的 REGISTRATION_FEE 标记为已作废（status=3），
+     * 防止前端"去缴费"/"取消挂号"时把多条一起扣/退造成 N 倍金额异常。
+     */
+    private void invalidateDuplicateRegistrationFees(Long registerId, Long keepId) {
+        if (registerId == null) return;
+        List<ExpenseRecord> pendingFees = expenseRecordMapper.selectByRegisterId(registerId).stream()
+                .filter(record -> "REGISTRATION_FEE".equals(record.getItemCode()))
+                .filter(record -> record.getStatus() != null && record.getStatus() == 0)
+                .toList();
+        if (pendingFees.isEmpty()) return;
+        LocalDateTime now = LocalDateTime.now();
+        for (ExpenseRecord record : pendingFees) {
+            if (keepId != null && keepId.equals(record.getId())) {
+                continue;
+            }
+            record.setStatus(3);
+            record.setRemark("重复挂号费作废");
+            expenseRecordMapper.update(record);
+        }
+    }
+
     private String getString(Map<String, Object> data, String key, String defaultValue) {
         Object value = data.get(key);
         return value != null ? value.toString() : defaultValue;
@@ -473,6 +529,7 @@ public class RegistrationService {
         Map<String, Object> map = new HashMap<>();
         map.put("id", register.getId());
         map.put("patientId", register.getPatientId());
+        map.put("patientName", register.getRealName());
         map.put("schedulingId", register.getSchedulingId());
         map.put("caseNumber", register.getCaseNumber());
         map.put("realName", register.getRealName());
@@ -482,19 +539,133 @@ public class RegistrationService {
         map.put("age", register.getAge());
         map.put("ageType", register.getAgeType());
         map.put("homeAddress", register.getHomeAddress());
-        map.put("visitDate", register.getVisitDate());
+        map.put("visitDate", register.getVisitDate() != null ? register.getVisitDate().toLocalDate() : null);
         map.put("visitTime", register.getNoon());
         map.put("noon", register.getNoon());
         map.put("deptmentId", register.getDeptmentId());
+        map.put("departmentId", register.getDeptmentId());
+        if (register.getDeptmentId() != null) {
+            Department department = departmentMapper.selectById(register.getDeptmentId());
+            map.put("departmentName", department != null ? department.getName() : null);
+        }
         map.put("employeeId", register.getEmployeeId());
+        map.put("physicianId", register.getEmployeeId());
+        if (register.getEmployeeId() != null) {
+            Employee employee = employeeMapper.selectById(register.getEmployeeId());
+            map.put("physicianName", employee != null ? employee.getRealname() : null);
+        }
         map.put("registLevelId", register.getRegistLevelId());
+        if (register.getRegistLevelId() != null) {
+            RegistLevel registLevel = registLevelMapper.selectById(register.getRegistLevelId());
+            map.put("registLevelName", registLevel != null ? registLevel.getName() : null);
+        }
         map.put("settleCategoryId", register.getSettleCategoryId());
+        if (register.getSettleCategoryId() != null) {
+            SettleCategory settleCategory = settleCategoryMapper.selectById(register.getSettleCategoryId());
+            map.put("settleCategoryName", settleCategory != null ? settleCategory.getName() : null);
+        }
         map.put("isBook", register.getIsBook());
         map.put("registMethod", register.getRegistMethod());
+        map.put("complaint", null);
         map.put("registMoney", register.getRegistMoney());
+        map.put("amount", register.getRegistMoney());
+        fillPaymentStatus(map, register.getId());
         map.put("visitState", register.getVisitState());
         map.put("visitStateName", getStateName(register.getVisitState()));
+        map.put("status", register.getVisitState());
+        map.put("statusName", getStateName(register.getVisitState()));
         return map;
+    }
+
+    private Map<String, Object> toExpenseRecordMap(ExpenseRecord record) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("id", record.getId());
+        map.put("registerId", record.getRegisterId());
+        map.put("patientId", record.getPatientId());
+        map.put("patientName", record.getPatientName());
+        map.put("categoryId", record.getCategoryId());
+        map.put("categoryName", record.getCategoryName());
+        map.put("itemId", record.getItemId());
+        map.put("itemName", record.getItemName());
+        map.put("itemCode", record.getItemCode());
+        map.put("quantity", record.getQuantity());
+        map.put("unitPrice", record.getUnitPrice());
+        map.put("totalAmount", record.getTotalAmount());
+        map.put("status", record.getStatus());
+        map.put("statusName", getExpenseStatusName(record.getStatus()));
+        map.put("payTime", record.getPayTime());
+        map.put("refundTime", record.getRefundTime());
+        map.put("operatorName", record.getOperatorName());
+        map.put("remark", record.getRemark());
+        map.put("createTime", record.getCreateTime());
+        return map;
+    }
+
+    private void fillPaymentStatus(Map<String, Object> map, Long registerId) {
+        List<ExpenseRecord> expenseRecords = expenseRecordMapper.selectByRegisterId(registerId);
+        if (expenseRecords == null || expenseRecords.isEmpty()) {
+            map.put("payStatus", 0);
+            map.put("payStatusName", "待缴费");
+            return;
+        }
+
+        boolean hasRegistrationFee = expenseRecords.stream()
+            .anyMatch(record -> "REGISTRATION_FEE".equals(record.getItemCode()));
+        boolean hasPending = false;
+        boolean hasPaid = false;
+        boolean allRefunded = true;
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        LocalDateTime latestPayTime = null;
+        LocalDateTime latestRefundTime = null;
+        for (ExpenseRecord record : expenseRecords) {
+            if (hasRegistrationFee && !"REGISTRATION_FEE".equals(record.getItemCode())) {
+                continue;
+            }
+            if (record.getStatus() == null || record.getStatus() == 0) {
+                hasPending = true;
+            }
+            if (record.getStatus() != null && record.getStatus() == 1) {
+                hasPaid = true;
+            }
+            if (record.getStatus() == null || record.getStatus() != 2) {
+                allRefunded = false;
+            }
+            if (record.getTotalAmount() != null) {
+                totalAmount = totalAmount.add(record.getTotalAmount());
+            }
+            if (record.getPayTime() != null && (latestPayTime == null || record.getPayTime().isAfter(latestPayTime))) {
+                latestPayTime = record.getPayTime();
+            }
+            if (record.getRefundTime() != null && (latestRefundTime == null || record.getRefundTime().isAfter(latestRefundTime))) {
+                latestRefundTime = record.getRefundTime();
+            }
+        }
+
+        map.put("amount", totalAmount);
+        map.put("payTime", latestPayTime);
+        map.put("refundTime", latestRefundTime);
+        if (hasPending) {
+            map.put("payStatus", 0);
+            map.put("payStatusName", "待缴费");
+        } else if (hasPaid) {
+            map.put("payStatus", 1);
+            map.put("payStatusName", "已缴费");
+        } else if (allRefunded) {
+            map.put("payStatus", 2);
+            map.put("payStatusName", "已退费");
+        } else {
+            map.put("payStatus", 0);
+            map.put("payStatusName", "待缴费");
+        }
+    }
+
+    private String getExpenseStatusName(Integer status) {
+        return switch (status) {
+            case 1 -> "已缴费";
+            case 2 -> "已退费";
+            case 3 -> "已作废";
+            default -> "待缴费";
+        };
     }
 
     private String getStateName(Integer state) {

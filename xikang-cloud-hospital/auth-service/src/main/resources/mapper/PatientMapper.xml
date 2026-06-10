@@ -78,22 +78,19 @@
         WHERE id = #{id}
     </update>
 
-    <select id="selectBalanceById" resultType="java.math.BigDecimal">
-        SELECT account_balance FROM patient WHERE id = #{id} AND delmark = 1
+    <select id="selectByIdForUpdate" resultMap="BaseResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        WHERE id = #{id} AND delmark = 1
+        FOR UPDATE
     </select>
 
-    <update id="rechargeBalance">
+    <update id="updateBalance">
         UPDATE patient
-        SET account_balance = account_balance + #{amount},
+        SET account_balance = #{accountBalance},
             update_time = NOW()
         WHERE id = #{id} AND delmark = 1
-    </update>
-
-    <update id="deductBalanceIfEnough">
-        UPDATE patient
-        SET account_balance = account_balance - #{amount},
-            update_time = NOW()
-        WHERE id = #{id} AND delmark = 1 AND account_balance >= #{amount}
     </update>
 
     <delete id="deleteById">
