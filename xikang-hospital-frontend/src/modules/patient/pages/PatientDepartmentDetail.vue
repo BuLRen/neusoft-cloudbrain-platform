@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
@@ -152,15 +153,29 @@ function goTriage() {
   router.push('/patient/registration')
 }
 
-function goRegister(schedule?: SchedulingOption) {
-  router.push({
-    path: '/patient/registration',
-    query: {
-      departmentId: String(departmentId.value),
-      ...(schedule?.id ? { scheduleId: String(schedule.id) } : {}),
-      ...(schedule?.workDate ? { date: schedule.workDate } : { date: selectedDate.value }),
-    },
-  })
+async function goRegister(schedule?: SchedulingOption) {
+  try {
+    await ElMessageBox.confirm(
+      '直接挂号将跳过 AI 导诊。如果您已经确定要挂这个科室，可以继续；如果不确定，建议先通过 AI 导诊确认科室。',
+      '是否直接挂号？',
+      {
+        confirmButtonText: '继续直接挂号',
+        cancelButtonText: '先去 AI 导诊',
+        type: 'warning',
+      },
+    )
+
+    router.push({
+      path: '/patient/registration',
+      query: {
+        departmentId: String(departmentId.value),
+        ...(schedule?.id ? { scheduleId: String(schedule.id) } : {}),
+        ...(schedule?.workDate ? { date: schedule.workDate } : { date: selectedDate.value }),
+      },
+    })
+  } catch {
+    goTriage()
+  }
 }
 
 async function loadDepartmentDetail() {
