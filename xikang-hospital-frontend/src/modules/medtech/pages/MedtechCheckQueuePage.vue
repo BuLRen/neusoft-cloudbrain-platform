@@ -1,17 +1,27 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElEmpty, ElInput, ElTable, ElTableColumn } from 'element-plus'
+import { ElAlert, ElButton, ElEmpty, ElInput, ElTabPane, ElTabs, ElTable, ElTableColumn } from 'element-plus'
 import { medtechApi, type CheckApplication } from '@/shared/api/modules/medtech'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
+
+type CheckQueueTab = '待检查' | '检查中'
 
 const router = useRouter()
 
 const loading = ref(false)
 const keyword = ref('')
 const errorMessage = ref('')
+const activeTab = ref<CheckQueueTab>('待检查')
 const applications = ref<CheckApplication[]>([])
 const selected = ref<CheckApplication | null>(null)
+
+const emptyDescription = computed(() =>
+  activeTab.value === '待检查' ? '暂无待检查申请' : '暂无检查中记录',
+)
+const nextButtonLabel = computed(() =>
+  activeTab.value === '待检查' ? '进入开始检查' : '继续检查',
+)
 
 function formatTime(value?: string) {
   if (!value) return '-'
@@ -22,7 +32,7 @@ async function loadApplications() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const rows = await medtechApi.checkApplications()
+    const rows = await medtechApi.checkApplications({ checkState: activeTab.value })
     const kw = keyword.value.trim()
     applications.value = kw
       ? rows.filter((item) => String(item.caseNumber || '').includes(kw) || String(item.patientName || '').includes(kw))
@@ -43,6 +53,11 @@ function goNext() {
   router.push({ path: '/medtech/check-start', query: { id: String(selected.value.id) } })
 }
 
+function onTabChange() {
+  selected.value = null
+  void loadApplications()
+}
+
 onMounted(() => {
   void loadApplications()
 })
@@ -53,13 +68,18 @@ onMounted(() => {
     :step="1"
     :total-steps="2"
     title="检查申请"
-    description="第一步：查看待检查申请，选择一条记录进入「开始检查」。"
+    description="第一步：查看待检查或检查中的申请，选择一条记录进入「开始检查」。"
     next-path="/medtech/check-start"
   >
+    <ElTabs v-model="activeTab" class="queue-tabs" @tab-change="onTabChange">
+      <ElTabPane label="待检查" name="待检查" />
+      <ElTabPane label="检查中" name="检查中" />
+    </ElTabs>
+
     <div class="toolbar">
       <ElInput v-model="keyword" placeholder="搜索病历号或姓名" @keyup.enter="loadApplications" />
       <ElButton :loading="loading" @click="loadApplications">查询</ElButton>
-      <ElButton type="primary" :disabled="!selected" @click="goNext">进入开始检查</ElButton>
+      <ElButton type="primary" :disabled="!selected" @click="goNext">{{ nextButtonLabel }}</ElButton>
     </div>
 
     <ElAlert
@@ -71,7 +91,7 @@ onMounted(() => {
       class="error-alert"
     />
 
-    <ElEmpty v-if="!loading && !errorMessage && !applications.length" description="暂无检查申请" />
+    <ElEmpty v-if="!loading && !errorMessage && !applications.length" :description="emptyDescription" />
     <ElTable
       v-else-if="!errorMessage"
       v-loading="loading"
@@ -93,6 +113,18 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.queue-tabs {
+  margin-block-end: var(--space-4);
+}
+
+.queue-tabs :deep(.el-tabs__content) {
+  display: none;
+}
+
+.queue-tabs :deep(.el-tabs__header) {
+  margin-block-end: 0;
+}
+
 .toolbar {
   display: flex;
   gap: var(--space-2);
