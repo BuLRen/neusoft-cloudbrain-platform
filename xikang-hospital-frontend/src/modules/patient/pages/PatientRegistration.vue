@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRoute } from 'vue-router'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
@@ -9,6 +10,7 @@ import { useAuthStore } from '@/app/stores/auth'
 import { Warning } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
+const route = useRoute()
 
 // 步骤定义 - 按时间顺序：导诊 → 选择排班 → 确认挂号 → 预问诊
 const steps = [
@@ -343,7 +345,44 @@ function formatVisitTime(record: RegistrationRecord) {
   return [record.visitDate, record.visitTime].filter(Boolean).join(' ') || record.createTime || '-'
 }
 
-onMounted(loadRegistrations)
+function getQueryNumber(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+}
+
+function getQueryString(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value
+  return typeof raw === 'string' ? raw : undefined
+}
+
+async function startFromDepartmentQuery() {
+  const departmentId = getQueryNumber(route.query.departmentId)
+  if (!departmentId) {
+    await loadRegistrations()
+    return
+  }
+
+  pageMode.value = 'wizard'
+  restart()
+  pageMode.value = 'wizard'
+  currentStep.value = 1
+  scheduleDate.value = getQueryString(route.query.date) || formatDate(new Date())
+  triageResult.value = {
+    recommendedDepartmentId: departmentId,
+    recommendedDepartment: getQueryString(route.query.departmentName) || '所选科室',
+  }
+
+  await loadAvailableSchedules()
+
+  const scheduleId = getQueryNumber(route.query.scheduleId)
+  if (scheduleId) {
+    const matched = availableSchedules.value.find(item => item.id === scheduleId)
+    if (matched) selectSchedule(matched)
+  }
+}
+
+onMounted(startFromDepartmentQuery)
 
 // ========== Step 1: AI导诊 ==========
 async function runTriage() {

@@ -12,6 +12,7 @@ import PatientRecords from '@/modules/patient/pages/PatientRecords.vue'
 import PatientFollowup from '@/modules/patient/pages/PatientFollowup.vue'
 import PatientProfile from '@/modules/patient/pages/PatientProfile.vue'
 import PatientPrescription from '@/modules/patient/pages/PatientPrescription.vue'
+import PatientDepartmentDetail from '@/modules/patient/pages/PatientDepartmentDetail.vue'
 import RegistrationWorkspace from '@/modules/registration/RegistrationWorkspace.vue'
 import PhysicianWorkspace from '@/modules/physician/PhysicianWorkspace.vue'
 import MedicalTechWorkspace from '@/modules/medical-tech/MedicalTechWorkspace.vue'
@@ -51,6 +52,12 @@ const patientRoutes: RouteRecordRaw[] = [
         name: 'PatientRegistration',
         component: PatientRegistration,
         meta: { title: '我的挂号', requiresAuth: true, roles: ['patient', 'admin'] },
+      },
+      {
+        path: 'departments/:departmentId',
+        name: 'PatientDepartmentDetail',
+        component: PatientDepartmentDetail,
+        meta: { title: '科室详情', requiresAuth: true, roles: ['patient', 'admin'] },
       },
       {
         path: 'previsit',

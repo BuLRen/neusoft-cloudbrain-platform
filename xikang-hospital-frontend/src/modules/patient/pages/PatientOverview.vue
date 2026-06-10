@@ -151,7 +151,7 @@ onMounted(loadDepartments)
               <span class="card-icon">🏥</span>
               <span>临床科室导航</span>
             </div>
-            <p>展示数据库中已维护的全部临床科室，可根据科室简介选择方向后进入挂号流程。</p>
+            <p>展示数据库中已维护的全部临床科室，可先进入科室详情查看医生团队和可约号源。</p>
           </div>
           <div v-if="departments.length" class="department-total">共 {{ departments.length }} 个科室</div>
         </div>
@@ -166,7 +166,7 @@ onMounted(loadDepartments)
               <span>{{ getDoctorCount(department.id) }} 位医生</span>
             </div>
             <p>{{ department.description }}</p>
-            <button class="department-register-btn" @click="navigateTo('/patient/registration')">去挂号</button>
+            <button class="department-register-btn" @click="navigateTo(`/patient/departments/${department.id}`)">查看详情</button>
           </article>
         </div>
 
