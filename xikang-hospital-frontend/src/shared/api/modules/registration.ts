@@ -107,17 +107,20 @@ export const registrationApi = {
   charge(data: ChargePayload) {
     return http<ChargeResult>({ url: '/registration/charge', method: 'POST', data })
   },
+  payRegistration(id: number) {
+    return http<ChargeResult>({ url: `/registration/${id}/pay`, method: 'POST' })
+  },
   expenseRecords(params: ExpenseRecordQuery) {
     return http<ExpenseRecord[]>({ url: '/registration/expense-records', method: 'GET', params })
   },
   refund(data: RefundPayload) {
-    return http<void>({ url: '/registration/refund', method: 'POST', data })
+    return http<ChargeResult>({ url: '/registration/refund', method: 'POST', data })
   },
   refundByRegister(registerId: number, data?: Omit<RefundPayload, 'expenseRecordId'>) {
-    return http<void>({ url: `/registration/refund/register/${registerId}`, method: 'POST', data })
+    return http<ChargeResult>({ url: `/registration/refund/register/${registerId}`, method: 'POST', data })
   },
   cancelRegistration(id: number) {
-    return http<void>({ url: `/registration/${id}/cancel`, method: 'PUT' })
+    return http<ChargeResult>({ url: `/registration/${id}/cancel`, method: 'PUT' })
   },
   createScheduling(data: SchedulingCreatePayload) {
     return http<SchedulingOption>({ url: '/registration/scheduling', method: 'POST', data })

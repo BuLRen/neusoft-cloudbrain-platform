@@ -162,6 +162,7 @@ async function goRegister(schedule?: SchedulingOption) {
         confirmButtonText: '继续直接挂号',
         cancelButtonText: '先去 AI 导诊',
         type: 'warning',
+        distinguishCancelAndClose: true,
       },
     )
 
@@ -173,8 +174,12 @@ async function goRegister(schedule?: SchedulingOption) {
         ...(schedule?.workDate ? { date: schedule.workDate } : { date: selectedDate.value }),
       },
     })
-  } catch {
-    goTriage()
+  } catch (action) {
+    // action === 'cancel' -> 用户点了"先去 AI 导诊"按钮，跳转
+    // action === 'close'  -> 用户点了 X / 关闭按钮，停在原界面，不做任何跳转
+    if (action === 'cancel') {
+      goTriage()
+    }
   }
 }
 

@@ -112,6 +112,7 @@ export interface RegistrationCreatePayload {
 
 export interface RegistrationCreateResult {
   id: number
+  caseNumber?: string
   patientName?: string
   departmentName?: string
   physicianName?: string
@@ -136,6 +137,7 @@ export interface RegistrationRecord {
   patientName?: string
   patientPhone?: string
   idCard?: string
+  caseNumber?: string
   departmentId?: number
   departmentName?: string
   physicianId?: number
@@ -150,9 +152,13 @@ export interface RegistrationRecord {
   registLevelId?: number
   registLevelName?: string
   settleCategoryId?: number
+  settleCategoryName?: string
   amount?: number
   payStatus?: number
   payStatusName?: string
+  payTime?: string
+  refundTime?: string
+  expenseRecords?: ExpenseRecord[]
   aiTriageResult?: string | TriageAnalysisResult | null
   aiPreVisit?: string
   createTime?: string
@@ -180,11 +186,22 @@ export interface ChargePayload {
 }
 
 export interface ChargeResult {
+  success?: boolean
   registerId?: number
   itemCount?: number
   totalAmount?: number
+  amount?: number
   payTime?: string
+  refundTime?: string
+  refundAmount?: number
+  refunded?: boolean
   operatorName?: string
+  payStatus?: number
+  payStatusName?: string
+  status?: number
+  statusName?: string
+  accountBalance?: number
+  paymentMessage?: string
 }
 
 export interface ExpenseRecord {

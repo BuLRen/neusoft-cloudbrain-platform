@@ -18,10 +18,41 @@ export interface PatientInfo {
   updateTime?: string
 }
 
+export type BalanceTransactionType = 'RECHARGE' | 'DEDUCT' | 'REFUND'
+
+export interface PatientBalanceTransaction {
+  id: number
+  transactionNo: string
+  patientId: number
+  transactionType: BalanceTransactionType
+  amount: number
+  balanceBefore: number
+  balanceAfter: number
+  businessType?: string | null
+  businessId?: number | null
+  operatorId?: number | null
+  operatorName?: string | null
+  remark?: string | null
+  transactionTime: string
+  createTime?: string
+}
+
+export interface BalanceChangeResult {
+  success: boolean
+  message?: string
+  patientId?: number
+  accountBalance: number
+  transactionNo?: string
+  transactionType?: BalanceTransactionType
+  transactionTime?: string
+  idempotent?: boolean
+}
+
+function balanceUrl(patientId: number, suffix: string): string {
+  return '/patient/' + patientId + suffix
+}
+
 export const patientApi = {
-  /**
-   * 获取患者列表（本人+家人）
-   */
   async getPatientList(userId: number): Promise<PatientInfo[]> {
     return http<PatientInfo[]>({
       method: 'GET',
@@ -30,22 +61,13 @@ export const patientApi = {
     })
   },
 
-  /**
-   * 获取单个患者信息
-   */
   async getPatient(patientId: number): Promise<PatientInfo> {
     return http<PatientInfo>({
       method: 'GET',
-      url: `/patient/${patientId}`,
+      url: balanceUrl(patientId, ''),
     })
   },
 
-  /**
-   * 添加家人（创建患者档案并建立关联）
-   * @param userId 用户ID
-   * @param patient 患者信息
-   * @param relation 关系（父亲、母亲、配偶、子女、其他）
-   */
   async addFamilyMember(userId: number, patient: Partial<PatientInfo>, relation: string): Promise<void> {
     return http<void>({
       method: 'POST',
@@ -55,34 +77,25 @@ export const patientApi = {
     })
   },
 
-  /**
-   * 更新患者档案
-   */
   async updatePatient(patientId: number, patient: Partial<PatientInfo>): Promise<void> {
     return http<void>({
       method: 'PUT',
-      url: `/patient/${patientId}`,
+      url: balanceUrl(patientId, ''),
       data: patient,
     })
   },
 
-  /**
-   * 删除患者档案
-   */
   async deletePatient(patientId: number): Promise<void> {
     return http<void>({
       method: 'DELETE',
-      url: `/patient/${patientId}`,
+      url: balanceUrl(patientId, ''),
     })
   },
 
-  /**
-   * 设置默认就诊人
-   */
   async setDefaultPatient(patientId: number, userId: number): Promise<void> {
     return http<void>({
       method: 'PUT',
-      url: `/patient/${patientId}/default`,
+      url: balanceUrl(patientId, '/default'),
       params: { userId },
     })
   },
@@ -90,15 +103,28 @@ export const patientApi = {
   async getBalance(patientId: number): Promise<{ patientId: number; accountBalance: number }> {
     return http<{ patientId: number; accountBalance: number }>({
       method: 'GET',
-      url: `/patient/${patientId}/balance`,
+      url: balanceUrl(patientId, '/balance'),
     })
   },
 
-  async rechargeBalance(patientId: number, amount: number): Promise<{ patientId: number; accountBalance: number }> {
-    return http<{ patientId: number; accountBalance: number }>({
+  async rechargeBalance(patientId: number, amount: number, remark?: string): Promise<BalanceChangeResult> {
+    return http<BalanceChangeResult>({
       method: 'POST',
-      url: `/patient/${patientId}/balance/recharge`,
-      data: { amount },
+      url: balanceUrl(patientId, '/balance/recharge'),
+      data: {
+        amount,
+        businessType: 'RECHARGE',
+        operatorName: '患者自助',
+        remark: remark || '账户充值',
+      },
+    })
+  },
+
+  async getBalanceTransactions(patientId: number, type?: BalanceTransactionType): Promise<PatientBalanceTransaction[]> {
+    return http<PatientBalanceTransaction[]>({
+      method: 'GET',
+      url: balanceUrl(patientId, '/balance/transactions'),
+      params: type ? { type } : undefined,
     })
   },
 }

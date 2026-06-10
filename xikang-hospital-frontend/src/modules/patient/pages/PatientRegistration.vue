@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute } from 'vue-router'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
@@ -23,6 +23,10 @@ const steps = [
 const pageMode = ref<'list' | 'wizard'>('list')
 const registrations = ref<RegistrationRecord[]>([])
 const registrationLoading = ref(false)
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const actionLoading = ref(false)
+const selectedRegistration = ref<RegistrationRecord | null>(null)
 
 // 当前步骤索引
 const currentStep = ref(0)
@@ -321,6 +325,140 @@ async function loadRegistrations() {
   }
 }
 
+function formatMoney(value?: number | string | null) {
+  return Number(value || 0).toFixed(2)
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '-'
+  const text = String(value).trim()
+  if (!text) return '-'
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/)
+  if (isoMatch) {
+    const [, y, m, d, hh, mm] = isoMatch
+    return `${y}-${m}-${d} ${hh}:${mm}`
+  }
+  const fallback = new Date(text)
+  if (!Number.isNaN(fallback.getTime())) {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${fallback.getFullYear()}-${pad(fallback.getMonth() + 1)}-${pad(fallback.getDate())} ${pad(fallback.getHours())}:${pad(fallback.getMinutes())}`
+  }
+  return text
+}
+
+function getCurrentPatientId() {
+  return authStore.currentPatientId || authStore.currentPatient?.patientId || selectedRegistration.value?.patientId
+}
+
+function syncPatientBalance(accountBalance?: number) {
+  const patientId = getCurrentPatientId()
+  if (patientId && typeof accountBalance === 'number') {
+    authStore.setPatientBalance(patientId, accountBalance)
+  }
+}
+
+async function openRegistrationDetail(record: RegistrationRecord) {
+  detailVisible.value = true
+  selectedRegistration.value = record
+  await loadRegistrationDetail(record.id)
+}
+
+async function loadRegistrationDetail(id: number) {
+  detailLoading.value = true
+  try {
+    selectedRegistration.value = await registrationApi.registration(id)
+  } catch (err: any) {
+    console.error('加载挂号详情失败:', err)
+    ElMessage.error(err?.message || '加载挂号详情失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+async function refreshRegistrationState(targetId?: number) {
+  await loadRegistrations()
+  const detailId = targetId || selectedRegistration.value?.id
+  if (detailVisible.value && detailId) {
+    await loadRegistrationDetail(detailId)
+  }
+}
+
+function canPay(record: RegistrationRecord) {
+  return record.status !== 4 && record.payStatus === 0
+}
+
+function canCancel(record: RegistrationRecord) {
+  return record.status === 1 || record.status === 2
+}
+
+function paymentStatusTone(payStatus?: number): 'success' | 'warning' | 'danger' {
+  if (payStatus === 1) return 'success'
+  if (payStatus === 2) return 'danger'
+  return 'warning'
+}
+
+async function handlePay(record: RegistrationRecord) {
+  const amount = Number(record.amount || 0)
+  const balance = Number(authStore.currentPatient?.accountBalance || 0)
+  const nextBalance = balance - amount
+  try {
+    await ElMessageBox.confirm(
+      `确认支付该挂号单？\n\n支付金额：¥${formatMoney(amount)}\n当前余额：¥${formatMoney(balance)}\n支付后余额：¥${formatMoney(nextBalance)}`,
+      '挂号缴费确认',
+      {
+        confirmButtonText: '确认支付',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+
+  actionLoading.value = true
+  try {
+    const result = await registrationApi.payRegistration(record.id)
+    syncPatientBalance(result.accountBalance)
+    ElMessage.success(result.paymentMessage || '缴费成功')
+    await refreshRegistrationState(record.id)
+  } catch (err: any) {
+    console.error('挂号缴费失败:', err)
+    ElMessage.error(err?.message || '挂号缴费失败')
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function handleCancel(record: RegistrationRecord) {
+  const paidHint = record.payStatus === 1 ? '\n\n该挂号已缴费，取消后将原路退回患者余额。' : ''
+  try {
+    await ElMessageBox.confirm(
+      `确认取消该挂号吗？${paidHint}`,
+      '取消挂号确认',
+      {
+        confirmButtonText: '确认取消',
+        cancelButtonText: '返回',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+
+  actionLoading.value = true
+  try {
+    const result = await registrationApi.cancelRegistration(record.id)
+    syncPatientBalance(result.accountBalance)
+    ElMessage.success(result.paymentMessage || '取消挂号成功')
+    await refreshRegistrationState(record.id)
+  } catch (err: any) {
+    console.error('取消挂号失败:', err)
+    ElMessage.error(err?.message || '取消挂号失败')
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 function startRegistration() {
   pageMode.value = 'wizard'
   restart()
@@ -332,13 +470,9 @@ function backToList() {
 }
 
 function registrationStatusTone(record: RegistrationRecord): 'success' | 'warning' | 'danger' {
-  if (record.status === 3) return 'danger'
-  if (record.payStatus === 1 || record.status === 1 || record.status === 2) return 'success'
+  if (record.status === 4) return 'danger'
+  if (record.status === 3 || record.payStatus === 1 || record.status === 1 || record.status === 2) return 'success'
   return 'warning'
-}
-
-function registrationStatusText(record: RegistrationRecord) {
-  return record.statusName || record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费')
 }
 
 function formatVisitTime(record: RegistrationRecord) {
@@ -655,7 +789,8 @@ const showSuccessCard = computed(() => {
           <div class="record-main">
             <div class="record-title-row">
               <strong>{{ record.departmentName || '未分配科室' }}</strong>
-              <StatusTag :tone="registrationStatusTone(record)">{{ registrationStatusText(record) }}</StatusTag>
+              <StatusTag :tone="registrationStatusTone(record)">{{ record.statusName || '未知状态' }}</StatusTag>
+              <StatusTag :tone="paymentStatusTone(record.payStatus)">{{ record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费') }}</StatusTag>
             </div>
             <div class="record-meta">
               <span>挂号单号：{{ record.id }}</span>
@@ -664,6 +799,11 @@ const showSuccessCard = computed(() => {
               <span>挂号级别：{{ record.registLevelName || '-' }}</span>
             </div>
             <p v-if="record.complaint" class="record-complaint">主诉：{{ record.complaint }}</p>
+            <div class="record-actions">
+              <button class="btn-outline btn-sm" @click="openRegistrationDetail(record)">查看详情</button>
+              <button v-if="canPay(record)" class="btn-primary btn-sm" :disabled="actionLoading" @click="handlePay(record)">去缴费</button>
+              <button v-if="canCancel(record)" class="btn-outline btn-sm btn-danger" :disabled="actionLoading" @click="handleCancel(record)">取消挂号</button>
+            </div>
           </div>
           <div class="record-side">
             <span class="record-amount">¥{{ Number(record.amount || 0).toFixed(2) }}</span>
@@ -1127,8 +1267,139 @@ const showSuccessCard = computed(() => {
           </div>
         </div>
       </div>
-
     </div>
+
+    <el-dialog
+      v-model="detailVisible"
+      title="挂号详情"
+      width="720px"
+      class="registration-detail-dialog"
+      destroy-on-close
+    >
+      <div v-if="detailLoading" class="empty-state">正在加载挂号详情...</div>
+      <div v-else-if="selectedRegistration" class="detail-dialog">
+        <div class="detail-header">
+          <div class="detail-header-main">
+            <span class="detail-department">{{ selectedRegistration.departmentName || '未分配科室' }}</span>
+            <span class="detail-doctor">{{ selectedRegistration.physicianName || '待分配医生' }}</span>
+          </div>
+          <div class="detail-header-side">
+            <div class="detail-amount">
+              <span class="detail-amount-label">挂号金额</span>
+              <span class="detail-amount-value">¥{{ formatMoney(selectedRegistration.amount) }}</span>
+            </div>
+            <div class="detail-tags">
+              <StatusTag :tone="registrationStatusTone(selectedRegistration)">
+                {{ selectedRegistration.statusName || '未知状态' }}
+              </StatusTag>
+              <StatusTag :tone="paymentStatusTone(selectedRegistration.payStatus)">
+                {{ selectedRegistration.payStatusName || (selectedRegistration.payStatus === 1 ? '已缴费' : '待缴费') }}
+              </StatusTag>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">基本信息</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <label>挂号单号</label>
+              <span class="mono">{{ selectedRegistration.id }}</span>
+            </div>
+            <div class="detail-item">
+              <label>病历号</label>
+              <span>{{ selectedRegistration.caseNumber || '-' }}</span>
+            </div>
+            <div class="detail-item">
+              <label>就诊时间</label>
+              <span>{{ formatVisitTime(selectedRegistration) }}</span>
+            </div>
+            <div class="detail-item">
+              <label>挂号级别</label>
+              <span>{{ selectedRegistration.registLevelName || '-' }}</span>
+            </div>
+            <div class="detail-item">
+              <label>结算类别</label>
+              <span>{{ selectedRegistration.settleCategoryName || '-' }}</span>
+            </div>
+            <div class="detail-item">
+              <label>支付时间</label>
+              <span>{{ formatDateTime(selectedRegistration.payTime) }}</span>
+            </div>
+            <div class="detail-item">
+              <label>退费时间</label>
+              <span>{{ formatDateTime(selectedRegistration.refundTime) }}</span>
+            </div>
+            <div class="detail-item">
+              <label>建卡时间</label>
+              <span>{{ formatDateTime(selectedRegistration.createTime) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="selectedRegistration.complaint" class="detail-section">
+          <div class="detail-section-title">主诉</div>
+          <p class="detail-complaint">{{ selectedRegistration.complaint }}</p>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">
+            费用明细
+            <span class="detail-section-meta" v-if="selectedRegistration.expenseRecords?.length">
+              共 {{ selectedRegistration.expenseRecords.length }} 条
+            </span>
+          </div>
+          <div v-if="selectedRegistration.expenseRecords?.length" class="expense-table-wrapper">
+            <table class="expense-table">
+              <thead>
+                <tr>
+                  <th>项目</th>
+                  <th>类别</th>
+                  <th>数量</th>
+                  <th>金额</th>
+                  <th>状态</th>
+                  <th>支付/退费时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in selectedRegistration.expenseRecords" :key="item.id">
+                  <td>{{ item.itemName || '-' }}</td>
+                  <td>{{ item.categoryName || '-' }}</td>
+                  <td>{{ item.quantity || 0 }}</td>
+                  <td>¥{{ formatMoney(item.totalAmount) }}</td>
+                  <td>
+                    <StatusTag :tone="paymentStatusTone(item.status)">{{ item.statusName || '-' }}</StatusTag>
+                  </td>
+                  <td>{{ formatDateTime(item.payTime) || formatDateTime(item.refundTime) || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="empty-state small">暂无费用明细</div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="dialog-actions">
+          <button
+            v-if="selectedRegistration && canCancel(selectedRegistration)"
+            class="btn-outline btn-danger"
+            :disabled="actionLoading"
+            @click="handleCancel(selectedRegistration)"
+          >
+            取消挂号
+          </button>
+          <button
+            v-if="selectedRegistration && canPay(selectedRegistration)"
+            class="btn-primary"
+            :disabled="actionLoading"
+            @click="handlePay(selectedRegistration)"
+          >
+            去缴费
+          </button>
+          <button class="btn-outline" @click="detailVisible = false">关闭</button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1248,6 +1519,234 @@ const showSuccessCard = computed(() => {
 .rich-empty span {
   max-width: 560px;
   line-height: 1.7;
+}
+
+/* ========== 挂号详情弹窗 ========== */
+.registration-detail-dialog :deep(.el-dialog__header) {
+  padding: 20px 24px 12px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.registration-detail-dialog :deep(.el-dialog__title) {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.registration-detail-dialog :deep(.el-dialog__body) {
+  padding: 20px 24px;
+  background: #f7f8fc;
+}
+
+.registration-detail-dialog :deep(.el-dialog__footer) {
+  padding: 12px 24px 18px;
+  border-top: 1px solid var(--color-border);
+  background: #fff;
+}
+
+.detail-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #1f8cff 0%, #5aa9ff 100%);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(31, 140, 255, 0.18);
+}
+
+.detail-header .status-tag {
+  --tag-color: #ffffff;
+  --tag-bg: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.detail-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.detail-department {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.detail-doctor {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.detail-header-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.detail-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+
+.detail-amount-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.detail-amount-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.detail-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.detail-section {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.detail-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.01em;
+}
+
+.detail-section-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  margin-right: 8px;
+  background: var(--color-primary);
+  border-radius: 2px;
+}
+
+.detail-section-meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: #f7f8fc;
+  border-radius: 8px;
+  border: 1px solid #eef0f4;
+}
+
+.detail-item label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.detail-item span {
+  font-size: 14px;
+  color: var(--color-text);
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.detail-item .mono {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+.detail-complaint {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fff8eb;
+  border: 1px solid #fce3a8;
+  color: #8a5a00;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.expense-table-wrapper {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.expense-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.expense-table th {
+  text-align: left;
+  padding: 10px 12px;
+  background: #f7f8fc;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.expense-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f2f5;
+  color: var(--color-text);
+}
+
+.expense-table tr:last-child td {
+  border-bottom: none;
+}
+
+.expense-table tr:hover td {
+  background: #fafbff;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.empty-state.small {
+  padding: 18px 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
 
 /* ========== 时间轴进度条 ========== */

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { patientApi } from '@/shared/api/modules/patient'
+import type { PatientBalanceTransaction, BalanceTransactionType } from '@/shared/api/modules/patient'
 import { authApi } from '@/shared/api/modules/auth'
 import { useAuthStore } from '@/app/stores/auth'
 
@@ -51,6 +52,31 @@ interface PatientInfo {
 
 const currentPatient = ref<PatientInfo | null>(null)
 const familyPatients = ref<PatientInfo[]>([])
+
+// 交易记录（来自后端真实钱包流水）
+const transactionsCardRef = ref<{ $el?: HTMLElement } | null>(null)
+function scrollToTransactions() {
+  const el = transactionsCardRef.value?.$el
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  loadTransactions()
+}
+
+interface TransactionEntry {
+  id: string
+  type: 'recharge' | 'payment' | 'refund'
+  title: string
+  amount: number
+  status: string
+  statusName: string
+  direction: 'in' | 'out'
+  time?: string
+  raw: PatientBalanceTransaction
+}
+const transactions = ref<TransactionEntry[]>([])
+const transactionsLoading = ref(false)
+const transactionFilter = ref<'all' | 'recharge' | 'payment' | 'refund'>('all')
 
 // 编辑状态
 const isEditing = ref(false)
@@ -197,15 +223,118 @@ async function rechargePatient(patient: PatientInfo) {
       inputPattern: /^([1-9]\d{0,5})(\.\d{1,2})?$/,
       inputErrorMessage: '请输入大于0的金额，最多两位小数',
     })
-    const result = await patientApi.rechargeBalance(patient.id, Number(value))
-    patient.accountBalance = Number(result.accountBalance || 0)
-    authStore.setPatientBalance(patient.id, patient.accountBalance)
-    ElMessage.success('充值成功')
+    const amount = Number(value)
+    const result = await patientApi.rechargeBalance(patient.id, amount)
+    const newBalance = Number(result.accountBalance || 0)
+    patient.accountBalance = newBalance
+    authStore.setPatientBalance(patient.id, newBalance)
+    ElMessage.success(result.message || '充值成功')
+    await loadTransactions()
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('充值失败')
     }
   }
+}
+
+async function loadTransactions() {
+  if (!currentPatient.value) return
+  transactionsLoading.value = true
+  try {
+    const records = await patientApi.getBalanceTransactions(currentPatient.value.id)
+    transactions.value = (records || []).map(toTransactionFromLedger)
+  } catch (err) {
+    console.error('加载交易记录失败:', err)
+    ElMessage.error('加载交易记录失败')
+  } finally {
+    transactionsLoading.value = false
+  }
+}
+
+function toTransactionFromLedger(tx: PatientBalanceTransaction): TransactionEntry {
+  const type = transactionTypeToUi(tx.transactionType)
+  return {
+    id: `ledger-${tx.id}`,
+    type,
+    title: transactionTitle(tx),
+    amount: Number(tx.amount || 0),
+    status: tx.transactionType,
+    statusName: transactionStatusName(tx.transactionType),
+    direction: type === 'refund' || type === 'recharge' ? 'in' : 'out',
+    time: tx.transactionTime,
+    raw: tx,
+  }
+}
+
+function transactionTypeToUi(type: BalanceTransactionType): TransactionEntry['type'] {
+  if (type === 'RECHARGE') return 'recharge'
+  if (type === 'REFUND') return 'refund'
+  return 'payment'
+}
+
+function transactionTitle(tx: PatientBalanceTransaction): string {
+  if (tx.transactionType === 'RECHARGE') return '账户充值'
+  if (tx.transactionType === 'REFUND') {
+    return tx.businessType ? `${describeBusiness(tx.businessType)}退款` : '余额退款'
+  }
+  return tx.businessType ? `${describeBusiness(tx.businessType)}扣款` : '余额消费'
+}
+
+function describeBusiness(businessType: string): string {
+  if (businessType === 'REGISTRATION') return '挂号费'
+  if (businessType === 'RECHARGE') return '账户充值'
+  return businessType
+}
+
+function transactionStatusName(type: BalanceTransactionType): string {
+  if (type === 'RECHARGE') return '充值成功'
+  if (type === 'REFUND') return '已退款'
+  return '已扣款'
+}
+
+function transactionTone(entry: TransactionEntry) {
+  if (entry.type === 'refund' || entry.direction === 'in') return 'success'
+  if (entry.status === '3') return 'warning'
+  if (entry.status === '0') return 'warning'
+  return 'primary'
+}
+
+function transactionSign(entry: TransactionEntry) {
+  return entry.direction === 'in' ? '+' : '-'
+}
+
+const filteredTransactions = computed(() => {
+  if (transactionFilter.value === 'all') return transactions.value
+  return transactions.value.filter(item => item.type === transactionFilter.value)
+})
+
+const transactionSummary = computed(() => {
+  let income = 0
+  let expense = 0
+  for (const item of transactions.value) {
+    if (item.direction === 'in') income += Number(item.amount || 0)
+    else expense += Number(item.amount || 0)
+  }
+  return {
+    income: income.toFixed(2),
+    expense: expense.toFixed(2),
+    count: transactions.value.length,
+  }
+})
+
+function formatTransactionTime(value?: string) {
+  if (!value) return '-'
+  const text = String(value).trim()
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/)
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]} ${isoMatch[4]}:${isoMatch[5]}`
+  }
+  const fallback = new Date(text)
+  if (!Number.isNaN(fallback.getTime())) {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${fallback.getFullYear()}-${pad(fallback.getMonth() + 1)}-${pad(fallback.getDate())} ${pad(fallback.getHours())}:${pad(fallback.getMinutes())}`
+  }
+  return text
 }
 
 // 删除就诊人
@@ -334,6 +463,7 @@ async function confirmAddMember() {
 
 onMounted(() => {
   loadData()
+  loadTransactions()
 })
 </script>
 
@@ -406,7 +536,10 @@ onMounted(() => {
               </div>
               <div class="field-item">
                 <label>账户操作</label>
-                <button v-if="currentPatient" class="btn-outline" @click="rechargePatient(currentPatient)">充值</button>
+                <div class="field-actions">
+                  <button v-if="currentPatient" class="btn-outline btn-sm" @click="rechargePatient(currentPatient)">充值</button>
+                  <button v-if="currentPatient" class="btn-link btn-sm" @click="scrollToTransactions">查看交易记录</button>
+                </div>
               </div>
             </div>
           </template>
@@ -542,6 +675,81 @@ onMounted(() => {
       </div>
     </GlassCard>
 
+    <!-- 交易记录卡片 -->
+    <GlassCard class="transactions-card" ref="transactionsCardRef">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="card-icon">💳</span>
+          <span>交易记录</span>
+        </div>
+        <div class="header-actions">
+          <button class="btn-outline btn-sm" @click="loadTransactions" :disabled="transactionsLoading">
+            {{ transactionsLoading ? '刷新中...' : '刷新' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="transaction-summary">
+        <div class="summary-item">
+          <span class="summary-label">收入</span>
+          <span class="summary-value income">+¥{{ transactionSummary.income }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">支出</span>
+          <span class="summary-value expense">-¥{{ transactionSummary.expense }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">交易笔数</span>
+          <span class="summary-value neutral">{{ transactionSummary.count }}</span>
+        </div>
+      </div>
+
+      <div class="transaction-filter">
+        <button
+          v-for="opt in [
+            { key: 'all', label: '全部' },
+            { key: 'recharge', label: '充值' },
+            { key: 'payment', label: '消费' },
+            { key: 'refund', label: '退款' },
+          ]"
+          :key="opt.key"
+          class="filter-chip"
+          :class="{ 'is-active': transactionFilter === opt.key }"
+          @click="transactionFilter = (opt.key as any)"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
+
+      <div v-if="transactionsLoading" class="empty-state small">交易记录加载中...</div>
+      <div v-else-if="filteredTransactions.length === 0" class="empty-state small">
+        暂无{{ transactionFilter === 'all' ? '' : transactionFilter === 'recharge' ? '充值' : transactionFilter === 'payment' ? '消费' : '退款' }}记录
+      </div>
+      <div v-else class="transaction-list">
+        <div v-for="item in filteredTransactions" :key="item.id" class="transaction-item">
+          <div class="transaction-icon" :data-type="item.type">
+            <span v-if="item.type === 'recharge'">＋</span>
+            <span v-else-if="item.type === 'refund'">↺</span>
+            <span v-else>－</span>
+          </div>
+          <div class="transaction-main">
+            <div class="transaction-title-row">
+              <span class="transaction-title">{{ item.title }}</span>
+              <StatusTag :tone="transactionTone(item)">{{ item.statusName }}</StatusTag>
+            </div>
+            <div class="transaction-meta">
+              <span>{{ formatTransactionTime(item.time) }}</span>
+              <span>流水号 {{ item.raw.transactionNo }}</span>
+              <span v-if="item.raw.businessId">业务 #{{ item.raw.businessType }}:{{ item.raw.businessId }}</span>
+            </div>
+          </div>
+          <div class="transaction-amount" :class="{ income: item.direction === 'in', expense: item.direction === 'out' }">
+            {{ transactionSign(item) }}¥{{ item.amount.toFixed(2) }}
+          </div>
+        </div>
+      </div>
+    </GlassCard>
+
     <!-- 账号安全卡片 -->
     <GlassCard class="security-card">
       <div class="card-header">
@@ -664,7 +872,8 @@ onMounted(() => {
 .profile-card,
 .health-card,
 .family-card,
-.security-card {
+.security-card,
+.transactions-card {
   padding: 24px;
   border-radius: 16px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
@@ -1097,6 +1306,196 @@ onMounted(() => {
   .member-detail {
     flex-direction: column;
     gap: 4px;
+  }
+}
+
+/* 交易记录 */
+.transactions-card .card-header {
+  margin-bottom: 12px;
+}
+
+.transactions-card .header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.field-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.transaction-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.transaction-summary .summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(31, 140, 255, 0.08) 0%, rgba(31, 140, 255, 0.02) 100%);
+  border: 1px solid rgba(31, 140, 255, 0.18);
+  border-radius: 12px;
+}
+
+.transaction-summary .summary-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.transaction-summary .summary-value {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.transaction-summary .summary-value.income {
+  color: #1f8cff;
+}
+
+.transaction-summary .summary-value.expense {
+  color: #6b7280;
+}
+
+.transaction-summary .summary-value.neutral {
+  color: var(--color-text);
+}
+
+.transaction-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.filter-chip {
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-chip:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.filter-chip.is-active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.transaction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.transaction-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #fff;
+  transition: background 0.2s ease;
+}
+
+.transaction-item:hover {
+  background: #f7f8fc;
+}
+
+.transaction-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  color: #fff;
+  background: var(--color-primary);
+}
+
+.transaction-icon[data-type="recharge"] {
+  background: #1f8cff;
+}
+
+.transaction-icon[data-type="payment"] {
+  background: #6b7280;
+}
+
+.transaction-icon[data-type="refund"] {
+  background: #20b486;
+}
+
+.transaction-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.transaction-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.transaction-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.transaction-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  flex-wrap: wrap;
+}
+
+.transaction-amount {
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+.transaction-amount.income {
+  color: #1f8cff;
+}
+
+.transaction-amount.expense {
+  color: #6b7280;
+}
+
+.empty-state.small {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .transaction-summary {
+    grid-template-columns: 1fr;
   }
 }
 </style>
