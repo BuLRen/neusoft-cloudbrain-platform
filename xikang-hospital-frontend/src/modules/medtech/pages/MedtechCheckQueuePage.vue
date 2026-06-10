@@ -51,7 +51,7 @@ onMounted(() => {
 <template>
   <MedtechStepLayout
     :step="1"
-    :total-steps="3"
+    :total-steps="2"
     title="检查申请"
     description="第一步：查看待检查申请，选择一条记录进入「开始检查」。"
     next-path="/medtech/check-start"

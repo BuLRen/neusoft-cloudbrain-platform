@@ -100,7 +100,7 @@ export const routes: RouteRecordRaw[] = [
         name: 'Medtech',
         component: RouteGroupView,
         redirect: '/medtech/check-queue',
-        meta: { title: '检查管理', description: '检查申请 → 开始检查 → 结果录入', icon: 'Operation', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+        meta: { title: '检查管理', description: '检查申请 → 开始检查（含结果录入）', icon: 'Operation', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
         children: [
           {
             path: 'check-queue',
@@ -118,7 +118,7 @@ export const routes: RouteRecordRaw[] = [
             path: 'check-result',
             name: 'MedtechCheckResult',
             component: MedtechCheckResultPage,
-            meta: { title: '③ 结果录入', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 3 },
+            meta: { title: '结果录入', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', hidden: true },
           },
         ],
       },

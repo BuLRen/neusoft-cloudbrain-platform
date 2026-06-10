@@ -353,7 +353,7 @@ CREATE TABLE check_request (
     check_employee_id       INTEGER         DEFAULT NULL,
     inputcheck_employee_id  INTEGER         DEFAULT NULL,
     check_time              TIMESTAMP       DEFAULT NULL,
-    check_result            VARCHAR(512)    DEFAULT NULL,
+    check_result            TEXT            DEFAULT NULL,
     check_state             VARCHAR(64)     NOT NULL DEFAULT '待检查',
     check_remark            VARCHAR(512)    DEFAULT NULL,
 
@@ -878,7 +878,9 @@ INSERT INTO medical_technology (id, tech_code, tech_name, tech_format, tech_pric
     (2, 'TLCT', '头颅CT', '平扫', 260.00, 'check', '检查费', 3, 'imaging_ct_brain'),
     (3, 'XCG', '血常规', '全血', 35.00, 'inspection', '检验费', 4, NULL),
     (4, 'CRP', 'C反应蛋白', '血清', 45.00, 'inspection', '检验费', 4, NULL),
-    (5, 'WX', '雾化吸入', '次', 30.00, 'disposal', '处置费', 5, NULL)
+    (5, 'WX', '雾化吸入', '次', 30.00, 'disposal', '处置费', 5, NULL),
+    (6, 'ECG', '心电图', '常规', 50.00, 'check', '检查费', 3, 'general_check'),
+    (7, 'USABD', '腹部超声', '常规', 120.00, 'check', '检查费', 3, 'general_check')
 ON CONFLICT (tech_code) DO NOTHING;
 
 INSERT INTO result_form_category (category_code, category_name, description) VALUES
@@ -912,6 +914,14 @@ INSERT INTO register (
      CURRENT_TIMESTAMP, '上午', 1, 1, 2, 1, '否', '微信', 15.00, 2)
 ON CONFLICT DO NOTHING;
 
+INSERT INTO check_request (
+    id, register_id, medical_technology_id, check_info, check_position, check_state
+) VALUES
+    (2001, 1001, 6, '排查心律不齐', '胸部', '待检查'),
+    (2002, 1001, 1, '排查肺部感染', '胸部', '待检查'),
+    (2003, 1002, 7, '排查腹痛原因', '腹部', '待检查')
+ON CONFLICT DO NOTHING;
+
 INSERT INTO ai_consultation_record (
     register_id, round_number, ai_question, patient_answer, consultation_state,
     chief_complaint, symptom_duration, history_summary, allergy_summary,
@@ -936,6 +946,7 @@ SELECT setval(pg_get_serial_sequence('medical_technology', 'id'), COALESCE((SELE
 SELECT setval(pg_get_serial_sequence('result_form_field', 'id'), COALESCE((SELECT MAX(id) FROM result_form_field), 1), true);
 SELECT setval(pg_get_serial_sequence('drug_info', 'id'), COALESCE((SELECT MAX(id) FROM drug_info), 1), true);
 SELECT setval(pg_get_serial_sequence('register', 'id'), COALESCE((SELECT MAX(id) FROM register), 1), true);
+SELECT setval(pg_get_serial_sequence('check_request', 'id'), COALESCE((SELECT MAX(id) FROM check_request), 1), true);
 
 -- 增量迁移：已有库可手动执行
 -- ALTER TABLE medical_technology ADD COLUMN IF NOT EXISTS ai_category_code VARCHAR(64);

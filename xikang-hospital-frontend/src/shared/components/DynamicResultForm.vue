@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElForm, ElFormItem, ElInput, ElInputNumber } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import type { ResultFormField } from '@/shared/types/resultForm'
@@ -52,18 +52,26 @@ const rules = computed<FormRules>(() => {
   return next
 })
 
+let syncingFromParent = false
+
 watch(
   () => props.modelValue,
-  (value) => {
+  async (value) => {
+    syncingFromParent = true
     Object.keys(localModel).forEach((key) => delete localModel[key])
     Object.assign(localModel, value ?? {})
+    await nextTick()
+    syncingFromParent = false
   },
   { immediate: true, deep: true },
 )
 
 watch(
   localModel,
-  (value) => emit('update:modelValue', { ...value }),
+  (value) => {
+    if (syncingFromParent) return
+    emit('update:modelValue', { ...value })
+  },
   { deep: true },
 )
 

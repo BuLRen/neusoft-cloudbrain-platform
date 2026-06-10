@@ -18,6 +18,8 @@
         <result column="case_number" property="caseNumber"/>
         <result column="patient_name" property="patientName"/>
         <result column="tech_name" property="techName"/>
+        <result column="tech_code" property="techCode"/>
+        <result column="ai_category_code" property="aiCategoryCode"/>
     </resultMap>
 
     <sql id="Join_Select">
@@ -36,7 +38,9 @@
             cr.inputcheck_employee_id,
             r.case_number,
             r.real_name AS patient_name,
-            mt.tech_name
+            mt.tech_name,
+            mt.tech_code,
+            mt.ai_category_code
         FROM check_request cr
         INNER JOIN register r ON r.id = cr.register_id
         INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id

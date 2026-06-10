@@ -4,6 +4,7 @@ import com.xikang.common.result.Result;
 import com.xikang.medtech.entity.MedicalTechnology;
 import com.xikang.medtech.service.MedtechService;
 import com.xikang.medtech.service.ResultFormService;
+import com.xikang.medtech.ai.CheckSimulationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,6 +21,7 @@ public class MedtechController {
 
     private final MedtechService medtechService;
     private final ResultFormService resultFormService;
+    private final CheckSimulationService checkSimulationService;
 
     // ==================== 检查相关接口 ====================
 
@@ -63,6 +65,26 @@ public class MedtechController {
     public Result<Map<String, Object>> getCheckReport(@PathVariable Long id) {
         Map<String, Object> report = medtechService.getCheckReport(id);
         return Result.success(report);
+    }
+
+    /**
+     * 运行模拟检查工作流（非 CT）
+     */
+    @PostMapping("/check/simulate/{id}")
+    public Result<Map<String, Object>> simulateCheck(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> response = checkSimulationService.simulateCheck(id, body);
+        return Result.success("模拟检查完成", response);
+    }
+
+    /**
+     * CT 影像分析（CT 专用，不走工作流模拟）
+     */
+    @PostMapping("/check/ct-infer/{id}")
+    public Result<Map<String, Object>> inferCtCheck(@PathVariable Long id) {
+        Map<String, Object> response = checkSimulationService.inferCtCheck(id);
+        return Result.success("CT 影像分析完成", response);
     }
 
     /**

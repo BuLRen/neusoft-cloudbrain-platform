@@ -42,3 +42,12 @@ UPDATE medical_technology SET ai_category_code = 'imaging_ct_chest' WHERE tech_c
 UPDATE medical_technology SET ai_category_code = 'imaging_ct_brain' WHERE tech_code = 'TLCT' AND (ai_category_code IS NULL OR ai_category_code = '');
 
 SELECT setval(pg_get_serial_sequence('result_form_field', 'id'), COALESCE((SELECT MAX(id) FROM result_form_field), 1), true);
+
+-- 检查结果 JSON 可能较长
+ALTER TABLE check_request ALTER COLUMN check_result TYPE TEXT;
+
+-- 非 CT 检查项目（便于医技模拟检查联调）
+INSERT INTO medical_technology (tech_code, tech_name, tech_format, tech_price, tech_type, price_type, deptment_id, ai_category_code) VALUES
+    ('ECG', '心电图', '常规', 50.00, 'check', '检查费', 3, 'general_check'),
+    ('USABD', '腹部超声', '常规', 120.00, 'check', '检查费', 3, 'general_check')
+ON CONFLICT (tech_code) DO NOTHING;

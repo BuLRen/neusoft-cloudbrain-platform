@@ -393,6 +393,8 @@ public class MedtechService {
         map.put("caseNumber", request.getCaseNumber());
         map.put("patientName", request.getPatientName());
         map.put("techName", request.getTechName());
+        map.put("techCode", request.getTechCode());
+        map.put("aiCategoryCode", request.getAiCategoryCode());
         map.put("position", request.getCheckPosition());
         map.put("info", request.getCheckInfo());
         map.put("statusText", request.getCheckState());

@@ -30,4 +30,6 @@ public class CheckRequest implements Serializable {
     private String caseNumber;
     private String patientName;
     private String techName;
+    private String techCode;
+    private String aiCategoryCode;
 }
