@@ -419,7 +419,7 @@ public class MedtechService {
             throw new BusinessException(400, "项目编码已存在");
         }
         int refs = medicalTechnologyMapper.countReferences(id);
-        if (refs > 0 && !existing.getTechType().equals(input.getTechType())) {
+        if (refs > 0 && !java.util.Objects.equals(existing.getTechType(), input.getTechType())) {
             throw new BusinessException(400, "该项目已被申请单引用，不能修改项目类型");
         }
         input.setId(id);
