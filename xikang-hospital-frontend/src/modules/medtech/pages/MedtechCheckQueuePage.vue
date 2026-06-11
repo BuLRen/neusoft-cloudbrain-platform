@@ -188,8 +188,8 @@ onMounted(() => {
   <MedtechStepLayout
     :step="1"
     :total-steps="2"
+    :show-steps="false"
     title="医技申请"
-    description="第一步：查看待执行、执行中或已结束的申请，点击操作列进入执行或查看详情。"
   >
     <ElTabs v-model="statusTab" class="queue-tabs" @tab-change="onStatusTabChange">
       <ElTabPane label="待执行" name="pending" />

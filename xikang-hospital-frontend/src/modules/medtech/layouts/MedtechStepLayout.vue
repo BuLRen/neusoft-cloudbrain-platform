@@ -5,17 +5,23 @@ import { ElButton, ElDivider, ElSteps, ElStep } from 'element-plus'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 
-const props = defineProps<{
-  step: number
-  totalSteps: number
-  title: string
-  description?: string
-  prevPath?: string
-  nextPath?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    step: number
+    totalSteps: number
+    title: string
+    description?: string
+    prevPath?: string
+    nextPath?: string
+    showSteps?: boolean
+  }>(),
+  { showSteps: true },
+)
 
 const router = useRouter()
-const eyebrow = computed(() => `医技管理 · 第 ${props.step}/${props.totalSteps} 步`)
+const eyebrow = computed(() =>
+  props.showSteps ? `医技管理 · 第 ${props.step}/${props.totalSteps} 步` : '医技管理',
+)
 </script>
 
 <template>
@@ -23,10 +29,12 @@ const eyebrow = computed(() => `医技管理 · 第 ${props.step}/${props.totalS
     <PageHeader :title="title" :description="description" :eyebrow="eyebrow" />
 
     <GlassCard class="step-layout__panel">
-      <ElSteps :active="step - 1" align-center finish-status="success">
-        <ElStep v-for="n in totalSteps" :key="n" :title="`第 ${n} 步`" />
-      </ElSteps>
-      <ElDivider />
+      <template v-if="showSteps">
+        <ElSteps :active="step - 1" align-center finish-status="success">
+          <ElStep v-for="n in totalSteps" :key="n" :title="`第 ${n} 步`" />
+        </ElSteps>
+        <ElDivider />
+      </template>
       <slot />
       <div class="step-layout__nav">
         <ElButton v-if="prevPath" @click="router.push(prevPath)">上一步</ElButton>
