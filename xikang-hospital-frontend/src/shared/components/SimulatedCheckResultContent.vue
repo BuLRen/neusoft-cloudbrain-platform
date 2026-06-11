@@ -10,18 +10,19 @@ defineProps<{
 
 <template>
   <template v-if="data && (data.resultItems.length || data.conclusion || data.checkName)">
-    <!-- <div class="dialog-meta">
+    <div class="dialog-meta">
       <StatusTag :tone="data.isNormal ? 'success' : 'warning'">
-        {{ data.isNormal ? '模拟正常' : '模拟异常' }}
+        <!-- {{ data.isNormal ? '模拟正常' : '模拟异常' }} -->
+          检查结果
       </StatusTag>
-      <div v-if="data.simulatedForDiseases.length" class="dialog-meta__diseases">
+      <!-- <div v-if="data.simulatedForDiseases.length" class="dialog-meta__diseases">
         <span class="dialog-meta__label">参考疾病：</span>
         <ElTag v-for="disease in data.simulatedForDiseases" :key="disease" size="small" type="info">
           {{ disease }}
         </ElTag>
-      </div>
-    </div> -->
-    
+      </div> -->
+    </div>
+
 
     <ElTable :data="data.resultItems" border size="small" class="result-table">
       <ElTableColumn prop="itemName" label="项目" min-width="110" />

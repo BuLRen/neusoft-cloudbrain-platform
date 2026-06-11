@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElButton, ElCard, ElEmpty, ElMessage, ElTable, ElTableColumn } from 'element-plus'
+import { ElButton, ElCard, ElDialog, ElEmpty, ElMessage, ElTable, ElTableColumn } from 'element-plus'
 import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
+import SimulatedCheckResultContent from '@/shared/components/SimulatedCheckResultContent.vue'
 import { physicianApi, type CheckResult, type InspectionResult, type W3Output } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import ResultPayloadViewer from '@/shared/components/ResultPayloadViewer.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 import { useLabReportExport } from '@/shared/composables/useLabReportExport'
 import { buildLabReportContextFromPhysician } from '@/shared/types/labReportPdf'
-import { hasExportableLabReportPayload, resolveStructuredOutputFromPayload } from '@/shared/types/simulatedCheckResult'
+import {
+  hasExportableLabReportPayload,
+  resolveStructuredOutputFromPayload,
+  type SimulatedCheckStructuredOutput,
+} from '@/shared/types/simulatedCheckResult'
 
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
@@ -20,6 +25,10 @@ const loading = ref(false)
 const checkResults = ref<CheckResult[]>([])
 const inspectionResults = ref<InspectionResult[]>([])
 const w3Output = ref<W3Output | null>(null)
+const inspectionDialogVisible = ref(false)
+const inspectionDialogTitle = ref('检验结果')
+const inspectionDialogOutput = ref<SimulatedCheckStructuredOutput | null>(null)
+const inspectionDialogRow = ref<InspectionResult | null>(null)
 
 async function loadResults() {
   if (!registerId.value) return
@@ -47,8 +56,28 @@ async function runW3() {
   }
 }
 
+function resolveInspectionStructuredOutput(row: InspectionResult): SimulatedCheckStructuredOutput | null {
+  return resolveStructuredOutputFromPayload(row.inspectionResult)
+}
+
+function canViewInspectionResult(row: InspectionResult): boolean {
+  const structured = resolveInspectionStructuredOutput(row)
+  if (!structured) return false
+  if ((structured.resultItems?.length ?? 0) > 0) return true
+  return Boolean(structured.conclusion?.trim() || structured.checkName?.trim())
+}
+
 function canExportInspectionPdf(row: InspectionResult): boolean {
   return hasExportableLabReportPayload(row.inspectionResult)
+}
+
+function openInspectionResultDialog(row: InspectionResult) {
+  const structured = resolveInspectionStructuredOutput(row)
+  if (!structured || !canViewInspectionResult(row)) return
+  inspectionDialogOutput.value = structured
+  inspectionDialogRow.value = row
+  inspectionDialogTitle.value = row.techName ? `${row.techName} 检验结果` : '检验结果'
+  inspectionDialogVisible.value = true
 }
 
 async function handleExportInspectionPdf(row: InspectionResult) {
@@ -130,17 +159,27 @@ onMounted(() => {
           <span>{{ row.aiAnalysis?.analysisReport || '-' }}</span>
         </template>
       </ElTableColumn>
-      <ElTableColumn label="操作" width="110" fixed="right">
+      <ElTableColumn label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <ElButton
-            link
-            type="primary"
-            :disabled="!canExportInspectionPdf(row)"
-            :loading="exporting"
-            @click="handleExportInspectionPdf(row)"
-          >
-            导出 PDF
-          </ElButton>
+          <div class="inspection-actions">
+            <ElButton
+              text
+              type="primary"
+              :disabled="!canViewInspectionResult(row)"
+              @click="openInspectionResultDialog(row)"
+            >
+              查看结果
+            </ElButton>
+            <ElButton
+              text
+              type="primary"
+              :disabled="!canExportInspectionPdf(row)"
+              :loading="exporting"
+              @click="handleExportInspectionPdf(row)"
+            >
+              导出 PDF
+            </ElButton>
+          </div>
         </template>
       </ElTableColumn>
     </ElTable>
@@ -160,6 +199,27 @@ onMounted(() => {
     </div>
   </PhysicianStepLayout>
 
+  <ElDialog
+    v-model="inspectionDialogVisible"
+    :title="inspectionDialogTitle"
+    width="760px"
+    align-center
+    destroy-on-close
+  >
+    <SimulatedCheckResultContent :data="inspectionDialogOutput" />
+    <template #footer>
+      <ElButton @click="inspectionDialogVisible = false">关闭</ElButton>
+      <ElButton
+        v-if="inspectionDialogRow && canExportInspectionPdf(inspectionDialogRow)"
+        :loading="exporting"
+        type="primary"
+        @click="handleExportInspectionPdf(inspectionDialogRow)"
+      >
+        导出 PDF
+      </ElButton>
+    </template>
+  </ElDialog>
+
   <div class="lab-report-print-host" aria-hidden="true">
     <LabReportPrintSheet ref="printSheetRef" :context="exportContext" />
   </div>
@@ -175,6 +235,13 @@ onMounted(() => {
 
 .result-expand {
   padding: var(--space-3) var(--space-4);
+}
+
+.inspection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
 }
 
 .w3-grid {
