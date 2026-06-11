@@ -230,7 +230,12 @@ export interface ExpenseRecordQuery {
   patientId?: number
   registerId?: number
   status?: number
+  startDate?: string
+  endDate?: string
 }
+
+export type ExpenseRecordSortBy = 'payTime' | 'createTime' | 'refundTime'
+export type ExpenseRecordSortDir = 'asc' | 'desc'
 
 export interface RefundPayload {
   expenseRecordId?: number

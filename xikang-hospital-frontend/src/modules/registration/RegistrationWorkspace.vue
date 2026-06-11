@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
+  ElDatePicker,
   ElDescriptions,
   ElDescriptionsItem,
   ElEmpty,
@@ -12,6 +13,8 @@ import {
   ElInputNumber,
   ElMessage,
   ElOption,
+  ElRadio,
+  ElRadioGroup,
   ElSelect,
   ElTable,
   ElTableColumn,
@@ -26,6 +29,8 @@ import { registrationApi, scheduleApi } from '@/shared/api/modules/registration'
 import type {
   DepartmentOption,
   ExpenseRecord,
+  ExpenseRecordSortBy,
+  ExpenseRecordSortDir,
   PendingChargeItem,
   RegistrationCreateResult,
   RegistLevelOption,
@@ -79,6 +84,9 @@ const registrationForm = reactive({
 const chargeRegisterId = ref<number | undefined>()
 const chargePatientId = ref<number | undefined>()
 const recordStatus = ref<number | undefined>()
+const visitDateRange = ref<[string, string] | null>(null)
+const sortBy = ref<ExpenseRecordSortBy>('payTime')
+const sortDir = ref<ExpenseRecordSortDir>('desc')
 
 const inferredOperatorId = computed(() => {
   const parsed = Number(authStore.userId)
@@ -91,6 +99,32 @@ const selectedSettleCategory = computed(() => settleCategories.value.find((item)
 const chargeTotal = computed(() => {
   const selected = pendingCharges.value.filter((item) => selectedChargeItemIds.value.includes(item.id))
   return selected.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0)
+})
+
+// 状态优先级：待缴费 0 → 已缴费 1 → 已退费/作废 2、3 → 末位
+function expenseStatusRank(status?: number) {
+  if (status === 0) return 0
+  if (status === 1) return 1
+  return 2
+}
+
+function parseExpenseTime(value?: string | null): number {
+  if (!value) return Number.POSITIVE_INFINITY
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY
+}
+
+const sortedExpenseRecords = computed(() => {
+  const list = expenseRecords.value.slice()
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  const key = sortBy.value
+  return list.sort((a, b) => {
+    const rankDiff = expenseStatusRank(a.status) - expenseStatusRank(b.status)
+    if (rankDiff !== 0) return rankDiff
+    const timeDiff = (parseExpenseTime(a[key]) - parseExpenseTime(b[key])) * dir
+    if (timeDiff !== 0) return timeDiff
+    return a.id - b.id
+  })
 })
 
 function levelTone(name?: string) {
@@ -255,10 +289,13 @@ async function submitCharge() {
 }
 
 async function loadExpenseRecords() {
+  const [startDate, endDate] = visitDateRange.value || []
   expenseRecords.value = await registrationApi.expenseRecords({
     registerId: chargeRegisterId.value,
     patientId: chargePatientId.value,
     status: recordStatus.value,
+    startDate,
+    endDate,
   })
 }
 
@@ -465,7 +502,7 @@ onMounted(async () => {
 
         <ElTabPane label="费用记录 / 退费 / 退号" name="records">
           <div class="filter-grid">
-            <ElForm label-position="top" class="filter-form filter-form--three">
+            <ElForm label-position="top" class="filter-form filter-form--four">
               <ElFormItem label="registerId">
                 <ElInputNumber v-model="chargeRegisterId" :min="1" :controls="false" class="field" />
               </ElFormItem>
@@ -477,7 +514,33 @@ onMounted(async () => {
                   <ElOption label="待缴费" :value="0" />
                   <ElOption label="已收费" :value="1" />
                   <ElOption label="已退费" :value="2" />
+                  <ElOption label="已作废" :value="3" />
                 </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="时间范围（按收费时间）">
+                <ElDatePicker
+                  v-model="visitDateRange"
+                  type="daterange"
+                  range-separator="至"
+                  start-placeholder="开始日期"
+                  end-placeholder="结束日期"
+                  value-format="YYYY-MM-DD"
+                  clearable
+                  class="field"
+                />
+              </ElFormItem>
+              <ElFormItem label="排序字段">
+                <ElSelect v-model="sortBy" class="field">
+                  <ElOption label="收费时间" value="payTime" />
+                  <ElOption label="开单时间" value="createTime" />
+                  <ElOption label="退费时间" value="refundTime" />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="排序方向">
+                <ElRadioGroup v-model="sortDir">
+                  <ElRadio value="desc">降序</ElRadio>
+                  <ElRadio value="asc">升序</ElRadio>
+                </ElRadioGroup>
               </ElFormItem>
             </ElForm>
             <div class="actions actions--top">
@@ -486,13 +549,15 @@ onMounted(async () => {
               <ElButton type="danger" plain @click="cancelCurrentRegistration">退号</ElButton>
             </div>
           </div>
-          <ElTable :data="expenseRecords">
+          <ElTable :data="sortedExpenseRecords">
             <ElTableColumn prop="itemName" label="项目" min-width="180" />
             <ElTableColumn prop="categoryName" label="类别" min-width="120" />
             <ElTableColumn prop="totalAmount" label="金额" min-width="100" />
             <ElTableColumn prop="statusName" label="状态" min-width="120" />
             <ElTableColumn prop="operatorName" label="操作人" min-width="120" />
+            <ElTableColumn prop="createTime" label="开单时间" min-width="160" />
             <ElTableColumn prop="payTime" label="收费时间" min-width="160" />
+            <ElTableColumn prop="refundTime" label="退费时间" min-width="160" />
             <ElTableColumn label="操作" min-width="140" fixed="right">
               <template #default="{ row }">
                 <ElButton link type="danger" :disabled="row.status !== 1" @click="refundExpenseRecord(row.id)">退费</ElButton>
@@ -587,6 +652,10 @@ onMounted(async () => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.filter-form--four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -621,7 +690,8 @@ onMounted(async () => {
   .filter-grid,
   .form-grid,
   .filter-form,
-  .filter-form--three {
+  .filter-form--three,
+  .filter-form--four {
     grid-template-columns: 1fr;
   }
 }

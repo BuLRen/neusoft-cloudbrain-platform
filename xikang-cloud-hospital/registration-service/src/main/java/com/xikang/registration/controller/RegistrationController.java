@@ -139,8 +139,11 @@ public class RegistrationController {
     public Result<List<Map<String, Object>>> getExpenseRecords(
             @RequestParam(required = false) Long patientId,
             @RequestParam(required = false) Long registerId,
-            @RequestParam(required = false) Integer status) {
-        List<Map<String, Object>> records = expenseRecordService.queryExpenseRecords(patientId, registerId, status);
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        List<Map<String, Object>> records = expenseRecordService.queryExpenseRecords(
+                patientId, registerId, status, startDate, endDate);
         return Result.success(records);
     }
 

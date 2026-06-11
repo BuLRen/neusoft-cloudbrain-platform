@@ -35,8 +35,8 @@ public class BaiduAsrService {
 
     public BaiduAsrService(
             ObjectMapper objectMapper,
-            @Value("${baidu.asr.api-key:#{null}}") String apiKey,
-            @Value("${baidu.asr.secret-key:#{null}}") String secretKey) {
+            @Value("${baidu.asr.api-key:}") String apiKey,
+            @Value("${baidu.asr.secret-key:}") String secretKey) {
         this.objectMapper = objectMapper;
         this.apiKey = apiKey;
         this.secretKey = secretKey;
@@ -46,8 +46,16 @@ public class BaiduAsrService {
                 .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .build();
         log.info("[BaiduASR] 短语音识别服务初始化: apiKey={}, secretKey={}",
-                apiKey != null ? apiKey.substring(0, 8) + "..." : "null",
-                secretKey != null ? secretKey.substring(0, 8) + "..." : "null");
+                maskKey(apiKey), maskKey(secretKey));
+    }
+
+    /**
+     * 隐藏 key 前 8 位的掩码显示，key 缺失或过短时返回占位符。
+     */
+    private static String maskKey(String key) {
+        if (key == null || key.isEmpty()) return "(empty)";
+        if (key.length() <= 8) return "***";
+        return key.substring(0, 8) + "...";
     }
 
     /**

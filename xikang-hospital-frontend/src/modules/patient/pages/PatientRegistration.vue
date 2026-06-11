@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { useRoute } from 'vue-router'
+import { ElDatePicker, ElMessage, ElMessageBox, ElRadio, ElRadioGroup } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
 import type { RegistrationRecord } from '@/shared/types/registration'
+import type { ExpenseRecordSortBy, ExpenseRecordSortDir } from '@/shared/types/registration'
 import { useAuthStore } from '@/app/stores/auth'
 import { Warning } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
 const route = useRoute()
+const router = useRouter()
+
+// ========== 预问诊状态映射 ==========
+type PreConsultBtnState = { text: string; type: 'primary' | 'warning' | 'default'; state: 'none' | 'in_progress' | 'completed' } | null
+const preConsultStates = ref<Record<number, PreConsultBtnState>>({})
 
 // 步骤定义 - 按时间顺序：导诊 → 选择排班 → 确认挂号 → 预问诊
 const steps = [
@@ -278,7 +284,6 @@ const previsitForm = ref({
   pastHistory: '',
   allergyHistory: '',
 })
-const previsitLoading = ref(false)
 const previsitCompleted = ref(false)
 
 // 步骤完成状态
@@ -311,18 +316,117 @@ function goToStep(index: number) {
   }
 }
 
+// ========== 列表筛选 / 排序 ==========
+const visitDateRange = ref<[string, string] | null>(null)
+const sortBy = ref<ExpenseRecordSortBy>('payTime')
+const sortDir = ref<ExpenseRecordSortDir>('desc')
+
+// 状态优先级：待缴费 → 已缴费 → 已退号（垫底）
+function registrationStatusRank(record: RegistrationRecord): number {
+  if (record.status === 4) return 2
+  if (record.payStatus === 0) return 0
+  if (record.payStatus === 1) return 1
+  return 1
+}
+
+function parseRegistrationTime(record: RegistrationRecord, key: ExpenseRecordSortBy): number {
+  const value = key === 'createTime' ? record.createTime : key === 'refundTime' ? record.refundTime : (record as any).payTime
+  if (!value) return Number.POSITIVE_INFINITY
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY
+}
+
+const sortedRegistrations = computed(() => {
+  const list = registrations.value.slice()
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  const key = sortBy.value
+  return list.sort((a, b) => {
+    const rankDiff = registrationStatusRank(a) - registrationStatusRank(b)
+    if (rankDiff !== 0) return rankDiff
+    const timeDiff = (parseRegistrationTime(a, key) - parseRegistrationTime(b, key)) * dir
+    if (timeDiff !== 0) return timeDiff
+    return a.id - b.id
+  })
+})
+
+function visitDateOf(record: RegistrationRecord): string {
+  if (record.visitDate) return record.visitDate.slice(0, 10)
+  if (record.createTime) return record.createTime.slice(0, 10)
+  return ''
+}
+
+const filteredRegistrations = computed(() => {
+  const range = visitDateRange.value
+  if (!range || !range[0] || !range[1]) return sortedRegistrations.value
+  const [start, end] = range
+  return sortedRegistrations.value.filter((record) => {
+    const day = visitDateOf(record)
+    if (!day) return false
+    return day >= start && day <= end
+  })
+})
+
 async function loadRegistrations() {
   const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
   if (!patientId) return
   registrationLoading.value = true
   try {
     registrations.value = await registrationApi.registrationsByPatient(patientId)
+    await loadPreConsultStates()
   } catch (err) {
     console.error('加载我的挂号失败:', err)
     ElMessage.error('加载我的挂号失败')
   } finally {
     registrationLoading.value = false
   }
+}
+
+// ========== 加载每个挂号的预问诊状态 ==========
+async function loadPreConsultStates() {
+  // 只对"已缴费 + 未就诊"的挂号查询
+  const targets = registrations.value.filter(
+    r => r.payStatus === 1 && r.status !== 4 && r.status !== 5,
+  )
+  const results: Record<number, PreConsultBtnState> = {}
+  await Promise.all(
+    targets.map(async r => {
+      try {
+        const session = await aiApi.previsitSession(r.id)
+        if (!session || !session.exists) {
+          results[r.id] = { text: '去预问诊', type: 'primary', state: 'none' }
+        } else if (session.state === 'completed') {
+          results[r.id] = { text: '查看预问诊', type: 'default', state: 'completed' }
+        } else {
+          results[r.id] = { text: '继续预问诊', type: 'warning', state: 'in_progress' }
+        }
+      } catch {
+        results[r.id] = { text: '去预问诊', type: 'primary', state: 'none' }
+      }
+    }),
+  )
+  preConsultStates.value = results
+}
+
+function preConsultBtnFor(record: RegistrationRecord): PreConsultBtnState {
+  if (record.payStatus !== 1) return null
+  if (record.status === 4 || record.status === 5) return null
+  return preConsultStates.value[record.id] || { text: '去预问诊', type: 'primary', state: 'none' }
+}
+
+function goPrevisit(record: RegistrationRecord) {
+  const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
+  router.push({
+    path: '/patient/previsit',
+    query: { registerId: record.id, patientId },
+  })
+}
+
+function goPrevisitById(registerId: number) {
+  const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
+  router.push({
+    path: '/patient/previsit',
+    query: { registerId, patientId },
+  })
 }
 
 function formatMoney(value?: number | string | null) {
@@ -695,16 +799,6 @@ async function submitRegistration() {
 }
 
 // ========== Step 4: AI预问诊 ==========
-async function runPrevisit() {
-  if (!previsitForm.value.chiefComplaint.trim()) {
-    return
-  }
-  previsitLoading.value = true
-  await new Promise(resolve => setTimeout(resolve, 1500))
-  previsitCompleted.value = true
-  previsitLoading.value = false
-}
-
 function riskTone(level?: string) {
   if (level === 'critical') return 'danger'
   if (level === 'urgent' || level === 'medium') return 'warning'
@@ -778,14 +872,51 @@ const showSuccessCard = computed(() => {
         <button class="btn-primary" @click="startRegistration">预约新挂号</button>
       </div>
 
+      <div class="list-filters">
+        <div class="filter-field">
+          <label>就诊日期</label>
+          <ElDatePicker
+            v-model="visitDateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            clearable
+            class="field"
+          />
+        </div>
+        <div class="filter-field">
+          <label>排序字段</label>
+          <select v-model="sortBy" class="form-input">
+            <option value="payTime">就诊时间</option>
+            <option value="createTime">开单时间</option>
+            <option value="refundTime">退号时间</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>排序方向</label>
+          <ElRadioGroup v-model="sortDir">
+            <ElRadio value="desc">降序</ElRadio>
+            <ElRadio value="asc">升序</ElRadio>
+          </ElRadioGroup>
+        </div>
+        <div class="filter-field filter-summary">
+          <span>已显示 {{ filteredRegistrations.length }} / {{ registrations.length }} 条</span>
+        </div>
+      </div>
+
       <div v-if="registrationLoading" class="empty-state">正在加载挂号记录...</div>
       <div v-else-if="registrations.length === 0" class="empty-state rich-empty">
         <strong>暂无挂号记录</strong>
         <span>完成预约后，挂号单会出现在这里，后续医生开具的病历、检查、处方也可以继续从电子病历入口查看。</span>
         <button class="btn-primary" @click="startRegistration">去预约挂号</button>
       </div>
+      <div v-else-if="filteredRegistrations.length === 0" class="empty-state">
+        当前筛选条件下没有挂号记录，<button class="link-btn" @click="visitDateRange = null">清空筛选</button>
+      </div>
       <div v-else class="registration-record-list">
-        <div v-for="record in registrations" :key="record.id" class="registration-record-card">
+        <div v-for="record in filteredRegistrations" :key="record.id" class="registration-record-card">
           <div class="record-main">
             <div class="record-title-row">
               <strong>{{ record.departmentName || '未分配科室' }}</strong>
@@ -803,6 +934,12 @@ const showSuccessCard = computed(() => {
               <button class="btn-outline btn-sm" @click="openRegistrationDetail(record)">查看详情</button>
               <button v-if="canPay(record)" class="btn-primary btn-sm" :disabled="actionLoading" @click="handlePay(record)">去缴费</button>
               <button v-if="canCancel(record)" class="btn-outline btn-sm btn-danger" :disabled="actionLoading" @click="handleCancel(record)">取消挂号</button>
+              <button
+                v-if="preConsultBtnFor(record)"
+                class="btn-sm"
+                :class="preConsultBtnFor(record)?.type === 'primary' ? 'btn-primary' : preConsultBtnFor(record)?.type === 'warning' ? 'btn-warning' : 'btn-outline'"
+                @click="goPrevisit(record)"
+              >💬 {{ preConsultBtnFor(record)?.text }}</button>
             </div>
           </div>
           <div class="record-side">
@@ -1202,56 +1339,25 @@ const showSuccessCard = computed(() => {
             <span>或</span>
           </div>
           <h3 class="previsit-title">💬 进行AI预问诊（可选）</h3>
-          <p class="previsit-desc">提前采集病史信息，让医生接诊更高效</p>
+          <p class="previsit-desc">和 AI 聊几句，提前采集病史信息，让医生接诊更高效</p>
 
-          <div class="form-grid">
-            <div class="form-item">
-              <label>主诉（本次就诊最主要的不适）</label>
-              <textarea
-                v-model="previsitForm.chiefComplaint"
-                class="form-textarea"
-                placeholder="例如：胃痛3天，伴有反酸和嗳气..."
-                rows="4"
-              ></textarea>
-            </div>
-            <div class="form-item">
-              <label>现病史（症状详细描述）</label>
-              <textarea
-                v-model="previsitForm.presentIllness"
-                class="form-textarea"
-                placeholder="请详细描述症状出现时间、频率、加重/缓解因素..."
-                rows="4"
-              ></textarea>
-            </div>
-            <div class="form-item">
-              <label>既往史（以往患有的疾病）</label>
-              <textarea
-                v-model="previsitForm.pastHistory"
-                class="form-textarea"
-                placeholder="例如：高血压3年，否认糖尿病史..."
-                rows="3"
-              ></textarea>
-            </div>
-            <div class="form-item">
-              <label>过敏史（药物/食物过敏）</label>
-              <textarea
-                v-model="previsitForm.allergyHistory"
-                class="form-textarea"
-                placeholder="例如：青霉素过敏..."
-                rows="3"
-              ></textarea>
+          <div class="previsit-cta-card">
+            <div class="previsit-cta-icon">🤖</div>
+            <div class="previsit-cta-content">
+              <h4>对话式预问诊</h4>
+              <p>AI 会像医生秘书一样依次问您：哪里不舒服→持续多久→伴随症状→既往史→过敏史。完成后自动生成结构化病历给医生。</p>
+              <p class="previsit-cta-hint">您也可以稍后从「我的挂号」继续</p>
             </div>
           </div>
 
           <div class="step-actions center">
             <button class="btn-outline" @click="backToList">稍后再说，查看我的挂号</button>
             <button
+              v-if="registrationResult"
               class="btn-primary"
-              :disabled="!previsitForm.chiefComplaint.trim() || previsitLoading"
-              @click="runPrevisit"
+              @click="goPrevisitById(registrationResult.id)"
             >
-              <span v-if="previsitLoading" class="loading-dots">采集中</span>
-              <span v-else>开始采集病史</span>
+              <span>💬 立即开始对话</span>
             </button>
           </div>
         </div>
@@ -1444,6 +1550,62 @@ const showSuccessCard = computed(() => {
 .registration-record-list {
   display: grid;
   gap: var(--space-4);
+}
+
+.list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: #f7f8fc;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.filter-field label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.filter-field .form-input {
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.filter-field .field {
+  width: 100%;
+}
+
+.filter-summary {
+  min-width: auto;
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  text-decoration: underline;
 }
 
 .registration-record-card {
@@ -2350,6 +2512,45 @@ const showSuccessCard = computed(() => {
   border-top: 1px solid var(--color-border);
 }
 
+.previsit-cta-card {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #7dd3fc;
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+}
+
+.previsit-cta-icon {
+  font-size: 40px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.previsit-cta-content {
+  flex: 1;
+}
+
+.previsit-cta-content h4 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+  color: #0369a1;
+}
+
+.previsit-cta-content p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0 0 var(--space-1);
+  color: var(--color-text);
+}
+
+.previsit-cta-hint {
+  color: var(--color-text-muted) !important;
+  font-size: 12px !important;
+}
+
 .previsit-divider {
   text-align: center;
   margin-bottom: var(--space-6);
@@ -2466,6 +2667,22 @@ const showSuccessCard = computed(() => {
 .btn-outline:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+.btn-warning {
+  padding: var(--space-2) var(--space-4);
+  background: #e6a23c;
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-warning:hover {
+  background: #cf8d2c;
 }
 
 .loading-dots::after {

@@ -151,6 +151,64 @@ export interface PrevisitRecord {
   updateTime?: string
 }
 
+// ===== 对话式预问诊（多轮 SSE） =====
+
+export interface PrevisitChatStartPayload {
+  registerId: number
+  patientId: number
+}
+
+export interface PrevisitChatReplyPayload {
+  sessionUuid: string
+  answer: string
+}
+
+export interface PrevisitChatFinishPayload {
+  sessionUuid: string
+}
+
+export interface PrevisitChatMeta {
+  sessionUuid?: string
+  registerId?: number
+  roundNumber?: number
+  finished?: boolean
+}
+
+export interface PrevisitSessionRound {
+  roundNumber: number
+  aiQuestion?: string | null
+  patientAnswer?: string | null
+  modelId?: string | null
+}
+
+export interface PrevisitSessionSummary {
+  chiefComplaint?: string
+  symptomDuration?: string
+  historySummary?: string
+  allergySummary?: string
+  medicationSummary?: string
+  aiSummary?: string
+  suggestedExam?: string
+}
+
+export interface PrevisitSession {
+  exists: boolean
+  sessionUuid?: string
+  state?: 'in_progress' | 'completed' | 'cancelled' | string
+  rounds?: PrevisitSessionRound[]
+  summary?: PrevisitSessionSummary
+}
+
+export interface PrevisitSummary {
+  chiefComplaint?: string
+  symptomDuration?: string
+  presentIllness?: string
+  historySummary?: string
+  allergySummary?: string
+  medicationSummary?: string
+  suggestedExam?: string[]
+}
+
 export interface ExamAnalyzePayload {
   patientId?: number
   registerId?: number
