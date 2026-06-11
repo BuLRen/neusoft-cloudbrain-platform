@@ -293,7 +293,7 @@ CREATE TABLE register (
     CONSTRAINT chk_register_gender CHECK (gender IS NULL OR gender IN ('男', '女')),
     CONSTRAINT chk_register_noon CHECK (noon IS NULL OR noon IN ('上午', '下午')),
     CONSTRAINT chk_register_is_book CHECK (is_book IN ('是', '否')),
-    CONSTRAINT chk_register_visit_state CHECK (visit_state IN (1, 2, 3, 4)),
+    CONSTRAINT chk_register_visit_state CHECK (visit_state IN (1, 2, 3, 4, 5, 6)),
     CONSTRAINT chk_register_regist_money CHECK (regist_money >= 0)
 );
 
@@ -306,7 +306,7 @@ CREATE INDEX idx_register_visit_date ON register(visit_date);
 
 COMMENT ON TABLE register IS '患者历次挂号信息表';
 COMMENT ON COLUMN register.case_number IS '病历号，同一患者多次挂号共用同一病历号';
-COMMENT ON COLUMN register.visit_state IS '看诊状态: 1-已挂号, 2-医生接诊, 3-看诊结束, 4-已退号';
+COMMENT ON COLUMN register.visit_state IS '看诊状态: 1-已挂号, 2-医生接诊, 3-看诊结束, 4-已退号, 5-检查检验中, 6-检查检验完成';
 
 -- ============================================================
 -- 第 4 层：业务表（依赖第 3 层）

@@ -32,7 +32,7 @@
             ORDER BY acr.completion_time DESC NULLS LAST, acr.creation_time DESC
             LIMIT 1
         ) ac ON TRUE
-        WHERE r.visit_state IN (1, 2)
+        WHERE r.visit_state IN (1, 2, 5, 6)
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
@@ -43,7 +43,7 @@
     <select id="countPatients" resultType="long">
         SELECT COUNT(*)
         FROM register r
-        WHERE r.visit_state IN (1, 2)
+        WHERE r.visit_state IN (1, 2, 5, 6)
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
@@ -52,9 +52,63 @@
     <select id="selectPatientStats" resultType="map">
         SELECT
             COALESCE(SUM(CASE WHEN visit_state = 3 THEN 1 ELSE 0 END), 0) AS "totalVisited",
-            COALESCE(SUM(CASE WHEN visit_state IN (1, 2) THEN 1 ELSE 0 END), 0) AS "totalWaiting"
+            COALESCE(SUM(CASE WHEN visit_state IN (1, 2, 5, 6) THEN 1 ELSE 0 END), 0) AS "totalWaiting"
         FROM register
     </select>
+
+    <select id="selectPatientByRegisterId" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.age AS "age",
+            r.visit_date AS "visitDate",
+            r.visit_state AS "visitState",
+            r.noon AS "noon",
+            d.dept_name AS "deptName",
+            e.realname AS "physicianName",
+            ac.chief_complaint AS "chiefComplaint",
+            ac.symptom_duration AS "symptomDuration",
+            ac.history_summary AS "historySummary",
+            ac.allergy_summary AS "allergySummary",
+            ac.medication_summary AS "medicationSummary",
+            ac.ai_summary AS "aiSummary",
+            ac.suggested_exam AS "suggestedExam",
+            CASE WHEN ac.id IS NULL THEN FALSE ELSE TRUE END AS "hasAiConsultation"
+        FROM register r
+        LEFT JOIN department d ON d.id = r.deptment_id
+        LEFT JOIN employee e ON e.id = r.employee_id
+        LEFT JOIN LATERAL (
+            SELECT *
+            FROM ai_consultation_record acr
+            WHERE acr.register_id = r.id
+            ORDER BY acr.completion_time DESC NULLS LAST, acr.creation_time DESC
+            LIMIT 1
+        ) ac ON TRUE
+        WHERE r.id = #{registerId}
+    </select>
+
+    <select id="countPendingExamRequests" resultType="long">
+        SELECT COUNT(*)
+        FROM (
+            SELECT cr.id
+            FROM check_request cr
+            WHERE cr.register_id = #{registerId}
+              AND (cr.check_result IS NULL OR cr.check_state != '已完成')
+            UNION ALL
+            SELECT ir.id
+            FROM inspection_request ir
+            WHERE ir.register_id = #{registerId}
+              AND (ir.inspection_result IS NULL OR ir.inspection_state != '已完成')
+        ) pending
+    </select>
+
+    <update id="updateVisitState">
+        UPDATE register
+        SET visit_state = #{visitState}
+        WHERE id = #{registerId}
+    </update>
 
     <select id="selectMedicalRecordByRegisterId" resultType="map">
         SELECT
@@ -355,7 +409,8 @@
             real_name AS "realName",
             gender AS "gender",
             age AS "age",
-            home_address AS "homeAddress"
+            home_address AS "homeAddress",
+            visit_state AS "visitState"
         FROM register
         WHERE id = #{registerId}
     </select>

@@ -6,6 +6,8 @@ import { Calendar, Document, Tickets, User } from '@element-plus/icons-vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import EmptyState from '@/shared/components/EmptyState.vue'
+import PhysicianPatientSwitcher from '../components/PhysicianPatientSwitcher.vue'
+import { usePhysicianEncounterRoute } from '../composables/usePhysicianEncounterRoute'
 import { useEncounterStore } from '@/app/stores/encounter'
 
 const props = defineProps<{
@@ -19,6 +21,7 @@ const props = defineProps<{
 
 const router = useRouter()
 const encounterStore = useEncounterStore()
+const { navigateWithRegisterId } = usePhysicianEncounterRoute()
 
 const eyebrow = computed(() => props.groupLabel)
 const patientSummary = computed(() => encounterStore.patientSummary)
@@ -44,6 +47,9 @@ const patientBadge = computed(() => {
 
     <GlassCard class="step-layout__summary">
       <template v-if="encounterStore.hasEncounter && patientSummary">
+        <div class="step-layout__switcher-row">
+          <PhysicianPatientSwitcher />
+        </div>
         <div v-if="patientCardVariant === 'profile'" class="patient-profile">
           <div class="patient-profile__main">
             <div class="patient-profile__avatar" aria-hidden="true">
@@ -117,8 +123,8 @@ const patientBadge = computed(() => {
     <GlassCard class="step-layout__panel">
       <slot />
       <div class="step-layout__nav">
-        <ElButton v-if="prevPath" @click="router.push(prevPath)">上一步</ElButton>
-        <ElButton v-if="nextPath" type="primary" @click="router.push(nextPath)">下一步</ElButton>
+        <ElButton v-if="prevPath" @click="navigateWithRegisterId(prevPath)">上一步</ElButton>
+        <ElButton v-if="nextPath" type="primary" @click="navigateWithRegisterId(nextPath)">下一步</ElButton>
       </div>
     </GlassCard>
   </div>
@@ -128,6 +134,14 @@ const patientBadge = computed(() => {
 .step-layout__summary,
 .step-layout__panel {
   padding: var(--space-5);
+}
+
+.step-layout__switcher-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-end: var(--space-4);
+  padding-block-end: var(--space-4);
+  border-block-end: 1px solid var(--color-border);
 }
 
 .step-layout__ai {

@@ -266,8 +266,25 @@ export const physicianApi = {
   patients(params: { keyword?: string; page?: number; size?: number }) {
     return http<PageResult<PhysicianPatient>>({ url: '/physician/patients', method: 'GET', params })
   },
+  patient(registerId: number) {
+    return http<PhysicianPatient>({ url: `/physician/patients/${registerId}`, method: 'GET' })
+  },
   patientStats() {
     return http<{ totalVisited: number; totalWaiting: number }>({ url: '/physician/patient-stats', method: 'GET' })
+  },
+  startEncounter(registerId: number) {
+    return http<{ registerId: number; visitState: number }>({
+      url: `/physician/register/${registerId}/visit-state`,
+      method: 'PATCH',
+      data: { action: 'start' },
+    })
+  },
+  endVisit(registerId: number) {
+    return http<{ registerId: number; visitState: number }>({
+      url: `/physician/register/${registerId}/visit-state`,
+      method: 'PATCH',
+      data: { action: 'end' },
+    })
   },
   medicalRecord(registerId: number) {
     return http<MedicalRecord | null>({ url: '/physician/medical-record', method: 'GET', params: { registerId }, skipErrorMessage: true })
@@ -341,10 +358,10 @@ export const physicianApi = {
     }>({ url: '/physician/ai/pipeline/run', method: 'POST', data })
   },
   createCheckRequest(data: Record<string, unknown>) {
-    return http<{ requestIds: number[] }>({ url: '/physician/check-request', method: 'POST', data })
+    return http<{ requestIds: number[]; visitState?: number }>({ url: '/physician/check-request', method: 'POST', data })
   },
   createInspectionRequest(data: Record<string, unknown>) {
-    return http<{ requestIds: number[] }>({ url: '/physician/inspection-request', method: 'POST', data })
+    return http<{ requestIds: number[]; visitState?: number }>({ url: '/physician/inspection-request', method: 'POST', data })
   },
   createDisposalRequest(data: Record<string, unknown>) {
     return http<{ requestIds: number[] }>({ url: '/physician/disposal-request', method: 'POST', data })
@@ -362,7 +379,7 @@ export const physicianApi = {
     return http<Drug[]>({ url: '/physician/drugs', method: 'GET', params: { keyword } })
   },
   createPrescription(data: Record<string, unknown>) {
-    return http<{ prescriptionIds: number[]; totalAmount: number; confirmedDiagnosis?: string }>({
+    return http<{ prescriptionIds: number[]; totalAmount: number; confirmedDiagnosis?: string; visitState?: number }>({
       url: '/physician/prescription',
       method: 'POST',
       data,

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ElButton,
   ElEmpty,
   ElIcon,
   ElInput,
   ElMessage,
+  ElMessageBox,
   ElTable,
   ElTableColumn,
   ElTag,
@@ -55,6 +57,7 @@ const TECH_TYPE_LABEL: Record<TechType, string> = {
   disposal: '处置',
 }
 
+const router = useRouter()
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
 
@@ -158,7 +161,29 @@ async function submitTechnologyRequest() {
   }
 
   requestBasket.value = []
-  ElMessage.success('申请已提交')
+
+  const submittedExam = checkItems.length > 0 || inspectionItems.length > 0
+  if (!submittedExam) {
+    ElMessage.success('申请已提交')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '检查/检验申请已提交。结果返回前可接诊其他患者。',
+      '申请成功',
+      {
+        confirmButtonText: '返回待诊接诊',
+        cancelButtonText: '留在当前页',
+        distinguishCancelAndClose: true,
+        type: 'success',
+      },
+    )
+    encounterStore.clearEncounter()
+    await router.push('/physician/queue')
+  } catch {
+    ElMessage.success('申请已提交')
+  }
 }
 
 function addW2RecommendationToBasket(item: W2RecommendedExamination) {

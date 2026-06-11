@@ -63,6 +63,12 @@ public interface PhysicianMapper {
 
     Map<String, Object> selectRegisterById(@Param("registerId") Long registerId);
 
+    Map<String, Object> selectPatientByRegisterId(@Param("registerId") Long registerId);
+
+    long countPendingExamRequests(@Param("registerId") Long registerId);
+
+    int updateVisitState(@Param("registerId") Long registerId, @Param("visitState") int visitState);
+
     Map<String, Object> selectLatestAiConsultation(@Param("registerId") Long registerId);
 
     List<Map<String, Object>> selectAvailableExaminations();

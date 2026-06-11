@@ -7,6 +7,7 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { physicianApi, type PhysicianPatient } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
+import { physicianRoute, resumePathForVisitState, visitStateLabel } from '../constants/visitState'
 
 const router = useRouter()
 const encounterStore = useEncounterStore()
@@ -37,24 +38,13 @@ async function loadPatients() {
   }
 }
 
-function enterEncounter() {
+async function enterEncounter() {
   if (!selectedPatient.value || !selectedRegisterId.value) return
-  encounterStore.setEncounter({
-    registerId: selectedRegisterId.value,
-    patientSummary: {
-      realName: selectedPatient.value.realName,
-      caseNumber: selectedPatient.value.caseNumber,
-      gender: selectedPatient.value.gender,
-      age: selectedPatient.value.age,
-    },
-    aiConsultSummary: selectedPatient.value.aiConsultSummary
-      ? {
-          aiSummary: selectedPatient.value.aiConsultSummary.aiSummary,
-          chiefComplaint: selectedPatient.value.aiConsultSummary.chiefComplaint,
-        }
-      : null,
-  })
-  router.push('/physician/record')
+  const patient = selectedPatient.value
+  const { visitState } = await physicianApi.startEncounter(patient.registerId)
+  encounterStore.applyPatient({ ...patient, visitState })
+  const path = resumePathForVisitState(visitState)
+  await router.push(physicianRoute(path, patient.registerId))
 }
 
 onMounted(() => {
@@ -95,9 +85,10 @@ onMounted(() => {
           >
             <strong>{{ patient.realName }}</strong>
             <span>{{ patient.caseNumber }}</span>
-            <StatusTag :tone="patient.visitState === 1 ? 'warning' : 'primary'">
-              {{ patient.visitState === 1 ? '待接诊' : '接诊中' }}
+            <StatusTag :tone="visitStateLabel(patient.visitState).tone">
+              {{ visitStateLabel(patient.visitState).text }}
             </StatusTag>
+            <span v-if="patient.visitState === 6" class="patient-item__hint">结果已出，可继续确诊开方</span>
           </button>
           <ElEmpty v-if="!loading && patients.length === 0" description="暂无待诊患者" />
         </div>
@@ -176,6 +167,11 @@ onMounted(() => {
 
 .patient-item span {
   color: var(--color-text-muted);
+}
+
+.patient-item__hint {
+  font-size: 12px;
+  color: var(--color-success);
 }
 
 .summary-title {

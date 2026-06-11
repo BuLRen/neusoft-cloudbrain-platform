@@ -22,6 +22,12 @@ public class PhysicianService {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    private static final int VISIT_REGISTERED = 1;
+    private static final int VISIT_IN_PROGRESS = 2;
+    private static final int VISIT_ENDED = 3;
+    private static final int VISIT_EXAM_PENDING = 5;
+    private static final int VISIT_EXAM_COMPLETED = 6;
+
     private final PhysicianMapper physicianMapper;
 
     public PhysicianService(PhysicianMapper physicianMapper) {
@@ -34,6 +40,7 @@ public class PhysicianService {
         int offset = (currentPage - 1) * pageSize;
         List<Map<String, Object>> records = physicianMapper.selectPatients(keyword, offset, pageSize).stream()
             .map(this::withAiConsultSummary)
+            .map(this::syncExamStateIfNeeded)
             .toList();
         long total = physicianMapper.countPatients(keyword);
 
@@ -48,6 +55,38 @@ public class PhysicianService {
 
     public Map<String, Object> getPatientStats() {
         return physicianMapper.selectPatientStats();
+    }
+
+    public Map<String, Object> getPatient(Long registerId) {
+        Map<String, Object> row = physicianMapper.selectPatientByRegisterId(registerId);
+        if (row == null) {
+            return null;
+        }
+        return syncExamStateIfNeeded(withAiConsultSummary(row));
+    }
+
+    @Transactional
+    public Map<String, Object> startEncounter(Long registerId) {
+        int current = currentVisitState(registerId);
+        if (current == VISIT_REGISTERED) {
+            physicianMapper.updateVisitState(registerId, VISIT_IN_PROGRESS);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+        result.put("visitState", currentVisitState(registerId));
+        return result;
+    }
+
+    @Transactional
+    public Map<String, Object> endVisit(Long registerId) {
+        int current = currentVisitState(registerId);
+        if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_PENDING || current == VISIT_EXAM_COMPLETED) {
+            physicianMapper.updateVisitState(registerId, VISIT_ENDED);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+        result.put("visitState", currentVisitState(registerId));
+        return result;
     }
 
     public Map<String, Object> getMedicalRecord(Long registerId) {
@@ -140,12 +179,18 @@ public class PhysicianService {
 
     @Transactional
     public Map<String, Object> createCheckRequest(Map<String, Object> request) {
-        return createTechnologyRequest(request, "check");
+        Map<String, Object> result = createTechnologyRequest(request, "check");
+        markExamPending(toLong(request.get("registerId")));
+        result.put("visitState", currentVisitState(toLong(request.get("registerId"))));
+        return result;
     }
 
     @Transactional
     public Map<String, Object> createInspectionRequest(Map<String, Object> request) {
-        return createTechnologyRequest(request, "inspection");
+        Map<String, Object> result = createTechnologyRequest(request, "inspection");
+        markExamPending(toLong(request.get("registerId")));
+        result.put("visitState", currentVisitState(toLong(request.get("registerId"))));
+        return result;
     }
 
     @Transactional
@@ -210,10 +255,13 @@ public class PhysicianService {
             .map(item -> toDecimal(item.get("drugPrice")).multiply(new BigDecimal(String.valueOf(item.getOrDefault("drugNumber", "0")))))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        endVisit(registerId);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("prescriptionIds", prescriptionIds);
         result.put("totalAmount", totalAmount);
         result.put("confirmedDiagnosis", prescriptionRequest.get("confirmedDiagnosis"));
+        result.put("visitState", currentVisitState(registerId));
         return result;
     }
 
@@ -298,6 +346,56 @@ public class PhysicianService {
                 "correlationAnalysis", "ai_exam_analysis.correlation_analysis"
             )
         );
+    }
+
+    private void markExamPending(Long registerId) {
+        if (registerId == null) {
+            return;
+        }
+        int current = currentVisitState(registerId);
+        if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_COMPLETED) {
+            physicianMapper.updateVisitState(registerId, VISIT_EXAM_PENDING);
+        }
+    }
+
+    private Map<String, Object> syncExamStateIfNeeded(Map<String, Object> row) {
+        Long registerId = toLong(row.get("registerId"));
+        int state = toInt(row.get("visitState"));
+        if (registerId != null && state == VISIT_EXAM_PENDING) {
+            int synced = syncExamCompletedState(registerId);
+            row.put("visitState", synced);
+        }
+        return row;
+    }
+
+    private int syncExamCompletedState(Long registerId) {
+        int current = currentVisitState(registerId);
+        if (current != VISIT_EXAM_PENDING) {
+            return current;
+        }
+        if (physicianMapper.countPendingExamRequests(registerId) == 0) {
+            physicianMapper.updateVisitState(registerId, VISIT_EXAM_COMPLETED);
+            return VISIT_EXAM_COMPLETED;
+        }
+        return VISIT_EXAM_PENDING;
+    }
+
+    private int currentVisitState(Long registerId) {
+        Map<String, Object> register = physicianMapper.selectRegisterById(registerId);
+        if (register == null) {
+            return VISIT_REGISTERED;
+        }
+        return toInt(register.get("visitState"));
+    }
+
+    private int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return Integer.parseInt(text);
+        }
+        return VISIT_REGISTERED;
     }
 
     private Map<String, Object> withAiConsultSummary(Map<String, Object> row) {

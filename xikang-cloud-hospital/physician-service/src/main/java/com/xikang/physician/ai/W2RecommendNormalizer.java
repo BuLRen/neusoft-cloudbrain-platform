@@ -103,14 +103,15 @@ public class W2RecommendNormalizer {
         return catalog;
     }
 
+    /** Maps AI output to DB priority tier: 1=高, 2=中, 3=低 (chk_ai_exam_sug_priority). */
     private static int clampPriority(Object value) {
         if (value instanceof Number number) {
             int p = number.intValue();
-            return Math.max(1, Math.min(5, p));
+            return Math.max(1, Math.min(3, p));
         }
         try {
             int p = Integer.parseInt(String.valueOf(value).trim());
-            return Math.max(1, Math.min(5, p));
+            return Math.max(1, Math.min(3, p));
         } catch (NumberFormatException ex) {
             return 3;
         }

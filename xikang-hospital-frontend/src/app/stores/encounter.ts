@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { physicianApi, type PhysicianPatient } from '@/shared/api/modules/physician'
 
 export interface EncounterPatientSummary {
   realName: string
@@ -35,6 +36,38 @@ export const useEncounterStore = defineStore('encounter', () => {
     aiConsultSummary.value = null
   }
 
-  return { registerId, patientSummary, aiConsultSummary, hasEncounter, setEncounter, clearEncounter }
+  function applyPatient(patient: PhysicianPatient) {
+    setEncounter({
+      registerId: patient.registerId,
+      patientSummary: {
+        realName: patient.realName,
+        caseNumber: patient.caseNumber,
+        gender: patient.gender,
+        age: patient.age,
+      },
+      aiConsultSummary: patient.aiConsultSummary
+        ? {
+            aiSummary: patient.aiConsultSummary.aiSummary,
+            chiefComplaint: patient.aiConsultSummary.chiefComplaint,
+          }
+        : null,
+    })
+  }
+
+  async function switchEncounter(nextRegisterId: number) {
+    const patient = await physicianApi.patient(nextRegisterId)
+    applyPatient(patient)
+  }
+
+  return {
+    registerId,
+    patientSummary,
+    aiConsultSummary,
+    hasEncounter,
+    setEncounter,
+    applyPatient,
+    switchEncounter,
+    clearEncounter,
+  }
 })
 
