@@ -5,10 +5,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.entity.CheckRequest;
+import com.xikang.medtech.entity.InspectionRequest;
 import com.xikang.medtech.entity.MedicalTechnology;
 import com.xikang.medtech.entity.ResultFormCategory;
 import com.xikang.medtech.entity.ResultFormField;
 import com.xikang.medtech.mapper.CheckRequestMapper;
+import com.xikang.medtech.mapper.InspectionRequestMapper;
 import com.xikang.medtech.mapper.MedicalTechnologyMapper;
 import com.xikang.medtech.mapper.ResultFormMapper;
 import lombok.RequiredArgsConstructor;
@@ -34,10 +36,12 @@ public class ResultFormService {
     private static final String OWNER_CATEGORY = "category";
     private static final String OWNER_TECH_EXTENSION = "tech_extension";
     private static final String DEFAULT_CATEGORY = "general_check";
+    private static final String DEFAULT_LAB_CATEGORY = "general_lab";
 
     private final ResultFormMapper resultFormMapper;
     private final MedicalTechnologyMapper medicalTechnologyMapper;
     private final CheckRequestMapper checkRequestMapper;
+    private final InspectionRequestMapper inspectionRequestMapper;
     private final ObjectMapper objectMapper;
 
     public List<Map<String, Object>> listCategories() {
@@ -103,21 +107,32 @@ public class ResultFormService {
         }
         Map<String, Object> schema = resolveByMedicalTechnologyId(request.getMedicalTechnologyId());
         schema.put("checkRequestId", checkRequestId);
-        schema.put("existingValues", parseExistingValues(request.getCheckResult()));
+        schema.put("existingValues", parseExistingValues(request.getCheckResult(), "check"));
+        return schema;
+    }
+
+    public Map<String, Object> resolveByInspectionRequestId(Long inspectionRequestId) {
+        InspectionRequest request = inspectionRequestMapper.selectById(inspectionRequestId);
+        if (request == null) {
+            throw new BusinessException(404, "检验申请不存在");
+        }
+        Map<String, Object> schema = resolveByMedicalTechnologyId(request.getMedicalTechnologyId());
+        schema.put("inspectionRequestId", inspectionRequestId);
+        schema.put("existingValues", parseExistingValues(request.getInspectionResult(), "inspection"));
         return schema;
     }
 
     public Map<String, Object> resolveByMedicalTechnologyId(Long medicalTechnologyId) {
-        MedicalTechnology tech = requireCheckTechnology(medicalTechnologyId);
+        MedicalTechnology tech = requireMedtechTechnology(medicalTechnologyId);
         return buildResolvedSchema(tech);
     }
 
     public String buildResultPayload(Long medicalTechnologyId, Map<String, Object> resultData) {
-        MedicalTechnology tech = requireCheckTechnology(medicalTechnologyId);
+        MedicalTechnology tech = requireMedtechTechnology(medicalTechnologyId);
         Map<String, Object> schema = buildResolvedSchema(tech);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> fields = (List<Map<String, Object>>) schema.get("fields");
-        Map<String, Object> values = extractValues(resultData, fields);
+        Map<String, Object> values = extractValues(resultData, fields, tech.getTechType());
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("schemaVersion", 1);
@@ -131,7 +146,7 @@ public class ResultFormService {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
-            throw new BusinessException(500, "检查结果序列化失败");
+            throw new BusinessException(500, "结果序列化失败");
         }
     }
 
@@ -177,12 +192,12 @@ public class ResultFormService {
     }
 
     private Map<String, Object> buildResolvedSchema(MedicalTechnology tech) {
-        String categoryCode = resolveCategoryCode(tech.getAiCategoryCode());
+        String categoryCode = resolveCategoryCode(tech);
         List<ResultFormField> baseFields = new ArrayList<>(
             resultFormMapper.selectFieldsByOwner(OWNER_CATEGORY, categoryCode)
         );
         if (baseFields.isEmpty()) {
-            baseFields = defaultGeneralFields(categoryCode);
+            baseFields = defaultCategoryFields(categoryCode, tech.getTechType());
         }
 
         List<ResultFormField> extensionFields = resultFormMapper.selectFieldsByOwner(
@@ -213,7 +228,7 @@ public class ResultFormService {
         return schema;
     }
 
-    private Map<String, Object> extractValues(Map<String, Object> resultData, List<Map<String, Object>> fields) {
+    private Map<String, Object> extractValues(Map<String, Object> resultData, List<Map<String, Object>> fields, String techType) {
         @SuppressWarnings("unchecked")
         Map<String, Object> inputValues = resultData.get("values") instanceof Map<?, ?> map
             ? (Map<String, Object>) map
@@ -229,11 +244,34 @@ public class ResultFormService {
                     (String) resultData.get("result")
                 );
             }
+            if (raw == null && ("inspectionResult".equals(fieldKey) || "result".equals(fieldKey))) {
+                raw = firstNonBlank(
+                    (String) resultData.get("inspectionResult"),
+                    (String) resultData.get("result")
+                );
+            }
+            if (raw == null && "checkRemark".equals(fieldKey)) {
+                raw = resultData.get("checkRemark");
+            }
+            if (raw == null && "inspectionRemark".equals(fieldKey)) {
+                raw = resultData.get("inspectionRemark");
+            }
             String fieldType = String.valueOf(field.get("fieldType"));
             boolean required = Boolean.TRUE.equals(field.get("required"));
             Object normalized = normalizeValue(raw, fieldType, required, String.valueOf(field.get("fieldLabel")));
             values.put(fieldKey, normalized);
         }
+
+        if ("inspection".equals(techType) && !values.containsKey("inspectionResult")) {
+            String legacy = firstNonBlank(
+                (String) resultData.get("inspectionResult"),
+                (String) resultData.get("result")
+            );
+            if (legacy != null) {
+                values.put("inspectionResult", legacy);
+            }
+        }
+
         return values;
     }
 
@@ -309,6 +347,14 @@ public class ResultFormService {
     }
 
     private MedicalTechnology requireCheckTechnology(Long techId) {
+        MedicalTechnology tech = requireMedtechTechnology(techId);
+        if (!"check".equals(tech.getTechType())) {
+            throw new BusinessException(400, "仅支持检查类项目配置结果表单");
+        }
+        return tech;
+    }
+
+    private MedicalTechnology requireMedtechTechnology(Long techId) {
         if (techId == null) {
             throw new BusinessException(400, "医技项目 ID 不能为空");
         }
@@ -316,8 +362,9 @@ public class ResultFormService {
         if (tech == null) {
             throw new BusinessException(404, "医技项目不存在");
         }
-        if (!"check".equals(tech.getTechType())) {
-            throw new BusinessException(400, "仅支持检查类项目配置结果表单");
+        String techType = tech.getTechType();
+        if (!"check".equals(techType) && !"inspection".equals(techType)) {
+            throw new BusinessException(400, "当前项目类型不支持动态结果表单");
         }
         return tech;
     }
@@ -328,9 +375,24 @@ public class ResultFormService {
         }
     }
 
+    private String resolveCategoryCode(MedicalTechnology tech) {
+        String aiCategoryCode = tech.getAiCategoryCode();
+        if (aiCategoryCode != null && aiCategoryCode.startsWith("imaging_ct")) {
+            return "imaging_ct";
+        }
+        if ("inspection".equals(tech.getTechType())
+            || "general_lab".equals(aiCategoryCode)) {
+            return DEFAULT_LAB_CATEGORY;
+        }
+        return DEFAULT_CATEGORY;
+    }
+
     private String resolveCategoryCode(String aiCategoryCode) {
         if (aiCategoryCode != null && aiCategoryCode.startsWith("imaging_ct")) {
             return "imaging_ct";
+        }
+        if ("general_lab".equals(aiCategoryCode)) {
+            return DEFAULT_LAB_CATEGORY;
         }
         return DEFAULT_CATEGORY;
     }
@@ -340,20 +402,26 @@ public class ResultFormService {
         return category == null ? categoryCode : category.getCategoryName();
     }
 
-    private List<ResultFormField> defaultGeneralFields(String categoryCode) {
-        ResultFormField checkResult = new ResultFormField();
-        checkResult.setFieldKey("checkResult");
-        checkResult.setFieldLabel("检查结果");
-        checkResult.setFieldType("textarea");
-        checkResult.setRequired(true);
-        checkResult.setSortOrder(1);
-        checkResult.setOwnerType(OWNER_CATEGORY);
-        checkResult.setOwnerKey(categoryCode);
-        return List.of(checkResult);
+    private List<ResultFormField> defaultCategoryFields(String categoryCode, String techType) {
+        ResultFormField primary = new ResultFormField();
+        primary.setOwnerType(OWNER_CATEGORY);
+        primary.setOwnerKey(categoryCode);
+        primary.setFieldType("textarea");
+        primary.setRequired(true);
+        primary.setSortOrder(1);
+
+        if ("inspection".equals(techType) || DEFAULT_LAB_CATEGORY.equals(categoryCode)) {
+            primary.setFieldKey("inspectionResult");
+            primary.setFieldLabel("检验结果");
+        } else {
+            primary.setFieldKey("checkResult");
+            primary.setFieldLabel("检查结果");
+        }
+        return List.of(primary);
     }
 
-    private Map<String, Object> parseExistingValues(String checkResult) {
-        Map<String, Object> payload = parseResultPayload(checkResult);
+    private Map<String, Object> parseExistingValues(String storedResult, String techType) {
+        Map<String, Object> payload = parseResultPayload(storedResult);
         if (payload == null) {
             return Map.of();
         }
@@ -363,7 +431,8 @@ public class ResultFormService {
             return result;
         }
         if (payload.containsKey("legacyText")) {
-            return Map.of("checkResult", payload.get("legacyText"));
+            String legacyKey = "inspection".equals(techType) ? "inspectionResult" : "checkResult";
+            return Map.of(legacyKey, payload.get("legacyText"));
         }
         return Map.of();
     }

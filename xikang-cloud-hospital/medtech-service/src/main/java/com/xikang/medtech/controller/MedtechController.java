@@ -68,6 +68,17 @@ public class MedtechController {
     }
 
     /**
+     * 归档检查申请
+     */
+    @PutMapping("/check/archive/{id}")
+    public Result<Void> archiveCheck(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> archiveData) {
+        medtechService.archiveCheck(id, archiveData);
+        return Result.success("检查申请已归档", null);
+    }
+
+    /**
      * 运行模拟检查工作流（非 CT）
      */
     @PostMapping("/check/simulate/{id}")
@@ -152,22 +163,71 @@ public class MedtechController {
     // ==================== 检验相关接口 ====================
 
     /**
+     * 运行模拟检验工作流
+     */
+    @PostMapping("/inspection/simulate/{id}")
+    public Result<Map<String, Object>> simulateInspection(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> response = checkSimulationService.simulateInspection(id, body);
+        return Result.success("模拟检验完成", response);
+    }
+
+    /**
+     * 解析检验结果录入表单 schema
+     */
+    @GetMapping("/inspection/result-form/resolve")
+    public Result<Map<String, Object>> resolveInspectionResultForm(
+            @RequestParam(required = false) Long inspectionRequestId,
+            @RequestParam(required = false) Long medicalTechnologyId) {
+        if (inspectionRequestId != null) {
+            return Result.success(resultFormService.resolveByInspectionRequestId(inspectionRequestId));
+        }
+        if (medicalTechnologyId != null) {
+            return Result.success(resultFormService.resolveByMedicalTechnologyId(medicalTechnologyId));
+        }
+        return Result.error("请提供 inspectionRequestId 或 medicalTechnologyId");
+    }
+
+    /**
      * 获取待检验患者列表
      */
     @GetMapping("/inspection/applications")
     public Result<List<Map<String, Object>>> getInspectionApplications(
             @RequestParam(required = false) Long registrationId,
-            @RequestParam(required = false) Integer status) {
-        List<Map<String, Object>> applications = medtechService.getInspectionApplications(registrationId, status);
+            @RequestParam(required = false) String inspectionState) {
+        List<Map<String, Object>> applications = medtechService.getInspectionApplications(registrationId, inspectionState);
         return Result.success(applications);
+    }
+
+    /**
+     * 获取检验申请详情
+     */
+    @GetMapping("/inspection/report/{id}")
+    public Result<Map<String, Object>> getInspectionReport(@PathVariable Long id) {
+        Map<String, Object> report = medtechService.getInspectionReport(id);
+        return Result.success(report);
+    }
+
+    /**
+     * 归档检验申请
+     */
+    @PutMapping("/inspection/archive/{id}")
+    public Result<Void> archiveInspection(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> archiveData) {
+        medtechService.archiveInspection(id, archiveData);
+        return Result.success("检验申请已归档", null);
     }
 
     /**
      * 开始检验
      */
     @PutMapping("/inspection/start/{id}")
-    public Result<Void> startInspection(@PathVariable Long id) {
-        medtechService.startInspection(id);
+    public Result<Void> startInspection(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> operatorInfo) {
+        medtechService.startInspection(id, operatorInfo);
         return Result.success();
     }
 
@@ -201,17 +261,39 @@ public class MedtechController {
     @GetMapping("/disposal/applications")
     public Result<List<Map<String, Object>>> getDisposalApplications(
             @RequestParam(required = false) Long registrationId,
-            @RequestParam(required = false) Integer status) {
-        List<Map<String, Object>> applications = medtechService.getDisposalApplications(registrationId, status);
+            @RequestParam(required = false) String disposalState) {
+        List<Map<String, Object>> applications = medtechService.getDisposalApplications(registrationId, disposalState);
         return Result.success(applications);
+    }
+
+    /**
+     * 获取处置申请详情
+     */
+    @GetMapping("/disposal/report/{id}")
+    public Result<Map<String, Object>> getDisposalReport(@PathVariable Long id) {
+        Map<String, Object> report = medtechService.getDisposalReport(id);
+        return Result.success(report);
+    }
+
+    /**
+     * 归档处置申请
+     */
+    @PutMapping("/disposal/archive/{id}")
+    public Result<Void> archiveDisposal(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> archiveData) {
+        medtechService.archiveDisposal(id, archiveData);
+        return Result.success("处置申请已归档", null);
     }
 
     /**
      * 开始处置
      */
     @PutMapping("/disposal/start/{id}")
-    public Result<Void> startDisposal(@PathVariable Long id) {
-        medtechService.startDisposal(id);
+    public Result<Void> startDisposal(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> operatorInfo) {
+        medtechService.startDisposal(id, operatorInfo);
         return Result.success();
     }
 

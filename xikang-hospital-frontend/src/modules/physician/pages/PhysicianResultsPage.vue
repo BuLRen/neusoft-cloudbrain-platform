@@ -76,7 +76,8 @@ onMounted(() => {
       <ElTableColumn prop="checkState" label="状态" width="100" />
       <ElTableColumn label="结果摘要" min-width="220">
         <template #default="{ row }">
-          <ResultPayloadViewer :raw="row.checkResult" compact />
+          <span v-if="row.checkState === '已归档'">{{ row.checkRemark || '未执行（已归档）' }}</span>
+          <ResultPayloadViewer v-else :raw="row.checkResult" compact />
         </template>
       </ElTableColumn>
       <ElTableColumn label="AI 分析">
@@ -89,9 +90,21 @@ onMounted(() => {
     <h3 style="margin-top: var(--space-4)">检验结果</h3>
     <ElEmpty v-if="!inspectionResults.length" description="暂无检验结果" />
     <ElTable v-else :data="inspectionResults">
+      <ElTableColumn type="expand">
+        <template #default="{ row }">
+          <div class="result-expand">
+            <ResultPayloadViewer :raw="row.inspectionResult" />
+          </div>
+        </template>
+      </ElTableColumn>
       <ElTableColumn prop="techName" label="项目" />
-      <ElTableColumn prop="inspectionState" label="状态" />
-      <ElTableColumn prop="inspectionResult" label="结果" />
+      <ElTableColumn prop="inspectionState" label="状态" width="100" />
+      <ElTableColumn label="结果摘要" min-width="220">
+        <template #default="{ row }">
+          <span v-if="row.inspectionState === '已归档'">{{ row.inspectionRemark || '未执行（已归档）' }}</span>
+          <ResultPayloadViewer v-else :raw="row.inspectionResult" compact />
+        </template>
+      </ElTableColumn>
       <ElTableColumn label="AI 分析">
         <template #default="{ row }">
           <span>{{ row.aiAnalysis?.analysisReport || '-' }}</span>

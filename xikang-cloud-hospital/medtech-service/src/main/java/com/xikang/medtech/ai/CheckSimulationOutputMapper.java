@@ -125,27 +125,24 @@ public class CheckSimulationOutputMapper {
         String conclusion = asString(structured.get("conclusion"));
         String notice = asString(structured.get("notice"));
 
-        if (conclusion != null) {
-            String targetKey = findFieldKey(schemaFields, "checkResult");
-            if (targetKey == null) {
-                targetKey = firstTextareaFieldKey(schemaFields);
-            }
-            if (targetKey != null) {
-                values.put(targetKey, conclusion);
-            }
+        String primaryKey = findFieldKey(schemaFields, "checkResult");
+        if (primaryKey == null) {
+            primaryKey = findFieldKey(schemaFields, "inspectionResult");
+        }
+        if (primaryKey == null) {
+            primaryKey = firstTextareaFieldKey(schemaFields);
         }
 
-        if (notice != null && findFieldKey(schemaFields, "checkRemark") != null) {
-            values.put("checkRemark", notice);
-        } else if (notice != null && findFieldKey(schemaFields, "checkRemark") == null && notice != null) {
-            String remarkKey = schemaFields.stream()
-                .map(f -> String.valueOf(f.get("fieldKey")))
-                .filter("checkRemark"::equals)
-                .findFirst()
-                .orElse(null);
-            if (remarkKey != null) {
-                values.put(remarkKey, notice);
-            }
+        if (conclusion != null && primaryKey != null) {
+            values.put(primaryKey, conclusion);
+        }
+
+        String remarkKey = findFieldKey(schemaFields, "checkRemark");
+        if (remarkKey == null) {
+            remarkKey = findFieldKey(schemaFields, "inspectionRemark");
+        }
+        if (notice != null && remarkKey != null) {
+            values.put(remarkKey, notice);
         }
 
         return values;

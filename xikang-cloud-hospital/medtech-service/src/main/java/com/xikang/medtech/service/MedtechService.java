@@ -113,17 +113,34 @@ public class MedtechService {
         return toCheckDetailMap(request);
     }
 
+    /**
+     * 归档检查申请
+     */
+    @Transactional
+    public void archiveCheck(Long id, Map<String, Object> archiveData) {
+        log.info("归档检查 | checkRequestId={}", id);
+        CheckRequest request = checkRequestMapper.selectById(id);
+        if (request == null) {
+            throw new BusinessException(404, "检查申请不存在");
+        }
+        if (!isArchivableCheckState(request.getCheckState())) {
+            throw new BusinessException(400, "当前状态不允许归档");
+        }
+        String remark = buildArchiveRemark(archiveData);
+        checkRequestMapper.updateArchive(id, "已归档", remark);
+    }
+
     // ==================== 检验相关 ====================
 
     /**
      * 获取待检验患者列表
      */
-    public List<Map<String, Object>> getInspectionApplications(Long registrationId, Integer status) {
+    public List<Map<String, Object>> getInspectionApplications(Long registrationId, String inspectionState) {
         List<InspectionRequest> requests;
         if (registrationId != null) {
             requests = inspectionRequestMapper.selectByRegisterId(registrationId);
-        } else if (status != null) {
-            requests = inspectionRequestMapper.selectByStatus(status);
+        } else if (inspectionState != null && !inspectionState.isBlank()) {
+            requests = inspectionRequestMapper.selectByInspectionState(inspectionState.trim());
         } else {
             requests = inspectionRequestMapper.selectPending();
         }
@@ -134,16 +151,21 @@ public class MedtechService {
      * 开始检验
      */
     @Transactional
-    public void startInspection(Long id) {
+    public void startInspection(Long id, Map<String, Object> operatorInfo) {
         log.info("开始检验 | inspectionRequestId={}", id);
         InspectionRequest request = inspectionRequestMapper.selectById(id);
         if (request == null) {
             throw new BusinessException(404, "检验申请不存在");
         }
-        if (request.getStatus() != 1) {
+        if (!"待检验".equals(request.getInspectionState())) {
             throw new BusinessException(400, "当前状态不允许开始检验");
         }
-        inspectionRequestMapper.updateStatus(id, 2); // 执行中
+        Long inspectionEmployeeId = extractLong(operatorInfo, "inspectionEmployeeId");
+        if (inspectionEmployeeId != null) {
+            inspectionRequestMapper.updateInspectionStateWithEmployee(id, "检验中", inspectionEmployeeId);
+        } else {
+            inspectionRequestMapper.updateInspectionState(id, "检验中");
+        }
     }
 
     /**
@@ -156,7 +178,10 @@ public class MedtechService {
         if (request == null) {
             throw new BusinessException(404, "检验申请不存在");
         }
-        inspectionRequestMapper.updateSpecimenTime(id, LocalDateTime.now());
+        if (!"检验中".equals(request.getInspectionState())) {
+            throw new BusinessException(400, "当前状态不允许记录采样");
+        }
+        inspectionRequestMapper.updateInspectionTime(id, LocalDateTime.now());
     }
 
     /**
@@ -170,28 +195,70 @@ public class MedtechService {
         if (request == null) {
             throw new BusinessException(404, "检验申请不存在");
         }
-
-        String result;
-        try {
-            result = objectMapper.writeValueAsString(resultData.get("result"));
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            log.error("检验结果序列化失败", e);
-            result = "{}";
+        if (!"检验中".equals(request.getInspectionState())) {
+            throw new BusinessException(400, "当前状态不允许录入结果");
         }
-        String aiAnalysis = (String) resultData.get("aiAnalysis");
 
-        request.setResult(result);
-        request.setAiAnalysis(aiAnalysis);
-        request.setStatus(3); // 已完成
-        request.setResultTime(LocalDateTime.now());
-        inspectionRequestMapper.update(request);
+        String inspectionResult;
+        if (resultData.get("values") instanceof Map<?, ?>) {
+            inspectionResult = resultFormService.buildResultPayload(request.getMedicalTechnologyId(), resultData);
+        } else {
+            inspectionResult = trimToNull((String) resultData.get("inspectionResult"));
+            if (inspectionResult == null) {
+                inspectionResult = trimToNull((String) resultData.get("result"));
+            }
+            if (inspectionResult == null) {
+                throw new BusinessException(400, "请填写检验结果");
+            }
+        }
+
+        request.setInspectionResult(inspectionResult);
+        request.setInspectionState("已完成");
+        request.setInspectionTime(LocalDateTime.now());
+        String remark = trimToNull((String) resultData.get("inspectionRemark"));
+        if (remark == null && resultData.get("values") instanceof Map<?, ?> values) {
+            Object fromValues = values.get("inspectionRemark");
+            if (fromValues != null && !String.valueOf(fromValues).isBlank()) {
+                remark = String.valueOf(fromValues).trim();
+            }
+        }
+        request.setInspectionRemark(remark);
+        request.setInputinspectionEmployeeId(extractLong(resultData, "inputinspectionEmployeeId"));
+        inspectionRequestMapper.updateResult(request);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "completed");
-        response.put("resultTime", request.getResultTime());
-        response.put("aiAnalysisTriggered", aiAnalysis != null);
+        response.put("inspectionTime", request.getInspectionTime());
 
         return response;
+    }
+
+    /**
+     * 获取检验申请详情
+     */
+    public Map<String, Object> getInspectionReport(Long id) {
+        InspectionRequest request = inspectionRequestMapper.selectById(id);
+        if (request == null) {
+            throw new BusinessException(404, "检验申请不存在");
+        }
+        return toInspectionDetailMap(request);
+    }
+
+    /**
+     * 归档检验申请
+     */
+    @Transactional
+    public void archiveInspection(Long id, Map<String, Object> archiveData) {
+        log.info("归档检验 | inspectionRequestId={}", id);
+        InspectionRequest request = inspectionRequestMapper.selectById(id);
+        if (request == null) {
+            throw new BusinessException(404, "检验申请不存在");
+        }
+        if (!isArchivableInspectionState(request.getInspectionState())) {
+            throw new BusinessException(400, "当前状态不允许归档");
+        }
+        String remark = buildArchiveRemark(archiveData);
+        inspectionRequestMapper.updateArchive(id, "已归档", remark);
     }
 
     // ==================== 处置相关 ====================
@@ -199,12 +266,12 @@ public class MedtechService {
     /**
      * 获取待处置患者列表
      */
-    public List<Map<String, Object>> getDisposalApplications(Long registrationId, Integer status) {
+    public List<Map<String, Object>> getDisposalApplications(Long registrationId, String disposalState) {
         List<DisposalRequest> requests;
         if (registrationId != null) {
             requests = disposalRequestMapper.selectByRegisterId(registrationId);
-        } else if (status != null) {
-            requests = disposalRequestMapper.selectByStatus(status);
+        } else if (disposalState != null && !disposalState.isBlank()) {
+            requests = disposalRequestMapper.selectByDisposalState(disposalState.trim());
         } else {
             requests = disposalRequestMapper.selectPending();
         }
@@ -215,16 +282,21 @@ public class MedtechService {
      * 开始处置
      */
     @Transactional
-    public void startDisposal(Long id) {
+    public void startDisposal(Long id, Map<String, Object> operatorInfo) {
         log.info("开始处置 | disposalRequestId={}", id);
         DisposalRequest request = disposalRequestMapper.selectById(id);
         if (request == null) {
             throw new BusinessException(404, "处置申请不存在");
         }
-        if (request.getStatus() != 1) {
+        if (!"待处置".equals(request.getDisposalState())) {
             throw new BusinessException(400, "当前状态不允许开始处置");
         }
-        disposalRequestMapper.updateStatus(id, 2); // 执行中
+        Long disposalEmployeeId = extractLong(operatorInfo, "disposalEmployeeId");
+        if (disposalEmployeeId != null) {
+            disposalRequestMapper.updateDisposalStateWithEmployee(id, "处置中", disposalEmployeeId);
+        } else {
+            disposalRequestMapper.updateDisposalState(id, "处置中");
+        }
     }
 
     /**
@@ -238,15 +310,52 @@ public class MedtechService {
         if (request == null) {
             throw new BusinessException(404, "处置申请不存在");
         }
+        if (!"处置中".equals(request.getDisposalState())) {
+            throw new BusinessException(400, "当前状态不允许录入结果");
+        }
 
-        String result = (String) resultData.get("result");
-        String remarks = (String) resultData.get("remarks");
+        String disposalResult = trimToNull((String) resultData.get("disposalResult"));
+        if (disposalResult == null) {
+            disposalResult = trimToNull((String) resultData.get("result"));
+        }
+        if (disposalResult == null) {
+            throw new BusinessException(400, "请填写处置结果");
+        }
 
-        request.setResult(result);
-        request.setRemarks(remarks);
-        request.setStatus(3); // 已完成
-        request.setExecuteTime(LocalDateTime.now());
-        disposalRequestMapper.update(request);
+        request.setDisposalResult(disposalResult);
+        request.setDisposalState("已完成");
+        request.setDisposalTime(LocalDateTime.now());
+        request.setDisposalRemark(trimToNull((String) resultData.get("disposalRemark")));
+        request.setInputdisposalEmployeeId(extractLong(resultData, "inputdisposalEmployeeId"));
+        disposalRequestMapper.updateResult(request);
+    }
+
+    /**
+     * 获取处置申请详情
+     */
+    public Map<String, Object> getDisposalReport(Long id) {
+        DisposalRequest request = disposalRequestMapper.selectById(id);
+        if (request == null) {
+            throw new BusinessException(404, "处置申请不存在");
+        }
+        return toDisposalDetailMap(request);
+    }
+
+    /**
+     * 归档处置申请
+     */
+    @Transactional
+    public void archiveDisposal(Long id, Map<String, Object> archiveData) {
+        log.info("归档处置 | disposalRequestId={}", id);
+        DisposalRequest request = disposalRequestMapper.selectById(id);
+        if (request == null) {
+            throw new BusinessException(404, "处置申请不存在");
+        }
+        if (!isArchivableDisposalState(request.getDisposalState())) {
+            throw new BusinessException(400, "当前状态不允许归档");
+        }
+        String remark = buildArchiveRemark(archiveData);
+        disposalRequestMapper.updateArchive(id, "已归档", remark);
     }
 
     // ==================== 基础数据 ====================
@@ -376,6 +485,37 @@ public class MedtechService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private static final Set<String> ARCHIVE_REASONS = Set.of(
+        "患者未到", "医师撤单", "重复开立", "设备故障", "其他"
+    );
+
+    private static boolean isArchivableCheckState(String state) {
+        return "待检查".equals(state) || "检查中".equals(state);
+    }
+
+    private static boolean isArchivableInspectionState(String state) {
+        return "待检验".equals(state) || "检验中".equals(state);
+    }
+
+    private static boolean isArchivableDisposalState(String state) {
+        return "待处置".equals(state) || "处置中".equals(state);
+    }
+
+    private static String validateArchiveReason(Map<String, Object> archiveData) {
+        String reason = trimToNull((String) archiveData.get("reason"));
+        if (reason == null || !ARCHIVE_REASONS.contains(reason)) {
+            throw new BusinessException(400, "请选择有效的归档原因");
+        }
+        return reason;
+    }
+
+    private static String buildArchiveRemark(Map<String, Object> archiveData) {
+        String reason = validateArchiveReason(archiveData);
+        String base = "[已归档] " + reason;
+        String extra = trimToNull((String) archiveData.get("remark"));
+        return extra == null ? base : base + "；" + extra;
+    }
+
     private static String trimToNull(String value) {
         if (value == null) {
             return null;
@@ -390,6 +530,7 @@ public class MedtechService {
         Map<String, Object> map = new HashMap<>();
         map.put("id", request.getId());
         map.put("registerId", request.getRegisterId());
+        map.put("techType", "check");
         map.put("caseNumber", request.getCaseNumber());
         map.put("patientName", request.getPatientName());
         map.put("techName", request.getTechName());
@@ -419,16 +560,26 @@ public class MedtechService {
         Map<String, Object> map = new HashMap<>();
         map.put("id", request.getId());
         map.put("registerId", request.getRegisterId());
-        map.put("patientId", request.getPatientId());
+        map.put("caseNumber", request.getCaseNumber());
         map.put("patientName", request.getPatientName());
-        map.put("physicianName", request.getPhysicianName());
-        map.put("medicalTechnologyName", request.getMedicalTechnologyName());
-        map.put("specimenType", request.getSpecimenType());
-        map.put("status", request.getStatus());
-        map.put("statusName", getInspectionStatusName(request.getStatus()));
-        map.put("specimenTime", request.getSpecimenTime());
-        map.put("resultTime", request.getResultTime());
-        map.put("createTime", request.getCreateTime());
+        map.put("techName", request.getTechName());
+        map.put("techCode", request.getTechCode());
+        map.put("techType", "inspection");
+        map.put("position", request.getInspectionPosition());
+        map.put("info", request.getInspectionInfo());
+        map.put("statusText", request.getInspectionState());
+        map.put("inspectionState", request.getInspectionState());
+        map.put("inspectionTime", request.getInspectionTime());
+        map.put("creationTime", request.getCreationTime());
+        return map;
+    }
+
+    private Map<String, Object> toInspectionDetailMap(InspectionRequest request) {
+        Map<String, Object> map = toInspectionMap(request);
+        map.put("medicalTechnologyId", request.getMedicalTechnologyId());
+        map.put("inspectionResult", request.getInspectionResult());
+        map.put("result", request.getInspectionResult());
+        map.put("inspectionRemark", request.getInspectionRemark());
         return map;
     }
 
@@ -436,32 +587,27 @@ public class MedtechService {
         Map<String, Object> map = new HashMap<>();
         map.put("id", request.getId());
         map.put("registerId", request.getRegisterId());
-        map.put("patientId", request.getPatientId());
+        map.put("caseNumber", request.getCaseNumber());
         map.put("patientName", request.getPatientName());
-        map.put("physicianName", request.getPhysicianName());
-        map.put("medicalTechnologyName", request.getMedicalTechnologyName());
-        map.put("description", request.getDescription());
-        map.put("quantity", request.getQuantity());
-        map.put("status", request.getStatus());
-        map.put("statusName", getDisposalStatusName(request.getStatus()));
-        map.put("executeTime", request.getExecuteTime());
-        map.put("createTime", request.getCreateTime());
+        map.put("techName", request.getTechName());
+        map.put("techCode", request.getTechCode());
+        map.put("techType", "disposal");
+        map.put("position", request.getDisposalPosition());
+        map.put("info", request.getDisposalInfo());
+        map.put("statusText", request.getDisposalState());
+        map.put("disposalState", request.getDisposalState());
+        map.put("disposalTime", request.getDisposalTime());
+        map.put("creationTime", request.getCreationTime());
         return map;
     }
 
-    private String getInspectionStatusName(Integer status) {
-        return switch (status) {
-            case 0 -> "待缴费";
-            case 1 -> "待执行";
-            case 2 -> "执行中";
-            case 3 -> "已完成";
-            case 4 -> "已取消";
-            default -> "未知";
-        };
-    }
-
-    private String getDisposalStatusName(Integer status) {
-        return getInspectionStatusName(status);
+    private Map<String, Object> toDisposalDetailMap(DisposalRequest request) {
+        Map<String, Object> map = toDisposalMap(request);
+        map.put("medicalTechnologyId", request.getMedicalTechnologyId());
+        map.put("disposalResult", request.getDisposalResult());
+        map.put("result", request.getDisposalResult());
+        map.put("disposalRemark", request.getDisposalRemark());
+        return map;
     }
 
     private static Long extractLong(Map<String, Object> data, String key) {

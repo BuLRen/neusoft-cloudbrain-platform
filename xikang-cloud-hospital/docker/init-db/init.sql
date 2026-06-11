@@ -368,7 +368,7 @@ CREATE TABLE check_request (
         FOREIGN KEY (inputcheck_employee_id) REFERENCES employee(id)
         ON DELETE SET NULL,
 
-    CONSTRAINT chk_check_request_state CHECK (check_state IN ('待检查', '检查中', '已完成'))
+    CONSTRAINT chk_check_request_state CHECK (check_state IN ('待检查', '检查中', '已完成', '已归档'))
 );
 
 CREATE INDEX idx_check_request_register_id ON check_request(register_id);
@@ -376,7 +376,7 @@ CREATE INDEX idx_check_request_state ON check_request(check_state);
 CREATE INDEX idx_check_request_medtech_id ON check_request(medical_technology_id);
 
 COMMENT ON TABLE check_request IS '检查申请表';
-COMMENT ON COLUMN check_request.check_state IS '状态: 待检查 → 检查中 → 已完成';
+COMMENT ON COLUMN check_request.check_state IS '状态: 待检查 → 检查中 → 已完成 / 已归档';
 
 -- ============================================================
 -- 表: inspection_request (检验申请表)
@@ -392,7 +392,7 @@ CREATE TABLE inspection_request (
     inspection_employee_id      INTEGER         DEFAULT NULL,
     inputinspection_employee_id INTEGER         DEFAULT NULL,
     inspection_time             TIMESTAMP       DEFAULT NULL,
-    inspection_result           VARCHAR(512)    DEFAULT NULL,
+    inspection_result           TEXT            DEFAULT NULL,
     inspection_state            VARCHAR(64)     NOT NULL DEFAULT '待检验',
     inspection_remark           VARCHAR(512)    DEFAULT NULL,
 
@@ -407,7 +407,7 @@ CREATE TABLE inspection_request (
         FOREIGN KEY (inputinspection_employee_id) REFERENCES employee(id)
         ON DELETE SET NULL,
 
-    CONSTRAINT chk_inspection_state CHECK (inspection_state IN ('待检验', '检验中', '已完成'))
+    CONSTRAINT chk_inspection_state CHECK (inspection_state IN ('待检验', '检验中', '已完成', '已归档'))
 );
 
 CREATE INDEX idx_inspection_request_register_id ON inspection_request(register_id);
@@ -444,7 +444,7 @@ CREATE TABLE disposal_request (
         FOREIGN KEY (inputdisposal_employee_id) REFERENCES employee(id)
         ON DELETE SET NULL,
 
-    CONSTRAINT chk_disposal_state CHECK (disposal_state IN ('待处置', '处置中', '已完成'))
+    CONSTRAINT chk_disposal_state CHECK (disposal_state IN ('待处置', '处置中', '已完成', '已归档'))
 );
 
 CREATE INDEX idx_disposal_request_register_id ON disposal_request(register_id);
@@ -876,8 +876,8 @@ ON CONFLICT (diseaseicd) DO NOTHING;
 INSERT INTO medical_technology (id, tech_code, tech_name, tech_format, tech_price, tech_type, price_type, deptment_id, ai_category_code) VALUES
     (1, 'XJCT', '胸部CT', '平扫', 280.00, 'check', '检查费', 3, 'imaging_ct_chest'),
     (2, 'TLCT', '头颅CT', '平扫', 260.00, 'check', '检查费', 3, 'imaging_ct_brain'),
-    (3, 'XCG', '血常规', '全血', 35.00, 'inspection', '检验费', 4, NULL),
-    (4, 'CRP', 'C反应蛋白', '血清', 45.00, 'inspection', '检验费', 4, NULL),
+    (3, 'XCG', '血常规', '全血', 35.00, 'inspection', '检验费', 4, 'general_lab'),
+    (4, 'CRP', 'C反应蛋白', '血清', 45.00, 'inspection', '检验费', 4, 'general_lab'),
     (5, 'WX', '雾化吸入', '次', 30.00, 'disposal', '处置费', 5, NULL),
     (6, 'ECG', '心电图', '常规', 50.00, 'check', '检查费', 3, 'general_check'),
     (7, 'USABD', '腹部超声', '常规', 120.00, 'check', '检查费', 3, 'general_check')
@@ -885,7 +885,8 @@ ON CONFLICT (tech_code) DO NOTHING;
 
 INSERT INTO result_form_category (category_code, category_name, description) VALUES
     ('general_check', '通用检查', '普通检查项目的默认结果录入模板'),
-    ('imaging_ct', '影像CT', 'CT 影像检查结构化报告模板')
+    ('imaging_ct', '影像CT', 'CT 影像检查结构化报告模板'),
+    ('general_lab', '通用检验', '普通检验项目的默认结果录入模板')
 ON CONFLICT (category_code) DO NOTHING;
 
 INSERT INTO result_form_field (owner_type, owner_key, field_key, field_label, field_type, required, sort_order, placeholder) VALUES
@@ -894,6 +895,8 @@ INSERT INTO result_form_field (owner_type, owner_key, field_key, field_label, fi
     ('category', 'imaging_ct', 'findings', '所见', 'textarea', TRUE, 1, '影像所见描述'),
     ('category', 'imaging_ct', 'impression', '印象', 'textarea', TRUE, 2, '影像印象'),
     ('category', 'imaging_ct', 'conclusion', '结论', 'textarea', TRUE, 3, '诊断结论'),
+    ('category', 'general_lab', 'inspectionResult', '检验结果', 'textarea', TRUE, 1, '请填写检验结论或汇总'),
+    ('category', 'general_lab', 'inspectionRemark', '备注', 'textarea', FALSE, 2, '可选备注'),
     ('tech_extension', '1', 'contrastReaction', '造影剂反应', 'text', FALSE, 10, '如：无、轻微恶心等')
 ON CONFLICT (owner_type, owner_key, field_key) DO NOTHING;
 

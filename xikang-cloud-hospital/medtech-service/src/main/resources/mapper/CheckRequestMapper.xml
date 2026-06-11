@@ -90,4 +90,11 @@
         WHERE id = #{id}
     </update>
 
+    <update id="updateArchive">
+        UPDATE check_request
+        SET check_state = #{checkState},
+            check_remark = #{checkRemark}
+        WHERE id = #{id}
+    </update>
+
 </mapper>

@@ -12,6 +12,8 @@ import PhysicianPrescriptionPage from '@/modules/physician/pages/PhysicianPrescr
 import MedtechCheckQueuePage from '@/modules/medtech/pages/MedtechCheckQueuePage.vue'
 import MedtechCheckStartPage from '@/modules/medtech/pages/MedtechCheckStartPage.vue'
 import MedtechCheckResultPage from '@/modules/medtech/pages/MedtechCheckResultPage.vue'
+import MedtechInspectionStartPage from '@/modules/medtech/pages/MedtechInspectionStartPage.vue'
+import MedtechDisposalStartPage from '@/modules/medtech/pages/MedtechDisposalStartPage.vue'
 import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
@@ -100,19 +102,31 @@ export const routes: RouteRecordRaw[] = [
         name: 'Medtech',
         component: RouteGroupView,
         redirect: '/medtech/check-queue',
-        meta: { title: '检查管理', description: '检查申请 → 开始检查（含结果录入）', icon: 'Operation', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+        meta: { title: '医技管理', description: '医技申请 → 检查/检验/处置执行', icon: 'Operation', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
         children: [
           {
             path: 'check-queue',
             name: 'MedtechCheckQueue',
             component: MedtechCheckQueuePage,
-            meta: { title: '① 检查申请', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 1 },
+            meta: { title: '① 医技申请', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 1 },
           },
           {
             path: 'check-start',
             name: 'MedtechCheckStart',
             component: MedtechCheckStartPage,
-            meta: { title: '② 开始检查', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 2 },
+            meta: { title: '② 检查执行', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 2, hidden: true },
+          },
+          {
+            path: 'inspection-start',
+            name: 'MedtechInspectionStart',
+            component: MedtechInspectionStartPage,
+            meta: { title: '② 检验执行', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 2, hidden: true },
+          },
+          {
+            path: 'disposal-start',
+            name: 'MedtechDisposalStart',
+            component: MedtechDisposalStartPage,
+            meta: { title: '② 处置执行', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 2, hidden: true },
           },
           {
             path: 'check-result',

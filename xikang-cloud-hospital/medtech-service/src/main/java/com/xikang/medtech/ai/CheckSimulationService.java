@@ -2,8 +2,10 @@ package com.xikang.medtech.ai;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.entity.CheckRequest;
+import com.xikang.medtech.entity.InspectionRequest;
 import com.xikang.medtech.entity.MedicalTechnology;
 import com.xikang.medtech.mapper.CheckRequestMapper;
+import com.xikang.medtech.mapper.InspectionRequestMapper;
 import com.xikang.medtech.mapper.MedicalTechnologyMapper;
 import com.xikang.medtech.service.ResultFormService;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ public class CheckSimulationService {
     private static final int DIFY_MAX_ATTEMPTS = 2;
 
     private final CheckRequestMapper checkRequestMapper;
+    private final InspectionRequestMapper inspectionRequestMapper;
     private final MedicalTechnologyMapper medicalTechnologyMapper;
     private final ResultFormService resultFormService;
     private final DifyWorkflowClient difyWorkflowClient;
@@ -31,7 +34,7 @@ public class CheckSimulationService {
     private final CtInferenceService ctInferenceService;
 
     public Map<String, Object> simulateCheck(Long checkRequestId, Map<String, Object> requestBody) {
-        CheckContext ctx = requireInProgressContext(checkRequestId);
+        CheckContext ctx = requireInProgressCheckContext(checkRequestId);
         if (isCtCategory(ctx.aiCategoryCode())) {
             throw new BusinessException(400, "CT 影像请使用 CT 影像分析，不支持工作流模拟");
         }
@@ -41,33 +44,52 @@ public class CheckSimulationService {
         List<Map<String, Object>> fields = (List<Map<String, Object>>) schema.get("fields");
 
         boolean isNormal = parseIsNormal(requestBody);
-        Map<String, Object> inputs = buildWorkflowInputs(ctx, isNormal);
+        Map<String, Object> inputs = buildWorkflowInputs(
+            ctx.technology().getTechName(),
+            ctx.request().getCheckInfo(),
+            ctx.request().getRegisterId(),
+            ctx.request().getId(),
+            isNormal
+        );
         String user = "check-" + checkRequestId;
 
-        Map<String, Object> outputs;
-        String source;
-        String workflowRunId = null;
-        Double elapsedTime = null;
-        String difyError = null;
+        return runWorkflowSimulation(
+            checkRequestId,
+            inputs,
+            user,
+            fields,
+            "Check simulate"
+        );
+    }
 
-        if (difyWorkflowClient.isCheckSimulateEnabled()) {
-            DifyInvocation invocation = invokeDifyWithRetry(checkRequestId, inputs, user);
-            outputs = invocation.outputs();
-            source = invocation.source();
-            workflowRunId = invocation.workflowRunId();
-            elapsedTime = invocation.elapsedTime();
-            difyError = invocation.difyError();
-        } else {
-            log.info("Check simulate Dify disabled, using fallback | checkRequestId={}", checkRequestId);
-            outputs = fallbackEngine.simulateSingleExam(inputs);
-            source = "fallback";
-        }
+    public Map<String, Object> simulateInspection(Long inspectionRequestId, Map<String, Object> requestBody) {
+        InspectionContext ctx = requireInProgressInspectionContext(inspectionRequestId);
 
-        return buildSimulationResponse(outputs, fields, source, workflowRunId, elapsedTime, difyError);
+        Map<String, Object> schema = resultFormService.resolveByInspectionRequestId(inspectionRequestId);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) schema.get("fields");
+
+        boolean isNormal = parseIsNormal(requestBody);
+        Map<String, Object> inputs = buildWorkflowInputs(
+            ctx.technology().getTechName(),
+            ctx.request().getInspectionInfo(),
+            ctx.request().getRegisterId(),
+            ctx.request().getId(),
+            isNormal
+        );
+        String user = "inspection-" + inspectionRequestId;
+
+        return runWorkflowSimulation(
+            inspectionRequestId,
+            inputs,
+            user,
+            fields,
+            "Inspection simulate"
+        );
     }
 
     public Map<String, Object> inferCtCheck(Long checkRequestId) {
-        CheckContext ctx = requireInProgressContext(checkRequestId);
+        CheckContext ctx = requireInProgressCheckContext(checkRequestId);
         if (!isCtCategory(ctx.aiCategoryCode())) {
             throw new BusinessException(400, "当前检查项目不是 CT 影像，请使用模拟检查");
         }
@@ -95,6 +117,35 @@ public class CheckSimulationService {
         response.put("limitations", ctResult.get("limitations"));
         response.put("fields", fields);
         return response;
+    }
+
+    private Map<String, Object> runWorkflowSimulation(
+        Long requestId,
+        Map<String, Object> inputs,
+        String user,
+        List<Map<String, Object>> fields,
+        String logPrefix
+    ) {
+        Map<String, Object> outputs;
+        String source;
+        String workflowRunId = null;
+        Double elapsedTime = null;
+        String difyError = null;
+
+        if (difyWorkflowClient.isCheckSimulateEnabled()) {
+            DifyInvocation invocation = invokeDifyWithRetry(requestId, inputs, user, logPrefix);
+            outputs = invocation.outputs();
+            source = invocation.source();
+            workflowRunId = invocation.workflowRunId();
+            elapsedTime = invocation.elapsedTime();
+            difyError = invocation.difyError();
+        } else {
+            log.info("{} Dify disabled, using fallback | requestId={}", logPrefix, requestId);
+            outputs = fallbackEngine.simulateSingleExam(inputs);
+            source = "fallback";
+        }
+
+        return buildSimulationResponse(outputs, fields, source, workflowRunId, elapsedTime, difyError);
     }
 
     private Map<String, Object> buildSimulationResponse(
@@ -132,22 +183,24 @@ public class CheckSimulationService {
         return response;
     }
 
-    private Map<String, Object> buildWorkflowInputs(CheckContext ctx, boolean isNormal) {
-        CheckRequest request = ctx.request();
-        MedicalTechnology tech = ctx.technology();
-        Long registerId = request.getRegisterId();
-
+    private Map<String, Object> buildWorkflowInputs(
+        String examName,
+        String purpose,
+        Long registerId,
+        Long requestId,
+        boolean isNormal
+    ) {
         Map<String, Object> inputs = new LinkedHashMap<>();
-        inputs.put("checkName", tech.getTechName());
+        inputs.put("checkName", examName);
         inputs.put("isNormal", isNormal ? "true" : "false");
         inputs.put("possibleDiseases", contextBuilder.serializePossibleDiseases(registerId));
-        inputs.put("checkPurpose", request.getCheckInfo() == null ? "" : request.getCheckInfo());
+        inputs.put("checkPurpose", purpose == null ? "" : purpose);
         inputs.put("patientContext", contextBuilder.buildPatientContext(registerId));
-        inputs.put("randomSeed", String.valueOf(request.getId()));
+        inputs.put("randomSeed", String.valueOf(requestId));
         return inputs;
     }
 
-    private CheckContext requireInProgressContext(Long checkRequestId) {
+    private CheckContext requireInProgressCheckContext(Long checkRequestId) {
         CheckRequest request = checkRequestMapper.selectById(checkRequestId);
         if (request == null) {
             throw new BusinessException(404, "检查申请不存在");
@@ -163,6 +216,24 @@ public class CheckSimulationService {
             throw new BusinessException(400, "当前申请不是检查类型");
         }
         return new CheckContext(request, technology);
+    }
+
+    private InspectionContext requireInProgressInspectionContext(Long inspectionRequestId) {
+        InspectionRequest request = inspectionRequestMapper.selectById(inspectionRequestId);
+        if (request == null) {
+            throw new BusinessException(404, "检验申请不存在");
+        }
+        if (!"检验中".equals(request.getInspectionState())) {
+            throw new BusinessException(400, "请先开始检验后再运行模拟");
+        }
+        MedicalTechnology technology = medicalTechnologyMapper.selectById(request.getMedicalTechnologyId());
+        if (technology == null) {
+            throw new BusinessException(404, "检验项目不存在");
+        }
+        if (!"inspection".equals(technology.getTechType())) {
+            throw new BusinessException(400, "当前申请不是检验类型");
+        }
+        return new InspectionContext(request, technology);
     }
 
     static boolean isCtCategory(String aiCategoryCode) {
@@ -194,7 +265,12 @@ public class CheckSimulationService {
         return null;
     }
 
-    private DifyInvocation invokeDifyWithRetry(Long checkRequestId, Map<String, Object> inputs, String user) {
+    private DifyInvocation invokeDifyWithRetry(
+        Long requestId,
+        Map<String, Object> inputs,
+        String user,
+        String logPrefix
+    ) {
         DifyWorkflowException lastError = null;
         String lastRunId = null;
         Double lastElapsed = null;
@@ -202,8 +278,9 @@ public class CheckSimulationService {
         for (int attempt = 1; attempt <= DIFY_MAX_ATTEMPTS; attempt++) {
             try {
                 log.info(
-                    "Check simulate invoking Dify | checkRequestId={} checkName={} attempt={}",
-                    checkRequestId,
+                    "{} invoking Dify | requestId={} checkName={} attempt={}",
+                    logPrefix,
+                    requestId,
                     inputs.get("checkName"),
                     attempt
                 );
@@ -213,16 +290,18 @@ public class CheckSimulationService {
                 Map<String, Object> candidateOutputs = result.getOutputs();
                 if (outputMapper.hasUsableStructuredOutput(candidateOutputs)) {
                     log.info(
-                        "Check simulate Dify succeeded | checkRequestId={} workflowRunId={} attempt={}",
-                        checkRequestId,
+                        "{} Dify succeeded | requestId={} workflowRunId={} attempt={}",
+                        logPrefix,
+                        requestId,
                         lastRunId,
                         attempt
                     );
                     return new DifyInvocation(candidateOutputs, "workflow", lastRunId, lastElapsed, null);
                 }
                 log.warn(
-                    "Check simulate Dify returned unusable structured output | checkRequestId={} attempt={} workflowRunId={} outputKeys={}",
-                    checkRequestId,
+                    "{} Dify returned unusable structured output | requestId={} attempt={} workflowRunId={} outputKeys={}",
+                    logPrefix,
+                    requestId,
                     attempt,
                     lastRunId,
                     candidateOutputs == null ? List.of() : candidateOutputs.keySet()
@@ -230,8 +309,9 @@ public class CheckSimulationService {
             } catch (DifyWorkflowException ex) {
                 lastError = ex;
                 log.warn(
-                    "Check simulate Dify failed | checkRequestId={} attempt={} reason={}",
-                    checkRequestId,
+                    "{} Dify failed | requestId={} attempt={} reason={}",
+                    logPrefix,
+                    requestId,
                     attempt,
                     ex.getMessage()
                 );
@@ -241,7 +321,7 @@ public class CheckSimulationService {
         String error = lastError == null
             ? "Dify 工作流未返回可用的结构化检查结果"
             : lastError.getMessage();
-        log.warn("Check simulate using fallback after Dify attempts exhausted | checkRequestId={}", checkRequestId);
+        log.warn("{} using fallback after Dify attempts exhausted | requestId={}", logPrefix, requestId);
         return new DifyInvocation(
             fallbackEngine.simulateSingleExam(inputs),
             "fallback",
@@ -265,4 +345,6 @@ public class CheckSimulationService {
             return code == null ? "" : code;
         }
     }
+
+    private record InspectionContext(InspectionRequest request, MedicalTechnology technology) {}
 }

@@ -172,6 +172,7 @@ export interface CheckResult {
   checkResult?: string
   checkState?: string
   checkTime?: string
+  checkRemark?: string
   aiAnalysis?: AiExamAnalysis | null
 }
 
@@ -182,6 +183,7 @@ export interface InspectionResult {
   inspectionResult?: string
   inspectionState?: string
   inspectionTime?: string
+  inspectionRemark?: string
   aiAnalysis?: AiExamAnalysis | null
 }
 

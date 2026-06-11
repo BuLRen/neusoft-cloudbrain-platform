@@ -5,76 +5,94 @@
     <resultMap id="BaseResultMap" type="com.xikang.medtech.entity.DisposalRequest">
         <id column="id" property="id"/>
         <result column="register_id" property="registerId"/>
-        <result column="patient_id" property="patientId"/>
-        <result column="patient_name" property="patientName"/>
-        <result column="physician_id" property="physicianId"/>
-        <result column="physician_name" property="physicianName"/>
         <result column="medical_technology_id" property="medicalTechnologyId"/>
-        <result column="medical_technology_name" property="medicalTechnologyName"/>
-        <result column="description" property="description"/>
-        <result column="quantity" property="quantity"/>
-        <result column="status" property="status"/>
-        <result column="execute_time" property="executeTime"/>
-        <result column="result" property="result"/>
-        <result column="remarks" property="remarks"/>
-        <result column="operator_id" property="operatorId"/>
-        <result column="operator_name" property="operatorName"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+        <result column="disposal_info" property="disposalInfo"/>
+        <result column="disposal_position" property="disposalPosition"/>
+        <result column="disposal_remark" property="disposalRemark"/>
+        <result column="disposal_state" property="disposalState"/>
+        <result column="disposal_result" property="disposalResult"/>
+        <result column="disposal_time" property="disposalTime"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="disposal_employee_id" property="disposalEmployeeId"/>
+        <result column="inputdisposal_employee_id" property="inputdisposalEmployeeId"/>
+        <result column="case_number" property="caseNumber"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="tech_name" property="techName"/>
+        <result column="tech_code" property="techCode"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, register_id, patient_id, patient_name, physician_id, physician_name,
-        medical_technology_id, medical_technology_name, description, quantity,
-        status, execute_time, result, remarks, operator_id, operator_name, create_time, update_time
+    <sql id="Join_Select">
+        SELECT
+            dr.id,
+            dr.register_id,
+            dr.medical_technology_id,
+            dr.disposal_info,
+            dr.disposal_position,
+            dr.disposal_remark,
+            dr.disposal_state,
+            dr.disposal_result,
+            dr.disposal_time,
+            dr.creation_time,
+            dr.disposal_employee_id,
+            dr.inputdisposal_employee_id,
+            r.case_number,
+            r.real_name AS patient_name,
+            mt.tech_name,
+            mt.tech_code
+        FROM disposal_request dr
+        INNER JOIN register r ON r.id = dr.register_id
+        INNER JOIN medical_technology mt ON mt.id = dr.medical_technology_id
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE id = #{id}
+        <include refid="Join_Select"/>
+        WHERE dr.id = #{id}
     </select>
 
     <select id="selectByRegisterId" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE register_id = #{registerId} ORDER BY create_time DESC
+        <include refid="Join_Select"/>
+        WHERE dr.register_id = #{registerId}
+        ORDER BY dr.creation_time DESC, dr.id DESC
     </select>
 
-    <select id="selectByPatientId" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE patient_id = #{patientId} ORDER BY create_time DESC
-    </select>
-
-    <select id="selectByStatus" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE status = #{status} ORDER BY create_time DESC
+    <select id="selectByDisposalState" resultMap="BaseResultMap">
+        <include refid="Join_Select"/>
+        WHERE dr.disposal_state = #{disposalState}
+        ORDER BY dr.creation_time ASC, dr.id ASC
     </select>
 
     <select id="selectPending" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM disposal_request WHERE status IN (1, 2) ORDER BY create_time ASC
+        <include refid="Join_Select"/>
+        WHERE dr.disposal_state = '待处置'
+        ORDER BY dr.creation_time ASC, dr.id ASC
     </select>
 
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO disposal_request (
-            register_id, patient_id, patient_name, physician_id, physician_name,
-            medical_technology_id, medical_technology_name, description, quantity,
-            status, remarks, operator_id, operator_name
-        ) VALUES (
-            #{registerId}, #{patientId}, #{patientName}, #{physicianId}, #{physicianName},
-            #{medicalTechnologyId}, #{medicalTechnologyName}, #{description}, #{quantity},
-            #{status}, #{remarks}, #{operatorId}, #{operatorName}
-        )
-    </insert>
+    <update id="updateDisposalState">
+        UPDATE disposal_request SET disposal_state = #{disposalState} WHERE id = #{id}
+    </update>
 
-    <update id="update">
-        UPDATE disposal_request SET
-            description = #{description}, quantity = #{quantity}, status = #{status},
-            execute_time = #{executeTime}, result = #{result},
-            remarks = #{remarks}, operator_id = #{operatorId}, operator_name = #{operatorName}
+    <update id="updateDisposalStateWithEmployee">
+        UPDATE disposal_request
+        SET disposal_state = #{disposalState},
+            disposal_employee_id = #{disposalEmployeeId}
         WHERE id = #{id}
     </update>
 
-    <update id="updateStatus">
-        UPDATE disposal_request SET status = #{status} WHERE id = #{id}
+    <update id="updateResult">
+        UPDATE disposal_request
+        SET disposal_result = #{disposalResult},
+            disposal_state = #{disposalState},
+            disposal_time = #{disposalTime},
+            disposal_remark = #{disposalRemark},
+            inputdisposal_employee_id = #{inputdisposalEmployeeId}
+        WHERE id = #{id}
     </update>
 
-    <update id="updateResult">
-        UPDATE disposal_request SET result = #{result}, status = 3 WHERE id = #{id}
+    <update id="updateArchive">
+        UPDATE disposal_request
+        SET disposal_state = #{disposalState},
+            disposal_remark = #{disposalRemark}
+        WHERE id = #{id}
     </update>
 
 </mapper>

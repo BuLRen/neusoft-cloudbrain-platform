@@ -26,6 +26,14 @@ export const resultFormApi = {
     })
   },
 
+  resolveInspectionForm(params: { inspectionRequestId?: number; medicalTechnologyId?: number }) {
+    return http<ResultFormSchema>({
+      url: '/medtech/inspection/result-form/resolve',
+      method: 'GET',
+      params,
+    })
+  },
+
   listCategories() {
     return http<ResultFormCategory[]>({ url: '/medtech/result-form/categories', method: 'GET' })
   },

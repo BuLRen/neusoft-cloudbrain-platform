@@ -14,6 +14,7 @@ export interface ResultFormField {
 
 export interface ResultFormSchema {
   checkRequestId?: number
+  inspectionRequestId?: number
   categoryCode: string
   categoryName?: string
   medicalTechnologyId?: number

@@ -29,4 +29,10 @@ public interface CheckRequestMapper {
     );
 
     int updateResult(CheckRequest checkRequest);
+
+    int updateArchive(
+        @Param("id") Long id,
+        @Param("checkState") String checkState,
+        @Param("checkRemark") String checkRemark
+    );
 }

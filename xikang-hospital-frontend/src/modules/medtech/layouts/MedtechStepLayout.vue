@@ -15,7 +15,7 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const eyebrow = computed(() => `检查管理 · 第 ${props.step}/${props.totalSteps} 步`)
+const eyebrow = computed(() => `医技管理 · 第 ${props.step}/${props.totalSteps} 步`)
 </script>
 
 <template>
