@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElButton, ElCard, ElEmpty, ElMessage, ElTable, ElTableColumn } from 'element-plus'
+import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import { physicianApi, type CheckResult, type InspectionResult, type W3Output } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import ResultPayloadViewer from '@/shared/components/ResultPayloadViewer.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
+import { useLabReportExport } from '@/shared/composables/useLabReportExport'
+import { buildLabReportContextFromPhysician } from '@/shared/types/labReportPdf'
+import { hasExportableLabReportPayload, resolveStructuredOutputFromPayload } from '@/shared/types/simulatedCheckResult'
 
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
+const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
+
+const { exportContext, exporting, exportPdf } = useLabReportExport()
 
 const loading = ref(false)
 const checkResults = ref<CheckResult[]>([])
@@ -38,6 +45,19 @@ async function runW3() {
   } finally {
     loading.value = false
   }
+}
+
+function canExportInspectionPdf(row: InspectionResult): boolean {
+  return hasExportableLabReportPayload(row.inspectionResult)
+}
+
+async function handleExportInspectionPdf(row: InspectionResult) {
+  const structuredOutput = resolveStructuredOutputFromPayload(row.inspectionResult)
+  if (!structuredOutput) {
+    ElMessage.warning('暂无结构化检验明细，无法导出 PDF')
+    return
+  }
+  await exportPdf(buildLabReportContextFromPhysician(row, structuredOutput, encounterStore.patientSummary), printSheetRef)
 }
 
 watch(registerId, () => {
@@ -110,6 +130,19 @@ onMounted(() => {
           <span>{{ row.aiAnalysis?.analysisReport || '-' }}</span>
         </template>
       </ElTableColumn>
+      <ElTableColumn label="操作" width="110" fixed="right">
+        <template #default="{ row }">
+          <ElButton
+            link
+            type="primary"
+            :disabled="!canExportInspectionPdf(row)"
+            :loading="exporting"
+            @click="handleExportInspectionPdf(row)"
+          >
+            导出 PDF
+          </ElButton>
+        </template>
+      </ElTableColumn>
     </ElTable>
 
     <h3 style="margin-top: var(--space-4)">W3 汇总</h3>
@@ -126,6 +159,10 @@ onMounted(() => {
       </ElCard>
     </div>
   </PhysicianStepLayout>
+
+  <div class="lab-report-print-host" aria-hidden="true">
+    <LabReportPrintSheet ref="printSheetRef" :context="exportContext" />
+  </div>
 </template>
 
 <style scoped>
@@ -150,5 +187,13 @@ onMounted(() => {
   margin-block-start: var(--space-2);
   color: var(--color-text-muted);
   line-height: 1.8;
+}
+
+.lab-report-print-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 </style>

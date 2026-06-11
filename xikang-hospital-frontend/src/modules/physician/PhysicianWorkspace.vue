@@ -21,6 +21,7 @@ import {
   ElMessage,
 } from 'element-plus'
 import PageHeader from '@/shared/components/PageHeader.vue'
+import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import {
@@ -34,7 +35,11 @@ import {
   type W2Output,
   type W3Output,
   type W4Output,
+  type InspectionResult,
 } from '@/shared/api/modules/physician'
+import { useLabReportExport } from '@/shared/composables/useLabReportExport'
+import { buildLabReportContextFromPhysician } from '@/shared/types/labReportPdf'
+import { hasExportableLabReportPayload, resolveStructuredOutputFromPayload } from '@/shared/types/simulatedCheckResult'
 
 type TechType = MedicalTechnology['techType']
 
@@ -104,6 +109,9 @@ const structuredRecord = ref<StructuredRecord | null>(null)
 const w2Output = ref<W2Output | null>(null)
 const w3Output = ref<W3Output | null>(null)
 const w4Output = ref<W4Output | null>(null)
+const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
+
+const { exportContext, exporting, exportPdf } = useLabReportExport()
 const aiPipelineLoading = ref(false)
 const confirmedDiagnosisForRx = ref('')
 
@@ -437,6 +445,27 @@ function adoptDiagnosisSuggestion(item: Record<string, unknown>) {
   }
 }
 
+function canExportInspectionPdf(row: InspectionResult): boolean {
+  return hasExportableLabReportPayload(row.inspectionResult)
+}
+
+async function handleExportInspectionPdf(row: InspectionResult) {
+  const structuredOutput = resolveStructuredOutputFromPayload(row.inspectionResult)
+  if (!structuredOutput) {
+    ElMessage.warning('暂无结构化检验明细，无法导出 PDF')
+    return
+  }
+  await exportPdf(
+    buildLabReportContextFromPhysician(row, structuredOutput, {
+      realName: selectedPatient.value?.realName ?? '',
+      caseNumber: selectedPatient.value?.caseNumber ?? '',
+      gender: selectedPatient.value?.gender,
+      age: selectedPatient.value?.age,
+    }),
+    printSheetRef,
+  )
+}
+
 watch(selectedRegisterId, () => {
   void loadPatientContext()
 })
@@ -672,6 +701,20 @@ onMounted(async () => {
                     <span v-else>未生成</span>
                   </template>
                 </ElTableColumn>
+                <ElTableColumn label="操作" width="110">
+                  <template #default="{ row }">
+                    <ElButton
+                      link
+                      type="primary"
+                      size="small"
+                      :disabled="!canExportInspectionPdf(row)"
+                      :loading="exporting"
+                      @click="handleExportInspectionPdf(row)"
+                    >
+                      导出 PDF
+                    </ElButton>
+                  </template>
+                </ElTableColumn>
               </ElTable>
             </ElTabPane>
 
@@ -766,6 +809,10 @@ onMounted(async () => {
         </GlassCard>
       </main>
     </section>
+  </div>
+
+  <div class="lab-report-print-host" aria-hidden="true">
+    <LabReportPrintSheet ref="printSheetRef" :context="exportContext" />
   </div>
 </template>
 
@@ -904,6 +951,14 @@ onMounted(async () => {
 
 .flow-card :deep(.el-tabs__content) {
   padding-block-start: var(--space-4);
+}
+
+.lab-report-print-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 
 @media (max-width: 1080px) {

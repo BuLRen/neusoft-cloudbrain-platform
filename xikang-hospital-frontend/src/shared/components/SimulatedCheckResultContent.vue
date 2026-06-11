@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ElTable, ElTableColumn, ElTag } from 'element-plus'
-import StatusTag from '@/shared/components/StatusTag.vue'
 import type { SimulatedCheckStructuredOutput } from '@/shared/types/simulatedCheckResult'
 import { statusLabel, statusTone } from '@/shared/types/simulatedCheckResult'
 
@@ -11,7 +10,7 @@ defineProps<{
 
 <template>
   <template v-if="data && (data.resultItems.length || data.conclusion || data.checkName)">
-    <div class="dialog-meta">
+    <!-- <div class="dialog-meta">
       <StatusTag :tone="data.isNormal ? 'success' : 'warning'">
         {{ data.isNormal ? '模拟正常' : '模拟异常' }}
       </StatusTag>
@@ -21,7 +20,7 @@ defineProps<{
           {{ disease }}
         </ElTag>
       </div>
-    </div>
+    </div> -->
 
     <ElTable :data="data.resultItems" border size="small" class="result-table">
       <ElTableColumn prop="itemName" label="项目" min-width="110" />

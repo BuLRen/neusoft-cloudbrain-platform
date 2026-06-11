@@ -142,6 +142,9 @@ public class ResultFormService {
         payload.put("techName", tech.getTechName());
         payload.put("submittedAt", LocalDateTime.now().toString());
         payload.put("values", values);
+        if (resultData.get("structuredOutput") != null) {
+            payload.put("structuredOutput", resultData.get("structuredOutput"));
+        }
 
         try {
             return objectMapper.writeValueAsString(payload);

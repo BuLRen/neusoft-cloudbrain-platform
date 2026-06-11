@@ -151,6 +151,7 @@ export const medtechApi = {
     id: number,
     data: {
       values?: Record<string, unknown>
+      structuredOutput?: SimulatedCheckStructuredOutput
       inspectionResult?: string
       result?: string
       inspectionRemark?: string

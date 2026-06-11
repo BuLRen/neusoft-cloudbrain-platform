@@ -179,6 +179,29 @@ export function statusLabel(status: string): string {
   }
 }
 
+/** 从已提交的 inspectionResult / checkResult JSON 中解析 structuredOutput */
+export function resolveStructuredOutputFromPayload(raw?: string | null): SimulatedCheckStructuredOutput | null {
+  if (!raw?.trim()) return null
+  const trimmed = raw.trim()
+  if (trimmed.startsWith('{')) {
+    try {
+      const payload = JSON.parse(trimmed) as Record<string, unknown>
+      if (payload.structuredOutput != null) {
+        const normalized = normalizeStructuredOutput(payload.structuredOutput)
+        if (normalized) return normalized
+      }
+    } catch {
+      // fall through to generic resolver
+    }
+  }
+  return resolveStructuredOutput(raw)
+}
+
+export function hasExportableLabReportPayload(raw?: string | null): boolean {
+  const structured = resolveStructuredOutputFromPayload(raw)
+  return Boolean(structured && (structured.resultItems?.length ?? 0) > 0)
+}
+
 export function statusTone(status: string): 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'high' || status === 'abnormal' || status === 'positive') return 'danger'
   if (status === 'low') return 'warning'

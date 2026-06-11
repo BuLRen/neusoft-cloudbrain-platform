@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElDescriptions, ElDescriptionsItem, ElDialog, ElEmpty, ElMessage, ElSwitch } from 'element-plus'
+import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import { medtechApi, type InspectionReport } from '@/shared/api/modules/medtech'
 import { resultFormApi } from '@/shared/api/modules/resultForm'
 import DynamicResultForm from '@/shared/components/DynamicResultForm.vue'
@@ -11,7 +11,10 @@ import {
   resolveSimulationDisplayOutput,
   type SimulatedCheckStructuredOutput,
 } from '@/shared/types/simulatedCheckResult'
+import { buildLabReportContextFromMedtech, canExportLabReport } from '@/shared/types/labReportPdf'
+import { useLabReportExport } from '@/shared/composables/useLabReportExport'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
+import { ElAlert, ElButton, ElDescriptions, ElDescriptionsItem, ElDialog, ElEmpty, ElMessage, ElSwitch } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,6 +33,9 @@ const specimenRecorded = ref(false)
 const isNormal = ref(false)
 const structuredOutput = ref<SimulatedCheckStructuredOutput | null>(null)
 const dialogVisible = ref(false)
+const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
+
+const { exportContext, exporting, exportPdf } = useLabReportExport()
 
 const id = computed(() => Number(route.query.id || 0))
 const canRecordSpecimen = computed(() => started.value && !specimenLoading.value && !specimenRecorded.value)
@@ -119,6 +125,14 @@ function openResultDialog() {
   dialogVisible.value = true
 }
 
+async function handleExportPdf() {
+  if (!report.value || !canExportLabReport(structuredOutput.value)) {
+    ElMessage.warning('暂无结构化检验明细，无法导出 PDF')
+    return
+  }
+  await exportPdf(buildLabReportContextFromMedtech(report.value, structuredOutput.value!), printSheetRef)
+}
+
 async function submit() {
   if (!id.value || !schema.value) return
   const valid = await formRef.value?.validate()
@@ -126,7 +140,10 @@ async function submit() {
 
   loading.value = true
   try {
-    await medtechApi.submitInspectionResult(id.value, { values: formValues.value })
+    await medtechApi.submitInspectionResult(id.value, {
+      values: formValues.value,
+      structuredOutput: structuredOutput.value ?? undefined,
+    })
     ElMessage.success('检验结果已提交')
     router.push('/medtech/check-queue')
   } finally {
@@ -197,6 +214,13 @@ onMounted(() => {
             运行模拟检验
           </ElButton>
           <ElButton v-if="canViewResult" @click="openResultDialog">查看结果</ElButton>
+          <ElButton
+            v-if="canViewResult && canExportLabReport(structuredOutput)"
+            :loading="exporting"
+            @click="handleExportPdf"
+          >
+            导出 PDF
+          </ElButton>
         </div>
         <ElAlert
           v-if="simulateError"
@@ -233,7 +257,22 @@ onMounted(() => {
 
   <ElDialog v-model="dialogVisible" :title="dialogTitle" width="760px" align-center destroy-on-close>
     <SimulatedCheckResultContent :data="structuredOutput" />
+    <template #footer>
+      <ElButton @click="dialogVisible = false">关闭</ElButton>
+      <ElButton
+        v-if="canExportLabReport(structuredOutput)"
+        :loading="exporting"
+        type="primary"
+        @click="handleExportPdf"
+      >
+        导出 PDF
+      </ElButton>
+    </template>
   </ElDialog>
+
+  <div class="lab-report-print-host" aria-hidden="true">
+    <LabReportPrintSheet ref="printSheetRef" :context="exportContext" />
+  </div>
 </template>
 
 <style scoped>
@@ -289,5 +328,13 @@ onMounted(() => {
   margin-block-start: var(--space-4);
   padding-block-start: var(--space-4);
   border-block-start: 1px solid var(--color-border);
+}
+
+.lab-report-print-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 </style>
