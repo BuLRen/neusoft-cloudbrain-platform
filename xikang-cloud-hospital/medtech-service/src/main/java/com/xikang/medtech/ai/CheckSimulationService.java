@@ -43,12 +43,12 @@ public class CheckSimulationService {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> fields = (List<Map<String, Object>>) schema.get("fields");
 
-        boolean isNormal = parseIsNormal(requestBody);
+        boolean normalStatus = parseNormalStatus(requestBody);
         Map<String, Object> inputs = buildWorkflowInputs(
             ctx.technology().getTechName(),
             ctx.request().getCheckInfo(),
             ctx.request().getRegisterId(),
-            isNormal
+            normalStatus
         );
         String user = "check-" + checkRequestId;
 
@@ -68,12 +68,12 @@ public class CheckSimulationService {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> fields = (List<Map<String, Object>>) schema.get("fields");
 
-        boolean isNormal = parseIsNormal(requestBody);
+        boolean normalStatus = parseNormalStatus(requestBody);
         Map<String, Object> inputs = buildWorkflowInputs(
             ctx.technology().getTechName(),
             ctx.request().getInspectionInfo(),
             ctx.request().getRegisterId(),
-            isNormal
+            normalStatus
         );
         String user = "inspection-" + inspectionRequestId;
 
@@ -185,11 +185,11 @@ public class CheckSimulationService {
         String examName,
         String purpose,
         Long registerId,
-        boolean isNormal
+        boolean normalStatus
     ) {
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("checkName", examName);
-        inputs.put("isNormal", isNormal ? "true" : "false");
+        inputs.put("normal_status", normalStatus ? "true" : "false");
         inputs.put("possibleDiseases", contextBuilder.serializePossibleDiseases(registerId));
         inputs.put("checkPurpose", purpose == null ? "" : purpose);
         inputs.put("patientContext", contextBuilder.buildPatientContext(registerId));
@@ -236,11 +236,11 @@ public class CheckSimulationService {
         return aiCategoryCode != null && aiCategoryCode.startsWith("imaging_ct");
     }
 
-    private static boolean parseIsNormal(Map<String, Object> requestBody) {
-        if (requestBody == null || !requestBody.containsKey("isNormal")) {
+    private static boolean parseNormalStatus(Map<String, Object> requestBody) {
+        if (requestBody == null || !requestBody.containsKey("normal_status")) {
             return false;
         }
-        Object value = requestBody.get("isNormal");
+        Object value = requestBody.get("normal_status");
         if (value instanceof Boolean bool) {
             return bool;
         }

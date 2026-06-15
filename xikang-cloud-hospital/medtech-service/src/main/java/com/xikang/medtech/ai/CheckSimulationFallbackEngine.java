@@ -16,7 +16,7 @@ public class CheckSimulationFallbackEngine {
         if (checkName.isEmpty()) {
             checkName = str(exam.get("techName"));
         }
-        boolean isNormal = parseBoolean(exam.get("isNormal"), false);
+        boolean isNormal = parseBoolean(exam.get("normal_status"), false);
 
         Random random = new Random(42L);
 

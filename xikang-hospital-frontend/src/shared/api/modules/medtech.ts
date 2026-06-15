@@ -118,7 +118,7 @@ export const medtechApi = {
   checkReport(id: number) {
     return http<CheckReport>({ url: `/medtech/check/report/${id}`, method: 'GET' })
   },
-  simulateCheck(id: number, body?: { isNormal?: boolean }) {
+  simulateCheck(id: number, body?: { normal_status?: boolean }) {
     return http<CheckSimulationResult>({
       url: `/medtech/check/simulate/${id}`,
       method: 'POST',
@@ -126,7 +126,7 @@ export const medtechApi = {
       timeout: CHECK_SIMULATE_TIMEOUT_MS,
     })
   },
-  simulateInspection(id: number, body?: { isNormal?: boolean }) {
+  simulateInspection(id: number, body?: { normal_status?: boolean }) {
     return http<CheckSimulationResult>({
       url: `/medtech/inspection/simulate/${id}`,
       method: 'POST',

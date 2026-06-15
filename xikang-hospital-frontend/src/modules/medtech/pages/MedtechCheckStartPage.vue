@@ -78,7 +78,7 @@ async function runSimulation() {
   try {
     const result = isCt.value
       ? await medtechApi.ctInferCheck(id.value)
-      : await medtechApi.simulateCheck(id.value, { isNormal: isNormal.value })
+      : await medtechApi.simulateCheck(id.value, { normal_status: isNormal.value })
 
     structuredOutput.value = resolveSimulationDisplayOutput(result, {
       defaultCheckName: report.value?.techName,

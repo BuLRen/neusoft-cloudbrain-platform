@@ -118,7 +118,7 @@ async function runSimulation() {
   simulateError.value = ''
   structuredOutput.value = null
   try {
-    const result = await medtechApi.simulateInspection(id.value, { isNormal: isNormal.value })
+    const result = await medtechApi.simulateInspection(id.value, { normal_status: isNormal.value })
 
     structuredOutput.value = resolveSimulationDisplayOutput(result, {
       defaultCheckName: report.value?.techName,
