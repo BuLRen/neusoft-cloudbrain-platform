@@ -2,13 +2,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User } from '@element-plus/icons-vue'
 import { appName } from '@/shared/constants/app'
 import { useAuthStore } from '@/app/stores/auth'
+import { useEncounterStore } from '@/app/stores/encounter'
+import { isPhysicianStepPath } from '@/modules/physician/composables/usePhysicianEncounterRoute'
+import { physicianRoute } from '@/modules/physician/constants/visitState'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const encounterStore = useEncounterStore()
 const iconMap = { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User }
 
 function isRouteAccessible(item: any) {
@@ -31,6 +36,29 @@ const menuRoutes = computed(() => {
 function iconComponent(name?: string) {
   return name && name in iconMap ? iconMap[name as keyof typeof iconMap] : Menu
 }
+
+function childPath(parentPath: string, childPathSegment: string) {
+  return `/${parentPath}/${childPathSegment}`
+}
+
+function isPhysicianStepDisabled(path: string) {
+  return isPhysicianStepPath(path) && !encounterStore.hasEncounter
+}
+
+function handleMenuSelect(index: string) {
+  if (index === route.path) return
+
+  if (isPhysicianStepPath(index)) {
+    if (!encounterStore.registerId) {
+      ElMessage.warning('请先从「待诊接诊」选择患者并进入流程')
+      return
+    }
+    void router.push(physicianRoute(index, encounterStore.registerId))
+    return
+  }
+
+  void router.push(index)
+}
 </script>
 
 <template>
@@ -43,7 +71,11 @@ function iconComponent(name?: string) {
       </span>
     </RouterLink>
 
-    <el-menu class="app-sidebar__menu" router :default-active="route.path">
+    <el-menu
+      class="app-sidebar__menu"
+      :default-active="route.path"
+      @select="handleMenuSelect"
+    >
       <template v-for="item in menuRoutes" :key="item.path">
         <el-sub-menu v-if="item.children?.length" :index="`/${item.path}`">
           <template #title>
@@ -51,7 +83,13 @@ function iconComponent(name?: string) {
             <span>{{ item.meta?.title }}</span>
           </template>
 
-          <el-menu-item v-for="child in item.children" :key="child.path" :index="`/${item.path}/${child.path}`">
+          <el-menu-item
+            v-for="child in item.children"
+            :key="child.path"
+            :index="childPath(item.path, child.path)"
+            :disabled="isPhysicianStepDisabled(childPath(item.path, child.path))"
+            :class="{ 'app-sidebar__item--disabled': isPhysicianStepDisabled(childPath(item.path, child.path)) }"
+          >
             <span>{{ child.meta?.title }}</span>
           </el-menu-item>
         </el-sub-menu>
@@ -133,5 +171,11 @@ function iconComponent(name?: string) {
 
 .app-sidebar :deep(.el-menu-item.is-active) {
   background-color: var(--color-primary-soft) !important;
+}
+
+.app-sidebar :deep(.el-menu-item.is-disabled),
+.app-sidebar :deep(.app-sidebar__item--disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 </style>

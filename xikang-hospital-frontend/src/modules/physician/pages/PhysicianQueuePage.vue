@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElEmpty, ElInput } from 'element-plus'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
@@ -9,9 +9,11 @@ import { physicianApi, type PhysicianPatient } from '@/shared/api/modules/physic
 import { useEncounterStore } from '@/app/stores/encounter'
 import { physicianRoute, resumePathForVisitState, visitStateLabel } from '../constants/visitState'
 
+const route = useRoute()
 const router = useRouter()
 const encounterStore = useEncounterStore()
 
+const showNeedEncounterHint = ref(false)
 const loading = ref(false)
 const patients = ref<PhysicianPatient[]>([])
 const selectedPatient = ref<PhysicianPatient | null>(null)
@@ -47,6 +49,20 @@ async function enterEncounter() {
   await router.push(physicianRoute(path, patient.registerId))
 }
 
+function dismissNeedEncounterHint() {
+  showNeedEncounterHint.value = false
+  const { needEncounter: _removed, ...rest } = route.query
+  void router.replace({ path: route.path, query: rest })
+}
+
+watch(
+  () => route.query.needEncounter,
+  (value) => {
+    showNeedEncounterHint.value = value === '1'
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   void loadPatients()
 })
@@ -54,6 +70,17 @@ onMounted(() => {
 
 <template>
   <div class="physician-queue u-page-grid">
+    <ElAlert
+      v-if="showNeedEncounterHint"
+      type="warning"
+      :closable="true"
+      show-icon
+      title="请先选择患者"
+      description="诊疗步骤需从待诊接诊选择患者并进入流程后，方可通过侧边栏访问。"
+      class="queue-hint"
+      @close="dismissNeedEncounterHint"
+    />
+
     <PageHeader title="待诊接诊" description="选择待诊患者，进入后续诊疗流程。" eyebrow="门诊诊疗">
       <template #actions>
         <ElButton type="primary" @click="loadPatients">刷新患者</ElButton>
@@ -119,6 +146,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.queue-hint {
+  margin-block-end: var(--space-4);
+}
+
 .queue-grid {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);

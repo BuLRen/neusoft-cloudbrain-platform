@@ -48,7 +48,6 @@ public class CheckSimulationService {
             ctx.technology().getTechName(),
             ctx.request().getCheckInfo(),
             ctx.request().getRegisterId(),
-            ctx.request().getId(),
             isNormal
         );
         String user = "check-" + checkRequestId;
@@ -74,7 +73,6 @@ public class CheckSimulationService {
             ctx.technology().getTechName(),
             ctx.request().getInspectionInfo(),
             ctx.request().getRegisterId(),
-            ctx.request().getId(),
             isNormal
         );
         String user = "inspection-" + inspectionRequestId;
@@ -187,7 +185,6 @@ public class CheckSimulationService {
         String examName,
         String purpose,
         Long registerId,
-        Long requestId,
         boolean isNormal
     ) {
         Map<String, Object> inputs = new LinkedHashMap<>();
@@ -196,7 +193,6 @@ public class CheckSimulationService {
         inputs.put("possibleDiseases", contextBuilder.serializePossibleDiseases(registerId));
         inputs.put("checkPurpose", purpose == null ? "" : purpose);
         inputs.put("patientContext", contextBuilder.buildPatientContext(registerId));
-        inputs.put("randomSeed", String.valueOf(requestId));
         return inputs;
     }
 

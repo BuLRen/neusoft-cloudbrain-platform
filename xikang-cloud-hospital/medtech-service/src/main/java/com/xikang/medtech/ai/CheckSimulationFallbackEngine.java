@@ -18,21 +18,7 @@ public class CheckSimulationFallbackEngine {
         }
         boolean isNormal = parseBoolean(exam.get("isNormal"), false);
 
-        long seed = 42L;
-        Object seedObj = exam.get("randomSeed");
-        if (seedObj instanceof Number number) {
-            seed = number.longValue();
-        } else if (seedObj != null) {
-            try {
-                seed = Long.parseLong(String.valueOf(seedObj).trim());
-            } catch (NumberFormatException ignored) {
-                Object fallback = exam.get("checkRequestId");
-                if (fallback instanceof Number n) {
-                    seed = n.longValue();
-                }
-            }
-        }
-        Random random = new Random(seed);
+        Random random = new Random(42L);
 
         Map<String, Object> structured = buildStructuredOutput(checkName, isNormal, random);
 

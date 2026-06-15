@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElButton, ElDescriptions, ElDescriptionsItem, ElIcon } from 'element-plus'
-import { Calendar, Document, Tickets, User } from '@element-plus/icons-vue'
+import { ElButton, ElIcon } from 'element-plus'
+import { ArrowRight, Calendar, Document, Switch, Tickets, User } from '@element-plus/icons-vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import EmptyState from '@/shared/components/EmptyState.vue'
-import PhysicianPatientSwitcher from '../components/PhysicianPatientSwitcher.vue'
+import PhysicianPatientDrawer from '../components/PhysicianPatientDrawer.vue'
 import { usePhysicianEncounterRoute } from '../composables/usePhysicianEncounterRoute'
 import { useEncounterStore } from '@/app/stores/encounter'
 
@@ -16,12 +16,13 @@ const props = defineProps<{
   description?: string
   prevPath?: string
   nextPath?: string
-  patientCardVariant?: 'default' | 'profile'
 }>()
 
 const router = useRouter()
 const encounterStore = useEncounterStore()
 const { navigateWithRegisterId } = usePhysicianEncounterRoute()
+
+const drawerVisible = ref(false)
 
 const eyebrow = computed(() => props.groupLabel)
 const patientSummary = computed(() => encounterStore.patientSummary)
@@ -47,10 +48,7 @@ const patientBadge = computed(() => {
 
     <GlassCard class="step-layout__summary">
       <template v-if="encounterStore.hasEncounter && patientSummary">
-        <div class="step-layout__switcher-row">
-          <PhysicianPatientSwitcher />
-        </div>
-        <div v-if="patientCardVariant === 'profile'" class="patient-profile">
+        <div class="patient-profile">
           <div class="patient-profile__main">
             <div class="patient-profile__avatar" aria-hidden="true">
               <ElIcon :size="28"><User /></ElIcon>
@@ -92,6 +90,11 @@ const patientBadge = computed(() => {
                 </div>
               </div>
             </div>
+            <ElButton class="patient-profile__switch" @click="drawerVisible = true">
+              <ElIcon><Switch /></ElIcon>
+              切换患者
+              <ElIcon><ArrowRight /></ElIcon>
+            </ElButton>
           </div>
           <div v-if="patientSummaryText" class="patient-profile__summary">
             <ElIcon class="patient-profile__summary-icon" aria-hidden="true"><Document /></ElIcon>
@@ -99,18 +102,6 @@ const patientBadge = computed(() => {
             <span class="patient-profile__summary-text">{{ patientSummaryText }}</span>
           </div>
         </div>
-        <template v-else>
-          <ElDescriptions :column="4" border>
-            <ElDescriptionsItem label="患者">{{ patientSummary.realName }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="病历号">{{ patientSummary.caseNumber }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="性别">{{ patientSummary.gender || '-' }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="年龄">{{ patientSummary.age ?? '-' }}</ElDescriptionsItem>
-          </ElDescriptions>
-          <p v-if="patientSummaryText" class="step-layout__ai">
-            <strong>患者摘要：</strong>
-            <span>{{ patientSummaryText }}</span>
-          </p>
-        </template>
       </template>
       <template v-else>
         <EmptyState title="尚未选择就诊患者" description="请先从「待诊接诊」页面选择患者进入流程。" />
@@ -127,6 +118,8 @@ const patientBadge = computed(() => {
         <ElButton v-if="nextPath" type="primary" @click="navigateWithRegisterId(nextPath)">下一步</ElButton>
       </div>
     </GlassCard>
+
+    <PhysicianPatientDrawer v-if="encounterStore.hasEncounter" v-model:visible="drawerVisible" />
   </div>
 </template>
 
@@ -134,20 +127,6 @@ const patientBadge = computed(() => {
 .step-layout__summary,
 .step-layout__panel {
   padding: var(--space-5);
-}
-
-.step-layout__switcher-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-block-end: var(--space-4);
-  padding-block-end: var(--space-4);
-  border-block-end: 1px solid var(--color-border);
-}
-
-.step-layout__ai {
-  margin-block-start: var(--space-3);
-  color: var(--color-text-muted);
-  line-height: 1.8;
 }
 
 .step-layout__actions {
@@ -218,7 +197,7 @@ const patientBadge = computed(() => {
 .patient-profile__stats {
   display: flex;
   align-items: center;
-  flex: 1 1 360px;
+  flex: 1 1 280px;
   gap: var(--space-4);
   justify-content: flex-end;
 }
@@ -260,6 +239,10 @@ const patientBadge = computed(() => {
   background: var(--color-border);
 }
 
+.patient-profile__switch {
+  flex-shrink: 0;
+}
+
 .patient-profile__summary {
   display: flex;
   align-items: flex-start;
@@ -296,6 +279,10 @@ const patientBadge = computed(() => {
 
   .patient-profile__divider {
     display: none;
+  }
+
+  .patient-profile__switch {
+    width: 100%;
   }
 }
 </style>

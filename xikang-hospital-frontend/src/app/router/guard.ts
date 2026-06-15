@@ -34,7 +34,7 @@ export function setupRouterGuard(router: Router) {
           query: { ...to.query, registerId: String(encounterStore.registerId) },
         }
       }
-      return '/physician/queue'
+      return { path: '/physician/queue', query: { needEncounter: '1' } }
     }
 
     return true
