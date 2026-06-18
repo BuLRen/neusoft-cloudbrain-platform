@@ -16,17 +16,23 @@ public interface DisposalRequestMapper {
 
     List<DisposalRequest> selectByRegisterId(Long registerId);
 
-    List<DisposalRequest> selectByPatientId(Long patientId);
-
-    List<DisposalRequest> selectByStatus(Integer status);
+    List<DisposalRequest> selectByDisposalState(String disposalState);
 
     List<DisposalRequest> selectPending();
 
-    int insert(DisposalRequest disposalRequest);
+    int updateDisposalState(@Param("id") Long id, @Param("disposalState") String disposalState);
 
-    int update(DisposalRequest disposalRequest);
+    int updateDisposalStateWithEmployee(
+        @Param("id") Long id,
+        @Param("disposalState") String disposalState,
+        @Param("disposalEmployeeId") Long disposalEmployeeId
+    );
 
-    int updateStatus(@Param("id") Long id, @Param("status") Integer status);
+    int updateResult(DisposalRequest disposalRequest);
 
-    int updateResult(@Param("id") Long id, @Param("result") String result);
+    int updateArchive(
+        @Param("id") Long id,
+        @Param("disposalState") String disposalState,
+        @Param("disposalRemark") String disposalRemark
+    );
 }

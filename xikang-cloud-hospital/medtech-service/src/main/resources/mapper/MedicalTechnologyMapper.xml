@@ -4,69 +4,114 @@
 
     <resultMap id="BaseResultMap" type="com.xikang.medtech.entity.MedicalTechnology">
         <id column="id" property="id"/>
-        <result column="name" property="name"/>
-        <result column="code" property="code"/>
-        <result column="type" property="type"/>
-        <result column="department_id" property="departmentId"/>
-        <result column="department_name" property="departmentName"/>
-        <result column="price" property="price"/>
-        <result column="specimen_type" property="specimenType"/>
-        <result column="container" property="container"/>
-        <result column="instructions" property="instructions"/>
-        <result column="preparation" property="preparation"/>
-        <result column="turnaround_time" property="turnaroundTime"/>
-        <result column="status" property="status"/>
-        <result column="description" property="description"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+        <result column="tech_code" property="techCode"/>
+        <result column="tech_name" property="techName"/>
+        <result column="tech_format" property="techFormat"/>
+        <result column="tech_price" property="techPrice"/>
+        <result column="tech_type" property="techType"/>
+        <result column="price_type" property="priceType"/>
+        <result column="deptment_id" property="deptmentId"/>
+        <result column="ai_category_code" property="aiCategoryCode"/>
+        <result column="dept_name" property="deptName"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, name, code, type, department_id, department_name, price, specimen_type,
-        container, instructions, preparation, turnaround_time, status, description, create_time, update_time
+    <sql id="Base_Select">
+        SELECT
+            mt.id,
+            mt.tech_code,
+            mt.tech_name,
+            mt.tech_format,
+            mt.tech_price,
+            mt.tech_type,
+            mt.price_type,
+            mt.deptment_id,
+            mt.ai_category_code,
+            d.dept_name
+        FROM medical_technology mt
+        LEFT JOIN department d ON d.id = mt.deptment_id
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM medical_technology WHERE id = #{id}
+        <include refid="Base_Select"/>
+        WHERE mt.id = #{id}
     </select>
 
-    <select id="selectAll" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM medical_technology WHERE status = 1 ORDER BY type, name
+    <sql id="List_Where">
+        WHERE 1 = 1
+        <if test="techType != null and techType != ''">
+            AND mt.tech_type = #{techType}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                mt.tech_code ILIKE CONCAT('%', #{keyword}, '%')
+                OR mt.tech_name ILIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+    </sql>
+
+    <select id="selectList" resultMap="BaseResultMap">
+        <include refid="Base_Select"/>
+        <include refid="List_Where"/>
+        ORDER BY mt.tech_type, mt.tech_name
+        <if test="offset != null and size != null">
+            LIMIT #{size} OFFSET #{offset}
+        </if>
     </select>
 
-    <select id="selectByType" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM medical_technology WHERE type = #{type} AND status = 1 ORDER BY name
+    <select id="countList" resultType="long">
+        SELECT COUNT(*)
+        FROM medical_technology mt
+        <include refid="List_Where"/>
     </select>
 
-    <select id="selectByDepartment" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM medical_technology WHERE department_id = #{departmentId} AND status = 1 ORDER BY name
+    <select id="selectByTechCode" resultMap="BaseResultMap">
+        <include refid="Base_Select"/>
+        WHERE mt.tech_code = #{techCode}
+        <if test="excludeId != null">
+            AND mt.id != #{excludeId}
+        </if>
+        LIMIT 1
     </select>
 
-    <select id="selectByCode" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM medical_technology WHERE code = #{code}
+    <select id="countReferences" resultType="int">
+        SELECT (
+            (SELECT COUNT(*) FROM check_request WHERE medical_technology_id = #{id})
+            + (SELECT COUNT(*) FROM inspection_request WHERE medical_technology_id = #{id})
+            + (SELECT COUNT(*) FROM disposal_request WHERE medical_technology_id = #{id})
+        )
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO medical_technology (
-            name, code, type, department_id, department_name, price, specimen_type,
-            container, instructions, preparation, turnaround_time, status, description
+            tech_code, tech_name, tech_format, tech_price, tech_type, price_type,
+            deptment_id, ai_category_code
         ) VALUES (
-            #{name}, #{code}, #{type}, #{departmentId}, #{departmentName}, #{price}, #{specimenType},
-            #{container}, #{instructions}, #{preparation}, #{turnaroundTime}, #{status}, #{description}
+            #{techCode}, #{techName}, #{techFormat}, #{techPrice}, #{techType}, #{priceType},
+            #{deptmentId}, #{aiCategoryCode}
         )
     </insert>
 
     <update id="update">
         UPDATE medical_technology SET
-            name = #{name}, code = #{code}, type = #{type}, department_id = #{departmentId},
-            department_name = #{departmentName}, price = #{price}, specimen_type = #{specimenType},
-            container = #{container}, instructions = #{instructions}, preparation = #{preparation},
-            turnaround_time = #{turnaroundTime}, status = #{status}, description = #{description}
+            tech_name = #{techName},
+            tech_format = #{techFormat},
+            tech_price = #{techPrice},
+            tech_type = #{techType},
+            price_type = #{priceType},
+            deptment_id = #{deptmentId},
+            ai_category_code = #{aiCategoryCode}
         WHERE id = #{id}
     </update>
 
     <delete id="deleteById">
-        UPDATE medical_technology SET status = 0 WHERE id = #{id}
+        DELETE FROM medical_technology WHERE id = #{id}
     </delete>
+
+    <select id="selectDepartmentOptions" resultType="map">
+        SELECT id AS "id", dept_name AS "deptName"
+        FROM department
+        WHERE delmark = 1
+        ORDER BY dept_name
+    </select>
 
 </mapper>

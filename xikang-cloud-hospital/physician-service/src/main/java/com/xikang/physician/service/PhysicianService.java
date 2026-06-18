@@ -1,5 +1,7 @@
 package com.xikang.physician.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.physician.mapper.PhysicianMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,14 @@ import java.util.stream.Collectors;
 @Service
 public class PhysicianService {
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private static final int VISIT_REGISTERED = 1;
+    private static final int VISIT_IN_PROGRESS = 2;
+    private static final int VISIT_ENDED = 3;
+    private static final int VISIT_EXAM_PENDING = 5;
+    private static final int VISIT_EXAM_COMPLETED = 6;
+
     private final PhysicianMapper physicianMapper;
 
     public PhysicianService(PhysicianMapper physicianMapper) {
@@ -30,6 +40,7 @@ public class PhysicianService {
         int offset = (currentPage - 1) * pageSize;
         List<Map<String, Object>> records = physicianMapper.selectPatients(keyword, offset, pageSize).stream()
             .map(this::withAiConsultSummary)
+            .map(this::syncExamStateIfNeeded)
             .toList();
         long total = physicianMapper.countPatients(keyword);
 
@@ -46,6 +57,38 @@ public class PhysicianService {
         return physicianMapper.selectPatientStats();
     }
 
+    public Map<String, Object> getPatient(Long registerId) {
+        Map<String, Object> row = physicianMapper.selectPatientByRegisterId(registerId);
+        if (row == null) {
+            return null;
+        }
+        return syncExamStateIfNeeded(withAiConsultSummary(row));
+    }
+
+    @Transactional
+    public Map<String, Object> startEncounter(Long registerId) {
+        int current = currentVisitState(registerId);
+        if (current == VISIT_REGISTERED) {
+            physicianMapper.updateVisitState(registerId, VISIT_IN_PROGRESS);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+        result.put("visitState", currentVisitState(registerId));
+        return result;
+    }
+
+    @Transactional
+    public Map<String, Object> endVisit(Long registerId) {
+        int current = currentVisitState(registerId);
+        if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_PENDING || current == VISIT_EXAM_COMPLETED) {
+            physicianMapper.updateVisitState(registerId, VISIT_ENDED);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+        result.put("visitState", currentVisitState(registerId));
+        return result;
+    }
+
     public Map<String, Object> getMedicalRecord(Long registerId) {
         Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
         if (record == null) {
@@ -53,7 +96,61 @@ public class PhysicianService {
         }
         Long medicalRecordId = toLong(record.get("id"));
         record.put("diseases", physicianMapper.selectDiseasesByMedicalRecordId(medicalRecordId));
+        record.put("preliminaryAiMeta", loadPreliminaryAiMeta(registerId));
         return record;
+    }
+
+    @Transactional
+    public void savePreliminaryDiagnosis(Map<String, Object> request) {
+        Long registerId = toLong(request.get("registerId"));
+        Map<String, Object> existing = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Long medicalRecordId;
+        if (existing == null) {
+            Map<String, Object> record = new HashMap<>();
+            record.put("registerId", registerId);
+            physicianMapper.insertMedicalRecord(record);
+            medicalRecordId = toLong(record.get("id"));
+        } else {
+            medicalRecordId = toLong(existing.get("id"));
+        }
+        Map<String, Object> update = new HashMap<>();
+        update.put("id", medicalRecordId);
+        update.put("preliminaryDiagnosis", request.get("preliminaryDiagnosis"));
+        physicianMapper.updateMedicalRecordPreliminary(update);
+        List<Long> ids = diseaseIds(request);
+        if (!ids.isEmpty()) {
+            syncRecordDiseases(medicalRecordId, ids);
+        }
+        persistPreliminaryDoctorSave(registerId, request);
+    }
+
+    private void persistPreliminaryDoctorSave(Long registerId, Map<String, Object> request) {
+        List<String> names = stringList(request.get("suggestedDiseaseNames"));
+        if (registerId == null || names.isEmpty()) {
+            return;
+        }
+        try {
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("suggestedDiseaseNames", names);
+            meta.put("savedBy", "doctor");
+            Map<String, Object> log = new HashMap<>();
+            log.put("registerId", registerId);
+            log.put("sourceType", "preliminary_diagnosis");
+            log.put("aiDiagnosis", request.get("preliminaryDiagnosis"));
+            log.put("modelId", "doctor-save");
+            log.put("doctorModification", JSON.writeValueAsString(meta));
+            physicianMapper.insertAiMedicalRecordLog(log);
+        } catch (Exception ignored) {
+            // ignore log persistence errors
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> stringList(Object value) {
+        if (value instanceof List<?> list) {
+            return list.stream().filter(Objects::nonNull).map(String::valueOf).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        }
+        return List.of();
     }
 
     @Transactional
@@ -82,12 +179,18 @@ public class PhysicianService {
 
     @Transactional
     public Map<String, Object> createCheckRequest(Map<String, Object> request) {
-        return createTechnologyRequest(request, "check");
+        Map<String, Object> result = createTechnologyRequest(request, "check");
+        markExamPending(toLong(request.get("registerId")));
+        result.put("visitState", currentVisitState(toLong(request.get("registerId"))));
+        return result;
     }
 
     @Transactional
     public Map<String, Object> createInspectionRequest(Map<String, Object> request) {
-        return createTechnologyRequest(request, "inspection");
+        Map<String, Object> result = createTechnologyRequest(request, "inspection");
+        markExamPending(toLong(request.get("registerId")));
+        result.put("visitState", currentVisitState(toLong(request.get("registerId"))));
+        return result;
     }
 
     @Transactional
@@ -152,10 +255,13 @@ public class PhysicianService {
             .map(item -> toDecimal(item.get("drugPrice")).multiply(new BigDecimal(String.valueOf(item.getOrDefault("drugNumber", "0")))))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        endVisit(registerId);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("prescriptionIds", prescriptionIds);
         result.put("totalAmount", totalAmount);
-        result.put("aiReviewResult", fallbackReview(registerId));
+        result.put("confirmedDiagnosis", prescriptionRequest.get("confirmedDiagnosis"));
+        result.put("visitState", currentVisitState(registerId));
         return result;
     }
 
@@ -177,26 +283,36 @@ public class PhysicianService {
 
     public Map<String, Object> getDifyWorkflowContracts() {
         return Map.of(
-            "medicalRecord", Map.of(
-                "inputs", List.of("registerId", "patientInfo", "aiConsultSummary", "doctorNotes", "checkResults"),
-                "outputs", List.of("aiReadme", "aiPresent", "aiHistory", "aiAllergy", "aiPhysique", "aiDiagnosis", "confidenceScore", "generationNotes")
+            "w1Structure", Map.of(
+                "inputs", List.of("registerId", "inputMode", "longText", "doctorForm", "structuredRecord", "patientInfoFromRegister"),
+                "outputs", List.of("registerId", "patientInfo", "chiefComplaint", "symptomDuration", "presentIllness", "history", "allergy", "physique", "preliminaryImpression")
             ),
-            "examSuggestion", Map.of(
-                "inputs", List.of("registerId", "chiefComplaint", "presentIllness", "physicalExam", "preliminaryDiagnosis", "allergyHistory"),
-                "outputs", List.of("techId", "techName", "suggestType", "suggestReason", "priority")
+            "w2Recommend", Map.of(
+                "inputs", List.of("clinical_context_json", "available_examinations_json"),
+                "outputs", List.of(
+                    "preliminaryAssessment",
+                    "recommendedExaminations",
+                    "notRecommendedNote",
+                    "unmatchedSuggestions"
+                )
             ),
-            "examAnalysis", Map.of(
-                "inputs", List.of("registerId", "analysisType", "originalResult", "medicalRecordSummary"),
-                "outputs", List.of("riskLevel", "analysisReport", "abnormalIndicators", "correlationAnalysis")
+            "w2bSimulate", Map.of(
+                "inputs", List.of("registerId", "structuredRecord", "orderedExaminations", "simulationProfile"),
+                "outputs", List.of("simulatedResults")
             ),
-            "diagnosis", Map.of(
-                "inputs", List.of("registerId", "patientInfo", "medicalRecord", "checkResults", "inspectionResults"),
-                "outputs", List.of("diseaseName", "recommendIcd", "probability", "riskLevel", "treatmentDirection", "diagnosisBasis")
+            "w3Analyze", Map.of(
+                "inputs", List.of("registerId", "structuredRecord", "preliminaryAssessment", "allResults"),
+                "outputs", List.of("examSummaries", "overallAnalysis", "explicitNonDiagnosis")
             ),
-            "prescriptionReview", Map.of(
-                "inputs", List.of("registerId", "diagnosis", "allergyHistory", "prescriptionItems", "currentMedications"),
-                "outputs", List.of("reviewResult", "riskScore", "drugConflict", "allergyRisk", "duplicateDrug", "dosageCheck", "riskDetails")
-            )
+            "w4Diagnose", Map.of(
+                "inputs", List.of("registerId", "structuredRecord", "w3Output", "diseaseCatalog"),
+                "outputs", List.of("primaryDiagnosis", "differentialDiagnoses", "clinicalAdvice", "confidenceScore")
+            ),
+            "preliminaryDiagnosis", Map.of(
+                "inputs", List.of("registerId", "text", "preHandle", "model"),
+                "outputs", List.of("diagnosisText", "diagnosisBasis", "confidence", "suggestedDiseases", "modelId", "llmModel")
+            ),
+            "ctModel", getCtModelOutputContract()
         );
     }
 
@@ -230,6 +346,56 @@ public class PhysicianService {
                 "correlationAnalysis", "ai_exam_analysis.correlation_analysis"
             )
         );
+    }
+
+    private void markExamPending(Long registerId) {
+        if (registerId == null) {
+            return;
+        }
+        int current = currentVisitState(registerId);
+        if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_COMPLETED) {
+            physicianMapper.updateVisitState(registerId, VISIT_EXAM_PENDING);
+        }
+    }
+
+    private Map<String, Object> syncExamStateIfNeeded(Map<String, Object> row) {
+        Long registerId = toLong(row.get("registerId"));
+        int state = toInt(row.get("visitState"));
+        if (registerId != null && state == VISIT_EXAM_PENDING) {
+            int synced = syncExamCompletedState(registerId);
+            row.put("visitState", synced);
+        }
+        return row;
+    }
+
+    private int syncExamCompletedState(Long registerId) {
+        int current = currentVisitState(registerId);
+        if (current != VISIT_EXAM_PENDING) {
+            return current;
+        }
+        if (physicianMapper.countPendingExamRequests(registerId) == 0) {
+            physicianMapper.updateVisitState(registerId, VISIT_EXAM_COMPLETED);
+            return VISIT_EXAM_COMPLETED;
+        }
+        return VISIT_EXAM_PENDING;
+    }
+
+    private int currentVisitState(Long registerId) {
+        Map<String, Object> register = physicianMapper.selectRegisterById(registerId);
+        if (register == null) {
+            return VISIT_REGISTERED;
+        }
+        return toInt(register.get("visitState"));
+    }
+
+    private int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return Integer.parseInt(text);
+        }
+        return VISIT_REGISTERED;
     }
 
     private Map<String, Object> withAiConsultSummary(Map<String, Object> row) {
@@ -311,6 +477,27 @@ public class PhysicianService {
             return ((List<?>) value).stream().map(this::toLong).filter(Objects::nonNull).toList();
         }
         return List.of();
+    }
+
+    private Map<String, Object> loadPreliminaryAiMeta(Long registerId) {
+        Map<String, Object> log = physicianMapper.selectLatestAiMedicalRecordLogBySourceType(registerId, "preliminary_diagnosis");
+        if (log == null) {
+            return Map.of();
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("aiDiagnosis", log.get("aiDiagnosis"));
+        meta.put("modelId", log.get("modelId"));
+        Object raw = log.get("doctorModification");
+        if (raw instanceof String text && !text.isBlank()) {
+            try {
+                Map<String, Object> parsed = JSON.readValue(text, new TypeReference<>() {
+                });
+                meta.putAll(parsed);
+            } catch (Exception ignored) {
+                // ignore malformed meta
+            }
+        }
+        return meta;
     }
 
     private Map<String, Object> fallbackReview(Long registerId) {

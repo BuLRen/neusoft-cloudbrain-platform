@@ -34,6 +34,29 @@ public class PhysicianController {
         return Result.success(physicianService.getPatientStats());
     }
 
+    @GetMapping("/patients/{registerId}")
+    public Result<Map<String, Object>> getPatient(@PathVariable Long registerId) {
+        Map<String, Object> patient = physicianService.getPatient(registerId);
+        if (patient == null) {
+            return Result.error("患者不存在");
+        }
+        return Result.success(patient);
+    }
+
+    @PatchMapping("/register/{registerId}/visit-state")
+    public Result<Map<String, Object>> updateVisitState(
+        @PathVariable Long registerId,
+        @RequestBody Map<String, Object> request
+    ) {
+        String action = String.valueOf(request.getOrDefault("action", ""));
+        Map<String, Object> result = switch (action) {
+            case "start" -> physicianService.startEncounter(registerId);
+            case "end" -> physicianService.endVisit(registerId);
+            default -> throw new IllegalArgumentException("不支持的 visit-state action: " + action);
+        };
+        return Result.success(result);
+    }
+
     @PostMapping("/medical-record")
     public Result<Map<String, Object>> createMedicalRecord(@RequestBody Map<String, Object> request) {
         return Result.success("病历创建成功", physicianService.createMedicalRecord(request));
@@ -50,9 +73,15 @@ public class PhysicianController {
         return Result.success(physicianService.getMedicalRecord(registerId));
     }
 
+    @PostMapping("/medical-record/preliminary")
+    public Result<Void> savePreliminaryDiagnosis(@RequestBody Map<String, Object> request) {
+        physicianService.savePreliminaryDiagnosis(request);
+        return Result.success("初步诊断已保存", null);
+    }
+
     @GetMapping("/medical-technologies")
     public Result<List<Map<String, Object>>> getMedicalTechnologies(
-        @RequestParam String techType,
+        @RequestParam(required = false) String techType,
         @RequestParam(required = false) String keyword
     ) {
         return Result.success(physicianService.getMedicalTechnologies(techType, keyword));
@@ -136,18 +165,4 @@ public class PhysicianController {
         return Result.success("删除成功", null);
     }
 
-    @GetMapping("/ai/prescription-review")
-    public Result<Map<String, Object>> getPrescriptionReview(@RequestParam Long registerId) {
-        return Result.success(physicianService.getPrescriptionReview(registerId));
-    }
-
-    @GetMapping("/ai/dify-workflow-contracts")
-    public Result<Map<String, Object>> getDifyWorkflowContracts() {
-        return Result.success(physicianService.getDifyWorkflowContracts());
-    }
-
-    @GetMapping("/ai/ct-model-contract")
-    public Result<Map<String, Object>> getCtModelOutputContract() {
-        return Result.success(physicianService.getCtModelOutputContract());
-    }
 }

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.ResultFormMapper">
+
+    <resultMap id="CategoryResultMap" type="com.xikang.medtech.entity.ResultFormCategory">
+        <id column="category_code" property="categoryCode"/>
+        <result column="category_name" property="categoryName"/>
+        <result column="description" property="description"/>
+    </resultMap>
+
+    <resultMap id="FieldResultMap" type="com.xikang.medtech.entity.ResultFormField">
+        <id column="id" property="id"/>
+        <result column="owner_type" property="ownerType"/>
+        <result column="owner_key" property="ownerKey"/>
+        <result column="field_key" property="fieldKey"/>
+        <result column="field_label" property="fieldLabel"/>
+        <result column="field_type" property="fieldType"/>
+        <result column="required" property="required"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="placeholder" property="placeholder"/>
+        <result column="max_length" property="maxLength"/>
+        <result column="options_json" property="optionsJson"/>
+    </resultMap>
+
+    <select id="selectAllCategories" resultMap="CategoryResultMap">
+        SELECT category_code, category_name, description
+        FROM result_form_category
+        ORDER BY category_code
+    </select>
+
+    <select id="selectCategoryByCode" resultMap="CategoryResultMap">
+        SELECT category_code, category_name, description
+        FROM result_form_category
+        WHERE category_code = #{categoryCode}
+    </select>
+
+    <select id="selectFieldsByOwner" resultMap="FieldResultMap">
+        SELECT id, owner_type, owner_key, field_key, field_label, field_type,
+               required, sort_order, placeholder, max_length, options_json
+        FROM result_form_field
+        WHERE owner_type = #{ownerType} AND owner_key = #{ownerKey}
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <delete id="deleteFieldsByOwner">
+        DELETE FROM result_form_field
+        WHERE owner_type = #{ownerType} AND owner_key = #{ownerKey}
+    </delete>
+
+    <insert id="insertField" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO result_form_field (
+            owner_type, owner_key, field_key, field_label, field_type,
+            required, sort_order, placeholder, max_length, options_json
+        ) VALUES (
+            #{ownerType}, #{ownerKey}, #{fieldKey}, #{fieldLabel}, #{fieldType},
+            #{required}, #{sortOrder}, #{placeholder}, #{maxLength}, #{optionsJson}
+        )
+    </insert>
+
+</mapper>
