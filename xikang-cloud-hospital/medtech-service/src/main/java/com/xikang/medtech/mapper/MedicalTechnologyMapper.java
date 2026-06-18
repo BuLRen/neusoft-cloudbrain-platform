@@ -2,8 +2,10 @@ package com.xikang.medtech.mapper;
 
 import com.xikang.medtech.entity.MedicalTechnology;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Medical Technology Mapper
@@ -13,17 +15,30 @@ public interface MedicalTechnologyMapper {
 
     MedicalTechnology selectById(Long id);
 
-    List<MedicalTechnology> selectAll();
+    List<MedicalTechnology> selectList(
+        @Param("techType") String techType,
+        @Param("keyword") String keyword,
+        @Param("offset") Integer offset,
+        @Param("size") Integer size
+    );
 
-    List<MedicalTechnology> selectByType(String type);
+    long countList(
+        @Param("techType") String techType,
+        @Param("keyword") String keyword
+    );
 
-    List<MedicalTechnology> selectByDepartment(Long departmentId);
+    MedicalTechnology selectByTechCode(
+        @Param("techCode") String techCode,
+        @Param("excludeId") Long excludeId
+    );
 
-    MedicalTechnology selectByCode(String code);
+    int countReferences(Long id);
 
     int insert(MedicalTechnology medicalTechnology);
 
     int update(MedicalTechnology medicalTechnology);
 
     int deleteById(Long id);
+
+    List<Map<String, Object>> selectDepartmentOptions();
 }

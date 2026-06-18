@@ -5,81 +5,98 @@
     <resultMap id="BaseResultMap" type="com.xikang.medtech.entity.InspectionRequest">
         <id column="id" property="id"/>
         <result column="register_id" property="registerId"/>
-        <result column="patient_id" property="patientId"/>
-        <result column="patient_name" property="patientName"/>
-        <result column="physician_id" property="physicianId"/>
-        <result column="physician_name" property="physicianName"/>
         <result column="medical_technology_id" property="medicalTechnologyId"/>
-        <result column="medical_technology_name" property="medicalTechnologyName"/>
-        <result column="specimen_type" property="specimenType"/>
-        <result column="specimen_time" property="specimenTime"/>
-        <result column="status" property="status"/>
-        <result column="result_time" property="resultTime"/>
-        <result column="result" property="result"/>
-        <result column="ai_analysis" property="aiAnalysis"/>
-        <result column="remarks" property="remarks"/>
-        <result column="operator_id" property="operatorId"/>
-        <result column="operator_name" property="operatorName"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+        <result column="inspection_info" property="inspectionInfo"/>
+        <result column="inspection_position" property="inspectionPosition"/>
+        <result column="inspection_remark" property="inspectionRemark"/>
+        <result column="inspection_state" property="inspectionState"/>
+        <result column="inspection_result" property="inspectionResult"/>
+        <result column="inspection_time" property="inspectionTime"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="inspection_employee_id" property="inspectionEmployeeId"/>
+        <result column="inputinspection_employee_id" property="inputinspectionEmployeeId"/>
+        <result column="case_number" property="caseNumber"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="tech_name" property="techName"/>
+        <result column="tech_code" property="techCode"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, register_id, patient_id, patient_name, physician_id, physician_name,
-        medical_technology_id, medical_technology_name, specimen_type, specimen_time,
-        status, result_time, result, ai_analysis, remarks, operator_id, operator_name, create_time, update_time
+    <sql id="Join_Select">
+        SELECT
+            ir.id,
+            ir.register_id,
+            ir.medical_technology_id,
+            ir.inspection_info,
+            ir.inspection_position,
+            ir.inspection_remark,
+            ir.inspection_state,
+            ir.inspection_result,
+            ir.inspection_time,
+            ir.creation_time,
+            ir.inspection_employee_id,
+            ir.inputinspection_employee_id,
+            r.case_number,
+            r.real_name AS patient_name,
+            mt.tech_name,
+            mt.tech_code
+        FROM inspection_request ir
+        INNER JOIN register r ON r.id = ir.register_id
+        INNER JOIN medical_technology mt ON mt.id = ir.medical_technology_id
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE id = #{id}
+        <include refid="Join_Select"/>
+        WHERE ir.id = #{id}
     </select>
 
     <select id="selectByRegisterId" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE register_id = #{registerId} ORDER BY create_time DESC
+        <include refid="Join_Select"/>
+        WHERE ir.register_id = #{registerId}
+        ORDER BY ir.creation_time DESC, ir.id DESC
     </select>
 
-    <select id="selectByPatientId" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE patient_id = #{patientId} ORDER BY create_time DESC
-    </select>
-
-    <select id="selectByStatus" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE status = #{status} ORDER BY create_time DESC
+    <select id="selectByInspectionState" resultMap="BaseResultMap">
+        <include refid="Join_Select"/>
+        WHERE ir.inspection_state = #{inspectionState}
+        ORDER BY ir.creation_time ASC, ir.id ASC
     </select>
 
     <select id="selectPending" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM inspection_request WHERE status IN (1, 2) ORDER BY create_time ASC
+        <include refid="Join_Select"/>
+        WHERE ir.inspection_state = '待检验'
+        ORDER BY ir.creation_time ASC, ir.id ASC
     </select>
 
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO inspection_request (
-            register_id, patient_id, patient_name, physician_id, physician_name,
-            medical_technology_id, medical_technology_name, specimen_type,
-            status, remarks, operator_id, operator_name
-        ) VALUES (
-            #{registerId}, #{patientId}, #{patientName}, #{physicianId}, #{physicianName},
-            #{medicalTechnologyId}, #{medicalTechnologyName}, #{specimenType},
-            #{status}, #{remarks}, #{operatorId}, #{operatorName}
-        )
-    </insert>
+    <update id="updateInspectionState">
+        UPDATE inspection_request SET inspection_state = #{inspectionState} WHERE id = #{id}
+    </update>
 
-    <update id="update">
-        UPDATE inspection_request SET
-            specimen_type = #{specimenType}, specimen_time = #{specimenTime}, status = #{status},
-            result_time = #{resultTime}, result = #{result}, ai_analysis = #{aiAnalysis},
-            remarks = #{remarks}, operator_id = #{operatorId}, operator_name = #{operatorName}
+    <update id="updateInspectionStateWithEmployee">
+        UPDATE inspection_request
+        SET inspection_state = #{inspectionState},
+            inspection_employee_id = #{inspectionEmployeeId}
         WHERE id = #{id}
     </update>
 
-    <update id="updateStatus">
-        UPDATE inspection_request SET status = #{status} WHERE id = #{id}
+    <update id="updateInspectionTime">
+        UPDATE inspection_request SET inspection_time = #{inspectionTime} WHERE id = #{id}
     </update>
 
     <update id="updateResult">
-        UPDATE inspection_request SET result = #{result}, ai_analysis = #{aiAnalysis}, status = 3 WHERE id = #{id}
+        UPDATE inspection_request
+        SET inspection_result = #{inspectionResult},
+            inspection_state = #{inspectionState},
+            inspection_time = #{inspectionTime},
+            inspection_remark = #{inspectionRemark},
+            inputinspection_employee_id = #{inputinspectionEmployeeId}
+        WHERE id = #{id}
     </update>
 
-    <update id="updateSpecimenTime">
-        UPDATE inspection_request SET specimen_time = #{specimenTime} WHERE id = #{id}
+    <update id="updateArchive">
+        UPDATE inspection_request
+        SET inspection_state = #{inspectionState},
+            inspection_remark = #{inspectionRemark}
+        WHERE id = #{id}
     </update>
 
 </mapper>

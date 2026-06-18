@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.SimulationContextMapper">
+
+    <select id="selectMedicalRecordByRegisterId" resultType="map">
+        SELECT
+            readme AS "readme",
+            present AS "present",
+            present_treat AS "presentTreat",
+            history AS "history",
+            allergy AS "allergy",
+            preliminary_diagnosis AS "preliminaryDiagnosis",
+            diagnosis AS "diagnosis"
+        FROM medical_record
+        WHERE register_id = #{registerId}
+        LIMIT 1
+    </select>
+
+    <select id="selectLatestAiConsultationByRegisterId" resultType="map">
+        SELECT
+            chief_complaint AS "chiefComplaint",
+            symptom_duration AS "symptomDuration",
+            ai_summary AS "aiSummary",
+            suggested_exam AS "suggestedExam"
+        FROM ai_consultation_record
+        WHERE register_id = #{registerId}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectDiseasesByRegisterId" resultType="map">
+        SELECT
+            d.disease_name AS "diseaseName"
+        FROM medical_record mr
+        INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+        INNER JOIN disease d ON d.id = mrd.disease_id
+        WHERE mr.register_id = #{registerId}
+        ORDER BY d.disease_name
+    </select>
+
+</mapper>

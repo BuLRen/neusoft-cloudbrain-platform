@@ -3,8 +3,13 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Box, Calendar, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User } from '@element-plus/icons-vue'
 import { appName } from '@/shared/constants/app'
 import { useAuthStore } from '@/app/stores/auth'
+import { useEncounterStore } from '@/app/stores/encounter'
+import { isPhysicianStepPath } from '@/modules/physician/composables/usePhysicianEncounterRoute'
+import { physicianRoute } from '@/modules/physician/constants/visitState'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,18 +18,50 @@ const iconMap = { Box, Calendar, DataBoard, FirstAidKit, MagicStick, Menu, Opera
 
 // 患者角色时隐藏左侧菜单
 const isPatient = computed(() => authStore.role === 'patient')
+const encounterStore = useEncounterStore()
+
+function isRouteAccessible(item: any) {
+  if (item?.meta?.hidden) return false
+  const roles = item?.meta?.roles
+  return !roles?.length || roles.includes(authStore.role)
+}
 
 const menuRoutes = computed(() => {
   const root = router.options.routes.find((item) => item.path === '/')
-  return (root?.children || []).filter((item) => {
-    if (item.meta?.hidden) return false
-    const roles = item.meta?.roles
-    return !roles?.length || roles.includes(authStore.role)
-  })
+  return (root?.children || [])
+    .filter(isRouteAccessible)
+    .map((item: any) => {
+      const children = (item.children || []).filter(isRouteAccessible)
+      return { ...item, children }
+    })
+    .filter((item: any) => !item.children?.length || item.children.length > 0)
 })
 
 function iconComponent(name?: string) {
   return name && name in iconMap ? iconMap[name as keyof typeof iconMap] : Menu
+}
+
+function childPath(parentPath: string, childPathSegment: string) {
+  return `/${parentPath}/${childPathSegment}`
+}
+
+function isPhysicianStepDisabled(path: string) {
+  return isPhysicianStepPath(path) && !encounterStore.hasEncounter
+}
+
+function handleMenuSelect(index: string) {
+  if (index === route.path) return
+
+  if (isPhysicianStepPath(index)) {
+    if (!encounterStore.registerId) {
+      ElMessage.warning('请先从「待诊接诊」选择患者并进入流程')
+      return
+    }
+    void router.push(physicianRoute(index, encounterStore.registerId))
+    return
+  }
+
+  void router.push(index)
 }
 </script>
 
@@ -39,11 +76,34 @@ function iconComponent(name?: string) {
       </span>
     </RouterLink>
 
-    <el-menu class="app-sidebar__menu" router :default-active="route.path">
-      <el-menu-item v-for="item in menuRoutes" :key="item.path" :index="`/${item.path}`">
-        <el-icon><component :is="iconComponent(item.meta?.icon)" /></el-icon>
-        <span>{{ item.meta?.title }}</span>
-      </el-menu-item>
+    <el-menu
+      class="app-sidebar__menu"
+      :default-active="route.path"
+      @select="handleMenuSelect"
+    >
+      <template v-for="item in menuRoutes" :key="item.path">
+        <el-sub-menu v-if="item.children?.length" :index="`/${item.path}`">
+          <template #title>
+            <el-icon><component :is="iconComponent(item.meta?.icon)" /></el-icon>
+            <span>{{ item.meta?.title }}</span>
+          </template>
+
+          <el-menu-item
+            v-for="child in item.children"
+            :key="child.path"
+            :index="childPath(item.path, child.path)"
+            :disabled="isPhysicianStepDisabled(childPath(item.path, child.path))"
+            :class="{ 'app-sidebar__item--disabled': isPhysicianStepDisabled(childPath(item.path, child.path)) }"
+          >
+            <span>{{ child.meta?.title }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <el-menu-item v-else :index="`/${item.path}`">
+          <el-icon><component :is="iconComponent(item.meta?.icon)" /></el-icon>
+          <span>{{ item.meta?.title }}</span>
+        </el-menu-item>
+      </template>
     </el-menu>
   </aside>
 </template>
@@ -116,5 +176,11 @@ function iconComponent(name?: string) {
 
 .app-sidebar :deep(.el-menu-item.is-active) {
   background-color: var(--color-primary-soft) !important;
+}
+
+.app-sidebar :deep(.el-menu-item.is-disabled),
+.app-sidebar :deep(.app-sidebar__item--disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 </style>

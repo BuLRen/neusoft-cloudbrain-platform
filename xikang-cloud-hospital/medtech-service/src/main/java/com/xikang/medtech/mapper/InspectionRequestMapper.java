@@ -16,19 +16,25 @@ public interface InspectionRequestMapper {
 
     List<InspectionRequest> selectByRegisterId(Long registerId);
 
-    List<InspectionRequest> selectByPatientId(Long patientId);
-
-    List<InspectionRequest> selectByStatus(Integer status);
+    List<InspectionRequest> selectByInspectionState(String inspectionState);
 
     List<InspectionRequest> selectPending();
 
-    int insert(InspectionRequest inspectionRequest);
+    int updateInspectionState(@Param("id") Long id, @Param("inspectionState") String inspectionState);
 
-    int update(InspectionRequest inspectionRequest);
+    int updateInspectionStateWithEmployee(
+        @Param("id") Long id,
+        @Param("inspectionState") String inspectionState,
+        @Param("inspectionEmployeeId") Long inspectionEmployeeId
+    );
 
-    int updateStatus(@Param("id") Long id, @Param("status") Integer status);
+    int updateInspectionTime(@Param("id") Long id, @Param("inspectionTime") java.time.LocalDateTime inspectionTime);
 
-    int updateResult(@Param("id") Long id, @Param("result") String result, @Param("aiAnalysis") String aiAnalysis);
+    int updateResult(InspectionRequest inspectionRequest);
 
-    int updateSpecimenTime(@Param("id") Long id, @Param("specimenTime") java.time.LocalDateTime specimenTime);
+    int updateArchive(
+        @Param("id") Long id,
+        @Param("inspectionState") String inspectionState,
+        @Param("inspectionRemark") String inspectionRemark
+    );
 }

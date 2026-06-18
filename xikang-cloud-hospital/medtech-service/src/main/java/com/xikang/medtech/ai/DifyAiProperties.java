@@ -1,0 +1,129 @@
+package com.xikang.medtech.ai;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+@ConfigurationProperties(prefix = "xikang.ai.dify")
+public class DifyAiProperties {
+
+    private boolean enabled;
+    private String baseUrl = "";
+    private String apiKeyCheckSimulate = "";
+    private String workflowCheckSimulate = "";
+    private String ctInferenceUrl = "";
+    private int readTimeoutMs = 300_000;
+    private int connectTimeoutMs = 30_000;
+    private CheckSimulateOutputKeys checkSimulateOutputKeys = new CheckSimulateOutputKeys();
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    public void setBaseUrl(String baseUrl) {
+        this.baseUrl = baseUrl;
+    }
+
+    public String getApiKeyCheckSimulate() {
+        return apiKeyCheckSimulate;
+    }
+
+    public void setApiKeyCheckSimulate(String apiKeyCheckSimulate) {
+        this.apiKeyCheckSimulate = apiKeyCheckSimulate;
+    }
+
+    public String getWorkflowCheckSimulate() {
+        return workflowCheckSimulate;
+    }
+
+    public void setWorkflowCheckSimulate(String workflowCheckSimulate) {
+        this.workflowCheckSimulate = workflowCheckSimulate;
+    }
+
+    public String getCtInferenceUrl() {
+        return ctInferenceUrl;
+    }
+
+    public void setCtInferenceUrl(String ctInferenceUrl) {
+        this.ctInferenceUrl = ctInferenceUrl;
+    }
+
+    public int getReadTimeoutMs() {
+        return readTimeoutMs;
+    }
+
+    public void setReadTimeoutMs(int readTimeoutMs) {
+        this.readTimeoutMs = readTimeoutMs;
+    }
+
+    public int getConnectTimeoutMs() {
+        return connectTimeoutMs;
+    }
+
+    public void setConnectTimeoutMs(int connectTimeoutMs) {
+        this.connectTimeoutMs = connectTimeoutMs;
+    }
+
+    public CheckSimulateOutputKeys getCheckSimulateOutputKeys() {
+        return checkSimulateOutputKeys;
+    }
+
+    public void setCheckSimulateOutputKeys(CheckSimulateOutputKeys checkSimulateOutputKeys) {
+        this.checkSimulateOutputKeys = checkSimulateOutputKeys == null
+            ? new CheckSimulateOutputKeys()
+            : checkSimulateOutputKeys;
+    }
+
+    public boolean isDifyBaseConfigured() {
+        return enabled && baseUrl != null && !baseUrl.isBlank();
+    }
+
+    public boolean isCheckSimulateWorkflowSwitchOn() {
+        if (workflowCheckSimulate == null || workflowCheckSimulate.isBlank()) {
+            return false;
+        }
+        String value = workflowCheckSimulate.trim().toLowerCase();
+        return "true".equals(value) || "1".equals(value) || "yes".equals(value) || "on".equals(value);
+    }
+
+    public String resolveCheckSimulateApiKey() {
+        return apiKeyCheckSimulate == null ? "" : apiKeyCheckSimulate.trim();
+    }
+
+    public static class CheckSimulateOutputKeys {
+
+        private String valuesRoot = "simulatedValues";
+        private String resultText = "resultText";
+        private String structuredOutput = "structured_output";
+
+        public String getValuesRoot() {
+            return valuesRoot;
+        }
+
+        public void setValuesRoot(String valuesRoot) {
+            this.valuesRoot = valuesRoot;
+        }
+
+        public String getResultText() {
+            return resultText;
+        }
+
+        public void setResultText(String resultText) {
+            this.resultText = resultText;
+        }
+
+        public String getStructuredOutput() {
+            return structuredOutput;
+        }
+
+        public void setStructuredOutput(String structuredOutput) {
+            this.structuredOutput = structuredOutput;
+        }
+    }
+}
