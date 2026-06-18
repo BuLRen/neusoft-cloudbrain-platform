@@ -99,7 +99,7 @@ management:
 
 logging:
   level:
-    com.xikang.gateway: DEBUG
+    com.xikang.gateway: INFO
     org.springframework.cloud.gateway: DEBUG
 
 jwt:

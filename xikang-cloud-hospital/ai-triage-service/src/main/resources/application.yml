@@ -32,7 +32,7 @@ mybatis:
   type-aliases-package: com.xikang.ai.triage.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 关闭 SQL 打印，调试时取消注释
 
 management:
   endpoints:
@@ -45,5 +45,5 @@ management:
 
 logging:
   level:
-    com.xikang.ai.triage: DEBUG
+    com.xikang.ai.triage: INFO
     org.springframework.ai: DEBUG

@@ -20,5 +20,5 @@ management:
 
 logging:
   level:
-    com.xikang.ai.gateway: DEBUG
+    com.xikang.ai.gateway: INFO
     org.springframework.ai: DEBUG

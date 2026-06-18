@@ -1,56 +1,119 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElButton, ElOption, ElSelect, ElTable, ElTableColumn } from 'element-plus'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
-import { adminDepartmentWorkload, reportRankings, reportSummaryCards, reportTrend } from '@/shared/mock/admin'
+import { registrationApi } from '@/shared/api/modules/registration'
+import type {
+  DepartmentWorkloadItem,
+  DailyTrendPoint,
+} from '@/shared/api/modules/registration'
+
+const loading = ref(false)
+const workload = ref<DepartmentWorkloadItem[]>([])
+const trend = ref<DailyTrendPoint[]>([])
 
 const filter = reactive({
-  period: 'week',
-  department: 'all',
+  period: 'week' as 'week' | 'month',
 })
 
-const maxChargeAmount = computed(() => Math.max(...reportTrend.map((item) => item.chargeAmount), 1))
-const filteredRanking = computed(() => filter.department === 'all'
-  ? reportRankings
-  : reportRankings.filter((item) => item.name.includes(filter.department)))
+const periodDays = computed(() => (filter.period === 'week' ? 7 : 30))
+
+const maxRegistrations = computed(() => Math.max(...trend.value.map((i) => i.registrations), 1))
+const maxCharges = computed(() => Math.max(...trend.value.map((i) => Number(i.charges)), 1))
+
+const summary = computed(() => {
+  const totalReg = workload.value.reduce((s, i) => s + i.registrations, 0)
+  const totalVisit = workload.value.reduce((s, i) => s + i.visits, 0)
+  const totalInsp = workload.value.reduce((s, i) => s + i.inspections, 0)
+  const totalRx = workload.value.reduce((s, i) => s + i.prescriptions, 0)
+  const totalCharge = trend.value.reduce((s, i) => s + Number(i.charges), 0)
+  return {
+    totalReg,
+    totalVisit,
+    totalCharge,
+    avgPerDept: workload.value.length ? Math.round(totalReg / workload.value.length) : 0,
+  }
+})
+
+// 业务排行：按挂号量 Top 5
+const ranking = computed(() =>
+  [...workload.value]
+    .sort((a, b) => b.registrations - a.registrations)
+    .slice(0, 5)
+    .map((item, idx) => ({
+      rank: idx + 1,
+      name: item.departmentName,
+      value: `${item.registrations} 挂号 / ${item.visits} 接诊`,
+      note: `检查 ${item.inspections} · 处方 ${item.prescriptions}`,
+    })),
+)
+
+function formatMoney(v: number | string) {
+  const n = Number(v) || 0
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+async function load() {
+  loading.value = true
+  try {
+    const [w, t] = await Promise.all([
+      registrationApi.departmentWorkload(),
+      registrationApi.dailyTrend(periodDays.value),
+    ])
+    workload.value = w
+    trend.value = t
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
 </script>
 
 <template>
   <div class="statistics-reports-page u-page-grid">
     <PageHeader
       title="统计报表"
-      description="从挂号、收费、AI 分诊和科室业务量角度展示面向管理员的经营分析与趋势报表。"
+      description="基于 register / medical_record / check_request / inspection_request / disposal_request / prescription / expense_record 真实数据聚合。"
       eyebrow="Role Admin / Reports"
     >
       <template #actions>
-        <ElButton>导出报表</ElButton>
-        <ElButton type="primary">生成周报</ElButton>
+        <ElButton @click="load">刷新</ElButton>
       </template>
     </PageHeader>
 
     <GlassCard class="filter-card">
       <div class="filter-row">
-        <ElSelect v-model="filter.period" class="field field--small">
-          <ElOption label="本周" value="week" />
-          <ElOption label="本月" value="month" />
+        <ElSelect v-model="filter.period" class="field field--small" @change="load">
+          <ElOption label="近 7 天" value="week" />
+          <ElOption label="近 30 天" value="month" />
         </ElSelect>
-        <ElSelect v-model="filter.department" class="field field--small">
-          <ElOption label="全部科室" value="all" />
-          <ElOption label="内科" value="内科" />
-          <ElOption label="骨科" value="骨科" />
-          <ElOption label="儿科" value="儿科" />
-        </ElSelect>
-        <StatusTag tone="ai">前端分析结构已就绪</StatusTag>
+        <StatusTag tone="primary">数据来自 registration-service 实时聚合</StatusTag>
       </div>
     </GlassCard>
 
-    <section class="summary-grid">
-      <GlassCard v-for="item in reportSummaryCards" :key="item.title" class="summary-card">
-        <StatusTag :tone="item.tone">{{ item.title }}</StatusTag>
-        <strong>{{ item.value }}</strong>
-        <span>{{ item.compare }}</span>
+    <section class="summary-grid" v-loading="loading">
+      <GlassCard class="summary-card">
+        <StatusTag tone="primary">总挂号量</StatusTag>
+        <strong>{{ summary.totalReg }}</strong>
+        <span>所有科室合计</span>
+      </GlassCard>
+      <GlassCard class="summary-card">
+        <StatusTag tone="success">总接诊量</StatusTag>
+        <strong>{{ summary.totalVisit }}</strong>
+        <span>已写病历数</span>
+      </GlassCard>
+      <GlassCard class="summary-card">
+        <StatusTag tone="warning">总收入</StatusTag>
+        <strong>¥ {{ formatMoney(summary.totalCharge) }}</strong>
+        <span>已缴费费用合计</span>
+      </GlassCard>
+      <GlassCard class="summary-card">
+        <StatusTag tone="ai">科室均值</StatusTag>
+        <strong>{{ summary.avgPerDept }}</strong>
+        <span>每科室平均挂号量</span>
       </GlassCard>
     </section>
 
@@ -58,20 +121,23 @@ const filteredRanking = computed(() => filter.department === 'all'
       <GlassCard class="panel">
         <div class="panel__header">
           <div>
-            <h3>收费趋势</h3>
-            <p>展示当前周期内收费额与 AI 分诊使用率变化。</p>
+            <h3>每日趋势</h3>
+            <p>展示每日挂号量与已缴费金额。</p>
           </div>
         </div>
         <div class="trend-list">
-          <div v-for="item in reportTrend" :key="item.label" class="trend-row">
+          <div v-for="item in trend" :key="item.label" class="trend-row">
             <span class="trend-label">{{ item.label }}</span>
             <div class="trend-main">
               <div class="bar-track">
-                <div class="bar-fill" :style="{ width: `${(item.chargeAmount / maxChargeAmount) * 100}%` }" />
+                <div class="bar-fill bar-fill--primary" :style="{ width: `${(item.registrations / maxRegistrations) * 100}%` }" />
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill bar-fill--success" :style="{ width: `${(Number(item.charges) / maxCharges) * 100}%` }" />
               </div>
               <div class="trend-meta">
-                <span>收费 {{ item.chargeAmount }}</span>
-                <StatusTag :tone="item.triageUsage >= 66 ? 'ai' : 'primary'">AI 使用率 {{ item.triageUsage }}%</StatusTag>
+                <span>挂号 {{ item.registrations }}</span>
+                <span>收费 ¥{{ formatMoney(item.charges) }}</span>
               </div>
             </div>
           </div>
@@ -81,12 +147,12 @@ const filteredRanking = computed(() => filter.department === 'all'
       <GlassCard class="panel">
         <div class="panel__header">
           <div>
-            <h3>业务排行</h3>
-            <p>用于快速识别当前运营高峰科室与业务单元。</p>
+            <h3>业务排行 Top 5</h3>
+            <p>按挂号量排序的科室排行。</p>
           </div>
         </div>
         <div class="ranking-list">
-          <div v-for="item in filteredRanking" :key="item.rank + item.name" class="ranking-item">
+          <div v-for="item in ranking" :key="item.rank + item.name" class="ranking-item">
             <strong>#{{ item.rank }}</strong>
             <div>
               <h4>{{ item.name }}</h4>
@@ -101,15 +167,15 @@ const filteredRanking = computed(() => filter.department === 'all'
         <div class="panel__header">
           <div>
             <h3>科室业务汇总</h3>
-            <p>支持后续扩展为更完整的统计图表与导出能力。</p>
+            <p>挂号量 / 接诊量 / 检查量 / 处方量，按挂号量降序。</p>
           </div>
         </div>
-        <ElTable :data="adminDepartmentWorkload">
+        <ElTable :data="workload">
           <ElTableColumn prop="departmentName" label="科室" min-width="120" />
-          <ElTableColumn prop="registrations" label="挂号量" min-width="100" />
-          <ElTableColumn prop="visits" label="接诊量" min-width="100" />
-          <ElTableColumn prop="inspections" label="检查量" min-width="100" />
-          <ElTableColumn prop="prescriptions" label="处方量" min-width="100" />
+          <ElTableColumn prop="registrations" label="挂号量" min-width="100" align="right" />
+          <ElTableColumn prop="visits" label="接诊量" min-width="100" align="right" />
+          <ElTableColumn prop="inspections" label="检查量" min-width="100" align="right" />
+          <ElTableColumn prop="prescriptions" label="处方量" min-width="100" align="right" />
         </ElTable>
       </GlassCard>
     </section>
@@ -147,6 +213,7 @@ const filteredRanking = computed(() => filter.department === 'all'
 .summary-card strong {
   font-size: 28px;
   letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 .summary-card span,
@@ -154,6 +221,7 @@ const filteredRanking = computed(() => filter.department === 'all'
 .ranking-item p {
   color: var(--color-text-muted);
   line-height: 1.7;
+  font-size: 0.85rem;
 }
 
 .content-grid {
@@ -175,7 +243,7 @@ const filteredRanking = computed(() => filter.department === 'all'
 
 .trend-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 110px minmax(0, 1fr);
   gap: var(--space-3);
   align-items: center;
 }
@@ -183,6 +251,7 @@ const filteredRanking = computed(() => filter.department === 'all'
 .trend-label {
   color: var(--color-text-muted);
   font-weight: 600;
+  font-size: 0.85rem;
 }
 
 .trend-main {
@@ -191,7 +260,7 @@ const filteredRanking = computed(() => filter.department === 'all'
 }
 
 .bar-track {
-  height: 10px;
+  height: 8px;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.16);
   overflow: hidden;
@@ -199,7 +268,26 @@ const filteredRanking = computed(() => filter.department === 'all'
 
 .bar-fill {
   height: 100%;
+  border-radius: inherit;
+  transition: width 0.4s ease;
+}
+
+.bar-fill--primary {
   background: var(--color-primary);
+}
+
+.bar-fill--success {
+  background: var(--color-success);
+}
+
+.trend-meta {
+  justify-content: space-between;
+  margin-block-start: 2px;
+}
+
+.trend-meta span {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
 }
 
 .ranking-item {
@@ -207,6 +295,17 @@ const filteredRanking = computed(() => filter.department === 'all'
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.6);
+}
+
+.ranking-item strong {
+  font-size: 1.1rem;
+  color: var(--color-primary);
+}
+
+.ranking-item h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-text);
 }
 
 .field--small {
