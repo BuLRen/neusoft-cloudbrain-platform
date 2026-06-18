@@ -158,6 +158,8 @@ export interface RegistrationRecord {
   payStatusName?: string
   payTime?: string
   refundTime?: string
+  checkInTime?: string
+  checkedIn?: boolean
   expenseRecords?: ExpenseRecord[]
   aiTriageResult?: string | TriageAnalysisResult | null
   aiPreVisit?: string

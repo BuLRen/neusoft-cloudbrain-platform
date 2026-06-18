@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElDatePicker, ElMessage, ElMessageBox, ElRadio, ElRadioGroup } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import CheckInQRCode from '@/shared/components/CheckInQRCode.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
 import type { RegistrationRecord } from '@/shared/types/registration'
@@ -321,9 +322,9 @@ const visitDateRange = ref<[string, string] | null>(null)
 const sortBy = ref<ExpenseRecordSortBy>('payTime')
 const sortDir = ref<ExpenseRecordSortDir>('desc')
 
-// 状态优先级：待缴费 → 已缴费 → 已退号（垫底）
+// 状态优先级：待缴费 → 已缴费 → 已退号/爽约（垫底）
 function registrationStatusRank(record: RegistrationRecord): number {
-  if (record.status === 4) return 2
+  if (record.status === 4 || record.status === 5) return 2
   if (record.payStatus === 0) return 0
   if (record.payStatus === 1) return 1
   return 1
@@ -383,15 +384,22 @@ async function loadRegistrations() {
 
 // ========== 加载每个挂号的预问诊状态 ==========
 async function loadPreConsultStates() {
-  // 只对"已缴费 + 未就诊"的挂号查询
+  // 已缴费、未退号的挂号都查；爽约(5)的挂号也查，但只为了能"查看"历史预问诊
   const targets = registrations.value.filter(
-    r => r.payStatus === 1 && r.status !== 4 && r.status !== 5,
+    r => r.payStatus === 1 && r.status !== 4,
   )
   const results: Record<number, PreConsultBtnState> = {}
   await Promise.all(
     targets.map(async r => {
       try {
         const session = await aiApi.previsitSession(r.id)
+        // 爽约挂号只保留"已完成"的查看入口，去掉"去预问诊/继续预问诊"等动作入口
+        if (r.status === 5) {
+          if (session && session.exists && session.state === 'completed') {
+            results[r.id] = { text: '查看预问诊', type: 'default', state: 'completed' }
+          }
+          return
+        }
         if (!session || !session.exists) {
           results[r.id] = { text: '去预问诊', type: 'primary', state: 'none' }
         } else if (session.state === 'completed') {
@@ -400,7 +408,9 @@ async function loadPreConsultStates() {
           results[r.id] = { text: '继续预问诊', type: 'warning', state: 'in_progress' }
         }
       } catch {
-        results[r.id] = { text: '去预问诊', type: 'primary', state: 'none' }
+        if (r.status !== 5) {
+          results[r.id] = { text: '去预问诊', type: 'primary', state: 'none' }
+        }
       }
     }),
   )
@@ -409,7 +419,13 @@ async function loadPreConsultStates() {
 
 function preConsultBtnFor(record: RegistrationRecord): PreConsultBtnState {
   if (record.payStatus !== 1) return null
-  if (record.status === 4 || record.status === 5) return null
+  // 退号：不显示任何预问诊入口
+  if (record.status === 4) return null
+  // 爽约：仅保留"查看预问诊"（已完成的历史会话），不显示"去/继续"等动作入口
+  if (record.status === 5) {
+    const state = preConsultStates.value[record.id]
+    return state && state.state === 'completed' ? state : null
+  }
   return preConsultStates.value[record.id] || { text: '去预问诊', type: 'primary', state: 'none' }
 }
 
@@ -488,11 +504,32 @@ async function refreshRegistrationState(targetId?: number) {
 }
 
 function canPay(record: RegistrationRecord) {
-  return record.status !== 4 && record.payStatus === 0
+  return record.status !== 4 && record.status !== 5 && record.payStatus === 0
 }
 
 function canCancel(record: RegistrationRecord) {
   return record.status === 1 || record.status === 2
+}
+
+// 是否可以报到：仅已缴费、未报到、未退号、未爽约的挂号可以报到
+function canCheckIn(record: RegistrationRecord) {
+  if (record.payStatus !== 1) return false
+  if (record.status === 4 || record.status === 5) return false
+  if (record.checkedIn) return false
+  // 必须是就诊当天
+  if (!record.visitDate) return false
+  const visitDay = record.visitDate.slice(0, 10)
+  const today = new Date().toISOString().slice(0, 10)
+  return visitDay === today
+}
+
+// 详情弹窗里是否显示二维码：只过滤终态(退号/爽约/已报到)
+// 已缴费的挂号都展示二维码，方便患者事后回看
+function canShowDetailQr(record: RegistrationRecord) {
+  if (record.payStatus !== 1) return false
+  if (record.status === 4 || record.status === 5) return false
+  if (record.checkedIn) return false
+  return true
 }
 
 function paymentStatusTone(payStatus?: number): 'success' | 'warning' | 'danger' {
@@ -574,7 +611,7 @@ function backToList() {
 }
 
 function registrationStatusTone(record: RegistrationRecord): 'success' | 'warning' | 'danger' {
-  if (record.status === 4) return 'danger'
+  if (record.status === 4 || record.status === 5) return 'danger'
   if (record.status === 3 || record.payStatus === 1 || record.status === 1 || record.status === 2) return 'success'
   return 'warning'
 }
@@ -922,6 +959,8 @@ const showSuccessCard = computed(() => {
               <strong>{{ record.departmentName || '未分配科室' }}</strong>
               <StatusTag :tone="registrationStatusTone(record)">{{ record.statusName || '未知状态' }}</StatusTag>
               <StatusTag :tone="paymentStatusTone(record.payStatus)">{{ record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费') }}</StatusTag>
+              <StatusTag v-if="record.checkedIn" tone="success">✅ 已报到</StatusTag>
+              <StatusTag v-else-if="canCheckIn(record)" tone="warning">待报到</StatusTag>
             </div>
             <div class="record-meta">
               <span>挂号单号：{{ record.id }}</span>
@@ -1334,6 +1373,15 @@ const showSuccessCard = computed(() => {
           </div>
         </div>
 
+        <div v-if="registrationResult && registrationResult.payStatus === 1" class="checkin-section">
+          <div class="previsit-divider">
+            <span>到院报到</span>
+          </div>
+          <h3 class="checkin-title">📱 请保存您的报到二维码</h3>
+          <p class="checkin-desc">到院后请在报到机上扫描此二维码报到，进入候诊队列</p>
+          <CheckInQRCode :register-id="registrationResult.id" />
+        </div>
+
         <div v-if="!previsitCompleted" class="previsit-section">
           <div class="previsit-divider">
             <span>或</span>
@@ -1401,8 +1449,22 @@ const showSuccessCard = computed(() => {
               <StatusTag :tone="paymentStatusTone(selectedRegistration.payStatus)">
                 {{ selectedRegistration.payStatusName || (selectedRegistration.payStatus === 1 ? '已缴费' : '待缴费') }}
               </StatusTag>
+              <StatusTag v-if="selectedRegistration.checkedIn" tone="success">✅ 已报到</StatusTag>
+              <StatusTag v-else-if="canCheckIn(selectedRegistration)" tone="warning">未报到</StatusTag>
             </div>
           </div>
+        </div>
+
+        <div
+          v-if="canShowDetailQr(selectedRegistration)"
+          class="checkin-section"
+        >
+          <h3 class="checkin-title">📱 报到二维码</h3>
+          <p class="checkin-desc">到院后请在报到机上扫描此二维码</p>
+          <CheckInQRCode :register-id="selectedRegistration.id" />
+          <p v-if="selectedRegistration.checkInTime" class="checkin-time">
+            报到时间：{{ formatDateTime(selectedRegistration.checkInTime) }}
+          </p>
         </div>
 
         <div class="detail-section">
@@ -1670,6 +1732,57 @@ const showSuccessCard = computed(() => {
 .record-pay {
   color: var(--color-text-muted);
   font-size: 13px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-sm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-outline.btn-sm {
+  background: #fff;
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.btn-outline.btn-sm:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn-outline.btn-sm.btn-danger {
+  color: var(--color-danger);
+  border-color: rgba(239, 77, 90, 0.3);
+}
+
+.btn-outline.btn-sm.btn-danger:hover {
+  background: rgba(239, 77, 90, 0.06);
+  border-color: var(--color-danger);
+}
+
+.btn-primary.btn-sm {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.btn-primary.btn-sm:hover {
+  background: #1a77e0;
+  border-color: #1a77e0;
 }
 
 .rich-empty {
@@ -2503,6 +2616,35 @@ const showSuccessCard = computed(() => {
 
 .success-row.highlight {
   background: var(--color-primary-soft);
+}
+
+/* ========== 报到二维码样式 ========== */
+.checkin-section {
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+.checkin-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+.checkin-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.checkin-time {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: var(--color-success, #16a34a);
+  text-align: center;
 }
 
 /* ========== AI预问诊样式 ========== */

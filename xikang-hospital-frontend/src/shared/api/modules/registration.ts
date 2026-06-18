@@ -122,6 +122,12 @@ export const registrationApi = {
   cancelRegistration(id: number) {
     return http<ChargeResult>({ url: `/registration/${id}/cancel`, method: 'PUT' })
   },
+  checkIn(id: number) {
+    return http<{ registerId: number; patientName?: string; checkInTime: string; alreadyCheckedIn: boolean; queueNumber: number; waitingAhead: number; message: string }>({
+      url: `/registration/${id}/check-in`,
+      method: 'POST',
+    })
+  },
   createScheduling(data: SchedulingCreatePayload) {
     return http<SchedulingOption>({ url: '/registration/scheduling', method: 'POST', data })
   },
@@ -195,6 +201,68 @@ export const registrationApi = {
   getDoctor(id: number) {
     return http<DoctorInfo>({ url: `/registration/doctors/${id}`, method: 'GET' })
   },
+
+  // ==================== 管理员统计接口 ====================
+  /**
+   * 科室工作量（挂号量 / 接诊量 / 检查量 / 处方量）
+   */
+  departmentWorkload(params?: { startDate?: string; endDate?: string }) {
+    return http<DepartmentWorkloadItem[]>({
+      url: '/registration/stats/department-workload',
+      method: 'GET',
+      params,
+    })
+  },
+
+  /**
+   * 每日趋势（默认近 7 天）
+   */
+  dailyTrend(days = 7) {
+    return http<DailyTrendPoint[]>({
+      url: '/registration/stats/daily-trend',
+      method: 'GET',
+      params: { days },
+    })
+  },
+
+  /**
+   * KPI 汇总（在册科室 / 在册医生 / 药品目录 / AI 导诊咨询数）
+   */
+  kpi() {
+    return http<KpiSummary>({
+      url: '/registration/stats/kpi',
+      method: 'GET',
+    })
+  },
+}
+
+// 管理员统计相关类型
+export interface DepartmentWorkloadItem {
+  departmentId: number
+  departmentName: string
+  registrations: number
+  visits: number
+  inspections: number
+  prescriptions: number
+}
+
+export interface DailyTrendPoint {
+  label: string
+  date: string
+  registrations: number
+  charges: number
+  triagePending: number
+}
+
+export interface KpiSummary {
+  /** 在册科室数 */
+  departments: number
+  /** 在册临床医生数 */
+  doctors: number
+  /** 启用药品数 */
+  drugs: number
+  /** AI 导诊历史咨询数 */
+  aiTriageConsultations: number
 }
 
 // 医生信息类型
