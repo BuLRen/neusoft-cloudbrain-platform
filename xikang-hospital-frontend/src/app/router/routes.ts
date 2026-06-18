@@ -14,8 +14,6 @@ import PatientProfile from '@/modules/patient/pages/PatientProfile.vue'
 import PatientPrescription from '@/modules/patient/pages/PatientPrescription.vue'
 import PatientDepartmentDetail from '@/modules/patient/pages/PatientDepartmentDetail.vue'
 import RegistrationWorkspace from '@/modules/registration/RegistrationWorkspace.vue'
-import PhysicianWorkspace from '@/modules/physician/PhysicianWorkspace.vue'
-import MedicalTechWorkspace from '@/modules/medical-tech/MedicalTechWorkspace.vue'
 import PharmacyWorkspace from '@/modules/pharmacy/PharmacyWorkspace.vue'
 import AdminWorkspace from '@/modules/admin/AdminWorkspace.vue'
 import ScheduleManagement from '@/modules/admin/pages/ScheduleManagement.vue'
@@ -145,14 +143,6 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'physician',
         name: 'Physician',
-        component: PhysicianWorkspace,
-        meta: { title: '医生工作站', description: '患者查看、病历、检查申请、确诊、处方', icon: 'FirstAidKit', roles: ['physician'], requiresAuth: true, owner: 'A' },
-      },
-      {
-        path: 'medical-tech',
-        name: 'MedicalTech',
-        component: MedicalTechWorkspace,
-        meta: { title: '医技执行', description: '检查、检验、处置执行和结果录入', icon: 'Operation', roles: ['medtech'], requiresAuth: true, owner: 'B' },
         component: RouteGroupView,
         redirect: '/physician/queue',
         meta: { title: '门诊诊疗', description: '接诊 → 病历 → 申请 → 结果 → 确诊 → 处方', icon: 'FirstAidKit', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A', group: 'attending' },
@@ -275,30 +265,18 @@ export const routes: RouteRecordRaw[] = [
         name: 'StatisticsReports',
         component: StatisticsReports,
         meta: { title: '统计报表', description: '经营分析、趋势与工作量统计', icon: 'DataBoard', roles: ['admin'], requiresAuth: true, owner: 'B' },
-        component: RouteGroupView,
-        redirect: '/admin/check-equipment',
-        meta: {
-          title: '管理端',
-          description: '基础数据维护：检查设备、检验项目等',
-          icon: 'Setting',
-          roles: ['admin'],
-          requiresAuth: true,
-          owner: 'B',
-        },
-        children: [
-          {
-            path: 'check-equipment',
-            name: 'AdminCheckEquipment',
-            component: () => import('@/modules/admin/pages/AdminCheckEquipmentPage.vue'),
-            meta: { title: '检查项目', roles: ['admin'], requiresAuth: true },
-          },
-          {
-            path: 'result-form',
-            name: 'AdminResultForm',
-            component: () => import('@/modules/admin/pages/AdminResultFormPage.vue'),
-            meta: { title: '结果表单配置', roles: ['admin'], requiresAuth: true },
-          },
-        ],
+      },
+      {
+        path: 'admin/check-equipment',
+        name: 'AdminCheckEquipment',
+        component: () => import('@/modules/admin/pages/AdminCheckEquipmentPage.vue'),
+        meta: { title: '检查项目', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
+      },
+      {
+        path: 'admin/result-form',
+        name: 'AdminResultForm',
+        component: () => import('@/modules/admin/pages/AdminResultFormPage.vue'),
+        meta: { title: '结果表单配置', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
       },
       {
         path: 'ai',
