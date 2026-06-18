@@ -277,6 +277,9 @@ public class RegistrationService {
         if (register.getVisitState() == 4) {
             throw new BusinessException(400, "该挂号已退号");
         }
+        if (register.getVisitState() == 5) {
+            throw new BusinessException(400, "该挂号已爽约，不可取消，如需就诊请重新挂号");
+        }
         if (register.getVisitState() > 2) {
             throw new BusinessException(400, "该挂号状态不允许取消");
         }
@@ -304,6 +307,69 @@ public class RegistrationService {
         result.put("refunded", Boolean.TRUE.equals(refundResult.get("success")));
 
         log.info("退号成功 | registerId={}, refunded={}", id, result.get("refunded"));
+        return result;
+    }
+
+    /**
+     * 患者到院扫码报到
+     * - 校验挂号存在、状态合法（必须 visit_state = 1 已挂号）
+     * - 校验就诊日期是当天
+     * - 已报到则幂等返回（不报错），返回原号序
+     * - 未报到则写入 check_in_time，返回号序和前面等待人数
+     */
+    @Transactional
+    public Map<String, Object> checkIn(Long id) {
+        log.info("患者报到 | registerId={}", id);
+
+        Register register = registrationMapper.selectById(id);
+        if (register == null) {
+            throw new BusinessException(404, "挂号记录不存在");
+        }
+        if (register.getVisitState() == null) {
+            throw new BusinessException(400, "挂号状态异常");
+        }
+        if (register.getVisitState() != 1) {
+            throw new BusinessException(400, "该挂号当前状态不允许报到：" + getStateName(register.getVisitState()));
+        }
+
+        // 校验就诊日期是当天
+        LocalDateTime visitDate = register.getVisitDate();
+        if (visitDate == null) {
+            throw new BusinessException(400, "挂号缺少就诊时间，无法报到");
+        }
+        LocalDate visitDay = visitDate.toLocalDate();
+        LocalDate today = LocalDate.now();
+        if (!visitDay.equals(today)) {
+            throw new BusinessException(400, "非就诊当日，无法报到（就诊日：" + visitDay + "）");
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("registerId", id);
+        result.put("patientName", register.getRealName());
+
+        // 幂等：已报到直接返回原号序
+        if (register.getCheckInTime() != null) {
+            int before = registrationMapper.countWaitingBefore(id);
+            result.put("checkInTime", register.getCheckInTime());
+            result.put("alreadyCheckedIn", true);
+            result.put("queueNumber", before + 1);
+            result.put("waitingAhead", before);
+            result.put("message", "您已报到，无需重复报到");
+            log.info("重复报到（幂等返回）| registerId={}, queueNumber={}", id, before + 1);
+            return result;
+        }
+
+        // 写入报到时间
+        LocalDateTime now = LocalDateTime.now();
+        registrationMapper.updateCheckInTime(id, now);
+
+        int before = registrationMapper.countWaitingBefore(id);
+        result.put("checkInTime", now);
+        result.put("alreadyCheckedIn", false);
+        result.put("queueNumber", before + 1);
+        result.put("waitingAhead", before);
+        result.put("message", "报到成功");
+        log.info("报到成功 | registerId={}, queueNumber={}, waitingAhead={}", id, before + 1, before);
         return result;
     }
 
@@ -574,6 +640,8 @@ public class RegistrationService {
         map.put("visitStateName", getStateName(register.getVisitState()));
         map.put("status", register.getVisitState());
         map.put("statusName", getStateName(register.getVisitState()));
+        map.put("checkInTime", register.getCheckInTime());
+        map.put("checkedIn", register.getCheckInTime() != null);
         return map;
     }
 
@@ -674,6 +742,7 @@ public class RegistrationService {
             case 2 -> "医生接诊";
             case 3 -> "看诊结束";
             case 4 -> "已退号";
+            case 5 -> "爽约";
             default -> "未知";
         };
     }

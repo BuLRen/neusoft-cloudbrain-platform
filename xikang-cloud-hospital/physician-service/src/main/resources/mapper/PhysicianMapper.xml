@@ -11,6 +11,7 @@
             r.age AS "age",
             r.visit_date AS "visitDate",
             r.visit_state AS "visitState",
+            r.check_in_time AS "checkInTime",
             r.noon AS "noon",
             d.dept_name AS "deptName",
             e.realname AS "physicianName",
@@ -33,18 +34,20 @@
             ORDER BY acr.completion_time DESC NULLS LAST, acr.creation_time DESC
             LIMIT 1
         ) ac ON TRUE
-        WHERE r.visit_state IN (1, 2)
+        WHERE (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
+           OR r.visit_state = 2
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
-        ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
+        ORDER BY r.visit_state DESC, r.check_in_time ASC NULLS LAST, r.id DESC
         LIMIT #{size} OFFSET #{offset}
     </select>
 
     <select id="countPatients" resultType="long">
         SELECT COUNT(*)
         FROM register r
-        WHERE r.visit_state IN (1, 2)
+        WHERE (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
+           OR r.visit_state = 2
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>

@@ -345,6 +345,7 @@ CREATE TABLE register (
     regist_method           VARCHAR(10)     DEFAULT NULL,
     regist_money            DECIMAL(8,2)    DEFAULT 0.00,
     visit_state             SMALLINT        NOT NULL DEFAULT 1,
+    check_in_time           TIMESTAMP       DEFAULT NULL,
 
     CONSTRAINT fk_register_department
         FOREIGN KEY (deptment_id) REFERENCES department(id),
@@ -359,7 +360,7 @@ CREATE TABLE register (
     CONSTRAINT chk_register_gender CHECK (gender IS NULL OR gender IN ('男', '女')),
     CONSTRAINT chk_register_noon CHECK (noon IS NULL OR noon IN ('上午', '下午', '晚上')),
     CONSTRAINT chk_register_is_book CHECK (is_book IN ('是', '否')),
-    CONSTRAINT chk_register_visit_state CHECK (visit_state IN (1, 2, 3, 4)),
+    CONSTRAINT chk_register_visit_state CHECK (visit_state IN (1, 2, 3, 4, 5)),
     CONSTRAINT chk_register_regist_money CHECK (regist_money >= 0)
 );
 
@@ -376,7 +377,8 @@ COMMENT ON TABLE register IS '患者历次挂号信息表';
 COMMENT ON COLUMN register.patient_id IS '患者ID';
 COMMENT ON COLUMN register.scheduling_id IS '排班ID';
 COMMENT ON COLUMN register.case_number IS '病历号，同一患者多次挂号共用同一病历号';
-COMMENT ON COLUMN register.visit_state IS '看诊状态: 1-已挂号, 2-医生接诊, 3-看诊结束, 4-已退号';
+COMMENT ON COLUMN register.visit_state IS '看诊状态: 1-已挂号, 2-医生接诊, 3-看诊结束, 4-已退号, 5-爽约';
+COMMENT ON COLUMN register.check_in_time IS '报到时间: NULL表示未报到；非NULL表示已扫码报到进入候诊队列';
 
 -- ============================================================
 -- 表: expense_record (费用记录表)

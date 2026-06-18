@@ -52,6 +52,15 @@ public class RegistrationController {
     }
 
     /**
+     * 患者扫码报到（到院扫码进入候诊队列）
+     */
+    @PostMapping("/{id}/check-in")
+    public Result<Map<String, Object>> checkIn(@PathVariable Long id) {
+        Map<String, Object> result = registrationService.checkIn(id);
+        return Result.success(result);
+    }
+
+    /**
      * 获取挂号详情
      */
     @GetMapping("/{id}")
