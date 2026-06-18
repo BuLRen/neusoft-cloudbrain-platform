@@ -3,6 +3,7 @@ package com.xikang.physician.controller;
 import com.xikang.common.result.Result;
 import com.xikang.physician.ai.DifyWorkflowException;
 import com.xikang.physician.ai.PhysicianAiPipelineService;
+import com.xikang.physician.ai.W3AutoTriggerService;
 import com.xikang.physician.service.PhysicianService;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,10 +16,16 @@ public class PhysicianAiController {
 
     private final PhysicianAiPipelineService pipelineService;
     private final PhysicianService physicianService;
+    private final W3AutoTriggerService w3AutoTriggerService;
 
-    public PhysicianAiController(PhysicianAiPipelineService pipelineService, PhysicianService physicianService) {
+    public PhysicianAiController(
+        PhysicianAiPipelineService pipelineService,
+        PhysicianService physicianService,
+        W3AutoTriggerService w3AutoTriggerService
+    ) {
         this.pipelineService = pipelineService;
         this.physicianService = physicianService;
+        this.w3AutoTriggerService = w3AutoTriggerService;
     }
 
     @GetMapping("/available-examinations")
@@ -70,10 +77,28 @@ public class PhysicianAiController {
         return Result.success("W2b 模拟检查结果完成", pipelineService.runW2b(registerId, autoCreate));
     }
 
+    @GetMapping("/w3/status")
+    public Result<Map<String, Object>> getW3Status(@RequestParam Long registerId) {
+        if (registerId == null) {
+            return Result.error("registerId 不能为空");
+        }
+        return Result.success(pipelineService.getW3Status(registerId));
+    }
+
     @PostMapping("/w3/analyze")
     public Result<Map<String, Object>> runW3(@RequestBody Map<String, Object> request) {
         Long registerId = toLong(request.get("registerId"));
-        return Result.success("W3 结果分析完成", pipelineService.runW3(registerId));
+        return Result.success("W3 结果解读完成", pipelineService.runW3(registerId));
+    }
+
+    @PostMapping("/w3/trigger-async")
+    public Result<Void> triggerW3Async(@RequestBody Map<String, Object> request) {
+        Long registerId = toLong(request.get("registerId"));
+        if (registerId == null) {
+            return Result.error("registerId 不能为空");
+        }
+        w3AutoTriggerService.triggerW3(registerId);
+        return Result.success("W3 异步解读已触发", null);
     }
 
     @PostMapping("/w4/diagnose")

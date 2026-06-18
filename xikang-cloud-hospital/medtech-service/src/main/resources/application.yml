@@ -35,6 +35,9 @@ logging:
     com.xikang.medtech: DEBUG
 
 xikang:
+  physician:
+    base-url: ${PHYSICIAN_SERVICE_URL:http://localhost:8092}
+    w3-auto-trigger-enabled: ${W3_AUTO_TRIGGER_ENABLED:true}
   ai:
     dify:
       enabled: ${DIFY_ENABLED:true}

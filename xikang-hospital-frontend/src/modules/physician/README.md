@@ -23,8 +23,10 @@
 | W1 | `POST /api/physician/ai/w1/structure` | 长文本/表单 → 标准病历字段 |
 | W2 | `POST /api/physician/ai/w2/recommend` | 初步判断 + 检查推荐 |
 | W2b | `POST /api/physician/ai/w2b/simulate` | 常规检验模拟 + CT CNN |
-| W3 | `POST /api/physician/ai/w3/analyze` | 结果整理（非最终诊断） |
-| W4 | `POST /api/physician/ai/w4/diagnose` | 诊断与概率 |
+| W3 | `POST /api/physician/ai/w3/analyze` | 结果解读（非最终诊断） |
+| W3 状态 | `GET /api/physician/ai/w3/status?registerId=` | 查询已持久化的 W3 解读 |
+| W3 异步触发 | `POST /api/physician/ai/w3/trigger-async` | 医技结果提交后异步触发（内部） |
+| W4 | `POST /api/physician/ai/w4/diagnose` | 诊断与概率（依赖 W3 输出） |
 | 一键 | `POST /api/physician/ai/pipeline/run` | 串联 W1–W4 |
 
 未配置 Dify 时使用内置 `FallbackWorkflowEngine`。

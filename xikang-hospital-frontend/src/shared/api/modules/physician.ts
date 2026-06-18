@@ -234,6 +234,15 @@ export interface W3Output {
   explicitNonDiagnosis?: boolean
 }
 
+export interface W3Status {
+  registerId?: number
+  completed: boolean
+  examSummaryCount?: number
+  overallAnalysis?: string
+  explicitNonDiagnosis?: boolean
+  w3Output?: W3Output
+}
+
 export interface W4Output {
   primaryDiagnosis?: {
     diseaseName?: string
@@ -344,6 +353,9 @@ export const physicianApi = {
   },
   aiW3(registerId: number) {
     return http<W3Output>({ url: '/physician/ai/w3/analyze', method: 'POST', data: { registerId } })
+  },
+  w3Status(registerId: number) {
+    return http<W3Status>({ url: '/physician/ai/w3/status', method: 'GET', params: { registerId } })
   },
   aiW4(registerId: number) {
     return http<W4Output>({ url: '/physician/ai/w4/diagnose', method: 'POST', data: { registerId } })

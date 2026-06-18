@@ -30,6 +30,7 @@ public class PhysicianAiPipelineService {
     private final DifyW2OutputMapper w2OutputMapper;
     private final W2ClinicalContextBuilder w2ClinicalContextBuilder;
     private final W2RecommendNormalizer w2RecommendNormalizer;
+    private final W3AnalyzeNormalizer w3AnalyzeNormalizer;
     private final FallbackWorkflowEngine fallbackEngine;
     private final CtInferenceService ctInferenceService;
 
@@ -42,6 +43,7 @@ public class PhysicianAiPipelineService {
         DifyW2OutputMapper w2OutputMapper,
         W2ClinicalContextBuilder w2ClinicalContextBuilder,
         W2RecommendNormalizer w2RecommendNormalizer,
+        W3AnalyzeNormalizer w3AnalyzeNormalizer,
         FallbackWorkflowEngine fallbackEngine,
         CtInferenceService ctInferenceService
     ) {
@@ -53,6 +55,7 @@ public class PhysicianAiPipelineService {
         this.w2OutputMapper = w2OutputMapper;
         this.w2ClinicalContextBuilder = w2ClinicalContextBuilder;
         this.w2RecommendNormalizer = w2RecommendNormalizer;
+        this.w3AnalyzeNormalizer = w3AnalyzeNormalizer;
         this.fallbackEngine = fallbackEngine;
         this.ctInferenceService = ctInferenceService;
     }
@@ -248,13 +251,27 @@ public class PhysicianAiPipelineService {
     @Transactional
     public Map<String, Object> runW3(Long registerId) {
         Map<String, Object> input = buildW3Input(registerId);
-        Map<String, Object> output = invokeWorkflow(
+        Map<String, Object> rawOutput = invokeWorkflow(
             difyProperties.getWorkflowW3(),
             input,
             () -> fallbackEngine.runW3(input)
         );
+        Map<String, Object> output = w3AnalyzeNormalizer.normalize(rawOutput, registerId);
         persistW3(output, registerId);
         return output;
+    }
+
+    public Map<String, Object> getW3Status(Long registerId) {
+        List<Map<String, Object>> analyses = physicianMapper.selectExamAnalysisByRegisterId(registerId);
+        Map<String, Object> w3Output = loadW3Output(registerId);
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("registerId", registerId);
+        status.put("completed", !analyses.isEmpty());
+        status.put("examSummaryCount", listOfMaps(w3Output.get("examSummaries")).size());
+        status.put("overallAnalysis", w3Output.get("overallAnalysis"));
+        status.put("explicitNonDiagnosis", true);
+        status.put("w3Output", w3Output);
+        return status;
     }
 
     @Transactional
@@ -467,7 +484,7 @@ public class PhysicianAiPipelineService {
         for (Map<String, Object> summary : listOfMaps(output.get("examSummaries"))) {
             Map<String, Object> row = new HashMap<>();
             row.put("registerId", registerId);
-            row.put("analysisType", resolveAnalysisType(summary));
+            row.put("analysisType", techNameOrType(summary));
             row.put("originalResult", String.join("；", listOfStrings(summary.get("keyFindings"))));
             row.put("abnormalIndicators", JsonMapUtils.toJson(summary.get("keyFindings")));
             row.put("riskLevel", summary.getOrDefault("riskLevel", "normal"));
@@ -566,10 +583,11 @@ public class PhysicianAiPipelineService {
                 overall.append(row.get("correlationAnalysis"));
             }
         }
-        return Map.of(
-            "examSummaries", summaries,
-            "overallAnalysis", overall.length() > 0 ? overall.toString() : "暂无分析"
-        );
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("examSummaries", summaries);
+        out.put("overallAnalysis", overall.length() > 0 ? overall.toString() : "暂无分析");
+        out.put("explicitNonDiagnosis", true);
+        return out;
     }
 
     private Map<String, Object> loadStructuredRecord(Long registerId) {
@@ -621,6 +639,11 @@ public class PhysicianAiPipelineService {
             }
         }
         return fallback.get();
+    }
+
+    private static String techNameOrType(Map<String, Object> summary) {
+        String techName = String.valueOf(summary.getOrDefault("techName", "")).trim();
+        return techName.isEmpty() ? resolveAnalysisType(summary) : techName;
     }
 
     private static String resolveAnalysisType(Map<String, Object> summary) {

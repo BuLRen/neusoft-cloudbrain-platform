@@ -2,6 +2,7 @@ package com.xikang.medtech.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
+import com.xikang.medtech.client.PhysicianW3Client;
 import com.xikang.medtech.entity.*;
 import com.xikang.medtech.mapper.*;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class MedtechService {
     private final MedicalTechnologyMapper medicalTechnologyMapper;
     private final ResultFormService resultFormService;
     private final ObjectMapper objectMapper;
+    private final PhysicianW3Client physicianW3Client;
 
     // ==================== 检查相关 ====================
 
@@ -98,6 +100,7 @@ public class MedtechService {
         response.put("status", "completed");
         response.put("checkTime", request.getCheckTime());
         response.put("aiAnalysisTriggered", resultData.get("aiAnalysis") != null);
+        physicianW3Client.triggerW3Async(request.getRegisterId());
 
         return response;
     }
@@ -229,6 +232,7 @@ public class MedtechService {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "completed");
         response.put("inspectionTime", request.getInspectionTime());
+        physicianW3Client.triggerW3Async(request.getRegisterId());
 
         return response;
     }

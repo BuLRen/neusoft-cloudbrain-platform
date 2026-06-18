@@ -10,6 +10,7 @@ import {
   ElMessage,
   ElTable,
   ElTableColumn,
+  ElTag,
 } from 'element-plus'
 import {
   Document,
@@ -44,13 +45,31 @@ const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
 const { exportContext, exporting, exportPdf } = useLabReportExport()
 
 const loading = ref(false)
+const w3Loading = ref(false)
 const checkResults = ref<CheckResult[]>([])
 const inspectionResults = ref<InspectionResult[]>([])
 const w3Output = ref<W3Output | null>(null)
+const w3Completed = ref(false)
 const inspectionDialogVisible = ref(false)
 const inspectionDialogTitle = ref('检验结果')
 const inspectionDialogOutput = ref<SimulatedCheckStructuredOutput | null>(null)
 const inspectionDialogRow = ref<InspectionResult | null>(null)
+
+async function loadW3Status() {
+  if (!registerId.value) {
+    w3Output.value = null
+    w3Completed.value = false
+    return
+  }
+  try {
+    const status = await physicianApi.w3Status(registerId.value)
+    w3Completed.value = status.completed
+    w3Output.value = status.w3Output ?? null
+  } catch {
+    w3Output.value = null
+    w3Completed.value = false
+  }
+}
 
 async function loadResults() {
   if (!registerId.value) return
@@ -62,6 +81,7 @@ async function loadResults() {
     ])
     checkResults.value = checks
     inspectionResults.value = inspections
+    await loadW3Status()
   } finally {
     loading.value = false
   }
@@ -69,12 +89,14 @@ async function loadResults() {
 
 async function runW3() {
   if (!registerId.value) return
-  loading.value = true
+  w3Loading.value = true
   try {
     w3Output.value = await physicianApi.aiW3(registerId.value)
-    ElMessage.success('W3 结果分析已完成')
+    w3Completed.value = true
+    await loadResults()
+    ElMessage.success('W3 结果解读已完成')
   } finally {
-    loading.value = false
+    w3Loading.value = false
   }
 }
 
@@ -111,6 +133,18 @@ async function handleExportInspectionPdf(row: InspectionResult) {
   await exportPdf(buildLabReportContextFromPhysician(row, structuredOutput, encounterStore.patientSummary), printSheetRef)
 }
 
+function resolveRiskLabel(level?: string): string {
+  if (level === 'high') return '高风险'
+  if (level === 'attention') return '需关注'
+  return '正常'
+}
+
+function resolveRiskTone(level?: string): 'success' | 'warning' | 'danger' {
+  if (level === 'high') return 'danger'
+  if (level === 'attention') return 'warning'
+  return 'success'
+}
+
 function resolveStateTone(state: string): StateTone {
   if (state === '已完成' || state === '已归档') return 'success'
   if (state === '检查中' || state === '检验中') return 'warning'
@@ -137,6 +171,7 @@ onMounted(() => {
   <PhysicianStepLayout
     group-label="门诊诊疗"
     title="检查/检验结果"
+    description="汇总查看已完成项目的原始结果；W3 仅做结果解读（异常指标、风险与临床意义），疾病诊断请在下一步「门诊确诊」中运行 W4。"
     patient-card-variant="profile"
     prev-path="/physician/orders"
     next-path="/physician/diagnosis"
@@ -147,9 +182,9 @@ onMounted(() => {
           <ElIcon><Refresh /></ElIcon>
           刷新结果
         </ElButton>
-        <ElButton class="results-toolbar__w3" type="primary" :loading="loading" @click="runW3">
+        <ElButton class="results-toolbar__w3" type="primary" :loading="w3Loading" @click="runW3">
           <ElIcon><MagicStick /></ElIcon>
-          运行 W3（AI 分析）
+          运行 W3（结果解读）
         </ElButton>
       </div>
     </template>
@@ -293,19 +328,33 @@ onMounted(() => {
         <span class="results-section__icon results-section__icon--w3" aria-hidden="true">
           <ElIcon :size="18"><MagicStick /></ElIcon>
         </span>
-        <h3 class="results-section__title">W3 汇总</h3>
+        <div class="results-section__heading">
+          <h3 class="results-section__title">W3 结果解读</h3>
+          <p class="results-section__hint">解读检查/检验指标的临床意义，非疾病确诊。确诊请前往「门诊确诊」运行 W4。</p>
+        </div>
+        <ElTag v-if="w3Completed" type="info" effect="plain" class="results-section__tag">非诊断性分析</ElTag>
       </header>
       <div class="results-section__body results-section__body--padded">
-        <ElEmpty v-if="!w3Output" description="暂无 W3 输出，可运行 W3" />
+        <ElEmpty v-if="!w3Output?.examSummaries?.length && !w3Output?.overallAnalysis" description="暂无 W3 解读，可运行 W3 或等待医技提交结果后自动分析" />
         <div v-else class="w3-grid">
-          <ElCard v-for="item in w3Output.examSummaries || []" :key="item.techName" class="w3-card" shadow="never">
-            <strong class="w3-card__title">{{ item.techName }}</strong>
+          <ElCard v-for="item in w3Output?.examSummaries || []" :key="item.techName" class="w3-card" shadow="never">
+            <div class="w3-card__head">
+              <strong class="w3-card__title">{{ item.techName }}</strong>
+              <ElTag v-if="item.riskLevel" :type="resolveRiskTone(item.riskLevel)" size="small" effect="light">
+                {{ resolveRiskLabel(item.riskLevel) }}
+              </ElTag>
+            </div>
+            <ul v-if="item.keyFindings?.length" class="w3-card__findings">
+              <li v-for="(finding, idx) in item.keyFindings" :key="`${item.techName}-finding-${idx}`">{{ finding }}</li>
+            </ul>
             <p v-if="item.interpretation" class="w3-card__text">{{ item.interpretation }}</p>
-            <p v-if="item.riskLevel" class="w3-card__meta">风险等级：{{ item.riskLevel }}</p>
           </ElCard>
-          <ElCard v-if="w3Output.overallAnalysis" class="w3-card w3-card--overall" shadow="never">
+          <ElCard v-if="w3Output?.overallAnalysis" class="w3-card w3-card--overall" shadow="never">
             <strong class="w3-card__title">总体分析</strong>
             <p class="w3-card__text">{{ w3Output.overallAnalysis }}</p>
+            <p v-if="w3Output.explicitNonDiagnosis !== false" class="w3-card__notice">
+              以上为 AI 辅助解读，不构成最终诊断。
+            </p>
           </ElCard>
         </div>
       </div>
@@ -382,6 +431,22 @@ onMounted(() => {
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--color-border);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 251, 255, 0.88));
+}
+
+.results-section__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.results-section__hint {
+  margin: 4px 0 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.results-section__tag {
+  flex-shrink: 0;
 }
 
 .results-section__title {
@@ -535,11 +600,31 @@ onMounted(() => {
   font-size: 15px;
 }
 
+.w3-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.w3-card__findings {
+  margin: var(--space-2) 0 0;
+  padding-inline-start: 1.2rem;
+  color: var(--color-text-muted);
+  line-height: 1.8;
+}
+
 .w3-card__text,
-.w3-card__meta {
+.w3-card__meta,
+.w3-card__notice {
   margin: var(--space-2) 0 0;
   color: var(--color-text-muted);
   line-height: 1.8;
+}
+
+.w3-card__notice {
+  font-size: 13px;
+  color: var(--color-ai);
 }
 
 .lab-report-print-host {
