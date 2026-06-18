@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Box, Calendar, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User } from '@element-plus/icons-vue'
 import { appName } from '@/shared/constants/app'
@@ -13,8 +14,11 @@ import { physicianRoute } from '@/modules/physician/constants/visitState'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const iconMap = { Box, Calendar, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User }
+
+// 患者角色时隐藏左侧菜单
+const isPatient = computed(() => authStore.role === 'patient')
 const encounterStore = useEncounterStore()
-const iconMap = { Box, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User }
 
 function isRouteAccessible(item: any) {
   if (item?.meta?.hidden) return false
@@ -62,7 +66,8 @@ function handleMenuSelect(index: string) {
 </script>
 
 <template>
-  <aside class="app-sidebar">
+  <!-- 患者角色时隐藏左侧菜单 -->
+  <aside v-if="!isPatient" class="app-sidebar">
     <RouterLink class="app-sidebar__brand" to="/dashboard">
       <span class="app-sidebar__logo">希</span>
       <span>

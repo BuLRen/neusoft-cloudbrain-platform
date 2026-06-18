@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.auth.mapper.PatientMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.auth.entity.Patient">
+        <id column="id" property="id" jdbcType="INTEGER"/>
+        <result column="real_name" property="realName" jdbcType="VARCHAR"/>
+        <result column="id_card" property="idCard" jdbcType="VARCHAR"/>
+        <result column="gender" property="gender" jdbcType="VARCHAR"/>
+        <result column="birthdate" property="birthdate" jdbcType="DATE"/>
+        <result column="phone" property="phone" jdbcType="VARCHAR"/>
+        <result column="avatar" property="avatar" jdbcType="VARCHAR"/>
+        <result column="home_address" property="homeAddress" jdbcType="VARCHAR"/>
+        <result column="allergy_history" property="allergyHistory" jdbcType="VARCHAR"/>
+        <result column="account_balance" property="accountBalance" jdbcType="DECIMAL"/>
+        <result column="is_primary" property="isPrimary" jdbcType="INTEGER"/>
+        <result column="relation" property="relation" jdbcType="VARCHAR"/>
+        <result column="delmark" property="delmark" jdbcType="INTEGER"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        WHERE id = #{id} AND delmark = 1
+    </select>
+
+    <select id="selectByIdCard" resultMap="BaseResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        WHERE id_card = #{idCard} AND delmark = 1
+    </select>
+
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
+               p.allergy_history, p.account_balance, p.delmark, p.create_time, p.update_time,
+               upm.relation as relation,
+               CASE WHEN upm.relation = '本人' THEN 1 ELSE 0 END as is_primary
+        FROM patient p
+        INNER JOIN user_patient_managed upm ON p.id = upm.patient_id
+        WHERE upm.user_id = #{userId} AND p.delmark = 1
+        ORDER BY CASE WHEN upm.relation = '本人' THEN 0 ELSE 1 END, p.create_time ASC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO patient (real_name, id_card, gender, birthdate, phone, avatar, home_address,
+                           allergy_history, delmark, create_time, update_time)
+        VALUES (#{realName}, #{idCard}, #{gender}, #{birthdate}, #{phone}, #{avatar}, #{homeAddress},
+                #{allergyHistory}, 1, NOW(), NOW())
+    </insert>
+
+    <update id="update">
+        UPDATE patient
+        <set>
+            <if test="realName != null and realName != ''">
+                real_name = #{realName},
+            </if>
+            <if test="gender != null and gender != ''">
+                gender = #{gender},
+            </if>
+            <if test="birthdate != null">
+                birthdate = #{birthdate},
+            </if>
+            <if test="phone != null">
+                phone = #{phone},
+            </if>
+            <if test="homeAddress != null">
+                home_address = #{homeAddress},
+            </if>
+            <if test="allergyHistory != null">
+                allergy_history = #{allergyHistory},
+            </if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectByIdForUpdate" resultMap="BaseResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        WHERE id = #{id} AND delmark = 1
+        FOR UPDATE
+    </select>
+
+    <update id="updateBalance">
+        UPDATE patient
+        SET account_balance = #{accountBalance},
+            update_time = NOW()
+        WHERE id = #{id} AND delmark = 1
+    </update>
+
+    <delete id="deleteById">
+        UPDATE patient SET delmark = 0, update_time = NOW() WHERE id = #{id}
+    </delete>
+
+</mapper>

@@ -36,7 +36,7 @@ public class RegistLevelService {
      * 创建挂号级别
      */
     public RegistLevel createLevel(RegistLevel level) {
-        level.setStatus(1);
+        // delmark 在 Mapper INSERT 中自动设为 0
         registLevelMapper.insert(level);
         log.info("创建挂号级别: id={}, name={}", level.getId(), level.getName());
         return level;

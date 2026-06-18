@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.EmployeeMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.registration.entity.Employee">
+        <id column="id" property="id"/>
+        <result column="deptment_id" property="deptmentId"/>
+        <result column="regist_level_id" property="registLevelId"/>
+        <result column="realname" property="realname"/>
+        <result column="delmark" property="delmark"/>
+        <result column="dept_name" property="deptName"/>
+        <result column="regist_name" property="registName"/>
+    </resultMap>
+
+    <!-- 根据科室ID查询医生 -->
+    <select id="selectByDepartment" resultMap="BaseResultMap">
+        SELECT e.id, e.deptment_id, e.regist_level_id, e.realname, e.delmark,
+               d.dept_name, r.regist_name
+        FROM employee e
+        LEFT JOIN department d ON e.deptment_id = d.id
+        LEFT JOIN regist_level r ON e.regist_level_id = r.id
+        WHERE e.deptment_id = #{deptmentId}
+          AND e.delmark = 0
+        ORDER BY e.id
+    </select>
+
+    <!-- 根据科室ID查询医生（按挂号级别排序：主任 > 副主任 > 专家 > 普通） -->
+    <select id="selectByDepartmentOrderByLevel" resultMap="BaseResultMap">
+        SELECT e.id, e.deptment_id, e.regist_level_id, e.realname, e.delmark,
+               d.dept_name, r.regist_name
+        FROM employee e
+        LEFT JOIN department d ON e.deptment_id = d.id
+        LEFT JOIN regist_level r ON e.regist_level_id = r.id
+        WHERE e.deptment_id = #{deptmentId}
+          AND e.delmark = 0
+        ORDER BY r.sequence_no DESC NULLS LAST, e.id
+    </select>
+
+    <!-- 根据科室ID和挂号级别查询医生 -->
+    <select id="selectByDepartmentAndLevel" resultMap="BaseResultMap">
+        SELECT e.id, e.deptment_id, e.regist_level_id, e.realname, e.delmark,
+               d.dept_name, r.regist_name
+        FROM employee e
+        LEFT JOIN department d ON e.deptment_id = d.id
+        LEFT JOIN regist_level r ON e.regist_level_id = r.id
+        WHERE e.deptment_id = #{deptmentId}
+          AND e.regist_level_id = #{registLevelId}
+          AND e.delmark = 0
+        ORDER BY e.id
+    </select>
+
+    <!-- 根据ID查询医生 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT e.id, e.deptment_id, e.regist_level_id, e.realname, e.delmark,
+               d.dept_name, r.regist_name
+        FROM employee e
+        LEFT JOIN department d ON e.deptment_id = d.id
+        LEFT JOIN regist_level r ON e.regist_level_id = r.id
+        WHERE e.id = #{id}
+    </select>
+
+</mapper>

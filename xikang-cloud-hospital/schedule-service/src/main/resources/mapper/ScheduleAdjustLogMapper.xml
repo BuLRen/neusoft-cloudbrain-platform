@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.schedule.mapper.ScheduleAdjustLogMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.schedule.entity.ScheduleAdjustLog">
+        <id column="id" property="id"/>
+        <result column="schedule_id" property="scheduleId"/>
+        <result column="field_name" property="fieldName"/>
+        <result column="old_value" property="oldValue"/>
+        <result column="new_value" property="newValue"/>
+        <result column="adjust_type" property="adjustType"/>
+        <result column="adjust_by" property="adjustBy"/>
+        <result column="adjust_time" property="adjustTime"/>
+        <result column="remark" property="remark"/>
+        <result column="delmark" property="delmark"/>
+        <result column="adjust_by_name" property="adjustByName"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT sal.*, e.realname as adjust_by_name
+        FROM schedule_adjust_log sal
+        LEFT JOIN employee e ON sal.adjust_by = e.id
+        WHERE sal.delmark = 0
+        ORDER BY sal.adjust_time DESC
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT sal.*, e.realname as adjust_by_name
+        FROM schedule_adjust_log sal
+        LEFT JOIN employee e ON sal.adjust_by = e.id
+        WHERE sal.id = #{id} AND sal.delmark = 0
+    </select>
+
+    <select id="selectByScheduleId" resultMap="BaseResultMap">
+        SELECT sal.*, e.realname as adjust_by_name
+        FROM schedule_adjust_log sal
+        LEFT JOIN employee e ON sal.adjust_by = e.id
+        WHERE sal.schedule_id = #{scheduleId}
+          AND sal.delmark = 0
+        ORDER BY sal.adjust_time DESC
+    </select>
+
+    <select id="selectByAdjustBy" resultMap="BaseResultMap">
+        SELECT sal.*, e.realname as adjust_by_name
+        FROM schedule_adjust_log sal
+        LEFT JOIN employee e ON sal.adjust_by = e.id
+        WHERE sal.adjust_by = #{adjustBy}
+          AND sal.delmark = 0
+        ORDER BY sal.adjust_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO schedule_adjust_log (
+            schedule_id, field_name, old_value, new_value,
+            adjust_type, adjust_by, remark, delmark
+        ) VALUES (
+            #{scheduleId}, #{fieldName}, #{oldValue}, #{newValue},
+            #{adjustType}, #{adjustBy}, #{remark}, 0
+        )
+    </insert>
+
+    <update id="deleteById">
+        UPDATE schedule_adjust_log SET delmark = 1 WHERE id = #{id}
+    </update>
+
+</mapper>

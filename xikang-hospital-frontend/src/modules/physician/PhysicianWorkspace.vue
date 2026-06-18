@@ -24,6 +24,8 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import { aiApi } from '@/shared/api/modules/ai'
+type RequestKind = 'check' | 'inspection' | 'disposal'
 import {
   physicianApi,
   type Disease,
@@ -122,6 +124,33 @@ const prescriptionBasket = ref<Array<PrescriptionDraft & { drugName: string; dru
 const prescriptions = ref<Awaited<ReturnType<typeof physicianApi.prescriptions>>>([])
 
 const selectedRegisterId = computed(() => selectedPatient.value?.registerId)
+
+async function selectPatient(patient: PhysicianPatient) {
+  selectedPatient.value = patient
+  // 实时拉取最新 AI 预问诊（避免进入时正好在做）
+  try {
+    const session = await aiApi.previsitSession(patient.registerId)
+    if (session && session.exists && session.state === 'completed' && session.summary) {
+      selectedPatient.value = {
+        ...patient,
+        hasAiConsultation: true,
+        aiConsultSummary: {
+          chiefComplaint: session.summary.chiefComplaint,
+          symptomDuration: session.summary.symptomDuration,
+          historySummary: session.summary.historySummary,
+          allergySummary: session.summary.allergySummary,
+          medicationSummary: session.summary.medicationSummary,
+          aiSummary: session.summary.aiSummary,
+          suggestedExam: session.summary.suggestedExam,
+        },
+      }
+    } else if (session && !session.exists) {
+      selectedPatient.value = { ...patient, hasAiConsultation: false, aiConsultSummary: undefined }
+    }
+  } catch {
+    /* ignore */
+  }
+}
 const selectedDiseaseNames = computed(() => diseases.value.filter((item) => diagnosisForm.diseaseIds.includes(item.id)).map((item) => item.diseaseName).join('、'))
 
 async function loadPatients() {
@@ -508,7 +537,7 @@ onMounted(async () => {
             class="patient-item"
             :class="{ 'is-active': patient.registerId === selectedRegisterId }"
             type="button"
-            @click="selectedPatient = patient"
+            @click="selectPatient(patient)"
           >
             <strong>{{ patient.realName }}</strong>
             <span>{{ patient.caseNumber }}</span>
@@ -528,14 +557,54 @@ onMounted(async () => {
             <ElDescriptionsItem label="性别">{{ selectedPatient.gender || '-' }}</ElDescriptionsItem>
             <ElDescriptionsItem label="年龄">{{ selectedPatient.age || '-' }}</ElDescriptionsItem>
           </ElDescriptions>
-          <ElAlert
+          <div
             v-if="selectedPatient.aiConsultSummary"
+            class="ai-consult-card"
+          >
+            <div class="ai-consult-header">
+              <span class="ai-consult-icon">🤖</span>
+              <strong>AI 预问诊摘要</strong>
+              <ElTag v-if="selectedPatient.aiConsultSummary.chiefComplaint" type="success" size="small">已完成</ElTag>
+            </div>
+            <div class="ai-consult-grid">
+              <div class="ai-consult-item">
+                <label>主诉</label>
+                <p>{{ selectedPatient.aiConsultSummary.chiefComplaint || '—' }}</p>
+              </div>
+              <div class="ai-consult-item">
+                <label>症状时长</label>
+                <p>{{ selectedPatient.aiConsultSummary.symptomDuration || '—' }}</p>
+              </div>
+              <div class="ai-consult-item full">
+                <label>现病史</label>
+                <p>{{ selectedPatient.aiConsultSummary.aiSummary || '—' }}</p>
+              </div>
+              <div class="ai-consult-item">
+                <label>既往史</label>
+                <p>{{ selectedPatient.aiConsultSummary.historySummary || '—' }}</p>
+              </div>
+              <div class="ai-consult-item">
+                <label>过敏史</label>
+                <p>{{ selectedPatient.aiConsultSummary.allergySummary || '—' }}</p>
+              </div>
+              <div v-if="selectedPatient.aiConsultSummary.medicationSummary" class="ai-consult-item full">
+                <label>用药史</label>
+                <p>{{ selectedPatient.aiConsultSummary.medicationSummary }}</p>
+              </div>
+              <div v-if="selectedPatient.aiConsultSummary.suggestedExam" class="ai-consult-item full">
+                <label>建议检查</label>
+                <p>{{ selectedPatient.aiConsultSummary.suggestedExam }}</p>
+              </div>
+            </div>
+          </div>
+          <ElAlert
+            v-else-if="selectedPatient.hasAiConsultation === false"
             class="ai-summary"
-            type="success"
+            type="info"
             show-icon
             :closable="false"
-            title="AI 预问诊摘要"
-            :description="selectedPatient.aiConsultSummary.aiSummary || selectedPatient.aiConsultSummary.chiefComplaint"
+            title="患者未完成 AI 预问诊"
+            description="患者未在就诊前进行 AI 预问诊，请按常规流程接诊。"
           />
         </GlassCard>
 
@@ -893,6 +962,59 @@ onMounted(async () => {
 
 .ai-summary {
   margin-block-start: var(--space-4);
+}
+
+.ai-consult-card {
+  margin-block-start: var(--space-4);
+  padding: var(--space-4);
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #7dd3fc;
+  border-radius: var(--radius-md);
+}
+
+.ai-consult-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-size: 15px;
+  color: #0369a1;
+}
+
+.ai-consult-icon {
+  font-size: 20px;
+}
+
+.ai-consult-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.ai-consult-item {
+  background: white;
+  border: 1px solid #e0f2fe;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+
+.ai-consult-item.full {
+  grid-column: 1 / -1;
+}
+
+.ai-consult-item label {
+  display: block;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 2px;
+}
+
+.ai-consult-item p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text);
+  white-space: pre-wrap;
 }
 
 .form-grid {
