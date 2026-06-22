@@ -160,46 +160,52 @@ const currentPageTitle = computed(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  padding: var(--space-5) var(--space-8);
+  padding: var(--space-5) var(--space-6);
   min-height: 100%;
   width: 100%;
 }
 
-/* 顶部用户信息栏 */
+/* ===================== 顶部用户信息栏 ===================== */
 .patient-header {
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-5);
 }
 
 .patient-header__content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .patient-header__left {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  min-width: 0;
 }
 
 .patient-avatar {
-  width: 48px;
-  height: 48px;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: var(--gradient-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 20px;
-  font-weight: 600;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  box-shadow: 0 4px 12px rgba(31, 140, 255, 0.32),
+              inset 0 0 0 2px rgba(255, 255, 255, 0.22);
 }
 
 .patient-info {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 3px;
+  min-width: 0;
 }
 
 .patient-info__top {
@@ -209,73 +215,103 @@ const currentPageTitle = computed(() => {
 }
 
 .patient-greeting {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   margin: 0;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
 }
 
 .patient-allergy {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  font-size: 12px;
+  gap: 4px;
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(239, 77, 90, 0.08);
+  width: fit-content;
 }
 
 .allergy-label {
   color: var(--color-text-muted);
+  font-weight: 500;
 }
 
 .allergy-value {
   color: var(--color-danger);
+  font-weight: 600;
 }
 
-.patient-id {
-  font-size: 12px;
-}
-
+/* —— 右侧 —— */
 .patient-header__right {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  flex-wrap: nowrap;
 }
 
+/* 余额胶囊 */
 .balance-pill {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: var(--space-2) var(--space-4);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 14px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-primary-soft);
+  border-radius: 999px;
+  background: var(--color-surface-strong);
   cursor: pointer;
+  transition: all var(--duration-base) var(--ease-standard);
+}
+
+.balance-pill:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .balance-pill__label {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--color-text-muted);
+  font-weight: 500;
 }
 
 .balance-pill__amount {
   color: var(--color-primary);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
-/* 切换患者按钮 */
-.switch-patient-btn {
-  display: flex;
+/* 切换患者按钮：弱化成次操作 */
+.patient-header__right :deep(.switch-patient-btn) {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  height: auto;
+  transition: all var(--duration-base) var(--ease-standard);
+}
+
+.patient-header__right :deep(.switch-patient-btn:hover) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .switch-icon {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .current-patient-name {
   color: var(--color-primary);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 /* 下拉菜单中的患者项 */
@@ -308,53 +344,55 @@ const currentPageTitle = computed(() => {
 }
 
 .check-icon {
-  color: var(--color-primary);
-}
-
-.patient-relation {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  margin-left: var(--space-1);
-}
-
-.check-icon {
   margin-left: var(--space-2);
   color: var(--color-primary);
 }
 
+/* —— 快捷操作：文字导航风，无边框 —— */
 .quick-actions {
   display: flex;
-  gap: var(--space-2);
+  gap: 2px;
+  padding-left: var(--space-3);
+  margin-left: var(--space-1);
+  border-left: 1px solid var(--color-border);
 }
 
 .quick-action-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  gap: 6px;
+  padding: 7px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   cursor: pointer;
   transition: all var(--duration-base) var(--ease-standard);
+  color: var(--color-text-muted);
+  font-family: inherit;
 }
 
 .quick-action-btn:hover {
   background: var(--color-primary-soft);
-  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .quick-action-icon {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .quick-action-label {
   font-size: 13px;
-  color: var(--color-text);
+  font-weight: 500;
 }
 
 .logout-btn {
   color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 7px 10px;
+}
+
+.logout-btn:hover {
+  color: var(--color-danger);
 }
 
 /* 内容区域 */
@@ -363,15 +401,27 @@ const currentPageTitle = computed(() => {
   width: 100%;
 }
 
-/* 响应式 */
+/* ===================== 响应式 ===================== */
+@media (max-width: 1200px) {
+  .quick-actions {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
+  .patient-layout {
+    padding: var(--space-4);
+  }
+
   .patient-header__content {
     flex-direction: column;
     align-items: flex-start;
+    gap: var(--space-3);
   }
 
-  .quick-actions {
+  .patient-header__right {
     flex-wrap: wrap;
+    gap: var(--space-2);
   }
 }
 </style>

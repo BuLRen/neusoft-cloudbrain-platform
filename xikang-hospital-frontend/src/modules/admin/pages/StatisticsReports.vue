@@ -26,8 +26,6 @@ const maxCharges = computed(() => Math.max(...trend.value.map((i) => Number(i.ch
 const summary = computed(() => {
   const totalReg = workload.value.reduce((s, i) => s + i.registrations, 0)
   const totalVisit = workload.value.reduce((s, i) => s + i.visits, 0)
-  const totalInsp = workload.value.reduce((s, i) => s + i.inspections, 0)
-  const totalRx = workload.value.reduce((s, i) => s + i.prescriptions, 0)
   const totalCharge = trend.value.reduce((s, i) => s + Number(i.charges), 0)
   return {
     totalReg,

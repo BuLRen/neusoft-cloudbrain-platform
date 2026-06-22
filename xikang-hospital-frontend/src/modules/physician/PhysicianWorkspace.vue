@@ -25,7 +25,6 @@ import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
-type RequestKind = 'check' | 'inspection' | 'disposal'
 import {
   physicianApi,
   type Disease,

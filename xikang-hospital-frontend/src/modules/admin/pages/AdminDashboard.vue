@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElButton, ElTable, ElTableColumn } from 'element-plus'
-import { useAuthStore } from '@/app/stores/auth'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
@@ -15,7 +14,6 @@ import type {
 } from '@/shared/api/modules/registration'
 import type { DrugOption } from '@/shared/types/pharmacy'
 
-const authStore = useAuthStore()
 const router = useRouter()
 
 const loading = ref(false)
