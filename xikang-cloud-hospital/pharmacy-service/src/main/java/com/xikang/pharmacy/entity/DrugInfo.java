@@ -20,6 +20,7 @@ public class DrugInfo implements Serializable {
     private String brandName;           // 品牌名
     private String specification;       // 规格
     private String dosageForm;          // 剂型：片剂/胶囊/注射液/颗粒等
+    private String category;            // P1-4.3 分类：抗生素/OTC/中成药/处方药等
     private String unit;                 // 单位
     private String manufacturer;        // 生产企业
     private String approvalNumber;       // 批准文号

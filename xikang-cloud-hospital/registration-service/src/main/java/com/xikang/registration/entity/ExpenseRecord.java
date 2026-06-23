@@ -7,7 +7,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Expense Record Entity - 费用记录表
+ * ExpenseRecord Entity - 费用记录表
+ * expense_record: id, register_id, patient_id, patient_name, category_id, category_name,
+ *                item_id, item_name, item_code, quantity, unit_price, total_amount,
+ *                status, pay_time, refund_time, operator_id, operator_name, remark, create_time
  */
 @Data
 public class ExpenseRecord implements Serializable {
@@ -15,22 +18,22 @@ public class ExpenseRecord implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Long id;
-    private Long registerId;           // 挂号ID
-    private Long patientId;           // 患者ID
-    private String patientName;       // 患者姓名
-    private Long categoryId;          // 结算类别ID
-    private String categoryName;      // 结算类别名称：检查/检验/处置/药品
-    private Long itemId;             // 项目ID（检查/检验/处置/药品ID）
-    private String itemName;         // 项目名称
-    private String itemCode;         // 项目编码
-    private Integer quantity;         // 数量
-    private BigDecimal unitPrice;    // 单价
-    private BigDecimal totalAmount;   // 总金额
-    private Integer status;           // 状态：0待缴费/1已缴费/2已退款/3已作废
-    private LocalDateTime payTime;   // 缴费时间
-    private LocalDateTime refundTime; // 退款时间
-    private Long operatorId;         // 操作人ID
-    private String operatorName;      // 操作人姓名
-    private String remark;           // 备注
-    private LocalDateTime createTime;
+    private Long registerId;           // register_id
+    private Long patientId;           // patient_id
+    private String patientName;       // patient_name
+    private Long categoryId;          // category_id
+    private String categoryName;      // category_name
+    private Long itemId;             // item_id
+    private String itemName;         // item_name
+    private String itemCode;         // item_code
+    private Integer quantity;         // quantity
+    private BigDecimal unitPrice;    // unit_price
+    private BigDecimal totalAmount;   // total_amount
+    private Integer status;           // status: 0待缴费/1已缴费/2已退款/3已作废
+    private LocalDateTime payTime;   // pay_time
+    private LocalDateTime refundTime; // refund_time
+    private Long operatorId;         // operator_id
+    private String operatorName;      // operator_name
+    private String remark;           // remark
+    private LocalDateTime createTime; // create_time
 }

@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: schedule-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+      config:
+        server-addr: localhost:8848
+        file-extension: yaml
+  config:
+    import: optional:file:./.env
+
+coze:
+  api-key: ${COZE_API_KEY:}
+  workflow-id: ${COZE_WORKFLOW_ID:}
+  api-url: ${COZE_API_URL:https://api.coze.cn}
+  timeout-ms: ${COZE_TIMEOUT_MS:300000}

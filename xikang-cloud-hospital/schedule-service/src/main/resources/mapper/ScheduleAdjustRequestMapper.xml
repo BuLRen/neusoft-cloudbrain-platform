@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.schedule.mapper.ScheduleAdjustRequestMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.schedule.entity.ScheduleAdjustRequest">
+        <id column="id" property="id"/>
+        <result column="schedule_id" property="scheduleId"/>
+        <result column="adjust_type" property="adjustType"/>
+        <result column="old_physician_id" property="oldPhysicianId"/>
+        <result column="new_physician_id" property="newPhysicianId"/>
+        <result column="old_status" property="oldStatus"/>
+        <result column="new_status" property="newStatus"/>
+        <result column="old_quota" property="oldQuota"/>
+        <result column="new_quota" property="newQuota"/>
+        <result column="reason" property="reason"/>
+        <result column="ai_suggestion" property="aiSuggestion"/>
+        <result column="affect_patients" property="affectPatients"/>
+        <result column="triggered_by" property="triggeredBy"/>
+        <result column="status" property="status"/>
+        <result column="confirmed_by" property="confirmedBy"/>
+        <result column="confirm_time" property="confirmTime"/>
+        <result column="confirm_remark" property="confirmRemark"/>
+        <result column="create_time" property="createTime"/>
+        <result column="delmark" property="delmark"/>
+        <result column="original_physician_name" property="originalPhysicianName"/>
+        <result column="substitute_physician_name" property="substitutePhysicianName"/>
+        <result column="work_date" property="workDate"/>
+        <result column="time_slot" property="timeSlot"/>
+        <result column="triggered_by_name" property="triggeredByName"/>
+        <result column="confirmed_by_name" property="confirmedByName"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT sar.*,
+               e1.realname as original_physician_name,
+               e2.realname as substitute_physician_name,
+               ds.work_date, ds.time_slot,
+               e3.realname as triggered_by_name,
+               e4.realname as confirmed_by_name
+        FROM schedule_adjust_request sar
+        LEFT JOIN doctor_schedule ds ON sar.schedule_id = ds.id
+        LEFT JOIN employee e1 ON sar.old_physician_id = e1.id
+        LEFT JOIN employee e2 ON sar.new_physician_id = e2.id
+        LEFT JOIN employee e3 ON sar.triggered_by = e3.id
+        LEFT JOIN employee e4 ON sar.confirmed_by = e4.id
+        WHERE sar.delmark = 0
+        ORDER BY sar.create_time DESC
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT sar.*,
+               e1.realname as original_physician_name,
+               e2.realname as substitute_physician_name,
+               ds.work_date, ds.time_slot,
+               e3.realname as triggered_by_name,
+               e4.realname as confirmed_by_name
+        FROM schedule_adjust_request sar
+        LEFT JOIN doctor_schedule ds ON sar.schedule_id = ds.id
+        LEFT JOIN employee e1 ON sar.old_physician_id = e1.id
+        LEFT JOIN employee e2 ON sar.new_physician_id = e2.id
+        LEFT JOIN employee e3 ON sar.triggered_by = e3.id
+        LEFT JOIN employee e4 ON sar.confirmed_by = e4.id
+        WHERE sar.id = #{id} AND sar.delmark = 0
+    </select>
+
+    <select id="selectPending" resultMap="BaseResultMap">
+        SELECT sar.*,
+               e1.realname as original_physician_name,
+               e2.realname as substitute_physician_name,
+               ds.work_date, ds.time_slot,
+               e3.realname as triggered_by_name
+        FROM schedule_adjust_request sar
+        LEFT JOIN doctor_schedule ds ON sar.schedule_id = ds.id
+        LEFT JOIN employee e1 ON sar.old_physician_id = e1.id
+        LEFT JOIN employee e2 ON sar.new_physician_id = e2.id
+        LEFT JOIN employee e3 ON sar.triggered_by = e3.id
+        WHERE sar.status = '待确认'
+          AND sar.delmark = 0
+        ORDER BY sar.create_time DESC
+    </select>
+
+    <select id="selectByScheduleId" resultMap="BaseResultMap">
+        SELECT sar.*,
+               e1.realname as original_physician_name,
+               e2.realname as substitute_physician_name,
+               e3.realname as triggered_by_name
+        FROM schedule_adjust_request sar
+        LEFT JOIN employee e1 ON sar.old_physician_id = e1.id
+        LEFT JOIN employee e2 ON sar.new_physician_id = e2.id
+        LEFT JOIN employee e3 ON sar.triggered_by = e3.id
+        WHERE sar.schedule_id = #{scheduleId}
+          AND sar.delmark = 0
+        ORDER BY sar.create_time DESC
+    </select>
+
+    <select id="selectByTriggeredBy" resultMap="BaseResultMap">
+        SELECT sar.*,
+               e1.realname as original_physician_name,
+               e2.realname as substitute_physician_name
+        FROM schedule_adjust_request sar
+        LEFT JOIN employee e1 ON sar.old_physician_id = e1.id
+        LEFT JOIN employee e2 ON sar.new_physician_id = e2.id
+        WHERE sar.triggered_by = #{triggeredBy}
+          AND sar.delmark = 0
+        ORDER BY sar.create_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO schedule_adjust_request (
+            schedule_id, adjust_type, old_physician_id, new_physician_id,
+            old_status, new_status, old_quota, new_quota, reason,
+            ai_suggestion, affect_patients, triggered_by, status, delmark
+        ) VALUES (
+            #{scheduleId}, #{adjustType}, #{oldPhysicianId}, #{newPhysicianId},
+            #{oldStatus}, #{newStatus}, #{oldQuota}, #{newQuota}, #{reason},
+            #{aiSuggestion}, #{affectPatients}, #{triggeredBy}, #{status}, 0
+        )
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE schedule_adjust_request
+        SET status = #{status},
+            confirmed_by = #{confirmedBy},
+            confirm_time = #{confirmTime},
+            confirm_remark = #{confirmRemark}
+        WHERE id = #{id}
+    </update>
+
+    <update id="deleteById">
+        UPDATE schedule_adjust_request SET delmark = 1 WHERE id = #{id}
+    </update>
+
+</mapper>

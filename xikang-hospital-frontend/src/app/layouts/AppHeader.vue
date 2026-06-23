@@ -5,15 +5,20 @@ import { useRouter } from 'vue-router'
 import { useAppStore } from '@/app/stores/app'
 import { useAuthStore } from '@/app/stores/auth'
 import { useUserStore } from '@/app/stores/user'
+import { loginRoutePath } from '@/shared/constants/app'
 
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const userStore = useUserStore()
 
-function logout() {
-  authStore.logout()
-  router.push('/login')
+async function logout() {
+  try {
+    await authStore.logout()
+  } finally {
+    // 主动登出：不携带任何 redirect，避免下次被自动送回原页面
+    router.replace({ path: loginRoutePath, query: {} })
+  }
 }
 </script>
 

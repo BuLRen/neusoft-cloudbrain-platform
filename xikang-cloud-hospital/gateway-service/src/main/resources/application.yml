@@ -12,7 +12,7 @@ spring:
         - id: auth-service
           uri: lb://auth-service
           predicates:
-            - Path=/api/auth/**
+            - Path=/api/auth/**,/api/patient/**
         - id: registration-service
           uri: lb://registration-service
           predicates:
@@ -29,6 +29,10 @@ spring:
           uri: lb://pharmacy-service
           predicates:
             - Path=/api/pharmacy/**
+        - id: schedule-service
+          uri: lb://schedule-service
+          predicates:
+            - Path=/api/schedule/**
         - id: ai-triage-service
           uri: lb://ai-triage-service
           predicates:
@@ -53,6 +57,14 @@ spring:
           uri: lb://ai-gateway-service
           predicates:
             - Path=/api/ai/status
+        - id: ai-triage-websocket
+          uri: lb://ai-triage-service
+          predicates:
+            - Path=/ws/voice
+        - id: voice-service
+          uri: lb://ai-triage-service
+          predicates:
+            - Path=/api/voice/**
       globalcors:
         cors-configurations:
           '[/**]':
@@ -87,7 +99,7 @@ management:
 
 logging:
   level:
-    com.xikang.gateway: DEBUG
+    com.xikang.gateway: INFO
     org.springframework.cloud.gateway: DEBUG
 
 jwt:

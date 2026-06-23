@@ -16,6 +16,7 @@ public class Dispensing implements Serializable {
 
     private Long id;
     private Long prescriptionId;
+    private Long registerId;
     private Long patientId;
     private String dispensingNo;
     private BigDecimal amount;

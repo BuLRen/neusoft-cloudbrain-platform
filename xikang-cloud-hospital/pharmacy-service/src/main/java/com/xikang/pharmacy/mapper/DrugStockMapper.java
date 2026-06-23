@@ -18,6 +18,11 @@ public interface DrugStockMapper {
 
     List<DrugStock> selectByDrugIdAndStatus(Long drugId);
 
+    /**
+     * P1-4.2 查询近效期可用批次（status=1，失效日期 <= today + days）
+     */
+    List<DrugStock> selectExpiring(@Param("days") int days);
+
     int insert(DrugStock drugStock);
 
     int update(DrugStock drugStock);

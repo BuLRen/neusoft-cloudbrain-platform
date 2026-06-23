@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.schedule.mapper.DoctorScheduleMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.schedule.entity.DoctorSchedule">
+        <id column="id" property="id"/>
+        <result column="plan_id" property="planId"/>
+        <result column="physician_id" property="physicianId"/>
+        <result column="department_id" property="departmentId"/>
+        <result column="work_date" property="workDate"/>
+        <result column="time_slot" property="timeSlot"/>
+        <result column="regist_level_id" property="registLevelId"/>
+        <result column="total_quota" property="totalQuota"/>
+        <result column="used_quota" property="usedQuota"/>
+        <result column="available_quota" property="availableQuota"/>
+        <result column="price" property="price"/>
+        <result column="status" property="status"/>
+        <result column="ai_suggestion" property="aiSuggestion"/>
+        <result column="modified" property="modified"/>
+        <result column="modify_remark" property="modifyRemark"/>
+        <result column="created_time" property="createdTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="delmark" property="delmark"/>
+        <result column="physician_name" property="physicianName"/>
+        <result column="physician_title" property="physicianTitle"/>
+        <result column="department_name" property="departmentName"/>
+        <result column="regist_level_name" property="registLevelName"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT ds.*, e.realname as physician_name, d.dept_name as department_name,
+               rl.regist_name as regist_level_name
+        FROM doctor_schedule ds
+        LEFT JOIN employee e ON ds.physician_id = e.id
+        LEFT JOIN department d ON ds.department_id = d.id
+        LEFT JOIN regist_level rl ON ds.regist_level_id = rl.id
+        WHERE ds.delmark = 0
+        ORDER BY ds.work_date DESC, ds.time_slot
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT ds.*, e.realname as physician_name, d.dept_name as department_name,
+               rl.regist_name as regist_level_name,
+               rl.regist_name as physician_title
+        FROM doctor_schedule ds
+        LEFT JOIN employee e ON ds.physician_id = e.id
+        LEFT JOIN department d ON ds.department_id = d.id
+        LEFT JOIN regist_level rl ON ds.regist_level_id = rl.id
+        WHERE ds.id = #{id} AND ds.delmark = 0
+    </select>
+
+    <select id="selectAvailable" resultMap="BaseResultMap">
+        SELECT ds.*, e.realname as physician_name, d.dept_name as department_name,
+               rl.regist_name as regist_level_name
+        FROM doctor_schedule ds
+        INNER JOIN schedule_plan sp ON ds.plan_id = sp.id AND sp.status = '已发布'
+        LEFT JOIN employee e ON ds.physician_id = e.id
+        LEFT JOIN department d ON ds.department_id = d.id
+        LEFT JOIN regist_level rl ON ds.regist_level_id = rl.id
+        WHERE ds.department_id = #{departmentId}
+          AND ds.work_date = #{date}
+          AND ds.status = '正常'
+          AND ds.available_quota > 0
+          AND ds.delmark = 0
+        ORDER BY ds.time_slot, rl.regist_name
+    </select>
+
+    <select id="selectAvailableByDateRange" resultMap="BaseResultMap">
+        SELECT ds.*, e.realname as physician_name, d.dept_name as department_name,
+               rl.regist_name as regist_level_name
+        FROM doctor_schedule ds
+        INNER JOIN schedule_plan sp ON ds.plan_id = sp.id AND sp.status = '已发布'
+        LEFT JOIN employee e ON ds.physician_id = e.id
+        LEFT JOIN department d ON ds.department_id = d.id
+        LEFT JOIN regist_level rl ON ds.regist_level_id = rl.id
+        WHERE ds.department_id = #{departmentId}
+          AND ds.work_date BETWEEN #{startDate} AND #{endDate}
+          AND ds.status = '正常'
+          AND ds.delmark = 0
+        ORDER BY ds.work_date, ds.time_slot
+    </select>
+
+    <select id="selectByPlanIdAndDateRange" resultMap="BaseResultMap">
+        SELECT ds.*, e.realname as physician_name, d.dept_name as department_name,
+               rl.regist_name as regist_level_name
+        FROM doctor_schedule ds
+        LEFT JOIN employee e ON ds.physician_id = e.id
+        LEFT JOIN department d ON ds.department_id = d.id
+        LEFT JOIN regist_level rl ON ds.regist_level_id = rl.id
+        WHERE ds.plan_id = #{planId}
+          AND ds.work_date BETWEEN #{startDate} AND #{endDate}
+          AND ds.status = '正常'
+          AND ds.delmark = 0
+        ORDER BY ds.work_date, ds.time_slot
+    </select>
+
+    <select id="selectByPlanId" resultMap="BaseResultMap">
+        SELECT ds.*, e.realname as physician_name, d.dept_name as department_name,
+               rl.regist_name as regist_level_name
+        FROM doctor_schedule ds
+        LEFT JOIN employee e ON ds.physician_id = e.id
+        LEFT JOIN department d ON ds.department_id = d.id
+        LEFT JOIN regist_level rl ON ds.regist_level_id = rl.id
+        WHERE ds.plan_id = #{planId}
+          AND ds.delmark = 0
+        ORDER BY ds.work_date, ds.time_slot
+    </select>
+
+    <select id="selectByPhysicianAndDate" resultMap="BaseResultMap">
+        SELECT ds.*, e.realname as physician_name, d.dept_name as department_name
+        FROM doctor_schedule ds
+        LEFT JOIN employee e ON ds.physician_id = e.id
+        LEFT JOIN department d ON ds.department_id = d.id
+        WHERE ds.physician_id = #{physicianId}
+          AND ds.work_date = #{date}
+          AND ds.time_slot = #{timeSlot}
+          AND ds.delmark = 0
+    </select>
+
+    <select id="selectByPhysician" resultMap="BaseResultMap">
+        SELECT ds.*, d.dept_name as department_name, rl.regist_name as regist_level_name
+        FROM doctor_schedule ds
+        LEFT JOIN department d ON ds.department_id = d.id
+        LEFT JOIN regist_level rl ON ds.regist_level_id = rl.id
+        WHERE ds.physician_id = #{physicianId}
+          AND ds.work_date BETWEEN #{startDate} AND #{endDate}
+          AND ds.delmark = 0
+        ORDER BY ds.work_date, ds.time_slot
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO doctor_schedule (
+            plan_id, physician_id, department_id, work_date, time_slot,
+            regist_level_id, total_quota, used_quota, available_quota, price,
+            status, ai_suggestion, modified, delmark
+        ) VALUES (
+            #{planId}, #{physicianId}, #{departmentId}, #{workDate}, #{timeSlot},
+            #{registLevelId}, #{totalQuota}, #{usedQuota}, #{availableQuota}, #{price},
+            #{status}, #{aiSuggestion}, #{modified}, 0
+        )
+    </insert>
+
+    <insert id="batchInsert">
+        INSERT INTO doctor_schedule (
+            plan_id, physician_id, department_id, work_date, time_slot,
+            regist_level_id, total_quota, used_quota, available_quota, price,
+            status, ai_suggestion, modified, delmark
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.planId}, #{item.physicianId}, #{item.departmentId}, #{item.workDate}, #{item.timeSlot},
+                #{item.registLevelId}, #{item.totalQuota}, #{item.usedQuota}, #{item.availableQuota}, #{item.price},
+                #{item.status}, #{item.aiSuggestion}, #{item.modified}, 0
+            )
+        </foreach>
+    </insert>
+
+    <update id="update">
+        UPDATE doctor_schedule
+        <set>
+            <if test="physicianId != null">physician_id = #{physicianId},</if>
+            <if test="workDate != null">work_date = #{workDate},</if>
+            <if test="timeSlot != null">time_slot = #{timeSlot},</if>
+            <if test="totalQuota != null">total_quota = #{totalQuota},</if>
+            <if test="availableQuota != null">available_quota = #{availableQuota},</if>
+            <if test="price != null">price = #{price},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="aiSuggestion != null">ai_suggestion = #{aiSuggestion},</if>
+            <if test="modified != null">modified = #{modified},</if>
+            <if test="modifyRemark != null">modify_remark = #{modifyRemark},</if>
+            update_time = CURRENT_TIMESTAMP
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateQuota">
+        UPDATE doctor_schedule
+        SET used_quota = #{usedQuota},
+            available_quota = #{availableQuota},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE doctor_schedule
+        SET status = #{status},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <update id="deleteById">
+        UPDATE doctor_schedule SET delmark = 1 WHERE id = #{id}
+    </update>
+
+    <update id="deleteByPlanId">
+        UPDATE doctor_schedule SET delmark = 1 WHERE plan_id = #{planId}
+    </update>
+
+</mapper>

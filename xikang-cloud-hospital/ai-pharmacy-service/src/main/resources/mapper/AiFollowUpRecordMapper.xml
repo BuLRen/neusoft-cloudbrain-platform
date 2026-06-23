@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.ai.pharmacy.mapper.AiFollowUpRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.ai.pharmacy.entity.AiFollowUpRecord">
+        <id column="id" property="id"/>
+        <result column="plan_id" property="planId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="medication_compliance" property="medicationCompliance"/>
+        <result column="symptom_feedback" property="symptomFeedback"/>
+        <result column="side_effects" property="sideEffects"/>
+        <result column="recovery_status" property="recoveryStatus"/>
+        <result column="ai_assessment" property="aiAssessment"/>
+        <result column="next_follow_up_date" property="nextFollowUpDate"/>
+        <result column="remark" property="remark"/>
+        <result column="record_time" property="recordTime"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, plan_id, patient_id, medication_compliance, symptom_feedback, side_effects,
+        recovery_status, ai_assessment, next_follow_up_date, remark, record_time, create_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM ai_follow_up_record
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectByPlanId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM ai_follow_up_record
+        WHERE plan_id = #{planId}
+        ORDER BY record_time DESC, create_time DESC
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM ai_follow_up_record
+        WHERE patient_id = #{patientId}
+        ORDER BY record_time DESC, create_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_follow_up_record (
+            plan_id, patient_id, medication_compliance, symptom_feedback, side_effects,
+            recovery_status, ai_assessment, next_follow_up_date, remark, record_time, create_time
+        ) VALUES (
+            #{planId}, #{patientId}, #{medicationCompliance}, #{symptomFeedback}, #{sideEffects},
+            #{recoveryStatus}, #{aiAssessment}, #{nextFollowUpDate}, #{remark}, #{recordTime}, #{createTime}
+        )
+    </insert>
+
+</mapper>

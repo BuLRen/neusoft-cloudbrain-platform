@@ -8,7 +8,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Registration Entity - 挂号记录表
+ * Register Entity - 挂号记录表
+ * register: id, patient_id, scheduling_id, case_number, real_name, gender, card_number,
+ *           birthdate, age, age_type, home_address, visit_date, noon, deptment_id,
+ *           employee_id, regist_level_id, settle_category_id, is_book, regist_method,
+ *           regist_money, visit_state
  */
 @Data
 public class Register implements Serializable {
@@ -16,30 +20,36 @@ public class Register implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Long id;
-    private Long patientId;           // 患者ID
-    private String patientName;       // 患者姓名
-    private String patientPhone;      // 患者电话
-    private String idCard;           // 身份证号
-    private Long departmentId;        // 科室ID
-    private String departmentName;    // 科室名称
-    private Long physicianId;         // 医生ID
-    private String physicianName;     // 医生姓名
-    private Long schedulingId;        // 排班ID
-    private LocalDate visitDate;      // 就诊日期
-    private String visitTime;         // 就诊时间段
-    private String complaint;         // 主诉
-    private Integer status;           // 状态：0待缴费/1已缴费/2已接诊/3已完成/4已取消
-    private Integer registerType;     // 挂号类型：0普通/1专家
-    private Long registLevelId;       // 挂号级别ID
-    private String registLevelName;   // 挂号级别名称
-    private BigDecimal amount;        // 挂号费用
-    private Integer payStatus;        // 缴费状态：0待支付/1已支付/2已退款
-    private String payMethod;         // 支付方式
-    private String aiTriageResult;   // AI导诊结果JSON
-    private String aiPreVisit;       // AI预问诊摘要JSON
-    private Long operatorId;         // 操作员ID
-    private String operatorName;      // 操作员姓名
-    private String remark;           // 备注
-    private LocalDateTime createTime;
-    private LocalDateTime updateTime;
+    private Long patientId;       // patient_id (患者ID)
+    private Long schedulingId;    // scheduling_id (排班ID)
+    private String caseNumber;     // case_number (病历号)
+    private String realName;      // real_name (患者姓名)
+    private String gender;        // gender
+    private String cardNumber;    // card_number (就诊卡号)
+    private LocalDate birthdate;  // birthdate
+    private Integer age;           // age
+    private String ageType;       // age_type
+    private String homeAddress;   // home_address
+    private LocalDateTime visitDate;  // visit_date
+    private String noon;           // noon (上午/下午)
+    private Long deptmentId;      // deptment_id (科室ID)
+    private Long employeeId;      // employee_id (医生ID)
+    private Long registLevelId;   // regist_level_id
+    private Long settleCategoryId; // settle_category_id
+    private String isBook;        // is_book (是/否)
+    private String registMethod;  // regist_method
+    private BigDecimal registMoney; // regist_money (挂号费)
+    private Integer visitState;   // visit_state (1已挂号/2医生接诊/3看诊结束/4已退号/5爽约)
+    private java.time.LocalDateTime checkInTime; // check_in_time (报到时间，NULL=未报到)
+
+    // 辅助字段（不映射数据库）
+    private String departmentName;
+    private String physicianName;
+    private String registLevelName;
+    private String settleCategoryName;
+    private String aiTriageResult;
+    private String aiPreVisit;
+    private String complaint;
+    private String patientPhone;
+    private String idCard;
 }

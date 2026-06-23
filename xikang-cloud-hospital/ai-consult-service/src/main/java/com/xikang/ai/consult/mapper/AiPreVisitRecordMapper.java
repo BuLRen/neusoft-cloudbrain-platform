@@ -11,15 +11,24 @@ import java.util.List;
 @Mapper
 public interface AiPreVisitRecordMapper {
 
-    AiPreVisitRecord selectById(Long id);
+    AiPreVisitRecord selectById(Integer id);
 
-    AiPreVisitRecord selectByRegisterId(Long registerId);
+    /** 按会话UUID查询所有轮次，按 round_number 升序 */
+    List<AiPreVisitRecord> selectBySessionUuid(String sessionUuid);
 
-    AiPreVisitRecord selectByPatientId(Long patientId);
+    /** 按挂号ID查询所有轮次 */
+    List<AiPreVisitRecord> selectByRegisterId(Integer registerId);
 
-    List<AiPreVisitRecord> selectByStatus(Integer status);
+    /** 按患者ID + 状态查询 */
+    List<AiPreVisitRecord> selectByPatientIdAndState(Integer patientId, String state);
+
+    /** 同一会话下一轮 round_number */
+    Integer selectMaxRoundNumber(String sessionUuid);
 
     int insert(AiPreVisitRecord record);
 
     int update(AiPreVisitRecord record);
+
+    /** 更新整个会话的状态/汇总字段（不依赖单条 id） */
+    int updateSummaryBySessionUuid(AiPreVisitRecord record);
 }

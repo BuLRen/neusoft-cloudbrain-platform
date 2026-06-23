@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.ai.triage.mapper.AiTriageRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.ai.triage.entity.AiTriageRecord">
+        <id column="id" property="id"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="patient_age" property="patientAge"/>
+        <result column="patient_gender" property="patientGender"/>
+        <result column="symptom_description" property="symptomDescription"/>
+        <result column="recommend_dept_id" property="recommendDeptId"/>
+        <result column="recommend_dept_name" property="recommendDeptName"/>
+        <result column="recommend_doctor_id" property="recommendDoctorId"/>
+        <result column="recommend_doctor_name" property="recommendDoctorName"/>
+        <result column="risk_level" property="riskLevel"/>
+        <result column="is_priority" property="isPriority"/>
+        <result column="ai_analysis" property="aiAnalysis"/>
+        <result column="register_id" property="registerId"/>
+        <result column="triage_time" property="triageTime"/>
+        <result column="model_id" property="modelId"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM ai_triage_record WHERE id = #{id}
+    </select>
+
+    <select id="selectBySessionId" resultMap="BaseResultMap">
+        SELECT * FROM ai_triage_record WHERE symptom_description = #{sessionId}
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT * FROM ai_triage_record WHERE patient_name = #{patientName} OR register_id = #{patientId}
+        ORDER BY triage_time DESC
+    </select>
+
+    <select id="selectPending" resultMap="BaseResultMap">
+        SELECT * FROM ai_triage_record
+        WHERE risk_level = 'urgent' OR risk_level = 'critical'
+        ORDER BY triage_time ASC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_triage_record (
+            patient_name, patient_age, patient_gender, symptom_description,
+            recommend_dept_id, recommend_dept_name, recommend_doctor_id, recommend_doctor_name,
+            risk_level, is_priority, ai_analysis, register_id, triage_time, model_id
+        ) VALUES (
+            #{patientName}, #{patientAge}, #{patientGender}, #{symptomDescription},
+            #{recommendDeptId}, #{recommendDeptName}, #{recommendDoctorId}, #{recommendDoctorName},
+            #{riskLevel}, #{isPriority}, #{aiAnalysis}, #{registerId}, #{triageTime}, #{modelId}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE ai_triage_record SET
+            symptom_description = #{symptomDescription},
+            recommend_dept_id = #{recommendDeptId},
+            recommend_dept_name = #{recommendDeptName},
+            recommend_doctor_id = #{recommendDoctorId},
+            recommend_doctor_name = #{recommendDoctorName},
+            risk_level = #{riskLevel},
+            is_priority = #{isPriority},
+            ai_analysis = #{aiAnalysis},
+            register_id = #{registerId}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

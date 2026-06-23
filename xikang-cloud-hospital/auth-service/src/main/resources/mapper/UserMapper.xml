@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.auth.mapper.UserMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.auth.entity.User">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="username" property="username" jdbcType="VARCHAR"/>
+        <result column="password" property="password" jdbcType="VARCHAR"/>
+        <result column="real_name" property="realName" jdbcType="VARCHAR"/>
+        <result column="email" property="email" jdbcType="VARCHAR"/>
+        <result column="phone" property="phone" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="INTEGER"/>
+        <result column="user_type" property="userType" jdbcType="INTEGER"/>
+        <result column="remark" property="remark" jdbcType="VARCHAR"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <select id="selectByUsername" resultMap="BaseResultMap">
+        SELECT id, username, password, real_name, email, phone, status, user_type, remark, create_time, update_time
+        FROM users
+        WHERE username = #{username}
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT id, username, password, real_name, email, phone, status, user_type, remark, create_time, update_time
+        FROM users
+        WHERE id = #{id} AND status = 1
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO users (username, password, real_name, email, phone, status, user_type, remark, create_time, update_time)
+        VALUES (#{username}, #{password}, #{realName}, #{email}, #{phone}, #{status}, #{userType}, #{remark}, NOW(), NOW())
+    </insert>
+
+    <update id="update">
+        UPDATE users
+        SET real_name = #{realName},
+            email = #{email},
+            phone = #{phone},
+            status = #{status},
+            user_type = #{userType},
+            remark = #{remark},
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        UPDATE users SET status = -1, update_time = NOW() WHERE id = #{id}
+    </delete>
+
+    <update id="updatePassword">
+        UPDATE users SET password = #{newPassword}, update_time = NOW() WHERE id = #{id}
+    </update>
+
+</mapper>

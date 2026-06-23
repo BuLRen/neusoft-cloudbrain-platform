@@ -60,6 +60,13 @@
         ORDER BY create_time DESC
     </select>
 
+    <select id="selectPendingByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE patient_id = #{patientId} AND status = 0
+        ORDER BY create_time DESC
+    </select>
+
     <select id="selectPendingByRegisterAndIds" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM expense_record

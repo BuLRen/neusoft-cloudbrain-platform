@@ -1,71 +1,346 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    处方映射器。
+
+    设计说明：
+    真实 schema 中，prescription 表是"一药一行"的明细表，由 physician-service
+    按 (register_id, drug_id, drug_usage, drug_number) + drug_state 写入。
+    pharmacy-service 的旧 mapper 假设它是一张"按挂号聚合的父表"，并引用了
+    dispensation_status / pharmacist / dispensation_time / total_amount 等
+    不存在的列。
+
+    本 mapper 改为"按挂号聚合读 + 更新 drug_state 写"：
+      - 读：JOIN register / employee(医生) / patient 取头信息，drug_state 文本
+        ('未发'/'已发'/'已退') 在 Java 侧映射成 0/1/2 的 dispensationStatus。
+      - 写：只更新 prescription.drug_state，不再写不存在的列。
+-->
 <mapper namespace="com.xikang.pharmacy.mapper.PrescriptionMapper">
 
     <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.Prescription">
         <id column="id" property="id"/>
-        <result column="register_id" property="registerId"/>
-        <result column="patient_id" property="patientId"/>
-        <result column="patient_name" property="patientName"/>
-        <result column="physician_id" property="physicianId"/>
-        <result column="physician_name" property="physicianName"/>
-        <result column="diagnosis" property="diagnosis"/>
-        <result column="total_amount" property="totalAmount"/>
+        <result column="register_id"        property="registerId"/>
+        <result column="patient_id"         property="patientId"/>
+        <result column="patient_name"       property="patientName"/>
+        <result column="physician_id"       property="physicianId"/>
+        <result column="physician_name"     property="physicianName"/>
+        <result column="diagnosis"          property="diagnosis"/>
+        <result column="total_amount"       property="totalAmount"/>
         <result column="dispensation_status" property="dispensationStatus"/>
-        <result column="dispensation_time" property="dispensationTime"/>
-        <result column="pharmacist" property="pharmacist"/>
-        <result column="remarks" property="remarks"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+        <result column="dispensation_time"  property="dispensationTime"/>
+        <result column="pharmacist"         property="pharmacist"/>
+        <result column="remarks"            property="remarks"/>
+        <result column="create_time"        property="createTime"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, register_id, patient_id, patient_name, physician_id, physician_name,
-        diagnosis, total_amount, dispensation_status, dispensation_time, pharmacist,
-        remarks, create_time, update_time
-    </sql>
-
-    <select id="selectById" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM prescription WHERE id = #{id}
-    </select>
-
+    <!--
+        按 register_id 聚合读：一条结果 = 一个挂号下的处方头。
+        字段映射：
+          - patient_id / patient_name 来自 register 表（register.real_name 即患者姓名）
+          - physician_id = register.employee_id，physician_name = employee.realname
+          - diagnosis 门诊诊断从 register.diagnosis 取（如有）；无则为 NULL
+          - total_amount = SUM(drug.price * prescription.drug_number)
+          - dispensation_status 用 drug_state 文本聚合：全部已发=1，否则若有已退=2，否则 0
+          - create_time 取该挂号下最早的处方时间
+    -->
     <select id="selectByRegisterId" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM prescription WHERE register_id = #{registerId} ORDER BY create_time DESC
+        SELECT
+            MIN(p.id)                                   AS id,
+            r.id                                        AS register_id,
+            r.patient_id                                AS patient_id,
+            r.real_name                                 AS patient_name,
+            r.employee_id                               AS physician_id,
+            e.realname                                  AS physician_name,
+            MAX(p.diagnosis)                            AS diagnosis,
+            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+                                                        AS total_amount,
+            CASE
+                WHEN COUNT(*) FILTER (WHERE p.drug_state = '未发') = 0
+                 AND COUNT(*) FILTER (WHERE p.drug_state = '已退') = 0
+                THEN 1
+                WHEN COUNT(*) FILTER (WHERE p.drug_state = '已退') &gt; 0
+                THEN 2
+                ELSE 0
+            END                                         AS dispensation_status,
+            MAX(p.dispensation_time)                    AS dispensation_time,
+            MAX(p.pharmacist)                           AS pharmacist,
+            MAX(p.remarks)                              AS remarks,
+            MIN(p.creation_time)                        AS create_time
+        FROM prescription p
+        INNER JOIN register   r ON r.id = p.register_id
+        LEFT  JOIN employee   e ON e.id = r.employee_id
+        LEFT  JOIN drug_info  d ON d.id = p.drug_id
+        WHERE p.register_id = #{registerId}
+        GROUP BY r.id, r.patient_id, r.real_name, r.employee_id, e.realname
+        ORDER BY create_time DESC
     </select>
 
+    <!--
+        按状态筛选的挂号聚合查询。
+        status 取值：0=待发药（至少一条 未发），1=已发药（全部 已发），2=已退药（全部 已退）
+        用 HAVING 过滤，避免在 Java 侧二次筛选。
+    -->
     <select id="selectByRegisterIdAndStatus" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM prescription
-        WHERE register_id = #{registerId} AND dispensation_status = #{status} ORDER BY create_time DESC
+        SELECT
+            MIN(p.id)                                   AS id,
+            r.id                                        AS register_id,
+            r.patient_id                                AS patient_id,
+            r.real_name                                 AS patient_name,
+            r.employee_id                               AS physician_id,
+            e.realname                                  AS physician_name,
+            MAX(p.diagnosis)                            AS diagnosis,
+            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+                                                        AS total_amount,
+            <choose>
+                <when test="status == 1">
+                    1
+                </when>
+                <when test="status == 2">
+                    2
+                </when>
+                <otherwise>
+                    0
+                </otherwise>
+            </choose>                                   AS dispensation_status,
+            MAX(p.dispensation_time)                    AS dispensation_time,
+            MAX(p.pharmacist)                           AS pharmacist,
+            MAX(p.remarks)                              AS remarks,
+            MIN(p.creation_time)                        AS create_time
+        FROM prescription p
+        INNER JOIN register   r ON r.id = p.register_id
+        LEFT  JOIN employee   e ON e.id = r.employee_id
+        LEFT  JOIN drug_info  d ON d.id = p.drug_id
+        WHERE p.register_id = #{registerId}
+        GROUP BY r.id, r.patient_id, r.real_name, r.employee_id, e.realname
+        HAVING
+        <choose>
+            <when test="status == 1">
+                COUNT(*) FILTER (WHERE p.drug_state &lt;&gt; '已发') = 0
+            </when>
+            <when test="status == 2">
+                COUNT(*) FILTER (WHERE p.drug_state &lt;&gt; '已退') = 0
+            </when>
+            <otherwise>
+                COUNT(*) FILTER (WHERE p.drug_state = '未发') &gt; 0
+            </otherwise>
+        </choose>
+        ORDER BY create_time DESC
     </select>
 
-    <select id="selectByPatientId" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM prescription WHERE patient_id = #{patientId} ORDER BY create_time DESC
+    <!--
+        历史处方组合查询：patientId / status / startDate~endDate 任一可选。
+        status 含义：0=待发药，1=已发药，2=已退药，null=全部。
+        用 HAVING 做状态过滤，与 selectByRegisterIdAndStatus 一致。
+    -->
+    <select id="selectByConditions" resultMap="BaseResultMap">
+        SELECT
+            MIN(p.id)                                   AS id,
+            r.id                                        AS register_id,
+            r.patient_id                                AS patient_id,
+            r.real_name                                 AS patient_name,
+            r.employee_id                               AS physician_id,
+            e.realname                                  AS physician_name,
+            MAX(p.diagnosis)                            AS diagnosis,
+            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+                                                        AS total_amount,
+            CASE
+                WHEN COUNT(*) FILTER (WHERE p.drug_state = '未发') = 0
+                 AND COUNT(*) FILTER (WHERE p.drug_state = '已退') = 0
+                THEN 1
+                WHEN COUNT(*) FILTER (WHERE p.drug_state = '已退') &gt; 0
+                THEN 2
+                ELSE 0
+            END                                         AS dispensation_status,
+            MAX(p.dispensation_time)                    AS dispensation_time,
+            MAX(p.pharmacist)                           AS pharmacist,
+            MAX(p.remarks)                              AS remarks,
+            MIN(p.creation_time)                        AS create_time
+        FROM prescription p
+        INNER JOIN register   r ON r.id = p.register_id
+        LEFT  JOIN employee   e ON e.id = r.employee_id
+        LEFT  JOIN drug_info  d ON d.id = p.drug_id
+        <where>
+            <if test="patientId != null">
+                r.patient_id = #{patientId}
+            </if>
+            <if test="startDate != null">
+                AND p.creation_time &gt;= #{startDate}
+            </if>
+            <if test="endDate != null">
+                AND p.creation_time &lt;= #{endDate}
+            </if>
+        </where>
+        GROUP BY r.id, r.patient_id, r.real_name, r.employee_id, e.realname
+        <if test="status != null">
+            <choose>
+                <when test="status == 1">
+                    HAVING COUNT(*) FILTER (WHERE p.drug_state &lt;&gt; '已发') = 0
+                </when>
+                <when test="status == 2">
+                    HAVING COUNT(*) FILTER (WHERE p.drug_state &lt;&gt; '已退') = 0
+                </when>
+                <otherwise>
+                    HAVING COUNT(*) FILTER (WHERE p.drug_state = '未发') &gt; 0
+                </otherwise>
+            </choose>
+        </if>
+        ORDER BY create_time DESC
     </select>
 
+    <!--
+        全局待发药列表：任意挂号下只要还有 drug_state='未发' 的处方行，
+        即作为一个"待发药处方头"返回。registrationId 可选过滤。
+    -->
     <select id="selectPending" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM prescription WHERE dispensation_status = 0 ORDER BY create_time ASC
+        SELECT
+            MIN(p.id)                                   AS id,
+            r.id                                        AS register_id,
+            r.patient_id                                AS patient_id,
+            r.real_name                                 AS patient_name,
+            r.employee_id                               AS physician_id,
+            e.realname                                  AS physician_name,
+            MAX(p.diagnosis)                            AS diagnosis,
+            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+                                                        AS total_amount,
+            0                                           AS dispensation_status,
+            MAX(p.dispensation_time)                    AS dispensation_time,
+            MAX(p.pharmacist)                           AS pharmacist,
+            MAX(p.remarks)                              AS remarks,
+            MIN(p.creation_time)                        AS create_time
+        FROM prescription p
+        INNER JOIN register   r ON r.id = p.register_id
+        LEFT  JOIN employee   e ON e.id = r.employee_id
+        LEFT  JOIN drug_info  d ON d.id = p.drug_id
+        <where>
+            <if test="registrationId != null">
+                p.register_id = #{registrationId}
+            </if>
+        </where>
+        GROUP BY r.id, r.patient_id, r.real_name, r.employee_id, e.realname
+        HAVING COUNT(*) FILTER (WHERE p.drug_state = '未发') &gt; 0
+        ORDER BY create_time ASC
     </select>
 
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO prescription (
-            register_id, patient_id, patient_name, physician_id, physician_name,
-            diagnosis, total_amount, dispensation_status, remarks
-        ) VALUES (
-            #{registerId}, #{patientId}, #{patientName}, #{physicianId}, #{physicianName},
-            #{diagnosis}, #{totalAmount}, #{dispensationStatus}, #{remarks}
+    <!--
+        按处方行 id 查所属挂号聚合的处方头。
+        注意：prescription.id 在本 mapper 里被当作"挂号级 id"使用，但真实主键是
+        prescription 行级 id。这里把传入的 id 当作"该挂号下任意一行"处理，
+        先找出 register_id，再走聚合查询。
+    -->
+    <select id="selectById" resultMap="BaseResultMap">
+        WITH target AS (
+            SELECT register_id FROM prescription WHERE id = #{id} LIMIT 1
         )
-    </insert>
+        SELECT
+            MIN(p.id)                                   AS id,
+            r.id                                        AS register_id,
+            r.patient_id                                AS patient_id,
+            r.real_name                                 AS patient_name,
+            r.employee_id                               AS physician_id,
+            e.realname                                  AS physician_name,
+            MAX(p.diagnosis)                            AS diagnosis,
+            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+                                                        AS total_amount,
+            CASE
+                WHEN COUNT(*) FILTER (WHERE p.drug_state = '未发') = 0
+                 AND COUNT(*) FILTER (WHERE p.drug_state = '已退') = 0
+                THEN 1
+                WHEN COUNT(*) FILTER (WHERE p.drug_state = '已退') &gt; 0
+                THEN 2
+                ELSE 0
+            END                                         AS dispensation_status,
+            MAX(p.dispensation_time)                    AS dispensation_time,
+            MAX(p.pharmacist)                           AS pharmacist,
+            MAX(p.remarks)                              AS remarks,
+            MIN(p.creation_time)                        AS create_time
+        FROM prescription p
+        INNER JOIN register   r ON r.id = p.register_id
+        LEFT  JOIN employee   e ON e.id = r.employee_id
+        LEFT  JOIN drug_info  d ON d.id = p.drug_id
+        WHERE p.register_id = (SELECT register_id FROM target)
+        GROUP BY r.id, r.patient_id, r.real_name, r.employee_id, e.realname
+    </select>
 
-    <update id="update">
-        UPDATE prescription SET
-            diagnosis = #{diagnosis}, total_amount = #{totalAmount},
-            dispensation_status = #{dispensationStatus}, dispensation_time = #{dispensationTime},
-            pharmacist = #{pharmacist}, remarks = #{remarks}
+    <!--
+        患者维度的历史处方（按 patient_id 反查 register）。
+        register.patient_id 是 BIGINT，可直接匹配。
+    -->
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT
+            MIN(p.id)                                   AS id,
+            r.id                                        AS register_id,
+            r.patient_id                                AS patient_id,
+            r.real_name                                 AS patient_name,
+            r.employee_id                               AS physician_id,
+            e.realname                                  AS physician_name,
+            MAX(p.diagnosis)                            AS diagnosis,
+            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+                                                        AS total_amount,
+            CASE
+                WHEN COUNT(*) FILTER (WHERE p.drug_state = '未发') = 0
+                 AND COUNT(*) FILTER (WHERE p.drug_state = '已退') = 0
+                THEN 1
+                WHEN COUNT(*) FILTER (WHERE p.drug_state = '已退') &gt; 0
+                THEN 2
+                ELSE 0
+            END                                         AS dispensation_status,
+            MAX(p.dispensation_time)                    AS dispensation_time,
+            MAX(p.pharmacist)                           AS pharmacist,
+            MAX(p.remarks)                              AS remarks,
+            MIN(p.creation_time)                        AS create_time
+        FROM prescription p
+        INNER JOIN register   r ON r.id = p.register_id
+        LEFT  JOIN employee   e ON e.id = r.employee_id
+        LEFT  JOIN drug_info  d ON d.id = p.drug_id
+        WHERE r.patient_id = #{patientId}
+        GROUP BY r.id, r.patient_id, r.real_name, r.employee_id, e.realname
+        ORDER BY create_time DESC
+    </select>
+
+    <!--
+        发药 / 退药：更新 drug_state，同时写入 dispensation_time / pharmacist。
+        注意：真实 prescription 表的 drug_state 有 CHECK 约束 ('未发','已发','已退')，
+        因此 state 必须传中文文本。dispensation_time / pharmacist 两列通过
+        migrate_008_pharmacy_schema.sql 额外补齐（见下文 ALTER TABLE 语句）。
+    -->
+    <update id="updateDispensationStatus">
+        UPDATE prescription
+        SET drug_state = #{stateText}
         WHERE id = #{id}
     </update>
 
-    <update id="updateDispensationStatus">
-        UPDATE prescription SET dispensation_status = #{status} WHERE id = #{id}
+    <update id="updateStateByRegister">
+        UPDATE prescription
+        SET drug_state        = #{newStateText},
+            dispensation_time = #{dispensationTime},
+            pharmacist        = #{pharmacist}
+        WHERE register_id = #{registerId}
+          AND drug_state  = #{oldStateText}
+    </update>
+
+    <!--
+        兼容旧签名：status=1 → '已发'，status=2 → '已退'。
+        不传 oldStateText，按目标状态一次性改全表该挂号下的相关行：
+          status=1：把所有 '未发' 改 '已发'
+          status=2：把所有 '已发' 改 '已退'
+    -->
+    <update id="updateDispensationInfo">
+        UPDATE prescription
+        SET drug_state        =
+            <choose>
+                <when test="status == 1">'已发'</when>
+                <when test="status == 2">'已退'</when>
+                <otherwise>'未发'</otherwise>
+            </choose>,
+            dispensation_time = #{dispensationTime},
+            pharmacist        = #{pharmacist}
+        WHERE register_id = #{registerId}
+          AND drug_state =
+            <choose>
+                <when test="status == 1">'未发'</when>
+                <when test="status == 2">'已发'</when>
+                <otherwise>'__never_match__'</otherwise>
+            </choose>
     </update>
 
 </mapper>

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.StatsMapper">
+
+    <!--
+        科室工作量聚合
+        - 子查询 reg：按科室聚合有效挂号量（visit_state NOT IN (4,5)）
+        - 子查询 visit：medical_record JOIN register 聚合接诊量（每个挂号最多 1 条病历）
+        - 子查询 exam：check / inspection / disposal 三表 UNION ALL 后 JOIN register 聚合
+        - 子查询 rx：prescription JOIN register 聚合处方量
+        以 department 为主表 LEFT JOIN，保证没有业务的科室也显示 0
+    -->
+    <select id="departmentWorkload" resultType="java.util.LinkedHashMap">
+        SELECT
+            d.id              AS "departmentId",
+            d.dept_name       AS "departmentName",
+            COALESCE(reg.cnt, 0)         AS "registrations",
+            COALESCE(vis.cnt, 0)         AS "visits",
+            COALESCE(exam.cnt, 0)        AS "inspections",
+            COALESCE(rx.cnt, 0)          AS "prescriptions"
+        FROM department d
+        LEFT JOIN (
+            SELECT deptment_id AS dept_id, COUNT(*) AS cnt
+            FROM register
+            WHERE visit_state NOT IN (4, 5)
+            <if test="startDate != null">AND visit_date &gt;= #{startDate}</if>
+            <if test="endDate != null">AND visit_date &lt; #{endDate}</if>
+            GROUP BY deptment_id
+        ) reg ON reg.dept_id = d.id
+        LEFT JOIN (
+            SELECT r.deptment_id AS dept_id, COUNT(*) AS cnt
+            FROM medical_record mr
+            JOIN register r ON r.id = mr.register_id
+            WHERE r.visit_state NOT IN (4, 5)
+            <if test="startDate != null">AND r.visit_date &gt;= #{startDate}</if>
+            <if test="endDate != null">AND r.visit_date &lt; #{endDate}</if>
+            GROUP BY r.deptment_id
+        ) vis ON vis.dept_id = d.id
+        LEFT JOIN (
+            SELECT r.deptment_id AS dept_id, COUNT(*) AS cnt
+            FROM (
+                SELECT register_id FROM check_request
+                UNION ALL
+                SELECT register_id FROM inspection_request
+                UNION ALL
+                SELECT register_id FROM disposal_request
+            ) e
+            JOIN register r ON r.id = e.register_id
+            WHERE r.visit_state NOT IN (4, 5)
+            <if test="startDate != null">AND r.visit_date &gt;= #{startDate}</if>
+            <if test="endDate != null">AND r.visit_date &lt; #{endDate}</if>
+            GROUP BY r.deptment_id
+        ) exam ON exam.dept_id = d.id
+        LEFT JOIN (
+            SELECT r.deptment_id AS dept_id, COUNT(*) AS cnt
+            FROM prescription p
+            JOIN register r ON r.id = p.register_id
+            WHERE r.visit_state NOT IN (4, 5)
+            <if test="startDate != null">AND r.visit_date &gt;= #{startDate}</if>
+            <if test="endDate != null">AND r.visit_date &lt; #{endDate}</if>
+            GROUP BY r.deptment_id
+        ) rx ON rx.dept_id = d.id
+        WHERE d.delmark = 0
+        ORDER BY "registrations" DESC, d.id
+    </select>
+
+    <!--
+        每日趋势
+        - 使用 generate_series 保证没有挂号的日期也出现 0
+        - reg：当日有效挂号量
+        - charge：当日已缴费 expense_record 金额合计
+        - triage：截止当日 ai_triage_record 未关联 register（仍待确认）的数量
+    -->
+    <select id="dailyTrend" resultType="java.util.LinkedHashMap">
+        WITH days AS (
+            SELECT generate_series(
+                #{startDate}::date,
+                #{endDate}::date,
+                '1 day'::interval
+            )::date AS d
+        ),
+        reg AS (
+            SELECT visit_date::date AS d, COUNT(*) AS cnt
+            FROM register
+            WHERE visit_state NOT IN (4, 5)
+              AND visit_date::date BETWEEN #{startDate} AND #{endDate}
+            GROUP BY visit_date::date
+        ),
+        charge AS (
+            SELECT pay_time::date AS d, COALESCE(SUM(total_amount), 0) AS amt
+            FROM expense_record
+            WHERE status = 1
+              AND pay_time::date BETWEEN #{startDate} AND #{endDate}
+            GROUP BY pay_time::date
+        )
+        SELECT
+            TO_CHAR(days.d, 'YYYY-MM-DD') AS "label",
+            days.d                         AS "date",
+            COALESCE(reg.cnt, 0)           AS "registrations",
+            COALESCE(charge.amt, 0)        AS "charges",
+            0                              AS "triagePending"
+        FROM days
+        LEFT JOIN reg ON reg.d = days.d
+        LEFT JOIN charge ON charge.d = days.d
+        ORDER BY days.d
+    </select>
+
+    <!--
+        KPI 汇总：医院基础资源类指标（不依赖业务流水，数字稳定）
+        - departments:            在册科室数
+        - doctors:                在册临床医生数
+        - drugs:                  启用药品数
+        - aiTriageConsultations:  AI 导诊历史咨询数
+        注：#{today} 参数保留兼容签名，当前 SQL 不使用
+    -->
+    <select id="kpiSummary" resultType="java.util.LinkedHashMap">
+        SELECT
+            (SELECT COUNT(*) FROM department WHERE delmark = 0) AS "departments",
+            (SELECT COUNT(*) FROM employee
+             WHERE delmark = 0 AND deptment_id BETWEEN 1 AND 20) AS "doctors",
+            (SELECT COUNT(*) FROM drug_info WHERE status = 1) AS "drugs",
+            (SELECT COUNT(*) FROM ai_triage_record) AS "aiTriageConsultations"
+    </select>
+
+</mapper>

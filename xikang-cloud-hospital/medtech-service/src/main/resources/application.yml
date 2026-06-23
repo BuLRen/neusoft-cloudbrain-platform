@@ -19,7 +19,7 @@ mybatis:
   type-aliases-package: com.xikang.medtech.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 关闭 SQL 打印，调试时取消注释
 
 management:
   endpoints:
@@ -32,4 +32,24 @@ management:
 
 logging:
   level:
+
     com.xikang.medtech: DEBUG
+
+xikang:
+  physician:
+    base-url: ${PHYSICIAN_SERVICE_URL:http://localhost:8092}
+    w3-auto-trigger-enabled: ${W3_AUTO_TRIGGER_ENABLED:true}
+  ai:
+    dify:
+      enabled: ${DIFY_ENABLED:true}
+      base-url: ${DIFY_BASE_URL:http://localhost}
+      api-key-check-simulate: ${DIFY_API_KEY_CHECK_SIMULATE:${DIFY_API_KEY_SIMULATE:app-YpflvlBmahrZK9QycNUnq62m}}
+      workflow-check-simulate: ${DIFY_WORKFLOW_CHECK_SIMULATE:true}
+      connect-timeout-ms: ${DIFY_CONNECT_TIMEOUT_MS:30000}
+      read-timeout-ms: ${DIFY_READ_TIMEOUT_MS:300000}
+      ct-inference-url: ${CT_INFERENCE_URL:}
+      check-simulate-output-keys:
+        values-root: ${DIFY_CHECK_SIM_OUTPUT_VALUES:simulatedValues}
+        result-text: ${DIFY_CHECK_SIM_OUTPUT_TEXT:resultText}
+        structured-output: ${DIFY_CHECK_SIM_OUTPUT_STRUCTURED:structured_output}
+

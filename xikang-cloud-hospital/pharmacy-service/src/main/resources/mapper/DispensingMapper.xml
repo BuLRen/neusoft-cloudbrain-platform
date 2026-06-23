@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.pharmacy.mapper.DispensingMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.Dispensing">
+        <id column="id" property="id"/>
+        <result column="prescription_id" property="prescriptionId"/>
+        <result column="register_id" property="registerId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="dispensing_no" property="dispensingNo"/>
+        <result column="amount" property="amount"/>
+        <result column="status" property="status"/>
+        <result column="pharmacist" property="pharmacist"/>
+        <result column="dispensing_time" property="dispensingTime"/>
+        <result column="complete_time" property="completeTime"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, prescription_id, register_id, patient_id, dispensing_no, amount, status, pharmacist,
+        dispensing_time, complete_time, create_time, update_time
+    </sql>
+
+    <!-- P2-4.6：直接按 register_id 查询（dispensing 表自身冗余了 register_id） -->
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM dispensing
+        WHERE register_id = #{registerId}
+        ORDER BY dispensing_time DESC
+    </select>
+
+    <select id="selectByPrescriptionId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM dispensing
+        WHERE prescription_id = #{prescriptionId}
+        ORDER BY dispensing_time DESC
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM dispensing
+        WHERE patient_id = #{patientId}
+        ORDER BY dispensing_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO dispensing (
+            prescription_id, register_id, patient_id, dispensing_no, amount, status, pharmacist, dispensing_time
+        ) VALUES (
+            #{prescriptionId}, #{registerId}, #{patientId}, #{dispensingNo}, #{amount}, #{status},
+            #{pharmacist}, #{dispensingTime}
+        )
+    </insert>
+
+</mapper>

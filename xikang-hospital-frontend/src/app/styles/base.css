@@ -17,7 +17,6 @@
 
 @layer base {
   html {
-    min-width: 1280px;
     background: var(--color-bg);
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;

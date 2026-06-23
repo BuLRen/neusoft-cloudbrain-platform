@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.ai.consult.mapper.AiPreVisitRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.ai.consult.entity.AiPreVisitRecord">
+        <id column="id" property="id"/>
+        <result column="register_id" property="registerId"/>
+        <result column="round_number" property="roundNumber"/>
+        <result column="ai_question" property="aiQuestion"/>
+        <result column="patient_answer" property="patientAnswer"/>
+        <result column="consultation_state" property="consultationState"/>
+        <result column="chief_complaint" property="chiefComplaint"/>
+        <result column="symptom_duration" property="symptomDuration"/>
+        <result column="history_summary" property="historySummary"/>
+        <result column="allergy_summary" property="allergySummary"/>
+        <result column="medication_summary" property="medicationSummary"/>
+        <result column="ai_summary" property="aiSummary"/>
+        <result column="suggested_exam" property="suggestedExam"/>
+        <result column="model_id" property="modelId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="session_uuid" property="sessionUuid"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="completion_time" property="completionTime"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, register_id, round_number, ai_question, patient_answer, consultation_state,
+        chief_complaint, symptom_duration, history_summary, allergy_summary, medication_summary,
+        ai_summary, suggested_exam, model_id, patient_id, session_uuid,
+        creation_time, completion_time, updated_at
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM ai_consultation_record
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectBySessionUuid" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM ai_consultation_record
+        WHERE session_uuid = #{sessionUuid}
+        ORDER BY round_number ASC
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM ai_consultation_record
+        WHERE register_id = #{registerId}
+        ORDER BY round_number ASC
+    </select>
+
+    <select id="selectByPatientIdAndState" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM ai_consultation_record
+        WHERE patient_id = #{patientId}
+          AND consultation_state = #{state}
+        ORDER BY updated_at DESC
+    </select>
+
+    <select id="selectMaxRoundNumber" resultType="java.lang.Integer">
+        SELECT COALESCE(MAX(round_number), 0)
+        FROM ai_consultation_record
+        WHERE session_uuid = #{sessionUuid}
+    </select>
+
+    <insert id="insert" parameterType="com.xikang.ai.consult.entity.AiPreVisitRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_consultation_record (
+            register_id, round_number, ai_question, patient_answer, consultation_state,
+            chief_complaint, symptom_duration, history_summary, allergy_summary, medication_summary,
+            ai_summary, suggested_exam, model_id, patient_id, session_uuid,
+            creation_time, completion_time, updated_at
+        ) VALUES (
+            #{registerId}, #{roundNumber}, #{aiQuestion}, #{patientAnswer}, #{consultationState},
+            #{chiefComplaint}, #{symptomDuration}, #{historySummary}, #{allergySummary}, #{medicationSummary},
+            #{aiSummary}, #{suggestedExam}, #{modelId}, #{patientId}, #{sessionUuid},
+            #{creationTime}, #{completionTime}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.xikang.ai.consult.entity.AiPreVisitRecord">
+        UPDATE ai_consultation_record
+        <set>
+            <if test="aiQuestion != null">ai_question = #{aiQuestion},</if>
+            <if test="patientAnswer != null">patient_answer = #{patientAnswer},</if>
+            <if test="consultationState != null">consultation_state = #{consultationState},</if>
+            <if test="chiefComplaint != null">chief_complaint = #{chiefComplaint},</if>
+            <if test="symptomDuration != null">symptom_duration = #{symptomDuration},</if>
+            <if test="historySummary != null">history_summary = #{historySummary},</if>
+            <if test="allergySummary != null">allergy_summary = #{allergySummary},</if>
+            <if test="medicationSummary != null">medication_summary = #{medicationSummary},</if>
+            <if test="aiSummary != null">ai_summary = #{aiSummary},</if>
+            <if test="suggestedExam != null">suggested_exam = #{suggestedExam},</if>
+            <if test="modelId != null">model_id = #{modelId},</if>
+            <if test="completionTime != null">completion_time = #{completionTime},</if>
+            updated_at = CURRENT_TIMESTAMP
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateSummaryBySessionUuid" parameterType="com.xikang.ai.consult.entity.AiPreVisitRecord">
+        UPDATE ai_consultation_record
+        <set>
+            <if test="chiefComplaint != null">chief_complaint = #{chiefComplaint},</if>
+            <if test="symptomDuration != null">symptom_duration = #{symptomDuration},</if>
+            <if test="historySummary != null">history_summary = #{historySummary},</if>
+            <if test="allergySummary != null">allergy_summary = #{allergySummary},</if>
+            <if test="medicationSummary != null">medication_summary = #{medicationSummary},</if>
+            <if test="aiSummary != null">ai_summary = #{aiSummary},</if>
+            <if test="suggestedExam != null">suggested_exam = #{suggestedExam},</if>
+            <if test="consultationState != null">consultation_state = #{consultationState},</if>
+            <if test="completionTime != null">completion_time = #{completionTime},</if>
+            updated_at = CURRENT_TIMESTAMP
+        </set>
+        WHERE session_uuid = #{sessionUuid}
+    </update>
+
+</mapper>
