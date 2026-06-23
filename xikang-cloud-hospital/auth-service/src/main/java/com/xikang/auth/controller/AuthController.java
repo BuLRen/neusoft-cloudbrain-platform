@@ -12,6 +12,7 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -75,15 +76,17 @@ public class AuthController {
         headers.add(HttpHeaders.SET_COOKIE, accessCookie.toString());
         headers.add(HttpHeaders.SET_COOKIE, refreshCookie.toString());
 
-        Map<String, Object> body = Map.of(
-                "userId", tokens.get("userId"),
-                "username", username,  // 新增：返回登录用户名
-                "role", tokens.get("role"),
-                "realName", tokens.get("realName"),
-                "token", accessToken,
-                "refreshToken", refreshToken,
-                "patients", patients
-        );
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", tokens.get("userId"));
+        body.put("username", username);
+        body.put("role", tokens.get("role"));
+        body.put("realName", tokens.get("realName"));
+        body.put("token", accessToken);
+        body.put("refreshToken", refreshToken);
+        body.put("patients", patients);
+        if (tokens.containsKey("employeeId")) {
+            body.put("employeeId", Long.parseLong(tokens.get("employeeId")));
+        }
         return ResponseEntity.ok().headers(headers).body(Result.success("登录成功", body));
     }
 

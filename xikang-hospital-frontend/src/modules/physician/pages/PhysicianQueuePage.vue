@@ -6,11 +6,13 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { physicianApi, type PhysicianPatient } from '@/shared/api/modules/physician'
+import { useAuthStore } from '@/app/stores/auth'
 import { useEncounterStore } from '@/app/stores/encounter'
 import { physicianRoute, resumePathForVisitState, visitStateLabel } from '../constants/visitState'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const encounterStore = useEncounterStore()
 
 const showNeedEncounterHint = ref(false)
@@ -81,7 +83,19 @@ onMounted(() => {
       @close="dismissNeedEncounterHint"
     />
 
-    <PageHeader title="待诊接诊" description="选择待诊、接诊中或检查/检验进行中的患者，进入后续诊疗流程。" eyebrow="门诊诊疗">
+    <PageHeader
+      :title="authStore.role === 'physician'
+        ? `${authStore.realName || '医生'} · 待诊接诊`
+        : authStore.role === 'admin'
+          ? '管理员 · 全部患者'
+          : '待诊接诊'"
+      :description="authStore.role === 'physician'
+        ? `当前账号待诊 ${stats.totalWaiting} 人，已看诊 ${stats.totalVisited} 人。`
+        : authStore.role === 'admin'
+          ? `管理员可查看全部待诊患者（${stats.totalWaiting} 人待诊，${stats.totalVisited} 人已看诊）。`
+          : '选择待诊、接诊中或检查/检验进行中的患者，进入后续诊疗流程。'"
+      eyebrow="门诊诊疗"
+    >
       <template #actions>
         <ElButton type="primary" @click="loadPatients">刷新患者</ElButton>
       </template>

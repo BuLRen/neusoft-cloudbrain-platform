@@ -36,6 +36,9 @@
         ) ac ON TRUE
         WHERE (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
            OR r.visit_state IN (2, 5, 6)
+        <if test="employeeId != null">
+            AND r.employee_id = #{employeeId}
+        </if>
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
@@ -48,7 +51,9 @@
         FROM register r
         WHERE (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
            OR r.visit_state IN (2, 5, 6)
-
+        <if test="employeeId != null">
+            AND r.employee_id = #{employeeId}
+        </if>
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
@@ -59,6 +64,11 @@
             COALESCE(SUM(CASE WHEN visit_state = 3 THEN 1 ELSE 0 END), 0) AS "totalVisited",
             COALESCE(SUM(CASE WHEN visit_state IN (1, 2, 5, 6) THEN 1 ELSE 0 END), 0) AS "totalWaiting"
         FROM register
+        <where>
+            <if test="employeeId != null">
+                employee_id = #{employeeId}
+            </if>
+        </where>
     </select>
 
     <select id="selectPatientByRegisterId" resultType="map">
@@ -415,9 +425,18 @@
             gender AS "gender",
             age AS "age",
             home_address AS "homeAddress",
-            visit_state AS "visitState"
+            visit_state AS "visitState",
+            employee_id AS "employeeId"
         FROM register
         WHERE id = #{registerId}
+    </select>
+
+    <select id="selectRegisterEmployeeId" resultType="long">
+        SELECT employee_id FROM register WHERE id = #{registerId}
+    </select>
+
+    <select id="selectRegisterIdByMedicalRecordId" resultType="long">
+        SELECT register_id FROM medical_record WHERE id = #{medicalRecordId}
     </select>
 
     <select id="selectLatestAiConsultation" resultType="map">

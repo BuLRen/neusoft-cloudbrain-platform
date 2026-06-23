@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.ClinicalRecordMapper">
+
+    <select id="selectRegisterHeader" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.patient_id AS "patientId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.age AS "age",
+            r.visit_date AS "visitDate",
+            r.visit_state AS "visitState",
+            r.clinical_archived_at AS "clinicalArchivedAt",
+            r.clinical_archived_by AS "clinicalArchivedBy",
+            d.dept_name AS "departmentName",
+            e.realname AS "physicianName"
+        FROM register r
+        LEFT JOIN department d ON d.id = r.deptment_id
+        LEFT JOIN employee e ON e.id = r.employee_id
+        WHERE r.id = #{registerId}
+    </select>
+
+    <select id="selectVisitsByPatient" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.visit_date AS "visitDate",
+            r.visit_state AS "visitState",
+            r.clinical_archived_at AS "clinicalArchivedAt",
+            d.dept_name AS "departmentName",
+            e.realname AS "physicianName",
+            mr.diagnosis AS "diagnosis",
+            mr.preliminary_diagnosis AS "preliminaryDiagnosis"
+        FROM register r
+        LEFT JOIN department d ON d.id = r.deptment_id
+        LEFT JOIN employee e ON e.id = r.employee_id
+        LEFT JOIN medical_record mr ON mr.register_id = r.id
+        WHERE r.patient_id = #{patientId}
+          AND r.visit_state != 4
+        ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
+    </select>
+
+    <select id="selectLatestPreConsultation" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            chief_complaint AS "chiefComplaint",
+            symptom_duration AS "symptomDuration",
+            history_summary AS "historySummary",
+            allergy_summary AS "allergySummary",
+            medication_summary AS "medicationSummary",
+            ai_summary AS "aiSummary",
+            suggested_exam AS "suggestedExam",
+            completion_time AS "completionTime",
+            creation_time AS "creationTime"
+        FROM ai_consultation_record
+        WHERE register_id = #{registerId}
+          AND consultation_state = 'completed'
+        ORDER BY completion_time DESC NULLS LAST, creation_time DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectAiTriageByRegister" resultType="map">
+        SELECT
+            id AS "id",
+            symptom_description AS "symptomDescription",
+            recommend_dept_name AS "recommendDeptName",
+            recommend_doctor_name AS "recommendDoctorName",
+            risk_level AS "riskLevel",
+            ai_analysis AS "aiAnalysis",
+            triage_time AS "triageTime"
+        FROM ai_triage_record
+        WHERE register_id = #{registerId}
+        ORDER BY triage_time DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectMedicalRecord" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            readme AS "readme",
+            present AS "present",
+            present_treat AS "presentTreat",
+            history AS "history",
+            allergy AS "allergy",
+            physique AS "physique",
+            proposal AS "proposal",
+            preliminary_diagnosis AS "preliminaryDiagnosis",
+            careful AS "careful",
+            diagnosis AS "diagnosis",
+            cure AS "cure"
+        FROM medical_record
+        WHERE register_id = #{registerId}
+    </select>
+
+    <select id="selectDiseasesByMedicalRecordId" resultType="map">
+        SELECT
+            d.id AS "id",
+            d.disease_code AS "diseaseCode",
+            d.disease_name AS "diseaseName",
+            d.diseaseicd AS "diseaseIcd"
+        FROM medical_record_disease mrd
+        INNER JOIN disease d ON d.id = mrd.disease_id
+        WHERE mrd.medical_record_id = #{medicalRecordId}
+        ORDER BY d.disease_name
+    </select>
+
+    <select id="selectCheckRequests" resultType="map">
+        SELECT
+            cr.id AS "id",
+            mt.tech_name AS "techName",
+            cr.check_info AS "checkInfo",
+            cr.check_position AS "checkPosition",
+            cr.check_remark AS "checkRemark",
+            cr.check_result AS "checkResult",
+            cr.check_state AS "checkState",
+            cr.check_time AS "checkTime",
+            cr.creation_time AS "creationTime"
+        FROM check_request cr
+        INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+        WHERE cr.register_id = #{registerId}
+        ORDER BY cr.creation_time ASC, cr.id ASC
+    </select>
+
+    <select id="selectInspectionRequests" resultType="map">
+        SELECT
+            ir.id AS "id",
+            mt.tech_name AS "techName",
+            ir.inspection_info AS "inspectionInfo",
+            ir.inspection_position AS "inspectionPosition",
+            ir.inspection_remark AS "inspectionRemark",
+            ir.inspection_result AS "inspectionResult",
+            ir.inspection_state AS "inspectionState",
+            ir.inspection_time AS "inspectionTime",
+            ir.creation_time AS "creationTime"
+        FROM inspection_request ir
+        INNER JOIN medical_technology mt ON mt.id = ir.medical_technology_id
+        WHERE ir.register_id = #{registerId}
+        ORDER BY ir.creation_time ASC, ir.id ASC
+    </select>
+
+    <select id="selectDisposalRequests" resultType="map">
+        SELECT
+            dr.id AS "id",
+            mt.tech_name AS "techName",
+            dr.disposal_info AS "disposalInfo",
+            dr.disposal_position AS "disposalPosition",
+            dr.disposal_remark AS "disposalRemark",
+            dr.disposal_result AS "disposalResult",
+            dr.disposal_state AS "disposalState",
+            dr.disposal_time AS "disposalTime",
+            dr.creation_time AS "creationTime"
+        FROM disposal_request dr
+        INNER JOIN medical_technology mt ON mt.id = dr.medical_technology_id
+        WHERE dr.register_id = #{registerId}
+        ORDER BY dr.creation_time ASC, dr.id ASC
+    </select>
+
+    <select id="selectPrescriptions" resultType="map">
+        SELECT
+            p.id AS "id",
+            d.drug_name AS "drugName",
+            d.drug_format AS "drugFormat",
+            d.drug_unit AS "drugUnit",
+            p.drug_usage AS "drugUsage",
+            p.drug_number AS "drugNumber",
+            p.drug_state AS "drugState",
+            p.creation_time AS "creationTime"
+        FROM prescription p
+        INNER JOIN drug_info d ON d.id = p.drug_id
+        WHERE p.register_id = #{registerId}
+        ORDER BY p.creation_time ASC, p.id ASC
+    </select>
+
+    <select id="countUserPatientAccess" resultType="int">
+        SELECT COUNT(*)
+        FROM user_patient_managed
+        WHERE user_id = #{userId}
+          AND patient_id = #{patientId}
+    </select>
+
+    <select id="selectPatientClinicalProfile" resultType="map">
+        SELECT
+            patient_id AS "patientId",
+            allergy_summary AS "allergySummary",
+            chronic_conditions AS "chronicConditions",
+            past_diagnosis_summary AS "pastDiagnosisSummary",
+            last_visit_at AS "lastVisitAt",
+            updated_at AS "updatedAt"
+        FROM patient_clinical_profile
+        WHERE patient_id = #{patientId}
+    </select>
+
+    <select id="selectPatientBasic" resultType="map">
+        SELECT
+            id AS "patientId",
+            real_name AS "realName",
+            allergy_history AS "allergyHistory"
+        FROM patient
+        WHERE id = #{patientId}
+    </select>
+
+    <insert id="upsertPatientClinicalProfile">
+        INSERT INTO patient_clinical_profile (
+            patient_id, allergy_summary, chronic_conditions, past_diagnosis_summary, last_visit_at, updated_at
+        ) VALUES (
+            #{patientId}, #{allergySummary}, #{chronicConditions}, #{pastDiagnosisSummary}, #{lastVisitAt}, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (patient_id) DO UPDATE SET
+            allergy_summary = COALESCE(EXCLUDED.allergy_summary, patient_clinical_profile.allergy_summary),
+            chronic_conditions = COALESCE(EXCLUDED.chronic_conditions, patient_clinical_profile.chronic_conditions),
+            past_diagnosis_summary = COALESCE(EXCLUDED.past_diagnosis_summary, patient_clinical_profile.past_diagnosis_summary),
+            last_visit_at = COALESCE(EXCLUDED.last_visit_at, patient_clinical_profile.last_visit_at),
+            updated_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <update id="archiveRegister">
+        UPDATE register
+        SET clinical_archived_at = CURRENT_TIMESTAMP,
+            clinical_archived_by = #{employeeId}
+        WHERE id = #{registerId}
+          AND clinical_archived_at IS NULL
+    </update>
+
+    <select id="selectLatestCaseNumberByPatient" resultType="string">
+        SELECT case_number
+        FROM register
+        WHERE patient_id = #{patientId}
+        ORDER BY id ASC
+        LIMIT 1
+    </select>
+</mapper>

@@ -19,6 +19,7 @@ export interface PatientInfo {
 
 export const useAuthStore = defineStore('auth', () => {
   const userId = ref('')
+  const employeeId = ref<number | null>(null)
   const username = ref('')  // 登录用户名
   const role = ref<UserRole>('admin')
   const realName = ref('')
@@ -59,9 +60,10 @@ export const useAuthStore = defineStore('auth', () => {
 
       const data = await authApi.get<{
         userId: string
-        username: string  // 新增
+        username: string
         role: UserRole
         realName: string
+        employeeId?: number
         patients?: PatientInfo[]
       }>('/auth/me', undefined, { skipErrorMessage: true })
       if (data) {
@@ -69,6 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
         username.value = data.username || ''
         role.value = data.role || 'admin'
         realName.value = data.realName || (data.role === 'patient' ? '患者' : '未知用户')
+        employeeId.value = data.employeeId ?? null
         patients.value = data.patients || []
         selectDefaultPatient()
       }
@@ -83,19 +86,21 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(loginUsername: string, password: string) {
     const data = await authApi.post<{
       userId: string
-      username: string  // 新增
+      username: string
       role: UserRole
       token: string
       refreshToken: string
       realName: string
+      employeeId?: number
       patients?: PatientInfo[]
     }>('/auth/login', { username: loginUsername, password })
 
     if (data) {
       userId.value = String(data.userId)
-      username.value = data.username || loginUsername  // 从后端获取，如果没有就用登录时传入的
+      username.value = data.username || loginUsername
       role.value = data.role || 'admin'
       realName.value = data.realName || (data.role === 'patient' ? '患者' : '未知用户')
+      employeeId.value = data.employeeId ?? null
       token.value = data.token || ''
       patients.value = data.patients || []
       // 默认选中本人
@@ -116,6 +121,7 @@ export const useAuthStore = defineStore('auth', () => {
     username.value = ''
     role.value = 'admin'
     realName.value = ''
+    employeeId.value = null
     token.value = ''
     patients.value = []
     currentPatientId.value = null
@@ -156,9 +162,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     userId,
-    username,  // 新增：登录用户名
+    username,
     role,
     realName,
+    employeeId,
     sessionChecked,
     isAuthenticated,
     token,

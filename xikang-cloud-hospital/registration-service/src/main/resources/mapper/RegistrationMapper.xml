@@ -82,6 +82,22 @@
         ORDER BY visit_date DESC
     </select>
 
+    <select id="selectMaxId" resultType="long">
+        SELECT COALESCE(MAX(id), 0) FROM register
+    </select>
+
+    <select id="selectNextSequenceValue" resultType="long">
+        SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM register_id_seq
+    </select>
+
+    <select id="syncIdSequence" resultType="long">
+        SELECT setval(
+            pg_get_serial_sequence('register', 'id'),
+            COALESCE((SELECT MAX(id) FROM register), 1),
+            true
+        )
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO register (
             patient_id, scheduling_id, case_number, real_name, gender, card_number, birthdate, age, age_type,
@@ -155,5 +171,13 @@
     <delete id="deleteById">
         UPDATE register SET visit_state = 4 WHERE id = #{id}
     </delete>
+
+    <select id="selectLatestCaseNumberByPatient" resultType="string">
+        SELECT case_number
+        FROM register
+        WHERE patient_id = #{patientId}
+        ORDER BY id ASC
+        LIMIT 1
+    </select>
 
 </mapper>

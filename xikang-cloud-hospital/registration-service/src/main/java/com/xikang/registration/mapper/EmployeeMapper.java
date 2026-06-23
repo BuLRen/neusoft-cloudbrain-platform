@@ -40,4 +40,28 @@ public interface EmployeeMapper {
      * @return 医生信息
      */
     Employee selectById(@Param("id") Long id);
+
+    int insert(Employee employee);
+
+    int update(Employee employee);
+
+    int updateDelmark(@Param("id") Long id, @Param("delmark") Integer delmark);
+
+    long countClinicalPhysicians(
+        @Param("departmentId") Long departmentId,
+        @Param("keyword") String keyword,
+        @Param("includeDisabled") Boolean includeDisabled
+    );
+
+    java.util.List<com.xikang.registration.dto.PhysicianAdminView> selectClinicalPhysicianPage(
+        @Param("departmentId") Long departmentId,
+        @Param("keyword") String keyword,
+        @Param("includeDisabled") Boolean includeDisabled,
+        @Param("offset") int offset,
+        @Param("size") int size
+    );
+
+    com.xikang.registration.dto.PhysicianAdminView selectClinicalPhysicianById(@Param("id") Long id);
+
+    int countActiveRegistersByEmployeeId(@Param("employeeId") Long employeeId);
 }

@@ -20,6 +20,7 @@ public class UserInfoResponse {
     private String username;
     private String realName;
     private String role;
+    private Long employeeId;
     private Long deptId;
     private String deptName;
     private Long registLevelId;

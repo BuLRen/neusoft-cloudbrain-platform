@@ -59,4 +59,92 @@
         WHERE e.id = #{id}
     </select>
 
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO employee (deptment_id, regist_level_id, scheduling_id, realname, password, delmark)
+        VALUES (#{deptmentId}, #{registLevelId}, NULL, #{realname}, 'dev-password', COALESCE(#{delmark}, 0))
+    </insert>
+
+    <update id="update">
+        UPDATE employee
+        SET deptment_id = #{deptmentId},
+            regist_level_id = #{registLevelId},
+            realname = #{realname}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateDelmark">
+        UPDATE employee SET delmark = #{delmark} WHERE id = #{id}
+    </update>
+
+    <select id="countClinicalPhysicians" resultType="long">
+        SELECT COUNT(*)
+        FROM employee e
+        WHERE e.deptment_id BETWEEN 1 AND 20
+        <if test="includeDisabled == null or includeDisabled == false">
+            AND e.delmark = 0
+        </if>
+        <if test="departmentId != null">
+            AND e.deptment_id = #{departmentId}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND e.realname ILIKE CONCAT('%', #{keyword}, '%')
+        </if>
+    </select>
+
+    <select id="selectClinicalPhysicianPage" resultType="com.xikang.registration.dto.PhysicianAdminView">
+        SELECT
+            e.id,
+            e.deptment_id AS deptmentId,
+            d.dept_name AS deptName,
+            e.regist_level_id AS registLevelId,
+            r.regist_name AS registName,
+            e.realname,
+            e.delmark,
+            u.id AS userId,
+            u.username,
+            u.status AS accountStatus
+        FROM employee e
+        LEFT JOIN department d ON d.id = e.deptment_id
+        LEFT JOIN regist_level r ON r.id = e.regist_level_id
+        LEFT JOIN users u ON u.employee_id = e.id
+        WHERE e.deptment_id BETWEEN 1 AND 20
+        <if test="includeDisabled == null or includeDisabled == false">
+            AND e.delmark = 0
+        </if>
+        <if test="departmentId != null">
+            AND e.deptment_id = #{departmentId}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND e.realname ILIKE CONCAT('%', #{keyword}, '%')
+        </if>
+        ORDER BY e.deptment_id, e.id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="selectClinicalPhysicianById" resultType="com.xikang.registration.dto.PhysicianAdminView">
+        SELECT
+            e.id,
+            e.deptment_id AS deptmentId,
+            d.dept_name AS deptName,
+            e.regist_level_id AS registLevelId,
+            r.regist_name AS registName,
+            e.realname,
+            e.delmark,
+            u.id AS userId,
+            u.username,
+            u.status AS accountStatus
+        FROM employee e
+        LEFT JOIN department d ON d.id = e.deptment_id
+        LEFT JOIN regist_level r ON r.id = e.regist_level_id
+        LEFT JOIN users u ON u.employee_id = e.id
+        WHERE e.id = #{id} AND e.deptment_id BETWEEN 1 AND 20
+    </select>
+
+    <select id="countActiveRegistersByEmployeeId" resultType="int">
+        SELECT COUNT(*)
+        FROM register
+        WHERE employee_id = #{employeeId}
+          AND visit_state IN (1, 2, 5, 6)
+    </select>
+
 </mapper>
