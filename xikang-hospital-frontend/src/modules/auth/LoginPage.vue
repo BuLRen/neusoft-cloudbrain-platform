@@ -126,7 +126,7 @@ function switchMode() {
   <main class="auth-page">
     <section class="auth-page__panel u-glass">
       <div class="auth-page__intro">
-        <span class="auth-page__logo">希</span>
+        <span class="auth-page__logo">熙</span>
         <p>Frontend Framework</p>
         <h1>{{ appName }}</h1>
         <span>{{ isLogin ? '请输入账号密码登录系统' : '创建新账号开始就医之旅' }}</span>

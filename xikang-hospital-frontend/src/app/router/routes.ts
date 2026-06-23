@@ -14,7 +14,13 @@ import PatientProfile from '@/modules/patient/pages/PatientProfile.vue'
 import PatientPrescription from '@/modules/patient/pages/PatientPrescription.vue'
 import PatientDepartmentDetail from '@/modules/patient/pages/PatientDepartmentDetail.vue'
 import RegistrationWorkspace from '@/modules/registration/RegistrationWorkspace.vue'
-import PharmacyWorkspace from '@/modules/pharmacy/PharmacyWorkspace.vue'
+import PharmacyDispensingPage from '@/modules/pharmacy/pages/DispensingPage.vue'
+import PharmacyInventoryPage from '@/modules/pharmacy/pages/InventoryPage.vue'
+import PharmacyTransactionsPage from '@/modules/pharmacy/pages/TransactionsPage.vue'
+import PharmacyFollowUpPage from '@/modules/pharmacy/pages/FollowUpPage.vue'
+import PharmacyDrugDictionaryPage from '@/modules/pharmacy/pages/DrugDictionaryPage.vue'
+import PharmacyPrescriptionQueryPage from '@/modules/pharmacy/pages/PrescriptionQueryPage.vue'
+import PharmacyStatisticsPage from '@/modules/pharmacy/pages/StatisticsPage.vue'
 import AdminWorkspace from '@/modules/admin/AdminWorkspace.vue'
 import ScheduleManagement from '@/modules/admin/pages/ScheduleManagement.vue'
 import MasterDataManagement from '@/modules/admin/pages/MasterDataManagement.vue'
@@ -227,8 +233,53 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'pharmacy',
         name: 'Pharmacy',
-        component: PharmacyWorkspace,
-        meta: { title: '药房管理', description: '发药、退药、药库、交易记录', icon: 'Box', roles: ['pharmacy'], requiresAuth: true, owner: 'B' },
+        component: RouteGroupView,
+        redirect: '/pharmacy/dispensing',
+        meta: { title: '药房管理', description: '发药、退药、药库、交易记录', icon: 'Box', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B' },
+        children: [
+          {
+            path: 'dispensing',
+            name: 'PharmacyDispensing',
+            component: PharmacyDispensingPage,
+            meta: { title: '① 发药工作台', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 1 },
+          },
+          {
+            path: 'inventory',
+            name: 'PharmacyInventory',
+            component: PharmacyInventoryPage,
+            meta: { title: '② 药库与库存', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 2 },
+          },
+          {
+            path: 'transactions',
+            name: 'PharmacyTransactions',
+            component: PharmacyTransactionsPage,
+            meta: { title: '③ 出入库流水', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 3 },
+          },
+          {
+            path: 'follow-up',
+            name: 'PharmacyFollowUp',
+            component: PharmacyFollowUpPage,
+            meta: { title: '④ 患者随访', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 4 },
+          },
+          {
+            path: 'drug-dictionary',
+            name: 'PharmacyDrugDictionary',
+            component: PharmacyDrugDictionaryPage,
+            meta: { title: '⑤ 药品字典', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 5 },
+          },
+          {
+            path: 'prescription-query',
+            name: 'PharmacyPrescriptionQuery',
+            component: PharmacyPrescriptionQueryPage,
+            meta: { title: '⑥ 处方追溯', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 6 },
+          },
+          {
+            path: 'statistics',
+            name: 'PharmacyStatistics',
+            component: PharmacyStatisticsPage,
+            meta: { title: '⑦ 消耗统计', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 7 },
+          },
+        ],
       },
       {
         path: 'admin',
