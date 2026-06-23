@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -232,24 +233,13 @@ public class AuthService {
             Patient patient = new Patient();
             patient.setRealName(realName != null ? realName : username);
             patient.setIdCard(idCard);
-
-            // gender: 优先用入参；否则从身份证号第 17 位推导（奇=男, 偶=女）；空值置 null 以满足 chk_patient_gender
-            String resolvedGender = (gender != null && !gender.isBlank())
-                    ? gender
-                    : deriveGenderFromIdCard(idCard);
-            patient.setGender(resolvedGender);
-
-            // birthdate: 优先用入参；否则从身份证号第 7-14 位解析（仅 18 位身份证支持）
-            java.time.LocalDate resolvedBirthdate = null;
+            patient.setGender(resolveGender(gender, idCard));
             if (birthdateStr != null && !birthdateStr.isBlank()) {
-                resolvedBirthdate = java.time.LocalDate.parse(birthdateStr);
-            } else if (idCard.length() == 18) {
-                try {
-                    resolvedBirthdate = java.time.LocalDate.parse(
-                            idCard.substring(6, 14),
-                            java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
-                } catch (java.time.format.DateTimeParseException e) {
-                    log.warn("Failed to derive birthdate from idCard: {}", idCard);
+                patient.setBirthdate(LocalDate.parse(birthdateStr));
+            } else {
+                LocalDate parsedBirthdate = parseBirthdateFromIdCard(idCard);
+                if (parsedBirthdate != null) {
+                    patient.setBirthdate(parsedBirthdate);
                 }
             }
             patient.setBirthdate(resolvedBirthdate);
@@ -361,18 +351,35 @@ public class AuthService {
         log.info("User password changed successfully: {}", username);
     }
 
-    /**
-     * 从 18 位身份证号第 17 位推导性别（奇=男, 偶=女）。
-     * 非法或非 18 位身份证号返回 null（满足 chk_patient_gender 约束允许 NULL）。
-     */
-    private String deriveGenderFromIdCard(String idCard) {
+    private String resolveGender(String gender, String idCard) {
+        if (gender != null && !gender.isBlank() && ("男".equals(gender) || "女".equals(gender))) {
+            return gender;
+        }
+        return parseGenderFromIdCard(idCard);
+    }
+
+    private String parseGenderFromIdCard(String idCard) {
         if (idCard == null || idCard.length() != 18) {
             return null;
         }
-        char seqChar = idCard.charAt(16);
-        if (seqChar < '0' || seqChar > '9') {
+        char seq = idCard.charAt(16);
+        if (!Character.isDigit(seq)) {
             return null;
         }
-        return ((seqChar - '0') % 2 == 1) ? "男" : "女";
+        return ((seq - '0') % 2 == 1) ? "男" : "女";
+    }
+
+    private LocalDate parseBirthdateFromIdCard(String idCard) {
+        if (idCard == null || idCard.length() != 18) {
+            return null;
+        }
+        try {
+            int year = Integer.parseInt(idCard.substring(6, 10));
+            int month = Integer.parseInt(idCard.substring(10, 12));
+            int day = Integer.parseInt(idCard.substring(12, 14));
+            return LocalDate.of(year, month, day);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 }

@@ -448,7 +448,9 @@ public class PhysicianService {
             }
             return toLong(row.get("id"));
         }).toList();
-        return Map.of("requestIds", requestIds);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("requestIds", requestIds);
+        return result;
     }
 
     @SuppressWarnings("unchecked")

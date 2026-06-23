@@ -81,7 +81,7 @@ onMounted(() => {
       @close="dismissNeedEncounterHint"
     />
 
-    <PageHeader title="待诊接诊" description="选择待诊患者，进入后续诊疗流程。" eyebrow="门诊诊疗">
+    <PageHeader title="待诊接诊" description="选择待诊、接诊中或检查/检验进行中的患者，进入后续诊疗流程。" eyebrow="门诊诊疗">
       <template #actions>
         <ElButton type="primary" @click="loadPatients">刷新患者</ElButton>
       </template>
@@ -91,8 +91,8 @@ onMounted(() => {
       <GlassCard class="patient-panel">
         <div class="panel-heading">
           <div>
-            <h2>待诊患者</h2>
-            <p>待诊 {{ stats.totalWaiting }} 人，已完成 {{ stats.totalVisited }} 人</p>
+            <h2>待诊 / 进行中患者</h2>
+            <p>待诊及检查检验中 {{ stats.totalWaiting }} 人，已完成 {{ stats.totalVisited }} 人</p>
           </div>
         </div>
         <ElInput v-model="keyword" placeholder="搜索病历号或姓名" clearable @keyup.enter="loadPatients">
@@ -117,7 +117,7 @@ onMounted(() => {
             </StatusTag>
             <span v-if="patient.visitState === 6" class="patient-item__hint">结果已出，可继续确诊开方</span>
           </button>
-          <ElEmpty v-if="!loading && patients.length === 0" description="暂无待诊患者" />
+          <ElEmpty v-if="!loading && patients.length === 0" description="暂无待诊或进行中的患者" />
         </div>
       </GlassCard>
 
@@ -133,7 +133,9 @@ onMounted(() => {
             <span>{{ selectedPatient.aiConsultSummary.aiSummary || selectedPatient.aiConsultSummary.chiefComplaint }}</span>
           </p>
           <div class="summary-actions">
-            <ElButton type="primary" @click="enterEncounter">进入流程（下一步）</ElButton>
+            <ElButton type="primary" @click="enterEncounter">
+              {{ selectedPatient.visitState === 5 || selectedPatient.visitState === 6 ? '继续诊疗' : '进入流程（下一步）' }}
+            </ElButton>
           </div>
         </GlassCard>
 
