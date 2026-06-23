@@ -30,6 +30,16 @@
         SELECT <include refid="Base_Column_List"/> FROM drug_stock WHERE drug_id = #{drugId} AND status = 1 ORDER BY expiry_date
     </select>
 
+    <!-- P1-4.2 近效期批次查询：status=1 且 expiry_date 在今天到 today+days 之间 -->
+    <select id="selectExpiring" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_stock
+        WHERE status = 1
+          AND expiry_date IS NOT NULL
+          AND expiry_date &gt;= CURRENT_DATE
+          AND expiry_date &lt;= (CURRENT_DATE + (#{days} || ' days')::interval)
+        ORDER BY expiry_date
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO drug_stock (drug_id, batch_number, quantity, production_date, expiry_date, status, location)
         VALUES (#{drugId}, #{batchNumber}, #{quantity}, #{productionDate}, #{expiryDate}, #{status}, #{location})

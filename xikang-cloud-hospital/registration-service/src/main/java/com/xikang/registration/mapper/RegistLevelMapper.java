@@ -15,6 +15,8 @@ public interface RegistLevelMapper {
 
     RegistLevel selectById(Long id);
 
+    RegistLevel selectByCode(String code);
+
     int insert(RegistLevel registLevel);
 
     int update(RegistLevel registLevel);

@@ -4,22 +4,22 @@
 
     <resultMap id="BaseResultMap" type="com.xikang.registration.entity.RegistLevel">
         <id column="id" property="id"/>
-        <result column="name" property="name"/>
-        <result column="price" property="price"/>
-        <result column="description" property="description"/>
-        <result column="status" property="status"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+        <result column="regist_code" property="code"/>
+        <result column="regist_name" property="name"/>
+        <result column="regist_fee" property="price"/>
+        <result column="regist_quota" property="quota"/>
+        <result column="sequence_no" property="sequenceNo"/>
+        <result column="delmark" property="delmark"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, name, price, description, status, create_time, update_time
+        id, regist_code, regist_name, regist_fee, regist_quota, sequence_no, delmark
     </sql>
 
     <select id="selectAll" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM regist_level WHERE status = 1
-        ORDER BY id
+        FROM regist_level WHERE delmark = 0
+        ORDER BY sequence_no, id
     </select>
 
     <select id="selectById" resultMap="BaseResultMap">
@@ -27,19 +27,25 @@
         FROM regist_level WHERE id = #{id}
     </select>
 
+    <select id="selectByCode" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM regist_level WHERE regist_code = #{code}
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO regist_level (name, price, description, status)
-        VALUES (#{name}, #{price}, #{description}, #{status})
+        INSERT INTO regist_level (regist_code, regist_name, regist_fee, regist_quota, sequence_no, delmark)
+        VALUES (#{code}, #{name}, #{price}, #{quota}, #{sequenceNo}, 0)
     </insert>
 
     <update id="update">
         UPDATE regist_level
-        SET name = #{name}, price = #{price}, description = #{description}, status = #{status}
+        SET regist_code = #{code}, regist_name = #{name}, regist_fee = #{price},
+            regist_quota = #{quota}, sequence_no = #{sequenceNo}
         WHERE id = #{id}
     </update>
 
     <delete id="deleteById">
-        UPDATE regist_level SET status = 0 WHERE id = #{id}
+        UPDATE regist_level SET delmark = 1 WHERE id = #{id}
     </delete>
 
 </mapper>

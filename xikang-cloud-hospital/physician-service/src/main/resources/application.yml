@@ -34,7 +34,7 @@ mybatis:
   type-aliases-package: com.xikang.physician.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 关闭 SQL 打印，调试时取消注释
 
 # -----------------------------------------------------------------------------
 # Actuator 健康检查（/actuator/health 等）
@@ -53,6 +53,7 @@ management:
 # -----------------------------------------------------------------------------
 logging:
   level:
+
     com.xikang.physician: DEBUG
 
 # =============================================================================

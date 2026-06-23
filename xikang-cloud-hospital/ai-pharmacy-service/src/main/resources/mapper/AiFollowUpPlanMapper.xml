@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.ai.pharmacy.mapper.AiFollowUpPlanMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.ai.pharmacy.entity.AiFollowUpPlan">
+        <id column="id" property="id"/>
+        <result column="register_id" property="registerId"/>
+        <result column="prescription_id" property="prescriptionId"/>
+        <result column="follow_up_day" property="followUpDay"/>
+        <result column="planned_date" property="plannedDate"/>
+        <result column="follow_up_type" property="followUpType"/>
+        <result column="content_template" property="contentTemplate"/>
+        <result column="plan_status" property="planStatus"/>
+        <result column="creation_time" property="creationTime"/>
+        <result column="model_id" property="modelId"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM ai_follow_up_plan WHERE id = #{id}
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT p.* FROM ai_follow_up_plan p
+        INNER JOIN register r ON p.register_id = r.id
+        WHERE r.id = #{patientId}
+        OR r.case_number LIKE CONCAT('%', #{patientId})
+        ORDER BY p.creation_time DESC
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT * FROM ai_follow_up_plan
+        WHERE register_id = #{registerId}
+        ORDER BY creation_time DESC
+    </select>
+
+    <select id="selectByPrescriptionId" resultMap="BaseResultMap">
+        SELECT * FROM ai_follow_up_plan
+        WHERE prescription_id = #{prescriptionId}
+        ORDER BY creation_time DESC
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT * FROM ai_follow_up_plan
+        WHERE plan_status = #{status}
+        ORDER BY creation_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_follow_up_plan (
+            register_id, prescription_id, follow_up_day, planned_date,
+            follow_up_type, content_template, plan_status, creation_time, model_id
+        ) VALUES (
+            #{registerId}, #{prescriptionId}, #{followUpDay}, #{plannedDate},
+            #{followUpType}, #{contentTemplate}, #{planStatus}, #{creationTime}, #{modelId}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE ai_follow_up_plan
+        SET register_id = #{registerId},
+            prescription_id = #{prescriptionId},
+            follow_up_day = #{followUpDay},
+            planned_date = #{plannedDate},
+            follow_up_type = #{followUpType},
+            content_template = #{contentTemplate},
+            plan_status = #{planStatus}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

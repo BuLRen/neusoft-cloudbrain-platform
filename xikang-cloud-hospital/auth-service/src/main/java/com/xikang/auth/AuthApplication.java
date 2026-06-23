@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * Auth Service Application
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "com.xikang")
 public class AuthApplication {
 
     public static void main(String[] args) {

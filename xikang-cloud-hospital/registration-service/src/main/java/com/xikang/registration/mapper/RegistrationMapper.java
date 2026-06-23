@@ -2,6 +2,7 @@ package com.xikang.registration.mapper;
 
 import com.xikang.registration.entity.Register;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -16,6 +17,17 @@ public interface RegistrationMapper {
 
     List<Register> selectByPatientId(Long patientId);
 
+    /**
+     * 查询爽约候选：visit_state = 1 且就诊时间早于指定时间
+     */
+    List<Register> selectMissedCandidates(@Param("deadline") java.time.LocalDateTime deadline);
+
+    /**
+     * 批量将过期未到诊的挂号置为爽约（visit_state = 5）
+     * @return 受影响行数
+     */
+    int markMissed(@Param("deadline") java.time.LocalDateTime deadline);
+
     List<Register> selectByStatus(Integer status);
 
     List<Register> selectByDate(LocalDate date);
@@ -28,9 +40,19 @@ public interface RegistrationMapper {
 
     int update(Register register);
 
-    int updateStatus(Long id, Integer status);
+    int updateStatus(@Param("id") Long id, @Param("visitState") Integer status);
 
-    int updatePayStatus(Long id, Integer payStatus);
+    int updatePayStatus(@Param("id") Long id, @Param("visitState") Integer payStatus);
+
+    /**
+     * 设置报到时间（患者扫码报到）
+     */
+    int updateCheckInTime(@Param("id") Long id, @Param("checkInTime") java.time.LocalDateTime checkInTime);
+
+    /**
+     * 统计同一医生、同一天、已报到但未接诊的患者数（用于计算号序和前面等待人数）
+     */
+    int countWaitingBefore(@Param("id") Long id);
 
     int deleteById(Long id);
 }

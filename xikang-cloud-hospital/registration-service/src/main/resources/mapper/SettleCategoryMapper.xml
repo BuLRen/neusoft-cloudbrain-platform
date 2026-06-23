@@ -4,21 +4,20 @@
 
     <resultMap id="BaseResultMap" type="com.xikang.registration.entity.SettleCategory">
         <id column="id" property="id"/>
-        <result column="name" property="name"/>
-        <result column="code" property="code"/>
-        <result column="description" property="description"/>
-        <result column="status" property="status"/>
-        <result column="create_time" property="createTime"/>
+        <result column="settle_code" property="code"/>
+        <result column="settle_name" property="name"/>
+        <result column="sequence_no" property="sequenceNo"/>
+        <result column="delmark" property="delmark"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, name, code, description, status, create_time
+        id, settle_code, settle_name, sequence_no, delmark
     </sql>
 
     <select id="selectAll" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM settle_category WHERE status = 1
-        ORDER BY id
+        FROM settle_category WHERE delmark = 0
+        ORDER BY sequence_no, id
     </select>
 
     <select id="selectById" resultMap="BaseResultMap">
@@ -28,17 +27,17 @@
 
     <select id="selectByCode" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM settle_category WHERE code = #{code}
+        FROM settle_category WHERE settle_code = #{code}
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO settle_category (name, code, description, status)
-        VALUES (#{name}, #{code}, #{description}, #{status})
+        INSERT INTO settle_category (settle_code, settle_name, sequence_no, delmark)
+        VALUES (#{code}, #{name}, #{sequenceNo}, 0)
     </insert>
 
     <update id="update">
         UPDATE settle_category
-        SET name = #{name}, code = #{code}, description = #{description}, status = #{status}
+        SET settle_code = #{code}, settle_name = #{name}, sequence_no = #{sequenceNo}
         WHERE id = #{id}
     </update>
 

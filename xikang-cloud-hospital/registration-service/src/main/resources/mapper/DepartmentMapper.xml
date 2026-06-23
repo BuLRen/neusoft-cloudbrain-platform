@@ -4,31 +4,27 @@
 
     <resultMap id="BaseResultMap" type="com.xikang.registration.entity.Department">
         <id column="id" property="id"/>
-        <result column="name" property="name"/>
-        <result column="code" property="code"/>
-        <result column="type" property="type"/>
-        <result column="parent_id" property="parentId"/>
-        <result column="order_num" property="orderNum"/>
-        <result column="status" property="status"/>
-        <result column="description" property="description"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+        <result column="dept_name" property="name"/>
+        <result column="dept_code" property="code"/>
+        <result column="dept_type" property="type"/>
+        <result column="dept_description" property="description"/>
+        <result column="delmark" property="delmark"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, name, code, type, parent_id, order_num, status, description, create_time, update_time
+        id, dept_name, dept_code, dept_type, dept_description, delmark
     </sql>
 
     <select id="selectAll" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM department WHERE status = 1
-        ORDER BY order_num, id
+        FROM department WHERE delmark = 0
+        ORDER BY id
     </select>
 
     <select id="selectByType" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM department WHERE type = #{type} AND status = 1
-        ORDER BY order_num, id
+        FROM department WHERE dept_type = #{type} AND delmark = 0
+        ORDER BY id
     </select>
 
     <select id="selectById" resultMap="BaseResultMap">
@@ -38,23 +34,22 @@
 
     <select id="selectByCode" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM department WHERE code = #{code}
+        FROM department WHERE dept_code = #{code}
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO department (name, code, type, parent_id, order_num, status, description)
-        VALUES (#{name}, #{code}, #{type}, #{parentId}, #{orderNum}, #{status}, #{description})
+        INSERT INTO department (dept_name, dept_code, dept_type, dept_description, delmark)
+        VALUES (#{name}, #{code}, #{type}, #{description}, 0)
     </insert>
 
     <update id="update">
         UPDATE department
-        SET name = #{name}, code = #{code}, type = #{type}, parent_id = #{parentId},
-            order_num = #{orderNum}, status = #{status}, description = #{description}
+        SET dept_name = #{name}, dept_code = #{code}, dept_type = #{type}, dept_description = #{description}
         WHERE id = #{id}
     </update>
 
     <delete id="deleteById">
-        UPDATE department SET status = 0 WHERE id = #{id}
+        UPDATE department SET delmark = 1 WHERE id = #{id}
     </delete>
 
 </mapper>

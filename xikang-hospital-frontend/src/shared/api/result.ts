@@ -15,4 +15,5 @@ export interface PageResult<T> {
 
 export interface RequestOptions {
   skipErrorMessage?: boolean
+  skipAuthHandling?: boolean
 }

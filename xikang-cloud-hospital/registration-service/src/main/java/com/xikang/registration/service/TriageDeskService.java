@@ -43,8 +43,25 @@ public class TriageDeskService {
             : null;
         String operatorName = (String) triageData.get("operatorName");
 
-        // 调用AI导诊服务获取结果
-        Map<String, Object> aiResult = aiTriageClient.analyzeSymptoms(symptoms, patientId);
+        Map<String, Object> aiResult = null;
+        Object providedAiTriageResult = triageData.get("aiTriageResult");
+        if (providedAiTriageResult instanceof Map<?, ?> providedMap) {
+            Map<String, Object> convertedResult = new HashMap<>();
+            providedMap.forEach((key, value) -> convertedResult.put(String.valueOf(key), value));
+            aiResult = convertedResult;
+        } else if (providedAiTriageResult instanceof String providedText && !providedText.isBlank()) {
+            try {
+                aiResult = objectMapper.readValue(providedText, Map.class);
+            } catch (Exception e) {
+                log.warn("解析前端导诊结果失败，将回退到后端重算", e);
+            }
+        } else if (providedAiTriageResult != null) {
+            aiResult = objectMapper.convertValue(providedAiTriageResult, Map.class);
+        }
+
+        if (aiResult == null || aiResult.isEmpty()) {
+            aiResult = aiTriageClient.analyzeSymptoms(symptoms, patientId);
+        }
 
         // 创建分诊记录
         TriageDeskRecord record = new TriageDeskRecord();

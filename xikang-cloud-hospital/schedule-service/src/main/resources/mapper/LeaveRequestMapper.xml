@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.schedule.mapper.LeaveRequestMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.schedule.entity.LeaveRequest">
+        <id column="id" property="id"/>
+        <result column="physician_id" property="physicianId"/>
+        <result column="leave_date" property="leaveDate"/>
+        <result column="time_slot" property="timeSlot"/>
+        <result column="leave_type" property="leaveType"/>
+        <result column="reason" property="reason"/>
+        <result column="ai_parsed_date" property="aiParsedDate"/>
+        <result column="ai_parsed_slot" property="aiParsedSlot"/>
+        <result column="ai_confidence" property="aiConfidence"/>
+        <result column="status" property="status"/>
+        <result column="approver_id" property="approverId"/>
+        <result column="approval_time" property="approvalTime"/>
+        <result column="auto_processed" property="autoProcessed"/>
+        <result column="create_time" property="createTime"/>
+        <result column="delmark" property="delmark"/>
+        <result column="physician_name" property="physicianName"/>
+        <result column="approver_name" property="approverName"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT lr.*, e.realname as physician_name, a.realname as approver_name
+        FROM leave_request lr
+        LEFT JOIN employee e ON lr.physician_id = e.id
+        LEFT JOIN employee a ON lr.approver_id = a.id
+        WHERE lr.delmark = 0
+        ORDER BY lr.create_time DESC
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT lr.*, e.realname as physician_name, a.realname as approver_name
+        FROM leave_request lr
+        LEFT JOIN employee e ON lr.physician_id = e.id
+        LEFT JOIN employee a ON lr.approver_id = a.id
+        WHERE lr.id = #{id} AND lr.delmark = 0
+    </select>
+
+    <select id="selectByPhysician" resultMap="BaseResultMap">
+        SELECT lr.*, e.realname as physician_name
+        FROM leave_request lr
+        LEFT JOIN employee e ON lr.physician_id = e.id
+        WHERE lr.physician_id = #{physicianId}
+          AND lr.delmark = 0
+        ORDER BY lr.leave_date DESC
+    </select>
+
+    <select id="selectByPhysicianAndDateRange" resultMap="BaseResultMap">
+        SELECT lr.*, e.realname as physician_name
+        FROM leave_request lr
+        LEFT JOIN employee e ON lr.physician_id = e.id
+        WHERE lr.physician_id = #{physicianId}
+          AND lr.leave_date BETWEEN #{startDate} AND #{endDate}
+          AND lr.delmark = 0
+        ORDER BY lr.leave_date
+    </select>
+
+    <select id="selectByDate" resultMap="BaseResultMap">
+        SELECT lr.*, e.realname as physician_name
+        FROM leave_request lr
+        LEFT JOIN employee e ON lr.physician_id = e.id
+        WHERE lr.leave_date = #{leaveDate}
+          AND lr.delmark = 0
+        ORDER BY lr.create_time
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT lr.*, e.realname as physician_name
+        FROM leave_request lr
+        LEFT JOIN employee e ON lr.physician_id = e.id
+        WHERE lr.status = #{status}
+          AND lr.delmark = 0
+        ORDER BY lr.create_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO leave_request (
+            physician_id, leave_date, time_slot, leave_type, reason,
+            ai_parsed_date, ai_parsed_slot, ai_confidence, status, auto_processed, delmark
+        ) VALUES (
+            #{physicianId}, #{leaveDate}, #{timeSlot}, #{leaveType}, #{reason},
+            #{aiParsedDate}, #{aiParsedSlot}, #{aiConfidence}, #{status}, #{autoProcessed}, 0
+        )
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE leave_request
+        SET status = #{status},
+            approver_id = #{approverId},
+            approval_time = #{approvalTime}
+        WHERE id = #{id}
+    </update>
+
+    <update id="deleteById">
+        UPDATE leave_request SET delmark = 1 WHERE id = #{id}
+    </update>
+
+</mapper>

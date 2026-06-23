@@ -25,5 +25,14 @@ public interface PharmacyTransactionMapper {
 
     List<PharmacyTransaction> selectByRegisterId(Long registerId);
 
+    /**
+     * P1-4.4 组合条件查询（AND），任一参数为空则忽略该条件
+     */
+    List<PharmacyTransaction> selectByConditions(
+            @Param("drugId") Long drugId,
+            @Param("type") String type,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
     int insert(PharmacyTransaction transaction);
 }

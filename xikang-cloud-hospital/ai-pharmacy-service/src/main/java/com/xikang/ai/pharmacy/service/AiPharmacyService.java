@@ -5,6 +5,7 @@ import com.xikang.ai.pharmacy.entity.AiFollowUpPlan;
 import com.xikang.ai.pharmacy.entity.AiFollowUpRecord;
 import com.xikang.ai.pharmacy.mapper.AiFollowUpPlanMapper;
 import com.xikang.ai.pharmacy.mapper.AiFollowUpRecordMapper;
+import com.xikang.common.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,9 @@ public class AiPharmacyService {
 
         // 保存随访计划
         Long planId = saveFollowUpPlan(patientId, registerId, prescriptionId, plan);
+        if (planId == null) {
+            throw new BusinessException(500, "随访计划保存失败");
+        }
 
         Map<String, Object> result = new HashMap<>(plan);
         result.put("planId", planId);
@@ -120,6 +124,8 @@ public class AiPharmacyService {
         String sideEffects = (String) feedback.get("sideEffects");
         String recoveryStatus = (String) feedback.get("recoveryStatus");
 
+        LocalDateTime now = LocalDateTime.now();
+
         AiFollowUpRecord record = new AiFollowUpRecord();
         record.setPlanId(planId);
         record.setPatientId(((Number) feedback.get("patientId")).longValue());
@@ -127,7 +133,8 @@ public class AiPharmacyService {
         record.setSymptomFeedback(symptomFeedback);
         record.setSideEffects(sideEffects);
         record.setRecoveryStatus(recoveryStatus);
-        record.setRecordTime(LocalDateTime.now());
+        record.setRecordTime(now);
+        record.setCreateTime(now);
 
         aiFollowUpRecordMapper.insert(record);
 
@@ -135,6 +142,7 @@ public class AiPharmacyService {
         AiFollowUpPlan plan = aiFollowUpPlanMapper.selectById(planId);
         if (plan != null) {
             plan.setStatus(1); // 进行中
+            plan.setUpdateTime(now);
             aiFollowUpPlanMapper.update(plan);
         }
     }
@@ -144,6 +152,8 @@ public class AiPharmacyService {
      */
     private Long saveFollowUpPlan(Long patientId, Long registerId, Long prescriptionId, Map<String, Object> plan) {
         try {
+            LocalDateTime now = LocalDateTime.now();
+
             AiFollowUpPlan followUpPlan = new AiFollowUpPlan();
             followUpPlan.setPatientId(patientId);
             followUpPlan.setRegisterId(registerId);
@@ -155,7 +165,8 @@ public class AiPharmacyService {
             followUpPlan.setFollowUpItems(objectMapper.writeValueAsString(plan.get("followUpItems")));
             followUpPlan.setInstructions((String) plan.get("instructions"));
             followUpPlan.setStatus(0); // 待执行
-            followUpPlan.setCreateTime(LocalDateTime.now());
+            followUpPlan.setCreateTime(now);
+            followUpPlan.setUpdateTime(now);
 
             aiFollowUpPlanMapper.insert(followUpPlan);
             return followUpPlan.getId();
