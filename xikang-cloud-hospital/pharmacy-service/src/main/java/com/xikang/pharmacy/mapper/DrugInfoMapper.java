@@ -20,6 +20,18 @@ public interface DrugInfoMapper {
 
     List<DrugInfo> selectByDosageForm(String dosageForm);
 
+    /**
+     * P1-4.3 组合条件查询（AND）
+     */
+    List<DrugInfo> selectByConditions(@Param("keyword") String keyword,
+                                      @Param("dosageForm") String dosageForm,
+                                      @Param("category") String category);
+
+    /**
+     * P1-4.3 查询所有已用分类
+     */
+    List<String> selectCategories();
+
     List<DrugInfo> selectLowStock();
 
     DrugInfo selectByCode(String code);

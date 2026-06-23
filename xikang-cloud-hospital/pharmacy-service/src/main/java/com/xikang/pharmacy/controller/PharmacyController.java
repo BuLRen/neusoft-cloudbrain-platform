@@ -25,14 +25,30 @@ public class PharmacyController {
     // ==================== 药品管理接口 ====================
 
     /**
-     * 获取药品列表
+     * 获取药品列表（支持组合查询：keyword + dosageForm + category）
      */
     @GetMapping("/drugs")
     public Result<List<DrugInfo>> getDrugs(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String dosageForm) {
-        List<DrugInfo> drugs = pharmacyService.getDrugs(keyword, dosageForm);
-        return Result.success(drugs);
+            @RequestParam(required = false) String dosageForm,
+            @RequestParam(required = false) String category) {
+        // 优先走组合查询（P1-4.3）：带 category，或同时带 keyword + dosageForm
+        boolean hasCategory = category != null && !category.isEmpty();
+        boolean hasKeywordAndForm = (keyword != null && !keyword.isEmpty())
+                && (dosageForm != null && !dosageForm.isEmpty());
+        if (hasCategory || hasKeywordAndForm) {
+            return Result.success(pharmacyService.getDrugsByConditions(keyword, dosageForm, category));
+        }
+        // 兼容旧调用（keyword 与 dosageForm 互斥）
+        return Result.success(pharmacyService.getDrugs(keyword, dosageForm));
+    }
+
+    /**
+     * P1-4.3 查询所有已用药品分类
+     */
+    @GetMapping("/drugs/categories")
+    public Result<List<String>> getCategories() {
+        return Result.success(pharmacyService.getCategories());
     }
 
     /**
@@ -113,6 +129,60 @@ public class PharmacyController {
         return Result.success();
     }
 
+    /**
+     * P1-4.2 近效期批次查询
+     */
+    @GetMapping("/inventory/expiring")
+    public Result<List<Map<String, Object>>> getExpiringStock(
+            @RequestParam(defaultValue = "30") int days) {
+        return Result.success(pharmacyService.getExpiringStock(days));
+    }
+
+    // ==================== AI 联动接口 ====================
+
+    /**
+     * P1-6.1 生成用药指导
+     */
+    @PostMapping("/drugs/{drugId}/guide")
+    public Result<Map<String, Object>> generateMedicationGuide(@PathVariable Long drugId) {
+        return Result.success(pharmacyService.generateMedicationGuide(drugId));
+    }
+
+    /**
+     * P1-6.2 查询患者随访计划
+     */
+    @GetMapping("/followup/patient/{patientId}")
+    public Result<List<Map<String, Object>>> getPatientFollowUpPlans(@PathVariable Long patientId) {
+        return Result.success(pharmacyService.getPatientFollowUpPlans(patientId));
+    }
+
+    /**
+     * P2-6.3 重试创建随访计划
+     */
+    @PostMapping("/followup/retry/{prescriptionId}")
+    public Result<Map<String, Object>> retryFollowUp(@PathVariable Long prescriptionId) {
+        return Result.success(pharmacyService.retryFollowUp(prescriptionId));
+    }
+
+    /**
+     * P2-6.4 录入随访反馈
+     */
+    @PostMapping("/followup/{planId}/feedback")
+    public Result<Void> submitFollowUpFeedback(
+            @PathVariable Long planId,
+            @RequestBody Map<String, Object> feedback) {
+        pharmacyService.submitFollowUpFeedback(planId, feedback);
+        return Result.success();
+    }
+
+    /**
+     * P2-4.6 按挂号查询发药单
+     */
+    @GetMapping("/dispensing/{registerId}")
+    public Result<List<Map<String, Object>>> getDispensingByRegister(@PathVariable Long registerId) {
+        return Result.success(pharmacyService.getDispensingByRegister(registerId));
+    }
+
     // ==================== 发药接口 ====================
 
     /**
@@ -123,6 +193,18 @@ public class PharmacyController {
             @RequestParam(required = false) Long registrationId) {
         List<Map<String, Object>> pending = pharmacyService.getPendingDispensing(registrationId);
         return Result.success(pending);
+    }
+
+    /**
+     * 历史处方组合查询（处方追溯）：按 patientId / 状态 / 日期范围。
+     */
+    @GetMapping("/prescriptions")
+    public Result<List<Map<String, Object>>> queryPrescriptions(
+            @RequestParam(required = false) Long patientId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
+        return Result.success(pharmacyService.queryPrescriptions(patientId, status, startDate, endDate));
     }
 
     /**
@@ -143,6 +225,14 @@ public class PharmacyController {
             @RequestBody Map<String, Object> dispensingInfo) {
         Map<String, Object> result = pharmacyService.dispense(registerId, dispensingInfo);
         return Result.success("发药成功", result);
+    }
+
+    /**
+     * P1-4.1 发药前审核
+     */
+    @PostMapping("/dispense/{registerId}/review")
+    public Result<Map<String, Object>> reviewDispense(@PathVariable Long registerId) {
+        return Result.success(pharmacyService.reviewDispense(registerId));
     }
 
     // ==================== 退药接口 ====================
@@ -171,5 +261,16 @@ public class PharmacyController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
         List<Map<String, Object>> transactions = pharmacyService.getTransactions(drugId, type, startDate, endDate);
         return Result.success(transactions);
+    }
+
+    /**
+     * 药房工作量与药品消耗统计（按时间范围）。
+     */
+    @GetMapping("/statistics")
+    public Result<Map<String, Object>> getStatistics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
+            @RequestParam(defaultValue = "10") int topLimit) {
+        return Result.success(pharmacyService.getStatistics(startDate, endDate, topLimit));
     }
 }

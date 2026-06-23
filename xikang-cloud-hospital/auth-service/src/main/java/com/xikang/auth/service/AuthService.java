@@ -242,6 +242,7 @@ public class AuthService {
                     patient.setBirthdate(parsedBirthdate);
                 }
             }
+
             patient.setPhone(phone != null ? phone : "");
             patient.setDelmark(1);
             patient.setCreateTime(LocalDateTime.now());

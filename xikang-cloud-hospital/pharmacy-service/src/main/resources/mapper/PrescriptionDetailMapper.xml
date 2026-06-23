@@ -1,49 +1,66 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    处方明细映射器。
+
+    设计说明：
+    真实 schema 没有独立的 prescription_detail 表，prescription 本身就是"一药一行"。
+    因此 pharmacy 查询处方明细时，"prescription_id" 实际是指"register_id"——
+    按 register_id 反查 prescription 表得到该挂号下的所有药品行。
+
+    本 mapper 的 selectByPrescriptionId 入参沿用旧命名"prescriptionId"，
+    实际绑定到 register_id（pharmacy service 侧的聚合 id 等同于 register_id，
+    因为聚合后一行 id = 该挂号下 MIN(p.id)，但 service 仍按 registerId 查明细，
+    见 PharmacyService.getPrescriptionDetails）。
+-->
 <mapper namespace="com.xikang.pharmacy.mapper.PrescriptionDetailMapper">
 
     <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.PrescriptionDetail">
         <id column="id" property="id"/>
         <result column="prescription_id" property="prescriptionId"/>
-        <result column="drug_id" property="drugId"/>
-        <result column="drug_name" property="drugName"/>
+        <result column="drug_id"       property="drugId"/>
+        <result column="drug_name"     property="drugName"/>
         <result column="specification" property="specification"/>
-        <result column="dosage" property="dosage"/>
-        <result column="quantity" property="quantity"/>
-        <result column="unit_price" property="unitPrice"/>
-        <result column="total_amount" property="totalAmount"/>
-        <result column="usage" property="usage"/>
-        <result column="frequency" property="frequency"/>
-        <result column="duration" property="duration"/>
-        <result column="remark" property="remark"/>
-        <result column="create_time" property="createTime"/>
+        <result column="dosage"        property="dosage"/>
+        <result column="quantity"      property="quantity"/>
+        <result column="unit_price"    property="unitPrice"/>
+        <result column="total_amount"  property="totalAmount"/>
+        <result column="usage"         property="usage"/>
+        <result column="frequency"     property="frequency"/>
+        <result column="duration"      property="duration"/>
+        <result column="remark"        property="remark"/>
+        <result column="create_time"   property="createTime"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, prescription_id, drug_id, drug_name, specification, dosage, quantity,
-        unit_price, total_amount, usage, frequency, duration, remark, create_time
-    </sql>
-
-    <select id="selectById" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM prescription_detail WHERE id = #{id}
-    </select>
-
+    <!--
+        按挂号 id（service 侧传入的 prescriptionId 实为聚合查询返回的 MIN(id)）
+        查处方明细。为了覆盖所有同挂号行，用 register_id 过滤。
+        drug_number 在 schema 里是 VARCHAR（如 "2盒"），需要用 CAST 成 NUMERIC
+        做 quantity；若解析失败则退回为 0，并保留原值到 remark。
+    -->
     <select id="selectByPrescriptionId" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM prescription_detail WHERE prescription_id = #{prescriptionId}
+        SELECT
+            p.id                                               AS id,
+            p.register_id                                      AS prescription_id,
+            p.drug_id                                          AS drug_id,
+            d.name                                             AS drug_name,
+            d.specification                                    AS specification,
+            p.drug_usage                                       AS dosage,
+            CAST(NULLIF(REGEXP_REPLACE(COALESCE(p.drug_number, '0'), '[^0-9]', '', 'g'), '') AS INTEGER)
+                                                               AS quantity,
+            d.price                                            AS unit_price,
+            COALESCE(d.price, 0) *
+            COALESCE(CAST(NULLIF(REGEXP_REPLACE(COALESCE(p.drug_number, '0'), '[^0-9]', '', 'g'), '') AS NUMERIC), 0)
+                                                               AS total_amount,
+            p.drug_usage                                       AS usage,
+            NULL                                               AS frequency,
+            NULL                                               AS duration,
+            p.drug_number                                      AS remark,
+            p.creation_time                                    AS create_time
+        FROM prescription p
+        LEFT JOIN drug_info d ON d.id = p.drug_id
+        WHERE p.register_id = #{prescriptionId}
+        ORDER BY p.creation_time DESC, p.id DESC
     </select>
-
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO prescription_detail (
-            prescription_id, drug_id, drug_name, specification, dosage, quantity,
-            unit_price, total_amount, usage, frequency, duration, remark
-        ) VALUES (
-            #{prescriptionId}, #{drugId}, #{drugName}, #{specification}, #{dosage}, #{quantity},
-            #{unitPrice}, #{totalAmount}, #{usage}, #{frequency}, #{duration}, #{remark}
-        )
-    </insert>
-
-    <delete id="deleteById">
-        DELETE FROM prescription_detail WHERE id = #{id}
-    </delete>
 
 </mapper>
