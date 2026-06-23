@@ -1,5 +1,5 @@
-
 import { http } from '../request'
+import type { MedicalTechnologyCatalogItem } from '@/shared/types/medtech'
 import type { SimulatedCheckStructuredOutput } from '@/shared/types/simulatedCheckResult'
 
 export type MedtechTechType = 'check' | 'inspection' | 'disposal'
@@ -91,17 +91,17 @@ export const medtechApi = {
     return http<T>({ url, method: 'DELETE' })
   },
 
-  checkApplications(params?: { registrationId?: number; checkState?: string }) {
+  checkApplications(params?: { registrationId?: number; checkState?: string; status?: number }) {
     return http<CheckApplication[]>({ url: '/medtech/check/applications', method: 'GET', params }).then((rows) =>
       rows.map((row) => ({ ...row, techType: 'check' as const })),
     )
   },
-  inspectionApplications(params?: { registrationId?: number; inspectionState?: string }) {
+  inspectionApplications(params?: { registrationId?: number; inspectionState?: string; status?: number }) {
     return http<InspectionApplication[]>({ url: '/medtech/inspection/applications', method: 'GET', params }).then(
       (rows) => rows.map((row) => ({ ...row, techType: 'inspection' as const })),
     )
   },
-  disposalApplications(params?: { registrationId?: number; disposalState?: string }) {
+  disposalApplications(params?: { registrationId?: number; disposalState?: string; status?: number }) {
     return http<DisposalApplication[]>({ url: '/medtech/disposal/applications', method: 'GET', params }).then((rows) =>
       rows.map((row) => ({ ...row, techType: 'disposal' as const })),
     )
@@ -153,8 +153,9 @@ export const medtechApi = {
       values?: Record<string, unknown>
       structuredOutput?: SimulatedCheckStructuredOutput
       inspectionResult?: string
-      result?: string
+      result?: string | Record<string, unknown>
       inspectionRemark?: string
+      aiAnalysis?: string
     },
   ) {
     return http<Record<string, unknown>>({ url: `/medtech/inspection/result/${id}`, method: 'PUT', data })
@@ -170,6 +171,19 @@ export const medtechApi = {
   },
   disposalReport(id: number) {
     return http<DisposalReport>({ url: `/medtech/disposal/report/${id}`, method: 'GET' })
+  },
+  medicalTechnologies(type?: string) {
+    return http<MedicalTechnologyCatalogItem[]>({
+      url: '/medtech/medical-technologies',
+      method: 'GET',
+      params: { type },
+    })
+  },
+  medicalTechnology(id: number) {
+    return http<MedicalTechnologyCatalogItem>({
+      url: `/medtech/medical-technologies/${id}`,
+      method: 'GET',
+    })
   },
   archiveCheck(id: number, data: ArchiveRequest) {
     return http<void>({ url: `/medtech/check/archive/${id}`, method: 'PUT', data })

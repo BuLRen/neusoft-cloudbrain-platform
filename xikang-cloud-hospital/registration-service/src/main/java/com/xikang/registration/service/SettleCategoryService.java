@@ -43,7 +43,7 @@ public class SettleCategoryService {
      * 创建结算类别
      */
     public SettleCategory createCategory(SettleCategory category) {
-        category.setStatus(1);
+        // delmark 在 Mapper INSERT 中自动设为 0
         settleCategoryMapper.insert(category);
         log.info("创建结算类别: id={}, name={}", category.getId(), category.getName());
         return category;

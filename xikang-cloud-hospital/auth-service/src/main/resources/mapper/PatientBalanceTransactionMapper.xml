@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.auth.mapper.PatientBalanceTransactionMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.auth.entity.PatientBalanceTransaction">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="transaction_no" property="transactionNo" jdbcType="VARCHAR"/>
+        <result column="patient_id" property="patientId" jdbcType="INTEGER"/>
+        <result column="transaction_type" property="transactionType" jdbcType="VARCHAR"/>
+        <result column="amount" property="amount" jdbcType="DECIMAL"/>
+        <result column="balance_before" property="balanceBefore" jdbcType="DECIMAL"/>
+        <result column="balance_after" property="balanceAfter" jdbcType="DECIMAL"/>
+        <result column="business_type" property="businessType" jdbcType="VARCHAR"/>
+        <result column="business_id" property="businessId" jdbcType="BIGINT"/>
+        <result column="operator_id" property="operatorId" jdbcType="BIGINT"/>
+        <result column="operator_name" property="operatorName" jdbcType="VARCHAR"/>
+        <result column="remark" property="remark" jdbcType="VARCHAR"/>
+        <result column="transaction_time" property="transactionTime" jdbcType="TIMESTAMP"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, transaction_no, patient_id, transaction_type, amount, balance_before, balance_after,
+        business_type, business_id, operator_id, operator_name, remark, transaction_time, create_time
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO patient_balance_transaction (
+            transaction_no, patient_id, transaction_type, amount, balance_before, balance_after,
+            business_type, business_id, operator_id, operator_name, remark, transaction_time
+        ) VALUES (
+            #{transactionNo}, #{patientId}, #{transactionType}, #{amount}, #{balanceBefore}, #{balanceAfter},
+            #{businessType}, #{businessId}, #{operatorId}, #{operatorName}, #{remark}, #{transactionTime}
+        )
+    </insert>
+
+    <select id="selectByBusiness" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM patient_balance_transaction
+        WHERE patient_id = #{patientId}
+          AND transaction_type = #{transactionType}
+          AND business_type = #{businessType}
+          AND business_id = #{businessId}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectByPatient" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM patient_balance_transaction
+        WHERE patient_id = #{patientId}
+        <if test="transactionType != null and transactionType != ''">
+            AND transaction_type = #{transactionType}
+        </if>
+        ORDER BY transaction_time DESC, id DESC
+    </select>
+</mapper>

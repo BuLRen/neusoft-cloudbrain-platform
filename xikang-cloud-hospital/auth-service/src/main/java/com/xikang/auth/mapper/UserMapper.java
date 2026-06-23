@@ -18,4 +18,6 @@ public interface UserMapper {
     int update(User user);
 
     int deleteById(Long id);
+
+    int updatePassword(Long id, String newPassword);
 }

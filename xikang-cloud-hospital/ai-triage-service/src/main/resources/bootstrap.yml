@@ -8,7 +8,16 @@ spring:
       config:
         server-addr: localhost:8848
         file-extension: yaml
-  ai:
-    openai:
-      api-key: ${AI_API_KEY:your-api-key}
-      base-url: ${AI_BASE_URL:https://api.openai.com}
+  config:
+    import: optional:file:./.env
+
+baidu:
+  asr:
+    app-id: ${BAIDU_ASR_APP_ID:}
+    api-key: ${BAIDU_ASR_API_KEY:}
+    secret-key: ${BAIDU_ASR_SECRET_KEY:}
+
+deepseek:
+  api-key: ${DEEPSEEK_API_KEY:your-api-key}
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  model: ${DEEPSEEK_MODEL:deepseek-chat}

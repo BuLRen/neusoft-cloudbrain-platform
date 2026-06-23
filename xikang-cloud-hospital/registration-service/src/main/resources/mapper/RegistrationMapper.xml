@@ -5,121 +5,155 @@
     <resultMap id="BaseResultMap" type="com.xikang.registration.entity.Register">
         <id column="id" property="id"/>
         <result column="patient_id" property="patientId"/>
-        <result column="patient_name" property="patientName"/>
-        <result column="patient_phone" property="patientPhone"/>
-        <result column="id_card" property="idCard"/>
-        <result column="department_id" property="departmentId"/>
-        <result column="department_name" property="departmentName"/>
-        <result column="physician_id" property="physicianId"/>
-        <result column="physician_name" property="physicianName"/>
         <result column="scheduling_id" property="schedulingId"/>
+        <result column="case_number" property="caseNumber"/>
+        <result column="real_name" property="realName"/>
+        <result column="gender" property="gender"/>
+        <result column="card_number" property="cardNumber"/>
+        <result column="birthdate" property="birthdate"/>
+        <result column="age" property="age"/>
+        <result column="age_type" property="ageType"/>
+        <result column="home_address" property="homeAddress"/>
         <result column="visit_date" property="visitDate"/>
-        <result column="visit_time" property="visitTime"/>
-        <result column="complaint" property="complaint"/>
-        <result column="status" property="status"/>
-        <result column="register_type" property="registerType"/>
+        <result column="noon" property="noon"/>
+        <result column="deptment_id" property="deptmentId"/>
+        <result column="employee_id" property="employeeId"/>
         <result column="regist_level_id" property="registLevelId"/>
-        <result column="regist_level_name" property="registLevelName"/>
-        <result column="amount" property="amount"/>
-        <result column="pay_status" property="payStatus"/>
-        <result column="pay_method" property="payMethod"/>
-        <result column="ai_triage_result" property="aiTriageResult"/>
-        <result column="ai_pre_visit" property="aiPreVisit"/>
-        <result column="operator_id" property="operatorId"/>
-        <result column="operator_name" property="operatorName"/>
-        <result column="remark" property="remark"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+        <result column="settle_category_id" property="settleCategoryId"/>
+        <result column="is_book" property="isBook"/>
+        <result column="regist_method" property="registMethod"/>
+        <result column="regist_money" property="registMoney"/>
+        <result column="visit_state" property="visitState"/>
+        <result column="check_in_time" property="checkInTime"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, patient_id, patient_name, patient_phone, id_card, department_id, department_name,
-        physician_id, physician_name, scheduling_id, visit_date, visit_time, complaint, status,
-        register_type, regist_level_id, regist_level_name, amount, pay_status, pay_method,
-        ai_triage_result, ai_pre_visit, operator_id, operator_name, remark, create_time, update_time
+        id, patient_id, scheduling_id, case_number, real_name, gender, card_number, birthdate, age, age_type,
+        home_address, visit_date, noon, deptment_id, employee_id, regist_level_id,
+        settle_category_id, is_book, regist_method, regist_money, visit_state, check_in_time
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM register
-        WHERE id = #{id}
+        FROM register WHERE id = #{id}
     </select>
 
     <select id="selectByPatientId" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM register
-        WHERE patient_id = #{patientId}
-        ORDER BY create_time DESC
+        FROM register WHERE patient_id = #{patientId}
+        ORDER BY visit_date DESC
     </select>
 
     <select id="selectByStatus" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM register
-        WHERE status = #{status}
-        ORDER BY create_time DESC
+        FROM register WHERE visit_state = #{visitState}
+        ORDER BY visit_date DESC
     </select>
+
+    <select id="selectMissedCandidates" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE visit_state = 1 AND visit_date &lt; #{deadline} AND check_in_time IS NULL
+        ORDER BY visit_date ASC
+    </select>
+
+    <update id="markMissed">
+        UPDATE register
+        SET visit_state = 5
+        WHERE visit_state = 1 AND visit_date &lt; #{deadline} AND check_in_time IS NULL
+    </update>
 
     <select id="selectByDate" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM register
-        WHERE visit_date = #{date}
-        ORDER BY create_time DESC
+        FROM register WHERE DATE(visit_date) = #{date}
+        ORDER BY visit_date DESC
     </select>
 
     <select id="selectByDepartmentAndDate" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM register
-        WHERE department_id = #{departmentId}
-        AND visit_date = #{date}
-        ORDER BY create_time DESC
+        FROM register WHERE deptment_id = #{departmentId}
+        AND DATE(visit_date) = #{date}
+        ORDER BY visit_date DESC
     </select>
 
     <select id="selectByPayStatus" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
-        FROM register
-        WHERE pay_status = #{payStatus}
-        ORDER BY create_time DESC
+        FROM register WHERE visit_state = #{visitState}
+        ORDER BY visit_date DESC
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO register (
-            patient_id, patient_name, patient_phone, id_card, department_id, department_name,
-            physician_id, physician_name, scheduling_id, visit_date, visit_time, complaint,
-            status, register_type, regist_level_id, regist_level_name, amount, pay_status,
-            pay_method, ai_triage_result, ai_pre_visit, operator_id, operator_name, remark
+            patient_id, scheduling_id, case_number, real_name, gender, card_number, birthdate, age, age_type,
+            home_address, visit_date, noon, deptment_id, employee_id, regist_level_id,
+            settle_category_id, is_book, regist_method, regist_money, visit_state
         ) VALUES (
-            #{patientId}, #{patientName}, #{patientPhone}, #{idCard}, #{departmentId}, #{departmentName},
-            #{physicianId}, #{physicianName}, #{schedulingId}, #{visitDate}, #{visitTime}, #{complaint},
-            #{status}, #{registerType}, #{registLevelId}, #{registLevelName}, #{amount}, #{payStatus},
-            #{payMethod}, #{aiTriageResult}, #{aiPreVisit}, #{operatorId}, #{operatorName}, #{remark}
+            #{patientId}, #{schedulingId}, #{caseNumber}, #{realName}, #{gender}, #{cardNumber}, #{birthdate}, #{age}, #{ageType},
+            #{homeAddress}, #{visitDate}, #{noon}, #{deptmentId}, #{employeeId}, #{registLevelId},
+            #{settleCategoryId}, #{isBook}, #{registMethod}, #{registMoney}, #{visitState}
         )
     </insert>
 
     <update id="update">
         UPDATE register
-        SET patient_name = #{patientName},
-            patient_phone = #{patientPhone},
-            department_id = #{departmentId},
-            department_name = #{departmentName},
-            physician_id = #{physicianId},
-            physician_name = #{physicianName},
-            complaint = #{complaint},
-            status = #{status},
-            pay_status = #{payStatus},
-            remark = #{remark}
+        SET patient_id = #{patientId},
+            scheduling_id = #{schedulingId},
+            real_name = #{realName},
+            gender = #{gender},
+            card_number = #{cardNumber},
+            birthdate = #{birthdate},
+            age = #{age},
+            age_type = #{ageType},
+            home_address = #{homeAddress},
+            visit_date = #{visitDate},
+            noon = #{noon},
+            deptment_id = #{deptmentId},
+            employee_id = #{employeeId},
+            regist_level_id = #{registLevelId},
+            settle_category_id = #{settleCategoryId},
+            is_book = #{isBook},
+            regist_method = #{registMethod},
+            regist_money = #{registMoney},
+            visit_state = #{visitState}
         WHERE id = #{id}
     </update>
 
     <update id="updateStatus">
-        UPDATE register SET status = #{status} WHERE id = #{id}
+        UPDATE register SET visit_state = #{visitState} WHERE id = #{id}
     </update>
 
     <update id="updatePayStatus">
-        UPDATE register SET pay_status = #{payStatus} WHERE id = #{id}
+        UPDATE register SET visit_state = #{visitState} WHERE id = #{id}
     </update>
 
+    <update id="updateCheckInTime">
+        UPDATE register SET check_in_time = #{checkInTime} WHERE id = #{id}
+    </update>
+
+    <!--
+        统计同一医生、同一天、已报到且报到时间早于当前记录的患者数。
+        用于计算"前面还有 X 人"。号序 = 该值 + 1。
+        用 CTE 把当前记录的 employee_id / visit_date / check_in_time 一次性取出来，
+        避免三次相关子查询对同一行重复扫描。
+    -->
+    <select id="countWaitingBefore" resultType="int">
+        WITH cur AS (
+            SELECT employee_id, DATE(visit_date) AS d, check_in_time
+            FROM register
+            WHERE id = #{id}
+        )
+        SELECT COUNT(*)
+        FROM register r, cur
+        WHERE r.id &lt;&gt; #{id}
+          AND r.visit_state = 1
+          AND r.check_in_time IS NOT NULL
+          AND r.employee_id = cur.employee_id
+          AND DATE(r.visit_date) = cur.d
+          AND r.check_in_time &lt; cur.check_in_time
+    </select>
+
     <delete id="deleteById">
-        DELETE FROM register WHERE id = #{id}
+        UPDATE register SET visit_state = 4 WHERE id = #{id}
     </delete>
 
 </mapper>

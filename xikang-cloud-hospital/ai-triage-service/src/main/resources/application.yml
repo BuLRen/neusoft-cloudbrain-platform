@@ -15,15 +15,24 @@ spring:
       connection-timeout: 30000
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:your-api-key}
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      api-key: ${DEEPSEEK_API_KEY:your-api-key}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-chat}
+
+baidu:
+  asr:
+    app-id: ${BAIDU_ASR_APP_ID:}
+    api-key: ${BAIDU_ASR_API_KEY:}
+    secret-key: ${BAIDU_ASR_SECRET_KEY:}
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml
   type-aliases-package: com.xikang.ai.triage.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 关闭 SQL 打印，调试时取消注释
 
 management:
   endpoints:
@@ -36,5 +45,5 @@ management:
 
 logging:
   level:
-    com.xikang.ai.triage: DEBUG
+    com.xikang.ai.triage: INFO
     org.springframework.ai: DEBUG

@@ -2,6 +2,7 @@ package com.xikang.registration.controller;
 
 import com.xikang.common.result.Result;
 import com.xikang.registration.entity.Department;
+import com.xikang.registration.entity.Employee;
 import com.xikang.registration.entity.RegistLevel;
 import com.xikang.registration.entity.SettleCategory;
 import com.xikang.registration.service.*;
@@ -28,6 +29,7 @@ public class RegistrationController {
     private final RegistLevelService registLevelService;
     private final SettleCategoryService settleCategoryService;
     private final ExpenseRecordService expenseRecordService;
+    private final EmployeeService employeeService;
 
     // ==================== 挂号相关接口 ====================
 
@@ -44,9 +46,18 @@ public class RegistrationController {
      * 取消挂号（退号）
      */
     @PutMapping("/{id}/cancel")
-    public Result<Void> cancelRegister(@PathVariable Long id) {
-        registrationService.cancelRegistration(id);
-        return Result.success();
+    public Result<Map<String, Object>> cancelRegister(@PathVariable Long id) {
+        Map<String, Object> result = registrationService.cancelRegistration(id);
+        return Result.success(result);
+    }
+
+    /**
+     * 患者扫码报到（到院扫码进入候诊队列）
+     */
+    @PostMapping("/{id}/check-in")
+    public Result<Map<String, Object>> checkIn(@PathVariable Long id) {
+        Map<String, Object> result = registrationService.checkIn(id);
+        return Result.success(result);
     }
 
     /**
@@ -80,6 +91,15 @@ public class RegistrationController {
     // ==================== 收费相关接口 ====================
 
     /**
+     * 患者自助缴费
+     */
+    @PostMapping("/{id}/pay")
+    public Result<Map<String, Object>> payRegistration(@PathVariable Long id) {
+        Map<String, Object> result = chargeService.payRegistration(id);
+        return Result.success(result);
+    }
+
+    /**
      * 收费
      */
     @PostMapping("/charge")
@@ -92,7 +112,7 @@ public class RegistrationController {
      * 退费
      */
     @PostMapping("/refund")
-    public Result<Void> refund(@RequestBody Map<String, Object> request) {
+    public Result<Map<String, Object>> refund(@RequestBody Map<String, Object> request) {
         Long expenseRecordId = ((Number) request.get("expenseRecordId")).longValue();
         Long operatorId = request.get("operatorId") != null
             ? ((Number) request.get("operatorId")).longValue()
@@ -100,15 +120,15 @@ public class RegistrationController {
         String operatorName = (String) request.get("operatorName");
         String reason = (String) request.getOrDefault("reason", "用户申请退费");
 
-        refundService.refund(expenseRecordId, operatorId, operatorName, reason);
-        return Result.success();
+        Map<String, Object> result = refundService.refund(expenseRecordId, operatorId, operatorName, reason);
+        return Result.success(result);
     }
 
     /**
      * 按挂号ID退费（全部退费）
      */
     @PostMapping("/refund/register/{registerId}")
-    public Result<Void> refundByRegisterId(
+    public Result<Map<String, Object>> refundByRegisterId(
             @PathVariable Long registerId,
             @RequestBody Map<String, Object> request) {
         Long operatorId = request.get("operatorId") != null
@@ -117,8 +137,8 @@ public class RegistrationController {
         String operatorName = (String) request.get("operatorName");
         String reason = (String) request.getOrDefault("reason", "用户申请退费");
 
-        refundService.refundByRegisterId(registerId, operatorId, operatorName, reason);
-        return Result.success();
+        Map<String, Object> result = refundService.refundByRegisterId(registerId, operatorId, operatorName, reason);
+        return Result.success(result);
     }
 
     /**
@@ -128,8 +148,11 @@ public class RegistrationController {
     public Result<List<Map<String, Object>>> getExpenseRecords(
             @RequestParam(required = false) Long patientId,
             @RequestParam(required = false) Long registerId,
-            @RequestParam(required = false) Integer status) {
-        List<Map<String, Object>> records = expenseRecordService.queryExpenseRecords(patientId, registerId, status);
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        List<Map<String, Object>> records = expenseRecordService.queryExpenseRecords(
+                patientId, registerId, status, startDate, endDate);
         return Result.success(records);
     }
 
@@ -257,12 +280,43 @@ public class RegistrationController {
         return Result.success();
     }
 
-    /**
+/**
      * 删除挂号级别
      */
     @DeleteMapping("/regist-levels/{id}")
     public Result<Void> deleteRegistLevel(@PathVariable Long id) {
         registLevelService.deleteLevel(id);
         return Result.success();
+    }
+
+    // ==================== 医生相关接口 ====================
+
+    /**
+     * 获取科室医生列表
+     */
+    @GetMapping("/doctors/department/{departmentId}")
+    public Result<List<Employee>> getDoctorsByDepartment(@PathVariable Long departmentId) {
+        List<Employee> doctors = employeeService.getDoctorsByDepartment(departmentId);
+        return Result.success(doctors);
+    }
+
+    /**
+     * 根据科室和挂号级别获取医生列表
+     */
+    @GetMapping("/doctors/department/{departmentId}/level/{registLevelId}")
+    public Result<List<Employee>> getDoctorsByDepartmentAndLevel(
+            @PathVariable Long departmentId,
+            @PathVariable Long registLevelId) {
+        List<Employee> doctors = employeeService.getDoctorsByDepartmentAndLevel(departmentId, registLevelId);
+        return Result.success(doctors);
+    }
+
+    /**
+     * 获取医生详情
+     */
+    @GetMapping("/doctors/{id}")
+    public Result<Employee> getDoctor(@PathVariable Long id) {
+        Employee doctor = employeeService.getDoctor(id);
+        return Result.success(doctor);
     }
 }

@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/app/stores/auth'
+import AdminDashboard from '@/modules/admin/pages/AdminDashboard.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.role === 'admin')
 const modules = [
   { title: '诊疗流程', owner: '人员A', path: '/physician/queue', description: '医生接诊、病历、申请、确诊、开方。' },
   { title: '入口与支撑流程', owner: '人员B', path: '/registration', description: '导诊、挂号、收费、执行、发药、随访。' },
@@ -13,7 +18,8 @@ const modules = [
 </script>
 
 <template>
-  <div class="dashboard u-page-grid">
+  <AdminDashboard v-if="isAdmin" />
+  <div v-else class="dashboard u-page-grid">
     <PageHeader
       title="前端框架仪表盘"
       description="当前阶段只提供框架、菜单、权限、视觉系统和占位路由。具体业务页面由后续小组成员在对应模块中开发。"
