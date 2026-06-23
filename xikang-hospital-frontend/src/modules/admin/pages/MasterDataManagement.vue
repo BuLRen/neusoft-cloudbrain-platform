@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
   ElDescriptions,
@@ -39,14 +39,6 @@ const settleCategories = ref<SettleCategoryOption[]>([])
 const drugs = ref<DrugOption[]>([])
 const items = ref<MedicalTechnologyCatalogItem[]>([])
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: 'departments', label: '科室资料' },
-  { key: 'registLevels', label: '挂号级别' },
-  { key: 'settleCategories', label: '结算类别' },
-  { key: 'drugs', label: '药品目录' },
-  { key: 'items', label: '检查检验项目' },
-]
-
 // 科室编辑/新增
 const deptDialogVisible = ref(false)
 const editingDeptId = ref<number | null>(null)
@@ -70,8 +62,6 @@ const levelForm = reactive({
 // 药品详情（只读弹窗）
 const drugDialogVisible = ref(false)
 const selectedDrug = ref<DrugOption | null>(null)
-
-const currentLabel = computed(() => tabs.find((t) => t.key === activeTab.value)?.label || '')
 
 async function loadAll() {
   loading.value = true
@@ -153,7 +143,7 @@ function openCreateLevel() {
 
 function openEditLevel(row: RegistLevelOption) {
   editingLevelId.value = row.id
-  levelForm.code = row.code || ''
+  levelForm.code = row.id != null ? String(row.id) : ''
   levelForm.name = row.name
   levelForm.fee = row.price ?? 0
   levelForm.quota = 0

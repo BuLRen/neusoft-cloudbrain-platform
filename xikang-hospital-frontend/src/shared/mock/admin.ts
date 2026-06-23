@@ -85,7 +85,7 @@ export const adminUsers: AdminUserRecord[] = [
   { id: 2, username: 'reg_lili', realName: '李丽', role: 'registration', department: '挂号收费处', status: 'enabled', lastLoginAt: '2026-06-08 08:43' },
   { id: 3, username: 'dr_wang', realName: '王强', role: 'physician', department: '内科', status: 'enabled', lastLoginAt: '2026-06-08 09:01' },
   { id: 4, username: 'medtech_zhou', realName: '周敏', role: 'medtech', department: '检验科', status: 'locked', lastLoginAt: '2026-06-07 18:25' },
-  { id: 5, username: 'pharm_sun', realName: '孙晨', role: 'pharmacy', department: '门诊药房', status: 'disabled', lastLoginAt: '2026-06-05 14:11' },
+  { id: 5, username: 'pharm_sun', realName: '孙晨', role: 'pharmacy', department: '门诊药房', status: 'enabled', lastLoginAt: '2026-06-22 09:15' },
 ]
 
 export const permissionScopes: Record<string, PermissionScopeItem[]> = {

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    药房统计聚合 Mapper
+    所有查询都从 pharmacy_transaction 出发，按时间范围过滤。
+    quantity 字段约定：发放为负、入库/退回为正；本统计聚焦"发放"流向。
+-->
+<mapper namespace="com.xikang.pharmacy.mapper.StatisticsMapper">
+
+    <!-- 顶部 KPI：发药单数、发放药品件数、发放总金额 -->
+    <select id="selectOverview" resultType="java.util.Map">
+        SELECT
+            COUNT(DISTINCT register_id)                                AS prescription_count,
+            COALESCE(SUM(CASE WHEN type = '发放' THEN -quantity ELSE 0 END), 0)
+                                                                      AS dispensed_quantity,
+            COALESCE(SUM(CASE WHEN type = '发放' THEN -total_amount ELSE 0 END), 0)
+                                                                      AS dispensed_amount,
+            COALESCE(SUM(CASE WHEN type = '入库' THEN quantity ELSE 0 END), 0)
+                                                                      AS inbound_quantity,
+            COALESCE(SUM(CASE WHEN type = '退回' THEN total_amount ELSE 0 END), 0)
+                                                                      AS returned_amount
+        FROM pharmacy_transaction
+        <where>
+            <if test="startDate != null">transaction_time &gt;= #{startDate}</if>
+            <if test="endDate != null">AND transaction_time &lt;= #{endDate}</if>
+        </where>
+    </select>
+
+    <!-- 药品 TOP：按发放数量降序 -->
+    <select id="selectTopDrugs" resultType="java.util.Map">
+        SELECT
+            drug_id                AS "drugId",
+            drug_name              AS "drugName",
+            SUM(-quantity)         AS "dispensedQuantity",
+            COUNT(*)               AS "dispenseTimes"
+        FROM pharmacy_transaction
+        WHERE type = '发放'
+          <if test="startDate != null">AND transaction_time &gt;= #{startDate}</if>
+          <if test="endDate != null">AND transaction_time &lt;= #{endDate}</if>
+        GROUP BY drug_id, drug_name
+        ORDER BY "dispensedQuantity" DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 药师工作量：按操作人汇总 -->
+    <select id="selectOperatorStats" resultType="java.util.Map">
+        SELECT
+            COALESCE(operator_name, '未记录')   AS "operatorName",
+            COUNT(*)                            AS "operationCount",
+            SUM(CASE WHEN type = '发放' THEN 1 ELSE 0 END)
+                                                AS "dispenseCount",
+            SUM(CASE WHEN type = '入库' THEN 1 ELSE 0 END)
+                                                AS "inboundCount"
+        FROM pharmacy_transaction
+        <where>
+            <if test="startDate != null">transaction_time &gt;= #{startDate}</if>
+            <if test="endDate != null">AND transaction_time &lt;= #{endDate}</if>
+        </where>
+        GROUP BY operator_name
+        ORDER BY "operationCount" DESC
+    </select>
+
+</mapper>

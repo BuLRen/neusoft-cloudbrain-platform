@@ -1131,6 +1131,196 @@ ON CONFLICT (id) DO NOTHING;
 SELECT setval('department_id_seq', (SELECT MAX(id) FROM department));
 
 -- ============================================================
+-- 种子数据：挂号级别（3 级）、结算类别（2 类）、排班规则（3 条）
+-- 依据：挂号与排班模块必需
+-- ============================================================
+
+INSERT INTO regist_level (id, regist_code, regist_name, regist_fee, regist_quota, sequence_no, delmark) VALUES
+    (1, 'PT', '普通号',       5.00,  50, 1, 0),
+    (2, 'ZJ', '专家号',       15.00, 30, 2, 0),
+    (3, 'ZR', '主任医师号',   30.00, 15, 3, 0)
+ON CONFLICT (id) DO NOTHING;
+
+SELECT setval('regist_level_id_seq', (SELECT MAX(id) FROM regist_level));
+
+INSERT INTO settle_category (id, settle_code, settle_name, sequence_no, delmark) VALUES
+    (1, 'ZF', '自费', 1, 0),
+    (2, 'YB', '医保', 2, 0)
+ON CONFLICT (id) DO NOTHING;
+
+SELECT setval('settle_category_id_seq', (SELECT MAX(id) FROM settle_category));
+
+-- ============================================================
+-- 种子数据：员工（118 条）
+-- 临床科室医生：20 科室 × 5 人 = 100 人
+-- 医技科室人员：18 人
+-- ============================================================
+
+-- 科室1: 内科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (1, 1, 1, '内科张医生',       'dev-password', 0),
+    (2, 1, 1, '内科李医生',       'dev-password', 0),
+    (3, 1, 1, '内科王医生',       'dev-password', 0),
+    (4, 1, 2, '内科赵专家',       'dev-password', 0),
+    (5, 1, 3, '内科刘主任',       'dev-password', 0);
+-- 科室2: 呼吸内科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (6,  2, 1, '呼吸内科周医生',   'dev-password', 0),
+    (7,  2, 1, '呼吸内科吴医生',   'dev-password', 0),
+    (8,  2, 1, '呼吸内科郑医生',   'dev-password', 0),
+    (9,  2, 2, '呼吸内科冯专家',   'dev-password', 0),
+    (10, 2, 3, '呼吸内科陈主任',   'dev-password', 0);
+-- 科室3: 心血管内科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (11, 3, 1, '心血管内科孙医生', 'dev-password', 0),
+    (12, 3, 1, '心血管内科李医生', 'dev-password', 0),
+    (13, 3, 1, '心血管内科林医生', 'dev-password', 0),
+    (14, 3, 2, '心血管内科何专家', 'dev-password', 0),
+    (15, 3, 3, '心血管内科高主任', 'dev-password', 0);
+-- 科室4: 消化内科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (16, 4, 1, '消化内科马医生',   'dev-password', 0),
+    (17, 4, 1, '消化内科朱医生',   'dev-password', 0),
+    (18, 4, 1, '消化内科秦医生',   'dev-password', 0),
+    (19, 4, 2, '消化内科尤专家',   'dev-password', 0),
+    (20, 4, 3, '消化内科许主任',   'dev-password', 0);
+-- 科室5: 神经内科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (21, 5, 1, '神经内科施医生',   'dev-password', 0),
+    (22, 5, 1, '神经内科张医生',   'dev-password', 0),
+    (23, 5, 1, '神经内科蒋医生',   'dev-password', 0),
+    (24, 5, 2, '神经内科韩专家',   'dev-password', 0),
+    (25, 5, 3, '神经内科沈主任',   'dev-password', 0);
+-- 科室6: 肾内科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (26, 6, 1, '肾内科唐医生',     'dev-password', 0),
+    (27, 6, 1, '肾内科冯医生',     'dev-password', 0),
+    (28, 6, 1, '肾内科董医生',     'dev-password', 0),
+    (29, 6, 2, '肾内科潘专家',     'dev-password', 0),
+    (30, 6, 3, '肾内科姜主任',     'dev-password', 0);
+-- 科室7: 内分泌科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (31, 7, 1, '内分泌科苏医生',   'dev-password', 0),
+    (32, 7, 1, '内分泌科魏医生',   'dev-password', 0),
+    (33, 7, 1, '内分泌科卢医生',   'dev-password', 0),
+    (34, 7, 2, '内分泌科崔专家',   'dev-password', 0),
+    (35, 7, 3, '内分泌科蔡主任',   'dev-password', 0);
+-- 科室8: 外科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (36, 8, 1, '外科丁医生',       'dev-password', 0),
+    (37, 8, 1, '外科沈医生',       'dev-password', 0),
+    (38, 8, 1, '外科徐医生',       'dev-password', 0),
+    (39, 8, 2, '外科蒋专家',       'dev-password', 0),
+    (40, 8, 3, '外科沈主任',       'dev-password', 0);
+-- 科室9: 骨科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (41, 9, 1, '骨科卢医生',       'dev-password', 0),
+    (42, 9, 1, '骨科马医生',       'dev-password', 0),
+    (43, 9, 1, '骨科龚医生',       'dev-password', 0),
+    (44, 9, 2, '骨科秦专家',       'dev-password', 0),
+    (45, 9, 3, '骨科谢主任',       'dev-password', 0);
+-- 科室10: 妇产科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (46, 10, 1, '妇产科苏医生',     'dev-password', 0),
+    (47, 10, 1, '妇产科韦医生',     'dev-password', 0),
+    (48, 10, 1, '妇产科严医生',     'dev-password', 0),
+    (49, 10, 2, '妇产科卫专家',     'dev-password', 0),
+    (50, 10, 3, '妇产科武主任',     'dev-password', 0);
+-- 科室11: 儿科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (51, 11, 1, '儿科陶医生',       'dev-password', 0),
+    (52, 11, 1, '儿科俞医生',       'dev-password', 0),
+    (53, 11, 1, '儿科任医生',       'dev-password', 0),
+    (54, 11, 2, '儿科袁专家',       'dev-password', 0),
+    (55, 11, 3, '儿科柳主任',       'dev-password', 0);
+-- 科室12: 新生儿科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (56, 12, 1, '新生儿科毕医生',   'dev-password', 0),
+    (57, 12, 1, '新生儿科郝医生',   'dev-password', 0),
+    (58, 12, 1, '新生儿科邬医生',   'dev-password', 0),
+    (59, 12, 2, '新生儿科安专家',   'dev-password', 0),
+    (60, 12, 3, '新生儿科常主任',   'dev-password', 0);
+-- 科室13: 眼科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (61, 13, 1, '眼科乐医生',       'dev-password', 0),
+    (62, 13, 1, '眼科于医生',       'dev-password', 0),
+    (63, 13, 1, '眼科傅医生',       'dev-password', 0),
+    (64, 13, 2, '眼科康专家',       'dev-password', 0),
+    (65, 13, 3, '眼科陆主任',       'dev-password', 0);
+-- 科室14: 耳鼻咽喉科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (66, 14, 1, '耳鼻咽喉科柴医生', 'dev-password', 0),
+    (67, 14, 1, '耳鼻咽喉科胡医生', 'dev-password', 0),
+    (68, 14, 1, '耳鼻咽喉科戴医生', 'dev-password', 0),
+    (69, 14, 2, '耳鼻咽喉科蔡专家', 'dev-password', 0),
+    (70, 14, 3, '耳鼻咽喉科谭主任', 'dev-password', 0);
+-- 科室15: 口腔科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (71, 15, 1, '口腔科舒医生',     'dev-password', 0),
+    (72, 15, 1, '口腔科屈医生',     'dev-password', 0),
+    (73, 15, 1, '口腔科项医生',     'dev-password', 0),
+    (74, 15, 2, '口腔科纪专家',     'dev-password', 0),
+    (75, 15, 3, '口腔科梁主任',     'dev-password', 0);
+-- 科室16: 皮肤科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (76, 16, 1, '皮肤科杜医生',     'dev-password', 0),
+    (77, 16, 1, '皮肤科阮医生',     'dev-password', 0),
+    (78, 16, 1, '皮肤科贝医生',     'dev-password', 0),
+    (79, 16, 2, '皮肤科明专家',     'dev-password', 0),
+    (80, 16, 3, '皮肤科程主任',     'dev-password', 0);
+-- 科室17: 中医科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (81, 17, 1, '中医科卫医生',     'dev-password', 0),
+    (82, 17, 1, '中医科申医生',     'dev-password', 0),
+    (83, 17, 1, '中医科连医生',     'dev-password', 0),
+    (84, 17, 2, '中医科习专家',     'dev-password', 0),
+    (85, 17, 3, '中医科程主任',     'dev-password', 0);
+-- 科室18: 肿瘤科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (86, 18, 1, '肿瘤科向医生',     'dev-password', 0),
+    (87, 18, 1, '肿瘤科丁医生',     'dev-password', 0),
+    (88, 18, 1, '肿瘤科茅医生',     'dev-password', 0),
+    (89, 18, 2, '肿瘤科左专家',     'dev-password', 0),
+    (90, 18, 3, '肿瘤科甘主任',     'dev-password', 0);
+-- 科室19: 急诊科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (91, 19, 1, '急诊科龙医生',     'dev-password', 0),
+    (92, 19, 1, '急诊科万医生',     'dev-password', 0),
+    (93, 19, 1, '急诊科柯医生',     'dev-password', 0),
+    (94, 19, 2, '急诊科柯专家',     'dev-password', 0),
+    (95, 19, 3, '急诊科支主任',     'dev-password', 0);
+-- 科室20: 康复医学科
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (96, 20, 1, '康复科管医生',     'dev-password', 0),
+    (97, 20, 1, '康复科蔡医生',     'dev-password', 0),
+    (98, 20, 1, '康复科蒙医生',     'dev-password', 0),
+    (99, 20, 2, '康复科应专家',     'dev-password', 0),
+    (100, 20, 3, '康复科丁主任',    'dev-password', 0);
+
+-- 医技科室人员（不挂号，执行检查/检验/处置）
+INSERT INTO employee (id, deptment_id, regist_level_id, realname, password, delmark) VALUES
+    (101, 35, NULL, '放射科技师王一',   'dev-password', 0),
+    (102, 35, NULL, '放射科技师李二',   'dev-password', 0),
+    (103, 35, NULL, '放射科医生张三',   'dev-password', 0),
+    (104, 36, NULL, '超声科技师赵四',   'dev-password', 0),
+    (105, 36, NULL, '超声科医生钱五',   'dev-password', 0),
+    (106, 37, NULL, '检验科技师孙六',   'dev-password', 0),
+    (107, 37, NULL, '检验科医生周七',   'dev-password', 0),
+    (108, 38, NULL, '输血科技师吴八',   'dev-password', 0),
+    (109, 39, NULL, '病理科医生郑九',   'dev-password', 0),
+    (110, 40, NULL, '处置室护士长冯十', 'dev-password', 0),
+    (111, 40, NULL, '处置室护士李一',   'dev-password', 0),
+    (112, 41, NULL, '内镜中心技师周二', 'dev-password', 0),
+    (113, 41, NULL, '内镜中心医生陈二', 'dev-password', 0),
+    (114, 42, NULL, '手术室护士长周三', 'dev-password', 0),
+    (115, 42, NULL, '手术室麻醉师李三', 'dev-password', 0),
+    (116, 44, NULL, '供应中心护士长王四','dev-password', 0),
+    (117, 45, NULL, '药房药师张五',     'dev-password', 0),
+    (118, 45, NULL, '药房药师赵六',     'dev-password', 0);
+
+SELECT setval('employee_id_seq', (SELECT MAX(id) FROM employee));
+
+-- ============================================================
 -- 种子数据：测试用户（6 条，便于后端联调）
 -- ============================================================
 

@@ -46,6 +46,23 @@
         SELECT <include refid="Base_Column_List"/> FROM pharmacy_transaction WHERE register_id = #{registerId} ORDER BY create_time DESC
     </select>
 
+    <!-- P1-4.4 组合条件查询（AND） -->
+    <select id="selectByConditions" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM pharmacy_transaction
+        <where>
+            <if test="drugId != null">
+                AND drug_id = #{drugId}
+            </if>
+            <if test="type != null and type != ''">
+                AND type = #{type}
+            </if>
+            <if test="startDate != null and endDate != null">
+                AND transaction_time BETWEEN #{startDate} AND #{endDate}
+            </if>
+        </where>
+        ORDER BY transaction_time DESC
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO pharmacy_transaction (
             type, drug_id, drug_name, prescription_id, register_id, quantity,

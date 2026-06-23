@@ -2,6 +2,13 @@ export interface PendingPrescriptionQuery {
   registrationId?: number
 }
 
+export interface PrescriptionQuery {
+  patientId?: number
+  status?: number
+  startDate?: string
+  endDate?: string
+}
+
 export interface PrescriptionSummary {
   id: number
   registerId?: number
@@ -48,10 +55,7 @@ export interface DispenseResult {
   itemCount?: number
   dispensationTime?: string
   pharmacist?: string
-  followUpCreatedCount?: number
-  followUpFailedCount?: number
-  followUpPlanIds?: number[]
-  followUpFailedPrescriptionIds?: number[]
+  followUpMessage?: string
 }
 
 export interface ReturnDrugPayload {
@@ -67,6 +71,7 @@ export interface DrugOption {
   brandName?: string
   specification?: string
   dosageForm?: string
+  category?: string
   unit?: string
   manufacturer?: string
   approvalNumber?: string
@@ -80,6 +85,88 @@ export interface DrugOption {
   status?: number
   createTime?: string
   updateTime?: string
+}
+
+export interface DrugQuery {
+  keyword?: string
+  dosageForm?: string
+  category?: string
+}
+
+export interface ExpiringStockItem {
+  id: number
+  drugId?: number
+  drugName?: string
+  batchNumber?: string
+  quantity?: number
+  expiryDate?: string
+  location?: string
+  daysRemaining?: number
+}
+
+export interface ReviewItem {
+  drugId?: number
+  drugName?: string
+  quantity?: number
+  totalAmount?: number
+  status: 'pass' | 'warn' | 'block'
+  reason?: string
+}
+
+export interface ReviewResult {
+  registerId: number
+  overallStatus: 'pass' | 'warn' | 'block'
+  items: ReviewItem[]
+  warnings: string[]
+  totalAmount?: number
+}
+
+export interface FollowUpPlan {
+  id?: number
+  planId?: number
+  patientId?: number
+  patientName?: string
+  prescriptionId?: number
+  status?: string
+  currentStage?: string
+  nextFollowUpTime?: string
+  createTime?: string
+  [key: string]: unknown
+}
+
+export interface FollowUpFeedback {
+  followUpType?: string
+  medicationAdherence?: string
+  symptomScoreCurrent?: number
+  aiAssessment?: string
+  patientEducation?: string[]
+  nextFollowUpPlan?: string
+  needReferral?: boolean
+  referralReason?: string
+  [key: string]: unknown
+}
+
+/** P2-4.6 发药单 */
+export interface Dispensing {
+  id: number
+  prescriptionId?: number
+  patientId?: number
+  dispensingNo?: string
+  amount?: number
+  status?: number
+  pharmacist?: string
+  dispensingTime?: string
+}
+
+export interface MedicationGuide {
+  drugName?: string
+  usage?: string
+  dosage?: string
+  frequency?: string
+  precautions?: string
+  sideEffects?: string
+  storage?: string
+  [key: string]: unknown
 }
 
 export interface DrugStock {
@@ -106,6 +193,7 @@ export interface DrugStockUpdatePayload {
   quantity: number
   location?: string
   batchNumber?: string
+  reason?: string
 }
 
 export interface PharmacyTransactionQuery {
@@ -129,4 +217,34 @@ export interface PharmacyTransaction {
   reason?: string
   transactionTime?: string
   createTime?: string
+}
+
+export interface StatisticsOverview {
+  prescriptionCount?: number
+  dispensedQuantity?: number
+  dispensedAmount?: number
+  inboundQuantity?: number
+  returnedAmount?: number
+}
+
+export interface TopDrugItem {
+  drugId?: number
+  drugName?: string
+  dispensedQuantity?: number
+  dispenseTimes?: number
+}
+
+export interface OperatorStatItem {
+  operatorName?: string
+  operationCount?: number
+  dispenseCount?: number
+  inboundCount?: number
+}
+
+export interface StatisticsResult {
+  overview?: StatisticsOverview
+  topDrugs?: TopDrugItem[]
+  operatorStats?: OperatorStatItem[]
+  startDate?: string
+  endDate?: string
 }

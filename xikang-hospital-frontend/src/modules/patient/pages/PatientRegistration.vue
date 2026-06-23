@@ -1572,6 +1572,11 @@ const showSuccessCard = computed(() => {
 </template>
 
 <style scoped>
+/* ====================================================================
+   PatientRegistration — 重新设计的玻璃拟态风格
+   严守项目 tokens.css，结构/交互保持不变
+   ==================================================================== */
+
 .registration-wizard {
   display: flex;
   flex-direction: column;
@@ -1579,49 +1584,58 @@ const showSuccessCard = computed(() => {
   width: 100%;
 }
 
+/* ===================== 列表页 ===================== */
 .registration-list-page {
-  width: 80%;
-  margin: 0 10%;
-  padding: var(--space-5);
+  width: 88%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-8);
   background: var(--color-surface);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-md);
 }
 
 .list-toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
-  padding-bottom: var(--space-4);
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-5);
   border-bottom: 1px solid var(--color-border);
 }
 
 .list-toolbar h2 {
   margin: 0 0 var(--space-2);
-  font-size: 22px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .list-toolbar p {
   margin: 0;
   color: var(--color-text-muted);
   line-height: 1.7;
+  font-size: 13.5px;
+  max-width: 640px;
 }
 
-.registration-record-list {
-  display: grid;
-  gap: var(--space-4);
-}
-
+/* —— 筛选条 —— */
 .list-filters {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
   align-items: flex-end;
-  margin-bottom: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: #f7f8fc;
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
 }
@@ -1629,24 +1643,35 @@ const showSuccessCard = computed(() => {
 .filter-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 160px;
+  gap: 6px;
+  min-width: 168px;
 }
 
 .filter-field label {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--color-text-muted);
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.filter-field .form-input {
-  height: 32px;
+.filter-field .form-input,
+.filter-field :deep(.el-date-editor) {
+  height: 36px;
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: #fff;
+  background: var(--color-surface-strong);
   font-size: 13px;
   font-family: inherit;
+  transition: border-color var(--duration-base) var(--ease-standard),
+              box-shadow var(--duration-base) var(--ease-standard);
+}
+
+.filter-field .form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 .filter-field .field {
@@ -1658,6 +1683,7 @@ const showSuccessCard = computed(() => {
   margin-left: auto;
   color: var(--color-text-muted);
   font-size: 12px;
+  padding-bottom: 8px;
 }
 
 .link-btn {
@@ -1668,79 +1694,276 @@ const showSuccessCard = computed(() => {
   font-size: inherit;
   padding: 0;
   text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* —— 挂号记录卡片 —— */
+.registration-record-list {
+  display: grid;
+  gap: var(--space-4);
 }
 
 .registration-record-card {
+  position: relative;
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  gap: var(--space-5);
+  padding: var(--space-5);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: #fff;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-strong);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-base) var(--ease-standard),
+              box-shadow var(--duration-base) var(--ease-standard),
+              border-color var(--duration-base) var(--ease-standard);
+  overflow: hidden;
+}
+
+.registration-record-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--gradient-primary);
+  opacity: 0.85;
+}
+
+.registration-record-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-strong);
 }
 
 .record-main {
   flex: 1;
   display: grid;
   gap: var(--space-3);
+  padding-left: var(--space-2);
+}
+
+/* 操作按钮区：拉开间距 + 危险操作视觉隔离 */
+.record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 主操作（去缴费）和次要操作之间留出呼吸距离 */
+.record-actions .btn-primary.btn-sm {
+  margin-right: var(--space-1);
+}
+
+/* 危险操作（取消挂号）和其它按钮之间加分隔，避免误点 */
+.record-actions .btn-outline.btn-sm.btn-danger {
+  margin-left: var(--space-3);
+  position: relative;
+}
+
+.record-actions .btn-outline.btn-sm.btn-danger::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--space-3) * -1);
+  top: 50%;
+  width: 1px;
+  height: 18px;
+  background: var(--color-border);
+  transform: translateY(-50%);
 }
 
 .record-title-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .record-title-row strong {
   font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .record-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2) var(--space-4);
+  gap: var(--space-2) var(--space-5);
   color: var(--color-text-muted);
   font-size: 13px;
 }
 
 .record-complaint {
   margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-primary-soft);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-sm);
   color: var(--color-text);
   font-size: 13px;
   line-height: 1.7;
 }
 
 .record-side {
-  min-width: 112px;
+  min-width: 124px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   justify-content: center;
   gap: var(--space-2);
-  padding-left: var(--space-4);
-  border-left: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-control);
+  border-radius: var(--radius-lg);
 }
 
 .record-amount {
   color: var(--color-primary);
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 .record-pay {
   color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* —— 空状态 —— */
+.empty-state {
+  padding: var(--space-8) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 14px;
+  text-align: center;
+  background: var(--color-control);
+  border-radius: var(--radius-lg);
+}
+
+.rich-empty {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: center;
+  padding: var(--space-8);
+}
+
+.rich-empty strong {
+  font-size: 18px;
+  color: var(--color-text);
+}
+
+.rich-empty span {
+  max-width: 560px;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+.empty-state.small {
+  padding: var(--space-4);
   font-size: 13px;
 }
 
-.btn-sm {
-  padding: 6px 12px;
-  border-radius: var(--radius-md);
-  font-size: 12px;
+/* ===================== 按钮 ===================== */
+.btn-primary,
+.btn-outline,
+.btn-warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  border-radius: var(--radius-md);
+  transition: transform var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-base) var(--ease-standard),
+              background var(--duration-base) var(--ease-standard),
+              border-color var(--duration-base) var(--ease-standard),
+              color var(--duration-base) var(--ease-standard);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.btn-primary {
+  padding: 10px 22px;
+  background: var(--gradient-primary);
+  color: #fff;
+  border: none;
+  font-size: 14px;
+  box-shadow: 0 6px 18px rgba(31, 140, 255, 0.28);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px rgba(31, 140, 255, 0.36);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-primary.btn-lg {
+  padding: var(--space-4) var(--space-8);
+  font-size: 15px;
+}
+
+.btn-outline {
+  padding: 10px 20px;
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  font-size: 14px;
+}
+
+.btn-outline:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.btn-outline.btn-danger {
+  color: var(--color-danger);
+  border-color: rgba(239, 77, 90, 0.32);
+}
+
+.btn-outline.btn-danger:hover {
+  background: rgba(239, 77, 90, 0.08);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.btn-warning {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #ffb060 0%, #f59f00 100%);
+  color: #fff;
+  border: none;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(245, 159, 0, 0.28);
+}
+
+.btn-warning:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(245, 159, 0, 0.36);
+}
+
+/* 小号按钮（列表行内动作） */
+.btn-sm {
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-base) var(--ease-standard);
   border: 1px solid transparent;
   background: transparent;
   display: inline-flex;
@@ -1754,7 +1977,7 @@ const showSuccessCard = computed(() => {
 }
 
 .btn-outline.btn-sm {
-  background: #fff;
+  background: var(--color-surface-strong);
   color: var(--color-text);
   border-color: var(--color-border);
 }
@@ -1762,6 +1985,7 @@ const showSuccessCard = computed(() => {
 .btn-outline.btn-sm:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .btn-outline.btn-sm.btn-danger {
@@ -1775,276 +1999,54 @@ const showSuccessCard = computed(() => {
 }
 
 .btn-primary.btn-sm {
-  background: var(--color-primary);
+  background: var(--gradient-primary);
   color: #fff;
-  border-color: var(--color-primary);
+  border-color: transparent;
+  box-shadow: 0 3px 10px rgba(31, 140, 255, 0.24);
 }
 
-.btn-primary.btn-sm:hover {
-  background: #1a77e0;
-  border-color: #1a77e0;
+.btn-primary.btn-sm:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(31, 140, 255, 0.34);
 }
 
-.rich-empty {
-  display: grid;
-  gap: var(--space-3);
-  justify-items: center;
-}
-
-.rich-empty span {
-  max-width: 560px;
-  line-height: 1.7;
-}
-
-/* ========== 挂号详情弹窗 ========== */
-.registration-detail-dialog :deep(.el-dialog__header) {
-  padding: 20px 24px 12px;
-  margin-right: 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.registration-detail-dialog :deep(.el-dialog__title) {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.registration-detail-dialog :deep(.el-dialog__body) {
-  padding: 20px 24px;
-  background: #f7f8fc;
-}
-
-.registration-detail-dialog :deep(.el-dialog__footer) {
-  padding: 12px 24px 18px;
-  border-top: 1px solid var(--color-border);
-  background: #fff;
-}
-
-.detail-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #1f8cff 0%, #5aa9ff 100%);
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(31, 140, 255, 0.18);
-}
-
-.detail-header .status-tag {
-  --tag-color: #ffffff;
-  --tag-bg: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-}
-
-.detail-header-main {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.detail-department {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: #fff;
-}
-
-.detail-doctor {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.detail-header-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.detail-amount {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  line-height: 1.2;
-}
-
-.detail-amount-label {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.detail-amount-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.detail-tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.detail-section {
-  background: #fff;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.detail-section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-text);
-  letter-spacing: 0.01em;
-}
-
-.detail-section-title::before {
+/* 加载点动画 */
+.loading-dots::after {
   content: '';
-  display: inline-block;
-  width: 3px;
-  height: 14px;
-  margin-right: 8px;
-  background: var(--color-primary);
-  border-radius: 2px;
+  animation: dots 1.5s infinite;
 }
 
-.detail-section-meta {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  font-weight: 400;
+@keyframes dots {
+  0%, 20% { content: ''; }
+  40% { content: '.'; }
+  60% { content: '..'; }
+  80%, 100% { content: '...'; }
 }
 
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 20px;
-}
-
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  background: #f7f8fc;
-  border-radius: 8px;
-  border: 1px solid #eef0f4;
-}
-
-.detail-item label {
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.detail-item span {
-  font-size: 14px;
-  color: var(--color-text);
-  font-weight: 500;
-  word-break: break-all;
-}
-
-.detail-item .mono {
-  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
-  letter-spacing: 0.02em;
-}
-
-.detail-complaint {
-  margin: 0;
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: #fff8eb;
-  border: 1px solid #fce3a8;
-  color: #8a5a00;
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.expense-table-wrapper {
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  overflow: hidden;
-  background: #fff;
-}
-
-.expense-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.expense-table th {
-  text-align: left;
-  padding: 10px 12px;
-  background: #f7f8fc;
-  color: var(--color-text-muted);
-  font-weight: 600;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.expense-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid #f0f2f5;
-  color: var(--color-text);
-}
-
-.expense-table tr:last-child td {
-  border-bottom: none;
-}
-
-.expense-table tr:hover td {
-  background: #fafbff;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.empty-state.small {
-  padding: 18px 0;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-/* ========== 时间轴进度条 ========== */
+/* ===================== 步骤时间轴 ===================== */
 .step-timeline {
   position: relative;
-  width: 80%;
-  margin: 0 10%;
+  width: 88%;
+  max-width: 1280px;
+  margin: 0 auto;
   box-sizing: border-box;
-  padding: var(--space-4) var(--space-8);
+  padding: var(--space-5) var(--space-8);
   background: var(--color-surface);
-  border-radius: var(--radius-xl);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
   border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-sm);
 }
 
 .timeline-track {
   position: absolute;
-  top: 50%;
-  left: 48px;
-  right: 48px;
+  top: calc(var(--space-5) + 18px);
+  left: calc(var(--space-8) + 18px);
+  right: calc(var(--space-8) + 18px);
   height: 3px;
   background: var(--color-border);
   border-radius: 2px;
-  transform: translateY(-50%);
 }
 
 .timeline-progress {
@@ -2052,9 +2054,9 @@ const showSuccessCard = computed(() => {
   top: 0;
   left: 0;
   height: 100%;
-  background: var(--color-success);
+  background: var(--gradient-primary);
   border-radius: 2px;
-  transition: width 0.4s ease;
+  transition: width 0.5s var(--ease-standard);
 }
 
 .timeline-steps {
@@ -2074,29 +2076,37 @@ const showSuccessCard = computed(() => {
   z-index: 1;
   cursor: pointer;
   flex: 1;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.timeline-step:hover {
+  transform: translateY(-2px);
 }
 
 .step-node {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface);
-  border: 3px solid var(--color-border);
-  transition: all 0.3s ease;
+  background: var(--color-surface-strong);
+  border: 2px solid var(--color-border);
+  transition: all 0.35s var(--ease-standard);
+  box-shadow: 0 2px 8px rgba(31, 73, 125, 0.06);
 }
 
 .timeline-step.is-active .step-node {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 4px rgba(31, 140, 255, 0.2);
+  background: var(--gradient-primary);
+  border-color: transparent;
+  box-shadow: 0 0 0 6px var(--color-primary-soft),
+              0 8px 20px rgba(31, 140, 255, 0.32);
 }
 
 .timeline-step.is-completed .step-node {
-  background: var(--color-success);
-  border-color: var(--color-success);
+  background: var(--gradient-primary);
+  border-color: transparent;
+  box-shadow: 0 6px 14px rgba(31, 140, 255, 0.28);
 }
 
 .node-number {
@@ -2105,13 +2115,14 @@ const showSuccessCard = computed(() => {
   color: var(--color-text-muted);
 }
 
-.timeline-step.is-active .node-number {
-  color: white;
+.timeline-step.is-active .node-number,
+.timeline-step.is-completed .node-number {
+  color: #fff;
 }
 
 .node-check {
   font-size: 16px;
-  color: white;
+  color: #fff;
   font-weight: 700;
 }
 
@@ -2124,7 +2135,7 @@ const showSuccessCard = computed(() => {
 }
 
 .step-icon {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .step-title {
@@ -2143,15 +2154,22 @@ const showSuccessCard = computed(() => {
 }
 
 .timeline-step.is-completed .step-title {
-  color: var(--color-success);
+  color: var(--color-primary);
 }
 
-/* ========== 步骤内容 ========== */
+/* ===================== 步骤卡片通用 ===================== */
 .step-card {
-  padding: var(--space-4) var(--space-8);
-  width: 80%;
-  margin: 0 10%;
+  padding: var(--space-5) var(--space-8);
+  width: 88%;
+  max-width: 1280px;
+  margin: 0 auto;
   box-sizing: border-box;
+  background: var(--color-surface);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-md);
 }
 
 .step-header {
@@ -2164,8 +2182,9 @@ const showSuccessCard = computed(() => {
 }
 
 .step-icon-lg {
-  font-size: 32px;
+  font-size: 34px;
   line-height: 1;
+  filter: drop-shadow(0 4px 10px rgba(31, 140, 255, 0.18));
 }
 
 .header-text {
@@ -2179,15 +2198,19 @@ const showSuccessCard = computed(() => {
   font-weight: 700;
   margin: 0;
   letter-spacing: -0.02em;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .step-header p {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--color-text-muted);
   margin: 0;
 }
 
-/* ========== 表单布局 ========== */
+/* ===================== 表单 ===================== */
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2214,33 +2237,29 @@ const showSuccessCard = computed(() => {
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  background: var(--color-surface-strong);
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.75;
   resize: vertical;
   font-family: inherit;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  color: var(--color-text);
+  transition: border-color var(--duration-base) var(--ease-standard),
+              box-shadow var(--duration-base) var(--ease-standard);
 }
 
 .form-textarea:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(31, 140, 255, 0.1);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
 }
 
 .form-textarea::placeholder {
   color: var(--color-text-soft);
 }
 
-/* ========== 导诊表单（单列全宽） ========== */
+/* ===================== 导诊 ===================== */
 .triage-form-full {
   width: 100%;
-}
-
-.triage-form-full .form-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
 }
 
 .triage-form-full .form-item label {
@@ -2249,7 +2268,6 @@ const showSuccessCard = computed(() => {
   color: var(--color-text);
 }
 
-/* ========== 导诊结果 ========== */
 .triage-result {
   margin-top: var(--space-5);
   display: flex;
@@ -2260,24 +2278,27 @@ const showSuccessCard = computed(() => {
 .result-alert {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: linear-gradient(135deg, rgba(32, 180, 134, 0.1) 0%, rgba(32, 180, 134, 0.05) 100%);
-  border: 1px solid var(--color-success);
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: linear-gradient(135deg, rgba(32, 180, 134, 0.14) 0%, rgba(32, 180, 134, 0.04) 100%);
+  border: 1px solid rgba(32, 180, 134, 0.35);
   border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(32, 180, 134, 0.12);
 }
 
 .alert-icon {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--color-success);
-  color: white;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 22px;
+  font-weight: 700;
   flex-shrink: 0;
+  box-shadow: 0 6px 14px rgba(32, 180, 134, 0.32);
 }
 
 .alert-content {
@@ -2304,10 +2325,11 @@ const showSuccessCard = computed(() => {
 }
 
 .result-card {
-  padding: var(--space-4);
-  background: var(--color-surface);
+  padding: var(--space-5);
+  background: var(--color-surface-strong);
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
 }
 
 .result-card .card-header {
@@ -2326,13 +2348,19 @@ const showSuccessCard = computed(() => {
 }
 
 .doctor-chip {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-surface);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: 999px;
+  transition: all var(--duration-base) var(--ease-standard);
+}
+
+.doctor-chip:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .doctor-name {
@@ -2346,8 +2374,8 @@ const showSuccessCard = computed(() => {
 }
 
 .advice-text {
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 13.5px;
+  line-height: 1.8;
   color: var(--color-text);
   margin: 0 0 var(--space-3);
 }
@@ -2377,7 +2405,195 @@ const showSuccessCard = computed(() => {
   gap: var(--space-2);
 }
 
-/* ========== 排班列表 ========== */
+.urgency-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  font-size: 14px;
+}
+
+.urgency-bar.is-urgent {
+  background: rgba(245, 159, 0, 0.08);
+  border-left-color: var(--color-warning);
+}
+
+.urgency-advice {
+  color: var(--color-text-muted);
+}
+
+.info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: var(--space-3) 0;
+  font-size: 13px;
+}
+
+.red-flag-bar {
+  padding: var(--space-3) var(--space-4);
+  background: rgba(239, 77, 90, 0.06);
+  border: 1px solid rgba(239, 77, 90, 0.28);
+  border-left: 4px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+  color: var(--color-danger);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.red-flag-item {
+  font-size: 13px;
+  padding-left: var(--space-2);
+}
+
+.no-doctor {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* 症状快捷分类 */
+.symptom-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  align-items: center;
+}
+
+.category-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-right: var(--space-1);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.category-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-base) var(--ease-standard);
+}
+
+.category-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  transform: translateY(-1px);
+}
+
+.category-btn.is-active {
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(31, 140, 255, 0.24);
+}
+
+/* 语音输入 */
+.textarea-wrapper {
+  position: relative;
+}
+
+.form-textarea {
+  width: 100%;
+  padding-right: 64px;
+}
+
+.voice-btn {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-strong);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-base) var(--ease-standard);
+  font-size: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.voice-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  transform: scale(1.05);
+}
+
+.voice-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.voice-btn.is-recording {
+  border-color: var(--color-danger);
+  background: rgba(239, 77, 90, 0.08);
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 77, 90, 0.6); }
+  50% { transform: scale(1.08); box-shadow: 0 0 0 12px rgba(239, 77, 90, 0); }
+}
+
+/* ===================== 排班列表 ===================== */
+.schedule-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-control);
+  border-radius: var(--radius-md);
+}
+
+.schedule-filter label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.schedule-filter .form-input {
+  height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-strong);
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text);
+  transition: border-color var(--duration-base) var(--ease-standard),
+              box-shadow var(--duration-base) var(--ease-standard);
+}
+
+.schedule-filter .form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
 .schedule-list {
   display: flex;
   flex-direction: column;
@@ -2388,21 +2604,25 @@ const showSuccessCard = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4);
-  background: var(--color-surface);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface-strong);
   border: 2px solid var(--color-border);
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-base) var(--ease-standard);
+  box-shadow: var(--shadow-sm);
 }
 
 .schedule-item:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .schedule-item.is-selected {
-  border-color: var(--color-primary);
-  background: rgba(31, 140, 255, 0.05);
+  border-color: transparent;
+  background: linear-gradient(135deg, rgba(31, 140, 255, 0.06) 0%, rgba(47, 216, 196, 0.04) 100%);
+  box-shadow: 0 0 0 2px var(--color-primary), 0 8px 20px rgba(31, 140, 255, 0.18);
 }
 
 .schedule-main {
@@ -2418,7 +2638,7 @@ const showSuccessCard = computed(() => {
 }
 
 .schedule-doctor .doctor-name {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 16px;
 }
 
@@ -2427,6 +2647,7 @@ const showSuccessCard = computed(() => {
   gap: var(--space-4);
   font-size: 13px;
   color: var(--color-text-muted);
+  flex-wrap: wrap;
 }
 
 .schedule-status {
@@ -2439,31 +2660,35 @@ const showSuccessCard = computed(() => {
 .selected-badge {
   font-size: 12px;
   color: var(--color-primary);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 /* 挂号级别卡片 */
 .level-card {
   margin-top: var(--space-4);
-  background: var(--color-surface);
+  background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 .level-header {
   padding: var(--space-3) var(--space-4);
   background: var(--color-primary-soft);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-primary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .level-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-5);
 }
 
 .level-info {
@@ -2478,18 +2703,19 @@ const showSuccessCard = computed(() => {
 }
 
 .level-price {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--color-primary);
+  letter-spacing: -0.02em;
 }
 
-/* 患者信息提示栏 */
+/* 患者信息栏 */
 .patient-info-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
-  background: var(--color-surface);
+  background: var(--color-control);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   margin-bottom: var(--space-4);
@@ -2508,7 +2734,7 @@ const showSuccessCard = computed(() => {
 
 .patient-info-value {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .patient-info-right {
@@ -2521,14 +2747,16 @@ const showSuccessCard = computed(() => {
 
 .allergy-warning {
   color: var(--color-danger);
+  font-weight: 600;
 }
 
-/* ========== 确认信息 ========== */
+/* ===================== 确认信息 ===================== */
 .confirm-card {
-  background: var(--color-surface);
+  background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 .confirm-row {
@@ -2546,12 +2774,15 @@ const showSuccessCard = computed(() => {
 }
 
 .confirm-item label {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--color-text-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .confirm-item span {
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 500;
 }
 
@@ -2559,8 +2790,8 @@ const showSuccessCard = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
-  background: linear-gradient(135deg, var(--color-primary-soft) 0%, rgba(31, 140, 255, 0.05) 100%);
+  padding: var(--space-5);
+  background: linear-gradient(135deg, var(--color-primary-soft) 0%, rgba(47, 216, 196, 0.06) 100%);
 }
 
 .total-label {
@@ -2568,23 +2799,27 @@ const showSuccessCard = computed(() => {
   align-items: center;
   gap: var(--space-3);
   font-weight: 600;
+  font-size: 15px;
 }
 
 .total-price {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   color: var(--color-primary);
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
-/* ========== 成功页面 ========== */
+/* ===================== 成功页面 ===================== */
 .success-card-content {
-  max-width: 380px;
+  max-width: 420px;
   margin: 0 auto var(--space-6);
-  background: var(--color-surface);
+  background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   overflow: hidden;
   text-align: left;
+  box-shadow: var(--shadow-sm);
 }
 
 .success-row {
@@ -2610,15 +2845,16 @@ const showSuccessCard = computed(() => {
 }
 
 .success-row .mono {
-  font-family: 'Monaco', 'Consolas', monospace;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
   color: var(--color-primary);
+  letter-spacing: 0.02em;
 }
 
 .success-row.highlight {
   background: var(--color-primary-soft);
 }
 
-/* ========== 报到二维码样式 ========== */
+/* ===================== 报到二维码 ===================== */
 .checkin-section {
   margin-top: var(--space-6);
   padding-top: var(--space-6);
@@ -2628,26 +2864,29 @@ const showSuccessCard = computed(() => {
   align-items: center;
   gap: var(--space-3);
 }
+
 .checkin-title {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
   text-align: center;
 }
+
 .checkin-desc {
   margin: 0;
   font-size: 13px;
   color: var(--color-text-muted);
   text-align: center;
 }
+
 .checkin-time {
   margin: 4px 0 0 0;
   font-size: 12px;
-  color: var(--color-success, #16a34a);
+  color: var(--color-success);
   text-align: center;
 }
 
-/* ========== AI预问诊样式 ========== */
+/* ===================== AI预问诊 ===================== */
 .previsit-section {
   margin-top: var(--space-6);
   padding-top: var(--space-6);
@@ -2658,16 +2897,18 @@ const showSuccessCard = computed(() => {
   display: flex;
   gap: var(--space-4);
   padding: var(--space-5);
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border: 1px solid #7dd3fc;
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.1) 0%, rgba(31, 140, 255, 0.06) 100%);
+  border: 1px solid rgba(124, 92, 255, 0.28);
   border-radius: var(--radius-lg);
   margin-bottom: var(--space-4);
+  box-shadow: var(--shadow-sm);
 }
 
 .previsit-cta-icon {
-  font-size: 40px;
+  font-size: 42px;
   line-height: 1;
   flex-shrink: 0;
+  filter: drop-shadow(0 4px 10px rgba(124, 92, 255, 0.28));
 }
 
 .previsit-cta-content {
@@ -2676,9 +2917,9 @@ const showSuccessCard = computed(() => {
 
 .previsit-cta-content h4 {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   margin: 0 0 var(--space-2);
-  color: #0369a1;
+  color: var(--color-ai);
 }
 
 .previsit-cta-content p {
@@ -2711,15 +2952,16 @@ const showSuccessCard = computed(() => {
 
 .previsit-divider span {
   position: relative;
-  background: var(--color-surface);
+  background: var(--color-surface-strong);
   padding: 0 var(--space-4);
   color: var(--color-text-muted);
   font-size: 13px;
+  letter-spacing: 0.06em;
 }
 
 .previsit-title {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   margin: 0 0 var(--space-2);
   text-align: center;
 }
@@ -2742,7 +2984,7 @@ const showSuccessCard = computed(() => {
   padding: var(--space-3) var(--space-5);
   background: rgba(32, 180, 134, 0.1);
   border: 1px solid var(--color-success);
-  border-radius: var(--radius-lg);
+  border-radius: 999px;
   color: var(--color-success);
   font-weight: 600;
   margin-bottom: var(--space-5);
@@ -2752,7 +2994,7 @@ const showSuccessCard = computed(() => {
   font-size: 18px;
 }
 
-/* ========== 操作按钮 ========== */
+/* ===================== 步骤按钮区 ===================== */
 .step-actions {
   display: flex;
   justify-content: flex-end;
@@ -2766,80 +3008,246 @@ const showSuccessCard = computed(() => {
   justify-content: center;
 }
 
-.btn-primary {
-  padding: var(--space-3) var(--space-6);
-  background: var(--color-primary);
-  color: white;
-  border: none;
-  border-radius: var(--radius-lg);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
+/* ===================== 详情弹窗 ===================== */
+.registration-detail-dialog :deep(.el-dialog) {
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
 }
 
-.btn-primary:hover {
-  background: var(--color-primary-dark, #1a77e0);
-  transform: translateY(-1px);
+.registration-detail-dialog :deep(.el-dialog__header) {
+  padding: 22px 26px 14px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-strong);
 }
 
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btn-primary.btn-lg {
-  padding: var(--space-4) var(--space-8);
-  font-size: 15px;
-}
-
-.btn-outline {
-  padding: var(--space-3) var(--space-5);
-  background: transparent;
+.registration-detail-dialog :deep(.el-dialog__title) {
+  font-size: 18px;
+  font-weight: 700;
   color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.registration-detail-dialog :deep(.el-dialog__body) {
+  padding: 22px 26px;
+  background: var(--color-bg-soft);
+}
+
+.registration-detail-dialog :deep(.el-dialog__footer) {
+  padding: 14px 26px 20px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-strong);
+}
+
+.detail-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px;
+  border-radius: var(--radius-xl);
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(31, 140, 255, 0.28);
+}
+
+.detail-header :deep(.status-tag) {
+  --tag-color: #ffffff;
+  --tag-bg: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+}
+
+.detail-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.detail-department {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.detail-doctor {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.detail-header-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.detail-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+
+.detail-amount-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.detail-amount-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.detail-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.detail-section {
+  background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
 }
 
-.btn-outline:hover {
-  border-color: var(--color-primary);
+.detail-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.01em;
+}
+
+.detail-section-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 14px;
+  margin-right: 10px;
+  background: var(--gradient-primary);
+  border-radius: 2px;
+  vertical-align: -2px;
+}
+
+.detail-section-meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--color-control);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.detail-item label {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.detail-item span {
+  font-size: 14px;
+  color: var(--color-text);
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.detail-item .mono {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  letter-spacing: 0.02em;
   color: var(--color-primary);
 }
 
-.btn-warning {
-  padding: var(--space-2) var(--space-4);
-  background: #e6a23c;
-  color: white;
-  border: none;
+.detail-complaint {
+  margin: 0;
+  padding: 14px 16px;
   border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  border-left: 4px solid var(--color-primary);
+  color: var(--color-text);
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+.expense-table-wrapper {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface-strong);
+}
+
+.expense-table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 13px;
+}
+
+.expense-table th {
+  text-align: left;
+  padding: 12px 14px;
+  background: var(--color-table-header);
+  color: var(--color-text-muted);
   font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--color-border);
 }
 
-.btn-warning:hover {
-  background: #cf8d2c;
+.expense-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
 }
 
-.loading-dots::after {
-  content: '';
-  animation: dots 1.5s infinite;
+.expense-table tr:last-child td {
+  border-bottom: none;
 }
 
-@keyframes dots {
-  0%, 20% { content: ''; }
-  40% { content: '.'; }
-  60% { content: '..'; }
-  80%, 100% { content: '...'; }
+.expense-table tr:hover td {
+  background: var(--color-primary-soft);
 }
 
-/* ========== 响应式 ========== */
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ===================== 响应式 ===================== */
 @media (max-width: 1024px) {
   .result-cards {
     grid-template-columns: 1fr;
@@ -2848,11 +3256,20 @@ const showSuccessCard = computed(() => {
   .confirm-row {
     grid-template-columns: 1fr;
   }
+
+  .registration-list-page,
+  .step-timeline,
+  .step-card {
+    width: 94%;
+  }
 }
 
 @media (max-width: 768px) {
-  .step-timeline {
-    padding: var(--space-4);
+  .registration-list-page,
+  .step-timeline,
+  .step-card {
+    width: 100%;
+    padding: var(--space-5);
   }
 
   .timeline-steps {
@@ -2873,105 +3290,14 @@ const showSuccessCard = computed(() => {
     text-align: left;
   }
 
-  .form-row {
+  .form-row,
+  .form-grid {
     grid-template-columns: 1fr;
   }
-}
 
-.urgency-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  background: #f0f9ff;
-  border: 1px solid #3b82f6;
-  border-radius: var(--radius-md);
-  margin-bottom: var(--space-4);
-  font-size: 14px;
-}
-.urgency-bar.is-urgent { background: #fff7ed; border-color: #f97316; }
-.urgency-advice { color: var(--color-text-muted); }
-.info-row { display: flex; flex-wrap: wrap; gap: var(--space-4); margin: var(--space-3) 0; font-size: 13px; }
-.red-flag-bar { padding: var(--space-3); background: #fef2f2; border: 1px solid #ef4444; border-radius: var(--radius-md); margin: var(--space-3) 0; color: #dc2626; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
-.red-flag-item { font-size: 13px; }
-.no-doctor { color: var(--color-text-muted); font-size: 13px; }
-
-/* 症状快捷分类标签 */
-.symptom-categories {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-  align-items: center;
-}
-.category-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  margin-right: var(--space-1);
-}
-.category-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.category-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: rgba(26, 119, 224, 0.05);
-}
-.category-btn.is-active {
-  border-color: var(--color-primary);
-  background: rgba(26, 119, 224, 0.1);
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-/* 语音输入按钮 */
-.textarea-wrapper {
-  position: relative;
-}
-.form-textarea {
-  width: 100%;
-  padding-right: 48px;
-}
-.voice-btn {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  font-size: 20px;
-}
-.voice-btn:hover {
-  border-color: var(--color-primary);
-  background: rgba(26, 119, 224, 0.08);
-  box-shadow: 0 2px 8px rgba(26, 119, 224, 0.2);
-}
-.voice-btn.is-recording {
-  border-color: #ef4444;
-  background: #fef2f2;
-  animation: pulse 1s infinite;
-}
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
+  .record-side {
+    min-width: 0;
+    padding: var(--space-2);
+  }
 }
 </style>
