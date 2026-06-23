@@ -11,26 +11,38 @@
         <result column="phone" property="phone" jdbcType="VARCHAR"/>
         <result column="status" property="status" jdbcType="INTEGER"/>
         <result column="user_type" property="userType" jdbcType="INTEGER"/>
+        <result column="employee_id" property="employeeId" jdbcType="INTEGER"/>
         <result column="remark" property="remark" jdbcType="VARCHAR"/>
         <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
         <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
     </resultMap>
 
+    <sql id="Base_Column_List">
+        id, username, password, real_name, email, phone, status, user_type, employee_id, remark, create_time, update_time
+    </sql>
+
     <select id="selectByUsername" resultMap="BaseResultMap">
-        SELECT id, username, password, real_name, email, phone, status, user_type, remark, create_time, update_time
+        SELECT <include refid="Base_Column_List"/>
         FROM users
         WHERE username = #{username}
     </select>
 
     <select id="selectById" resultMap="BaseResultMap">
-        SELECT id, username, password, real_name, email, phone, status, user_type, remark, create_time, update_time
+        SELECT <include refid="Base_Column_List"/>
         FROM users
         WHERE id = #{id} AND status = 1
     </select>
 
+    <select id="selectByEmployeeId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM users
+        WHERE employee_id = #{employeeId}
+        LIMIT 1
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO users (username, password, real_name, email, phone, status, user_type, remark, create_time, update_time)
-        VALUES (#{username}, #{password}, #{realName}, #{email}, #{phone}, #{status}, #{userType}, #{remark}, NOW(), NOW())
+        INSERT INTO users (username, password, real_name, email, phone, status, user_type, employee_id, remark, create_time, update_time)
+        VALUES (#{username}, #{password}, #{realName}, #{email}, #{phone}, #{status}, #{userType}, #{employeeId}, #{remark}, NOW(), NOW())
     </insert>
 
     <update id="update">
@@ -40,6 +52,7 @@
             phone = #{phone},
             status = #{status},
             user_type = #{userType},
+            employee_id = #{employeeId},
             remark = #{remark},
             update_time = NOW()
         WHERE id = #{id}
@@ -51,6 +64,14 @@
 
     <update id="updatePassword">
         UPDATE users SET password = #{newPassword}, update_time = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE users SET status = #{status}, update_time = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateRealNameByEmployeeId">
+        UPDATE users SET real_name = #{realName}, update_time = NOW() WHERE employee_id = #{employeeId}
     </update>
 
 </mapper>

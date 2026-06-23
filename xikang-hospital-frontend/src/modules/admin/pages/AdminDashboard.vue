@@ -29,15 +29,16 @@ const kpiCards = computed(() => {
   const k = kpi.value
   return [
     { title: '在册科室', value: k?.departments ?? 0, tone: 'primary' as const, to: '/admin/master-data' },
-    { title: '在册医生', value: k?.doctors ?? 0, tone: 'success' as const, to: '/admin/master-data' },
+    { title: '在册医生', value: k?.doctors ?? 0, tone: 'success' as const, to: '/admin/physicians' },
     { title: '药品目录', value: k?.drugs ?? 0, tone: 'warning' as const, to: '/admin/master-data' },
     { title: 'AI 导诊咨询', value: k?.aiTriageConsultations ?? 0, tone: 'ai' as const, to: '/admin/reports' },
   ]
 })
 
 const quickEntries = [
-  { title: '管理员支撑', description: '处理 AI 分诊台和基础支撑动作。', path: '/admin', tone: 'primary' as const },
-  { title: '智能排班', description: '查看计划、确认调整、发布排班。', path: '/schedule', tone: 'warning' as const },
+  { title: 'AI 分诊台', description: '处理 AI 分诊台和基础支撑动作。', path: '/admin/triage', tone: 'primary' as const },
+  { title: '智能排班', description: '查看计划、确认调整、发布排班。', path: '/admin/schedule', tone: 'warning' as const },
+  { title: '诊疗医生维护', description: '维护医生档案与登录账号。', path: '/admin/physicians', tone: 'success' as const },
   { title: '基础资料', description: '维护科室、挂号级别、药品与项目目录。', path: '/admin/master-data', tone: 'success' as const },
   { title: '统计报表', description: '查看真实经营分析与趋势。', path: '/admin/reports', tone: 'ai' as const },
 ]

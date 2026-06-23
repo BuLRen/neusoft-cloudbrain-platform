@@ -2,6 +2,8 @@ package com.xikang.physician.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xikang.common.exception.BusinessException;
+import com.xikang.physician.context.PhysicianAuthContext;
 import com.xikang.physician.mapper.PhysicianMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,11 +40,12 @@ public class PhysicianService {
         int currentPage = page == null || page < 1 ? 1 : page;
         int pageSize = size == null || size < 1 ? 10 : size;
         int offset = (currentPage - 1) * pageSize;
-        List<Map<String, Object>> records = physicianMapper.selectPatients(keyword, offset, pageSize).stream()
+        Long employeeId = PhysicianAuthContext.employeeIdOrNull();
+        List<Map<String, Object>> records = physicianMapper.selectPatients(keyword, employeeId, offset, pageSize).stream()
             .map(this::withAiConsultSummary)
             .map(this::syncExamStateIfNeeded)
             .toList();
-        long total = physicianMapper.countPatients(keyword);
+        long total = physicianMapper.countPatients(keyword, employeeId);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("records", records);
@@ -54,10 +57,11 @@ public class PhysicianService {
     }
 
     public Map<String, Object> getPatientStats() {
-        return physicianMapper.selectPatientStats();
+        return physicianMapper.selectPatientStats(PhysicianAuthContext.employeeIdOrNull());
     }
 
     public Map<String, Object> getPatient(Long registerId) {
+        assertRegisterAccess(registerId);
         Map<String, Object> row = physicianMapper.selectPatientByRegisterId(registerId);
         if (row == null) {
             return null;
@@ -67,6 +71,7 @@ public class PhysicianService {
 
     @Transactional
     public Map<String, Object> startEncounter(Long registerId) {
+        assertRegisterAccess(registerId);
         int current = currentVisitState(registerId);
         if (current == VISIT_REGISTERED) {
             physicianMapper.updateVisitState(registerId, VISIT_IN_PROGRESS);
@@ -79,6 +84,7 @@ public class PhysicianService {
 
     @Transactional
     public Map<String, Object> endVisit(Long registerId) {
+        assertRegisterAccess(registerId);
         int current = currentVisitState(registerId);
         if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_PENDING || current == VISIT_EXAM_COMPLETED) {
             physicianMapper.updateVisitState(registerId, VISIT_ENDED);
@@ -90,6 +96,7 @@ public class PhysicianService {
     }
 
     public Map<String, Object> getMedicalRecord(Long registerId) {
+        assertRegisterAccess(registerId);
         Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
         if (record == null) {
             return null;
@@ -103,6 +110,7 @@ public class PhysicianService {
     @Transactional
     public void savePreliminaryDiagnosis(Map<String, Object> request) {
         Long registerId = toLong(request.get("registerId"));
+        assertRegisterAccess(registerId);
         Map<String, Object> existing = physicianMapper.selectMedicalRecordByRegisterId(registerId);
         Long medicalRecordId;
         if (existing == null) {
@@ -155,6 +163,7 @@ public class PhysicianService {
 
     @Transactional
     public Map<String, Object> createMedicalRecord(Map<String, Object> request) {
+        assertRegisterAccess(toLong(request.get("registerId")));
         Map<String, Object> record = copyRecordFields(request);
         physicianMapper.insertMedicalRecord(record);
         Long medicalRecordId = toLong(record.get("id"));
@@ -167,6 +176,8 @@ public class PhysicianService {
 
     @Transactional
     public void updateMedicalRecord(Long id, Map<String, Object> request) {
+        Long registerId = physicianMapper.selectRegisterIdByMedicalRecordId(id);
+        assertRegisterAccess(registerId);
         Map<String, Object> record = copyRecordFields(request);
         record.put("id", id);
         physicianMapper.updateMedicalRecord(record);
@@ -179,6 +190,7 @@ public class PhysicianService {
 
     @Transactional
     public Map<String, Object> createCheckRequest(Map<String, Object> request) {
+        assertRegisterAccess(toLong(request.get("registerId")));
         Map<String, Object> result = createTechnologyRequest(request, "check");
         markExamPending(toLong(request.get("registerId")));
         result.put("visitState", currentVisitState(toLong(request.get("registerId"))));
@@ -187,6 +199,7 @@ public class PhysicianService {
 
     @Transactional
     public Map<String, Object> createInspectionRequest(Map<String, Object> request) {
+        assertRegisterAccess(toLong(request.get("registerId")));
         Map<String, Object> result = createTechnologyRequest(request, "inspection");
         markExamPending(toLong(request.get("registerId")));
         result.put("visitState", currentVisitState(toLong(request.get("registerId"))));
@@ -195,14 +208,17 @@ public class PhysicianService {
 
     @Transactional
     public Map<String, Object> createDisposalRequest(Map<String, Object> request) {
+        assertRegisterAccess(toLong(request.get("registerId")));
         return createTechnologyRequest(request, "disposal");
     }
 
     public List<Map<String, Object>> getCheckResults(Long registerId) {
+        assertRegisterAccess(registerId);
         return physicianMapper.selectCheckResults(registerId).stream().map(this::withAiAnalysis).toList();
     }
 
     public List<Map<String, Object>> getInspectionResults(Long registerId) {
+        assertRegisterAccess(registerId);
         return physicianMapper.selectInspectionResults(registerId).stream().map(this::withAiAnalysis).toList();
     }
 
@@ -212,12 +228,15 @@ public class PhysicianService {
 
     @Transactional
     public void submitDiagnosis(Map<String, Object> request) {
+        Long registerId = physicianMapper.selectRegisterIdByMedicalRecordId(toLong(request.get("medicalRecordId")));
+        assertRegisterAccess(registerId);
         physicianMapper.updateDiagnosis(request);
         Long medicalRecordId = toLong(request.get("medicalRecordId"));
         syncRecordDiseases(medicalRecordId, diseaseIds(request));
     }
 
     public List<Map<String, Object>> getDiagnosisList(Long registrationId) {
+        assertRegisterAccess(registrationId);
         return physicianMapper.selectDiagnosisSuggestions(registrationId);
     }
 
@@ -237,12 +256,14 @@ public class PhysicianService {
     }
 
     public List<Map<String, Object>> getPrescriptionList(Long registrationId) {
+        assertRegisterAccess(registrationId);
         return physicianMapper.selectPrescriptions(registrationId);
     }
 
     @Transactional
     public Map<String, Object> createPrescription(Map<String, Object> prescriptionRequest) {
         Long registerId = toLong(prescriptionRequest.get("registerId"));
+        assertRegisterAccess(registerId);
         List<Map<String, Object>> items = requestItems(prescriptionRequest);
         List<Long> prescriptionIds = items.stream().map(item -> {
             Map<String, Object> row = new HashMap<>(item);
@@ -270,14 +291,17 @@ public class PhysicianService {
     }
 
     public List<Map<String, Object>> getExamSuggestions(Long registerId) {
+        assertRegisterAccess(registerId);
         return physicianMapper.selectExamSuggestions(registerId);
     }
 
     public List<Map<String, Object>> getDiagnosisSuggestions(Long registerId) {
+        assertRegisterAccess(registerId);
         return physicianMapper.selectDiagnosisSuggestions(registerId);
     }
 
     public Map<String, Object> getPrescriptionReview(Long registerId) {
+        assertRegisterAccess(registerId);
         return fallbackReview(registerId);
     }
 
@@ -346,6 +370,23 @@ public class PhysicianService {
                 "correlationAnalysis", "ai_exam_analysis.correlation_analysis"
             )
         );
+    }
+
+    private void assertRegisterAccess(Long registerId) {
+        if (registerId == null) {
+            throw new BusinessException(400, "挂号记录不存在");
+        }
+        if (PhysicianAuthContext.isAdminAllAccess()) {
+            return;
+        }
+        Long currentEmployeeId = PhysicianAuthContext.employeeIdOrNull();
+        if (currentEmployeeId == null) {
+            throw new BusinessException(403, "无权访问该患者");
+        }
+        Long ownerEmployeeId = physicianMapper.selectRegisterEmployeeId(registerId);
+        if (ownerEmployeeId == null || !ownerEmployeeId.equals(currentEmployeeId)) {
+            throw new BusinessException(403, "无权访问该患者");
+        }
     }
 
     private void markExamPending(Long registerId) {

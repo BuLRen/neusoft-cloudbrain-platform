@@ -9,11 +9,16 @@ import java.util.Map;
 @Mapper
 public interface PhysicianMapper {
 
-    List<Map<String, Object>> selectPatients(@Param("keyword") String keyword, @Param("offset") int offset, @Param("size") int size);
+    List<Map<String, Object>> selectPatients(
+        @Param("keyword") String keyword,
+        @Param("employeeId") Long employeeId,
+        @Param("offset") int offset,
+        @Param("size") int size
+    );
 
-    long countPatients(@Param("keyword") String keyword);
+    long countPatients(@Param("keyword") String keyword, @Param("employeeId") Long employeeId);
 
-    Map<String, Object> selectPatientStats();
+    Map<String, Object> selectPatientStats(@Param("employeeId") Long employeeId);
 
     Map<String, Object> selectMedicalRecordByRegisterId(@Param("registerId") Long registerId);
 
@@ -62,6 +67,10 @@ public interface PhysicianMapper {
     Map<String, Object> selectLatestPrescriptionReview(@Param("registerId") Long registerId);
 
     Map<String, Object> selectRegisterById(@Param("registerId") Long registerId);
+
+    Long selectRegisterEmployeeId(@Param("registerId") Long registerId);
+
+    Long selectRegisterIdByMedicalRecordId(@Param("medicalRecordId") Long medicalRecordId);
 
     Map<String, Object> selectPatientByRegisterId(@Param("registerId") Long registerId);
 

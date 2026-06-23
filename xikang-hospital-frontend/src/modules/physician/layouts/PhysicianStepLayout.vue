@@ -7,6 +7,7 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import EmptyState from '@/shared/components/EmptyState.vue'
 import PhysicianPatientDrawer from '../components/PhysicianPatientDrawer.vue'
+import ClinicalRecordAffix from '../components/ClinicalRecordAffix.vue'
 import { usePhysicianEncounterRoute } from '../composables/usePhysicianEncounterRoute'
 import { useEncounterStore } from '@/app/stores/encounter'
 
@@ -118,6 +119,12 @@ const patientBadge = computed(() => {
         <ElButton v-if="nextPath" type="primary" @click="navigateWithRegisterId(nextPath)">下一步</ElButton>
       </div>
     </GlassCard>
+
+    <ClinicalRecordAffix
+      v-if="encounterStore.hasEncounter"
+      :register-id="encounterStore.registerId"
+      mode="physician"
+    />
 
     <PhysicianPatientDrawer v-if="encounterStore.hasEncounter" v-model:visible="drawerVisible" />
   </div>

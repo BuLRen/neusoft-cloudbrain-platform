@@ -38,9 +38,17 @@ public interface RegistrationMapper {
 
     int insert(Register register);
 
+    Long selectMaxId();
+
+    Long selectNextSequenceValue();
+
+    Long syncIdSequence();
+
     int update(Register register);
 
     int updateStatus(@Param("id") Long id, @Param("visitState") Integer status);
+
+    String selectLatestCaseNumberByPatient(@Param("patientId") Long patientId);
 
     int updatePayStatus(@Param("id") Long id, @Param("visitState") Integer payStatus);
 

@@ -78,22 +78,23 @@ public class AuthService {
         String role = convertUserTypeToRole(user.getUserType());
 
         // Generate JWT tokens
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", user.getId());
-        claims.put("role", role);
+        Map<String, Object> claims = buildTokenClaims(user);
 
         String accessToken = JwtUtils.generateToken(username, claims, accessExpirationMs);
         String refreshToken = JwtUtils.generateToken(username, claims, refreshExpirationMs);
 
         log.info("User login success: {} with role: {}", username, role);
 
-        return Map.of(
-                "accessToken", accessToken,
-                "refreshToken", refreshToken,
-                "userId", String.valueOf(user.getId()),
-                "role", role,
-                "realName", user.getRealName() != null ? user.getRealName() : username
-        );
+        Map<String, String> result = new HashMap<>();
+        result.put("accessToken", accessToken);
+        result.put("refreshToken", refreshToken);
+        result.put("userId", String.valueOf(user.getId()));
+        result.put("role", role);
+        result.put("realName", user.getRealName() != null ? user.getRealName() : username);
+        if (user.getEmployeeId() != null) {
+            result.put("employeeId", String.valueOf(user.getEmployeeId()));
+        }
+        return result;
     }
 
     /**
@@ -125,17 +126,18 @@ public class AuthService {
 
         String role = convertUserTypeToRole(user.getUserType());
 
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", user.getId());
-        claims.put("role", role);
+        Map<String, Object> claims = buildTokenClaims(user);
 
         String accessToken = JwtUtils.generateToken(username, claims, accessExpirationMs);
 
-        return Map.of(
-                "accessToken", accessToken,
-                "userId", String.valueOf(user.getId()),
-                "role", role
-        );
+        Map<String, String> result = new HashMap<>();
+        result.put("accessToken", accessToken);
+        result.put("userId", String.valueOf(user.getId()));
+        result.put("role", role);
+        if (user.getEmployeeId() != null) {
+            result.put("employeeId", String.valueOf(user.getEmployeeId()));
+        }
+        return result;
     }
 
     /**
@@ -186,6 +188,9 @@ public class AuthService {
         result.put("role", role);
         result.put("realName", realName != null ? realName : username);
         result.put("patients", patients);
+        if (user != null && user.getEmployeeId() != null) {
+            result.put("employeeId", user.getEmployeeId());
+        }
         return result;
     }
 
@@ -289,6 +294,17 @@ public class AuthService {
             result.put("role", claims != null ? claims.get("role") : "admin");
         }
         return result;
+    }
+
+    private Map<String, Object> buildTokenClaims(User user) {
+        String role = convertUserTypeToRole(user.getUserType());
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("userId", user.getId());
+        claims.put("role", role);
+        if (user.getEmployeeId() != null) {
+            claims.put("employeeId", user.getEmployeeId());
+        }
+        return claims;
     }
 
     /**

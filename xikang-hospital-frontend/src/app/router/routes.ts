@@ -9,6 +9,8 @@ import PatientTriage from '@/modules/patient/pages/PatientTriage.vue'
 import PatientRegistration from '@/modules/patient/pages/PatientRegistration.vue'
 import PatientPrevisit from '@/modules/patient/pages/PatientPrevisit.vue'
 import PatientRecords from '@/modules/patient/pages/PatientRecords.vue'
+import PatientVisitRecord from '@/modules/patient/pages/PatientVisitRecord.vue'
+import PatientClinicalProfile from '@/modules/patient/pages/PatientClinicalProfile.vue'
 import PatientFollowup from '@/modules/patient/pages/PatientFollowup.vue'
 import PatientProfile from '@/modules/patient/pages/PatientProfile.vue'
 import PatientPrescription from '@/modules/patient/pages/PatientPrescription.vue'
@@ -27,6 +29,7 @@ import MasterDataManagement from '@/modules/admin/pages/MasterDataManagement.vue
 import UserPermissionManagement from '@/modules/admin/pages/UserPermissionManagement.vue'
 import OperationsMonitoring from '@/modules/admin/pages/OperationsMonitoring.vue'
 import StatisticsReports from '@/modules/admin/pages/StatisticsReports.vue'
+import PhysicianManagement from '@/modules/admin/pages/PhysicianManagement.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
 import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.vue'
@@ -86,6 +89,18 @@ const patientRoutes: RouteRecordRaw[] = [
         name: 'PatientRecords',
         component: PatientRecords,
         meta: { title: '就诊记录', requiresAuth: true, roles: ['patient', 'admin'] },
+      },
+      {
+        path: 'records/:registerId',
+        name: 'PatientVisitRecord',
+        component: PatientVisitRecord,
+        meta: { title: '就诊病历详情', requiresAuth: true, roles: ['patient', 'admin'] },
+      },
+      {
+        path: 'clinical-profile',
+        name: 'PatientClinicalProfile',
+        component: PatientClinicalProfile,
+        meta: { title: '长期健康档案', requiresAuth: true, roles: ['patient', 'admin'] },
       },
       {
         path: 'followup',
@@ -284,50 +299,70 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'admin',
         name: 'Admin',
-        component: AdminWorkspace,
-        meta: { title: '管理员支撑', description: 'AI 分诊台、基础数据', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
+        component: RouteGroupView,
+        redirect: '/admin/triage',
+        meta: { title: '管理员', description: '分诊、排班、医生与基础数据治理', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
+        children: [
+          {
+            path: 'triage',
+            name: 'AdminTriage',
+            component: AdminWorkspace,
+            meta: { title: 'AI 分诊台', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'schedule',
+            name: 'ScheduleManagement',
+            component: ScheduleManagement,
+            meta: { title: '智能排班', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'physicians',
+            name: 'PhysicianManagement',
+            component: PhysicianManagement,
+            meta: { title: '诊疗医生维护', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'master-data',
+            name: 'MasterDataManagement',
+            component: MasterDataManagement,
+            meta: { title: '基础资料', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'users',
+            name: 'UserPermissionManagement',
+            component: UserPermissionManagement,
+            meta: { title: '用户权限', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'check-equipment',
+            name: 'AdminCheckEquipment',
+            component: () => import('@/modules/admin/pages/AdminCheckEquipmentPage.vue'),
+            meta: { title: '检查项目', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'result-form',
+            name: 'AdminResultForm',
+            component: () => import('@/modules/admin/pages/AdminResultFormPage.vue'),
+            meta: { title: '结果表单配置', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'monitoring',
+            name: 'OperationsMonitoring',
+            component: OperationsMonitoring,
+            meta: { title: '运营监控', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'reports',
+            name: 'StatisticsReports',
+            component: StatisticsReports,
+            meta: { title: '统计报表', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+        ],
       },
       {
         path: 'schedule',
-        name: 'ScheduleManagement',
-        component: ScheduleManagement,
-        meta: { title: '智能排班', description: '智能排班管理、AI生成、号源管理', icon: 'Calendar', roles: ['admin'], requiresAuth: true, owner: 'B' },
-      },
-      {
-        path: 'admin/master-data',
-        name: 'MasterDataManagement',
-        component: MasterDataManagement,
-        meta: { title: '基础资料', description: '科室、医生、药品与项目主数据维护', icon: 'Box', roles: ['admin'], requiresAuth: true, owner: 'B' },
-      },
-      {
-        path: 'admin/users',
-        name: 'UserPermissionManagement',
-        component: UserPermissionManagement,
-        meta: { title: '用户权限', description: '账号、角色与权限范围治理', icon: 'User', roles: ['admin'], requiresAuth: true, owner: 'B' },
-      },
-      {
-        path: 'admin/monitoring',
-        name: 'OperationsMonitoring',
-        component: OperationsMonitoring,
-        meta: { title: '运营监控', description: '跨模块异常、预警和处理闭环', icon: 'Operation', roles: ['admin'], requiresAuth: true, owner: 'B' },
-      },
-      {
-        path: 'admin/reports',
-        name: 'StatisticsReports',
-        component: StatisticsReports,
-        meta: { title: '统计报表', description: '经营分析、趋势与工作量统计', icon: 'DataBoard', roles: ['admin'], requiresAuth: true, owner: 'B' },
-      },
-      {
-        path: 'admin/check-equipment',
-        name: 'AdminCheckEquipment',
-        component: () => import('@/modules/admin/pages/AdminCheckEquipmentPage.vue'),
-        meta: { title: '检查项目', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
-      },
-      {
-        path: 'admin/result-form',
-        name: 'AdminResultForm',
-        component: () => import('@/modules/admin/pages/AdminResultFormPage.vue'),
-        meta: { title: '结果表单配置', icon: 'Setting', roles: ['admin'], requiresAuth: true, owner: 'B' },
+        redirect: '/admin/schedule',
+        meta: { hidden: true, roles: ['admin'], requiresAuth: true },
       },
       {
         path: 'ai',

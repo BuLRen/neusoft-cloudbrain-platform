@@ -22,6 +22,7 @@ public class User implements Serializable {
     private String phone;
     private Integer status;
     private Integer userType;
+    private Integer employeeId;
     private String remark;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
