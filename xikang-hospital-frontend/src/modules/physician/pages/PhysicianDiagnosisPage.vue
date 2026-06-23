@@ -92,8 +92,6 @@ onMounted(() => {
       type="warning"
       :closable="false"
       show-icon
-      title="尚未完成 W3 结果解读"
-      description="请先在「查看结果」运行 W3，或等待医技提交结果后自动触发。完成 W3 后再运行 W4，诊断建议会更准确。"
     />
 
     <ElCard v-else-if="w3Status?.overallAnalysis" class="w3-summary-card" shadow="never">

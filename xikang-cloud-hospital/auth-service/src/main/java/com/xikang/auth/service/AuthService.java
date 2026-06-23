@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -232,9 +233,14 @@ public class AuthService {
             Patient patient = new Patient();
             patient.setRealName(realName != null ? realName : username);
             patient.setIdCard(idCard);
-            patient.setGender(gender != null ? gender : "");
+            patient.setGender(resolveGender(gender, idCard));
             if (birthdateStr != null && !birthdateStr.isBlank()) {
-                patient.setBirthdate(java.time.LocalDate.parse(birthdateStr));
+                patient.setBirthdate(LocalDate.parse(birthdateStr));
+            } else {
+                LocalDate parsedBirthdate = parseBirthdateFromIdCard(idCard);
+                if (parsedBirthdate != null) {
+                    patient.setBirthdate(parsedBirthdate);
+                }
             }
             patient.setPhone(phone != null ? phone : "");
             patient.setDelmark(1);
@@ -341,5 +347,37 @@ public class AuthService {
         }
 
         log.info("User password changed successfully: {}", username);
+    }
+
+    private String resolveGender(String gender, String idCard) {
+        if (gender != null && !gender.isBlank() && ("男".equals(gender) || "女".equals(gender))) {
+            return gender;
+        }
+        return parseGenderFromIdCard(idCard);
+    }
+
+    private String parseGenderFromIdCard(String idCard) {
+        if (idCard == null || idCard.length() != 18) {
+            return null;
+        }
+        char seq = idCard.charAt(16);
+        if (!Character.isDigit(seq)) {
+            return null;
+        }
+        return ((seq - '0') % 2 == 1) ? "男" : "女";
+    }
+
+    private LocalDate parseBirthdateFromIdCard(String idCard) {
+        if (idCard == null || idCard.length() != 18) {
+            return null;
+        }
+        try {
+            int year = Integer.parseInt(idCard.substring(6, 10));
+            int month = Integer.parseInt(idCard.substring(10, 12));
+            int day = Integer.parseInt(idCard.substring(12, 14));
+            return LocalDate.of(year, month, day);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 }

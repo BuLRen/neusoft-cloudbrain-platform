@@ -35,7 +35,7 @@
             LIMIT 1
         ) ac ON TRUE
         WHERE (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
-           OR r.visit_state = 2
+           OR r.visit_state IN (2, 5, 6)
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
@@ -47,7 +47,7 @@
         SELECT COUNT(*)
         FROM register r
         WHERE (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
-           OR r.visit_state = 2
+           OR r.visit_state IN (2, 5, 6)
 
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
