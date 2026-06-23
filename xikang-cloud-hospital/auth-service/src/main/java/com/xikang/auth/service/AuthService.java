@@ -242,7 +242,6 @@ public class AuthService {
                     patient.setBirthdate(parsedBirthdate);
                 }
             }
-            patient.setBirthdate(resolvedBirthdate);
 
             patient.setPhone(phone != null ? phone : "");
             patient.setDelmark(1);
