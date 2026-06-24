@@ -1,5 +1,7 @@
 import { http } from '../request'
 import type {
+  BatchInboundItem,
+  BatchInboundResult,
   DispensePayload,
   DispenseResult,
   Dispensing,
@@ -83,8 +85,28 @@ export const pharmacyApi = {
   inbound(drugId: number, data: DrugInboundPayload) {
     return http<void>({ url: `/pharmacy/inventory/${drugId}/inbound`, method: 'POST', data })
   },
+  /** 批量入库（单事务） */
+  batchInbound(items: BatchInboundItem[]) {
+    return http<BatchInboundResult>({
+      url: '/pharmacy/inventory/batch-inbound',
+      method: 'POST',
+      data: { items },
+    })
+  },
   updateStock(drugId: number, data: DrugStockUpdatePayload) {
     return http<void>({ url: `/pharmacy/inventory/${drugId}`, method: 'PUT', data })
+  },
+  /** 药品报损 */
+  loss(drugId: number, data: { batchId?: number; quantity: number; reason: string; operatorName?: string }) {
+    return http<void>({ url: `/pharmacy/inventory/${drugId}/loss`, method: 'POST', data })
+  },
+  /** 冻结批次 */
+  freezeBatch(batchId: number) {
+    return http<void>({ url: `/pharmacy/inventory/batch/${batchId}/freeze`, method: 'PUT' })
+  },
+  /** 解冻批次 */
+  unfreezeBatch(batchId: number) {
+    return http<void>({ url: `/pharmacy/inventory/batch/${batchId}/unfreeze`, method: 'PUT' })
   },
   /** P1-4.2 近效期批次查询 */
   expiringStock(days = 30) {

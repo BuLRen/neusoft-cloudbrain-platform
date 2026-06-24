@@ -18,6 +18,7 @@ import PatientDepartmentDetail from '@/modules/patient/pages/PatientDepartmentDe
 import RegistrationWorkspace from '@/modules/registration/RegistrationWorkspace.vue'
 import PharmacyDispensingPage from '@/modules/pharmacy/pages/DispensingPage.vue'
 import PharmacyInventoryPage from '@/modules/pharmacy/pages/InventoryPage.vue'
+import PharmacyBatchInboundPage from '@/modules/pharmacy/pages/BatchInboundPage.vue'
 import PharmacyTransactionsPage from '@/modules/pharmacy/pages/TransactionsPage.vue'
 import PharmacyFollowUpPage from '@/modules/pharmacy/pages/FollowUpPage.vue'
 import PharmacyDrugDictionaryPage from '@/modules/pharmacy/pages/DrugDictionaryPage.vue'
@@ -263,6 +264,12 @@ export const routes: RouteRecordRaw[] = [
             name: 'PharmacyInventory',
             component: PharmacyInventoryPage,
             meta: { title: '② 药库与库存', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 2 },
+          },
+          {
+            path: 'batch-inbound',
+            name: 'PharmacyBatchInbound',
+            component: PharmacyBatchInboundPage,
+            meta: { title: '②·批量入库', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 2, hidden: true },
           },
           {
             path: 'transactions',

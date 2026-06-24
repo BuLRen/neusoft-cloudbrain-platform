@@ -52,3 +52,8 @@ dist/
 task_requirements/设计文档/实训第一阶段总结报告.docx
 task_requirements/设计文档/项目数据库建模现状文档.md
 xikang-cloud-hospital/.env
+xikang-cloud-hospital/config/database-secrets.yml
+xikang-cloud-hospital/docker/migrate-to-server.env
+xikang-cloud-hospital/docker/backups/
+xikang-cloud-hospital/config/database-secrets.yml.example
+xikang-cloud-hospital/.env.example

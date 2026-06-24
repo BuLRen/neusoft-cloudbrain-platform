@@ -4,15 +4,14 @@ server:
 spring:
   application:
     name: ai-triage-service
-  datasource:
-    driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:3307/xikang_hospital
-    username: postgres
-    password: postgres123
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-      connection-timeout: 30000
+  config:
+    import:
+      - optional:classpath:config/database.yml
+      - optional:file:../config/database.yml
+      - optional:file:./config/database.yml
+      - optional:file:../config/database-secrets.yml
+      - optional:file:./config/database-secrets.yml
+      - optional:file:../.env
   ai:
     openai:
       api-key: ${DEEPSEEK_API_KEY:your-api-key}

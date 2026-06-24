@@ -144,7 +144,7 @@
         SELECT COUNT(*)
         FROM register
         WHERE employee_id = #{employeeId}
-          AND visit_state IN (1, 2, 5, 6)
+          AND visit_state IN (1, 2, 6)
     </select>
 
 </mapper>

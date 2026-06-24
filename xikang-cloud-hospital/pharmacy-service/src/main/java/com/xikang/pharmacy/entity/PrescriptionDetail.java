@@ -27,5 +27,6 @@ public class PrescriptionDetail implements Serializable {
     private String frequency;        // 频次：一日几次
     private String duration;         // 疗程
     private String remark;           // 备注
+    private String drugState;        // 处方行状态：未发/已发/已退（用于退药过滤）
     private LocalDateTime createTime;
 }

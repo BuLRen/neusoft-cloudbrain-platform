@@ -29,32 +29,16 @@ public class ClinicalRecordService {
 
     public Map<String, Object> getVisitTimeline(Long registerId) {
         assertRegisterAccess(registerId);
-        try {
-            Map<String, Object> header = clinicalRecordMapper.selectRegisterHeader(registerId);
-            if (header == null) {
-                throw new BusinessException(404, "就诊记录不存在");
-            }
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("registerId", registerId);
-            result.put("clinicalArchivedAt", header.get("clinicalArchivedAt"));
-            result.put("archived", header.get("clinicalArchivedAt") != null);
-            result.put("timeline", buildTimeline(registerId, true));
-            // #region agent log
-            try (var w = new java.io.FileWriter("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-2aef16.log", true)) {
-                w.write("{\"sessionId\":\"2aef16\",\"runId\":\"pre-fix\",\"hypothesisId\":\"A\",\"location\":\"ClinicalRecordService.getVisitTimeline\",\"message\":\"timeline success\",\"data\":{\"registerId\":" + registerId + ",\"eventCount\":" + ((List<?>) result.get("timeline")).size() + "},\"timestamp\":" + System.currentTimeMillis() + "}\n");
-            } catch (Exception ignored) {
-            }
-            // #endregion
-            return result;
-        } catch (Exception e) {
-            // #region agent log
-            try (var w = new java.io.FileWriter("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-2aef16.log", true)) {
-                w.write("{\"sessionId\":\"2aef16\",\"runId\":\"pre-fix\",\"hypothesisId\":\"A\",\"location\":\"ClinicalRecordService.getVisitTimeline\",\"message\":\"timeline failed\",\"data\":{\"registerId\":" + registerId + ",\"errorType\":\"" + e.getClass().getSimpleName() + "\",\"error\":\"" + String.valueOf(e.getMessage()).replace("\"", "'") + "\"},\"timestamp\":" + System.currentTimeMillis() + "}\n");
-            } catch (Exception ignored) {
-            }
-            // #endregion
-            throw e;
+        Map<String, Object> header = clinicalRecordMapper.selectRegisterHeader(registerId);
+        if (header == null) {
+            throw new BusinessException(404, "就诊记录不存在");
         }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+        result.put("clinicalArchivedAt", header.get("clinicalArchivedAt"));
+        result.put("archived", header.get("clinicalArchivedAt") != null);
+        result.put("timeline", buildTimeline(registerId, true));
+        return result;
     }
 
     public Map<String, Object> getPatientProfile(Long patientId) {

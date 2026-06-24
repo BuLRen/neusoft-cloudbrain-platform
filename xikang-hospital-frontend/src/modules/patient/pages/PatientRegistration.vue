@@ -324,7 +324,7 @@ const sortDir = ref<ExpenseRecordSortDir>('desc')
 
 // 状态优先级：待缴费 → 已缴费 → 已退号/爽约（垫底）
 function registrationStatusRank(record: RegistrationRecord): number {
-  if (record.status === 4 || record.status === 5) return 2
+  if (record.status === 4 || record.status === 7) return 2
   if (record.payStatus === 0) return 0
   if (record.payStatus === 1) return 1
   return 1
@@ -394,7 +394,7 @@ async function loadPreConsultStates() {
       try {
         const session = await aiApi.previsitSession(r.id)
         // 爽约挂号只保留"已完成"的查看入口，去掉"去预问诊/继续预问诊"等动作入口
-        if (r.status === 5) {
+        if (r.status === 7) {
           if (session && session.exists && session.state === 'completed') {
             results[r.id] = { text: '查看预问诊', type: 'default', state: 'completed' }
           }
@@ -422,7 +422,7 @@ function preConsultBtnFor(record: RegistrationRecord): PreConsultBtnState {
   // 退号：不显示任何预问诊入口
   if (record.status === 4) return null
   // 爽约：仅保留"查看预问诊"（已完成的历史会话），不显示"去/继续"等动作入口
-  if (record.status === 5) {
+  if (record.status === 7) {
     const state = preConsultStates.value[record.id]
     return state && state.state === 'completed' ? state : null
   }
@@ -514,7 +514,7 @@ function canCancel(record: RegistrationRecord) {
 // 是否可以报到：仅已缴费、未报到、未退号、未爽约的挂号可以报到
 function canCheckIn(record: RegistrationRecord) {
   if (record.payStatus !== 1) return false
-  if (record.status === 4 || record.status === 5) return false
+  if (record.status === 4 || record.status === 7) return false
   if (record.checkedIn) return false
   // 必须是就诊当天
   if (!record.visitDate) return false
@@ -523,11 +523,20 @@ function canCheckIn(record: RegistrationRecord) {
   return visitDay === today
 }
 
+// 患者端"模拟报到"按钮：暂绕过就诊当日限制，方便跑通流程。
+// 真实报到由报到机扫码触发后无需此按钮。
+function canCheckInSimulate(record: RegistrationRecord) {
+  if (record.payStatus !== 1) return false
+  if (record.status === 4 || record.status === 7) return false
+  if (record.checkedIn) return false
+  return true
+}
+
 // 详情弹窗里是否显示二维码：只过滤终态(退号/爽约/已报到)
 // 已缴费的挂号都展示二维码，方便患者事后回看
 function canShowDetailQr(record: RegistrationRecord) {
   if (record.payStatus !== 1) return false
-  if (record.status === 4 || record.status === 5) return false
+  if (record.status === 4 || record.status === 7) return false
   if (record.checkedIn) return false
   return true
 }
@@ -600,6 +609,20 @@ async function handleCancel(record: RegistrationRecord) {
   }
 }
 
+async function handleCheckIn(record: RegistrationRecord) {
+  actionLoading.value = true
+  try {
+    const result = await registrationApi.checkIn(record.id)
+    ElMessage.success(result.message || '报到成功')
+    await refreshRegistrationState(record.id)
+  } catch (err: any) {
+    console.error('报到失败:', err)
+    ElMessage.error(err?.message || '报到失败')
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 function startRegistration() {
   pageMode.value = 'wizard'
   restart()
@@ -611,9 +634,23 @@ function backToList() {
 }
 
 function registrationStatusTone(record: RegistrationRecord): 'success' | 'warning' | 'danger' {
-  if (record.status === 4 || record.status === 5) return 'danger'
-  if (record.status === 3 || record.payStatus === 1 || record.status === 1 || record.status === 2) return 'success'
+  if (record.status === 4 || record.status === 7) return 'danger'
+  if (record.status === 3 || record.status === 6 || record.payStatus === 1 || record.status === 1 || record.status === 2) return 'success'
   return 'warning'
+}
+
+// 前端兜底：保证 5/6/7 在患者端始终显示正确中文（不依赖后端 statusName）。
+function registrationStatusLabel(record: RegistrationRecord): string {
+  switch (record.status) {
+    case 1: return '已挂号'
+    case 2: return '医生接诊'
+    case 3: return '看诊结束'
+    case 4: return '已退号'
+    case 5: return '检查检验中'
+    case 6: return '检查检验完成'
+    case 7: return '爽约'
+    default: return record.statusName || '未知状态'
+  }
 }
 
 function formatVisitTime(record: RegistrationRecord) {
@@ -957,7 +994,7 @@ const showSuccessCard = computed(() => {
           <div class="record-main">
             <div class="record-title-row">
               <strong>{{ record.departmentName || '未分配科室' }}</strong>
-              <StatusTag :tone="registrationStatusTone(record)">{{ record.statusName || '未知状态' }}</StatusTag>
+              <StatusTag :tone="registrationStatusTone(record)">{{ registrationStatusLabel(record) }}</StatusTag>
               <StatusTag :tone="paymentStatusTone(record.payStatus)">{{ record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费') }}</StatusTag>
               <StatusTag v-if="record.checkedIn" tone="success">✅ 已报到</StatusTag>
               <StatusTag v-else-if="canCheckIn(record)" tone="warning">待报到</StatusTag>
@@ -972,6 +1009,7 @@ const showSuccessCard = computed(() => {
             <div class="record-actions">
               <button class="btn-outline btn-sm" @click="openRegistrationDetail(record)">查看详情</button>
               <button v-if="canPay(record)" class="btn-primary btn-sm" :disabled="actionLoading" @click="handlePay(record)">去缴费</button>
+              <button v-if="canCheckInSimulate(record)" class="btn-primary btn-sm" :disabled="actionLoading" @click="handleCheckIn(record)">📍 模拟报到</button>
               <button v-if="canCancel(record)" class="btn-outline btn-sm btn-danger" :disabled="actionLoading" @click="handleCancel(record)">取消挂号</button>
               <button
                 v-if="preConsultBtnFor(record)"
@@ -1444,7 +1482,7 @@ const showSuccessCard = computed(() => {
             </div>
             <div class="detail-tags">
               <StatusTag :tone="registrationStatusTone(selectedRegistration)">
-                {{ selectedRegistration.statusName || '未知状态' }}
+                {{ registrationStatusLabel(selectedRegistration) }}
               </StatusTag>
               <StatusTag :tone="paymentStatusTone(selectedRegistration.payStatus)">
                 {{ selectedRegistration.payStatusName || (selectedRegistration.payStatus === 1 ? '已缴费' : '待缴费') }}
@@ -1555,6 +1593,14 @@ const showSuccessCard = computed(() => {
             @click="handleCancel(selectedRegistration)"
           >
             取消挂号
+          </button>
+          <button
+            v-if="selectedRegistration && canCheckInSimulate(selectedRegistration)"
+            class="btn-primary"
+            :disabled="actionLoading"
+            @click="handleCheckIn(selectedRegistration)"
+          >
+            📍 模拟报到
           </button>
           <button
             v-if="selectedRegistration && canPay(selectedRegistration)"

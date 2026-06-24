@@ -38,9 +38,6 @@ async function loadTimeline() {
   }
   loading.value = true
   try {
-    // #region agent log
-    fetch('http://127.0.0.1:7351/ingest/40a86613-9d86-4846-bc86-2da24038373a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2aef16'},body:JSON.stringify({sessionId:'2aef16',runId:'pre-fix',hypothesisId:'B',location:'ClinicalRecordDrawer.vue:loadTimeline',message:'loadTimeline start',data:{registerId:props.registerId,mode:props.mode},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (props.mode === 'physician') {
       const data = await clinicalRecordApi.physicianTimeline(props.registerId)
       timeline.value = data.timeline || []
@@ -59,9 +56,6 @@ async function loadTimeline() {
       drawerSubtitle.value = props.subtitle
     }
   } catch (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7351/ingest/40a86613-9d86-4846-bc86-2da24038373a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2aef16'},body:JSON.stringify({sessionId:'2aef16',runId:'pre-fix',hypothesisId:'B',location:'ClinicalRecordDrawer.vue:loadTimeline',message:'loadTimeline failed',data:{registerId:props.registerId,mode:props.mode,error:error instanceof Error?error.message:String(error)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     console.warn('加载病历本失败:', error)
     timeline.value = []
   } finally {

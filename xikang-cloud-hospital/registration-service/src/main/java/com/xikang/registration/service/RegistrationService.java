@@ -305,7 +305,7 @@ public class RegistrationService {
         if (register.getVisitState() == 4) {
             throw new BusinessException(400, "该挂号已退号");
         }
-        if (register.getVisitState() == 5) {
+        if (register.getVisitState() == 7) {
             throw new BusinessException(400, "该挂号已爽约，不可取消，如需就诊请重新挂号");
         }
         if (register.getVisitState() > 2) {
@@ -776,7 +776,9 @@ public class RegistrationService {
             case 2 -> "医生接诊";
             case 3 -> "看诊结束";
             case 4 -> "已退号";
-            case 5 -> "爽约";
+            case 5 -> "检查检验中";
+            case 6 -> "检查检验完成";
+            case 7 -> "爽约";
             default -> "未知";
         };
     }

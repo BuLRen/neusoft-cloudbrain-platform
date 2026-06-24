@@ -39,7 +39,7 @@ public class Register implements Serializable {
     private String isBook;        // is_book (是/否)
     private String registMethod;  // regist_method
     private BigDecimal registMoney; // regist_money (挂号费)
-    private Integer visitState;   // visit_state (1已挂号/2医生接诊/3看诊结束/4已退号/5爽约)
+    private Integer visitState;   // visit_state (1已挂号/2医生接诊/3看诊结束/4已退号/5检查检验中/6检查检验完成/7爽约)
     private java.time.LocalDateTime checkInTime; // check_in_time (报到时间，NULL=未报到)
 
     // 辅助字段（不映射数据库）
