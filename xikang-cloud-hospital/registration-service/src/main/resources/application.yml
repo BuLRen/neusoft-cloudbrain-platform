@@ -1,7 +1,14 @@
+# =============================================================================
+# 数据源：默认连远程 PostgreSQL（43.139.102.203:5432），由 config/database.yml 提供
+# 远程密码见项目根目录 .env 中的 DB_REMOTE_PASSWORD
+# 切回本地 Docker：启动加 -Dspring.profiles.active=local
+# =============================================================================
 server:
   port: 8091
 
 spring:
+  profiles:
+    active: remote
   application:
     name: registration-service
   config:
