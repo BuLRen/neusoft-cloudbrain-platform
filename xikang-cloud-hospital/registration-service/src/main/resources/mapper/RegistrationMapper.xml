@@ -59,7 +59,7 @@
 
     <update id="markMissed">
         UPDATE register
-        SET visit_state = 5
+        SET visit_state = 7
         WHERE visit_state = 1 AND visit_date &lt; #{deadline} AND check_in_time IS NULL
     </update>
 

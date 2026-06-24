@@ -15,7 +15,7 @@ import com.xikang.registration.entity.Register;
 /**
  * 爽约扫描任务
  *
- * 业务规则：挂号后过了就诊时间仍未接诊的，置为「爽约」（visit_state = 5）。
+ * 业务规则：挂号后过了就诊时间仍未接诊的，置为「爽约」（visit_state = 7）。
  * - 不退款、不释放号源（时段已过）
  * - 爽约后状态锁定，患者必须重新挂号
  *

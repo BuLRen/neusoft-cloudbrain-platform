@@ -22,7 +22,7 @@
         LEFT JOIN (
             SELECT deptment_id AS dept_id, COUNT(*) AS cnt
             FROM register
-            WHERE visit_state NOT IN (4, 5)
+            WHERE visit_state NOT IN (4, 7)
             <if test="startDate != null">AND visit_date &gt;= #{startDate}</if>
             <if test="endDate != null">AND visit_date &lt; #{endDate}</if>
             GROUP BY deptment_id
@@ -31,7 +31,7 @@
             SELECT r.deptment_id AS dept_id, COUNT(*) AS cnt
             FROM medical_record mr
             JOIN register r ON r.id = mr.register_id
-            WHERE r.visit_state NOT IN (4, 5)
+            WHERE r.visit_state NOT IN (4, 7)
             <if test="startDate != null">AND r.visit_date &gt;= #{startDate}</if>
             <if test="endDate != null">AND r.visit_date &lt; #{endDate}</if>
             GROUP BY r.deptment_id
@@ -46,7 +46,7 @@
                 SELECT register_id FROM disposal_request
             ) e
             JOIN register r ON r.id = e.register_id
-            WHERE r.visit_state NOT IN (4, 5)
+            WHERE r.visit_state NOT IN (4, 7)
             <if test="startDate != null">AND r.visit_date &gt;= #{startDate}</if>
             <if test="endDate != null">AND r.visit_date &lt; #{endDate}</if>
             GROUP BY r.deptment_id
@@ -55,7 +55,7 @@
             SELECT r.deptment_id AS dept_id, COUNT(*) AS cnt
             FROM prescription p
             JOIN register r ON r.id = p.register_id
-            WHERE r.visit_state NOT IN (4, 5)
+            WHERE r.visit_state NOT IN (4, 7)
             <if test="startDate != null">AND r.visit_date &gt;= #{startDate}</if>
             <if test="endDate != null">AND r.visit_date &lt; #{endDate}</if>
             GROUP BY r.deptment_id
@@ -82,7 +82,7 @@
         reg AS (
             SELECT visit_date::date AS d, COUNT(*) AS cnt
             FROM register
-            WHERE visit_state NOT IN (4, 5)
+            WHERE visit_state NOT IN (4, 7)
               AND visit_date::date BETWEEN #{startDate} AND #{endDate}
             GROUP BY visit_date::date
         ),

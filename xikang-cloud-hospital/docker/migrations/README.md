@@ -30,8 +30,9 @@ docker exec -it xikang-postgres psql -U postgres -d xikang_hospital -c "\dt"
 | 1 | `init-db/migrate-result-form.sql` | 新增 `result_form_category` / `result_form_field` 表单引擎表；`check_result` 改 TEXT |
 | 2 | `init-db/migrate-inspection-result-text.sql` | `inspection_result` 改 TEXT；新增 `general_lab` 表单模板 |
 | 3 | `init-db/migrate-archive-state.sql` | 检查/检验/处置状态增加「已归档」 |
-| 4 | `migrations/001_visit_state_5_6.sql` | `register.visit_state` 扩展为 1–6 |
-| 5 | `migrations/incremental_to_local_20250618.sql` | 补齐本地快照中其余差异（见脚本内注释） |
+| 4 | `migrations/001_visit_state_5_6.sql` | `register.visit_state` 扩展为 1–6（5=检验中、6=检验完成） |
+| 5 | `migrations/002_visit_state_7_missed.sql` | `register.visit_state` 扩展为 1–7，新增 7=爽约；同步迁移已被错标为 5 的历史爽约记录 |
+| 6 | `migrations/incremental_to_local_20250618.sql` | 补齐本地快照中其余差异（见脚本内注释） |
 
 执行示例：
 
@@ -40,6 +41,7 @@ docker exec -i xikang-postgres psql -U postgres -d xikang_hospital < docker/init
 docker exec -i xikang-postgres psql -U postgres -d xikang_hospital < docker/init-db/migrate-inspection-result-text.sql
 docker exec -i xikang-postgres psql -U postgres -d xikang_hospital < docker/init-db/migrate-archive-state.sql
 docker exec -i xikang-postgres psql -U postgres -d xikang_hospital < docker/migrations/001_visit_state_5_6.sql
+docker exec -i xikang-postgres psql -U postgres -d xikang_hospital < docker/migrations/002_visit_state_7_missed.sql
 docker exec -i xikang-postgres psql -U postgres -d xikang_hospital < docker/migrations/incremental_to_local_20250618.sql
 ```
 
