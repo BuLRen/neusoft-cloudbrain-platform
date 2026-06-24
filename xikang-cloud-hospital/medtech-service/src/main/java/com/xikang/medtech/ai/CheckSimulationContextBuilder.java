@@ -1,6 +1,7 @@
 package com.xikang.medtech.ai;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.medtech.mapper.SimulationContextMapper;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CheckSimulationContextBuilder {
 
+    private static final String PRELIMINARY_SOURCE_TYPE = "preliminary_diagnosis";
+
     private final SimulationContextMapper simulationContextMapper;
     private final ObjectMapper objectMapper;
 
@@ -27,9 +30,14 @@ public class CheckSimulationContextBuilder {
             appendPart(parts, "现病史", record.get("present"));
             appendPart(parts, "既往史", record.get("history"));
             appendPart(parts, "过敏史", record.get("allergy"));
+            appendPart(parts, "体格检查", record.get("physique"));
             appendPart(parts, "初步诊断", record.get("preliminaryDiagnosis"));
             appendPart(parts, "诊断", record.get("diagnosis"));
         }
+
+        Map<String, Object> preliminaryMeta = loadPreliminaryAiMeta(registerId);
+        appendPart(parts, "AI临床摘要", preliminaryMeta.get("clinicalSummary"));
+        appendPart(parts, "AI主要诊断", preliminaryMeta.get("primaryDiagnosis"));
 
         Map<String, Object> consult = simulationContextMapper.selectLatestAiConsultationByRegisterId(registerId);
         if (consult != null) {
@@ -46,29 +54,16 @@ public class CheckSimulationContextBuilder {
 
         Map<String, Object> record = simulationContextMapper.selectMedicalRecordByRegisterId(registerId);
         if (record != null) {
-            String preliminary = trimToNull(record.get("preliminaryDiagnosis"));
-            if (preliminary != null) {
-                Map<String, String> row = new LinkedHashMap<>();
-                row.put("name", preliminary);
-                row.put("diseaseSymptoms", "");
-                diseases.add(row);
-            }
+            addDiseaseIfAbsent(diseases, trimToNull(record.get("preliminaryDiagnosis")), "");
         }
 
-        List<Map<String, Object>> linked = simulationContextMapper.selectDiseasesByRegisterId(registerId);
-        for (Map<String, Object> item : linked) {
-            String name = trimToNull(item.get("diseaseName"));
-            if (name == null) {
-                continue;
-            }
-            boolean exists = diseases.stream().anyMatch(d -> name.equals(d.get("name")));
-            if (!exists) {
-                Map<String, String> row = new LinkedHashMap<>();
-                row.put("name", name);
-                row.put("diseaseSymptoms", "");
-                diseases.add(row);
-            }
+        for (Map<String, Object> item : simulationContextMapper.selectDiseasesByRegisterId(registerId)) {
+            addDiseaseIfAbsent(diseases, trimToNull(item.get("diseaseName")), "");
         }
+
+        Map<String, Object> preliminaryMeta = loadPreliminaryAiMeta(registerId);
+        appendDiseasesFromMeta(diseases, preliminaryMeta.get("diseaseDetail"));
+        appendDiseasesFromMeta(diseases, preliminaryMeta.get("suggestedDiseases"));
 
         return diseases;
     }
@@ -81,10 +76,79 @@ public class CheckSimulationContextBuilder {
         }
     }
 
+    private Map<String, Object> loadPreliminaryAiMeta(Long registerId) {
+        Map<String, Object> log = simulationContextMapper.selectLatestAiMedicalRecordLogBySourceType(
+            registerId,
+            PRELIMINARY_SOURCE_TYPE
+        );
+        if (log == null) {
+            return Map.of();
+        }
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        appendPartValue(meta, "primaryDiagnosis", log.get("aiDiagnosis"));
+
+        Object raw = log.get("doctorModification");
+        if (raw instanceof String text && !text.isBlank()) {
+            try {
+                Map<String, Object> parsed = objectMapper.readValue(text, new TypeReference<>() {});
+                meta.putAll(parsed);
+            } catch (Exception ignored) {
+                // ignore malformed meta
+            }
+        }
+        return meta;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void appendDiseasesFromMeta(List<Map<String, String>> diseases, Object raw) {
+        if (!(raw instanceof List<?> list)) {
+            return;
+        }
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map) {
+                String name = firstNonBlank(
+                    trimToNull(map.get("diseaseName")),
+                    trimToNull(map.get("name")),
+                    trimToNull(map.get("primaryDiagnosis"))
+                );
+                String symptoms = firstNonBlank(
+                    trimToNull(map.get("diseaseSymptoms")),
+                    trimToNull(map.get("symptoms")),
+                    trimToNull(map.get("basis")),
+                    ""
+                );
+                addDiseaseIfAbsent(diseases, name, symptoms == null ? "" : symptoms);
+            } else {
+                addDiseaseIfAbsent(diseases, trimToNull(item), "");
+            }
+        }
+    }
+
+    private static void addDiseaseIfAbsent(List<Map<String, String>> diseases, String name, String symptoms) {
+        if (name == null) {
+            return;
+        }
+        boolean exists = diseases.stream().anyMatch(d -> name.equals(d.get("name")));
+        if (!exists) {
+            Map<String, String> row = new LinkedHashMap<>();
+            row.put("name", name);
+            row.put("diseaseSymptoms", symptoms == null ? "" : symptoms);
+            diseases.add(row);
+        }
+    }
+
     private static void appendPart(List<String> parts, String label, Object value) {
         String text = trimToNull(value);
         if (text != null) {
             parts.add(label + "：" + text);
+        }
+    }
+
+    private static void appendPartValue(Map<String, Object> target, String key, Object value) {
+        String text = trimToNull(value);
+        if (text != null) {
+            target.put(key, text);
         }
     }
 
@@ -94,5 +158,14 @@ public class CheckSimulationContextBuilder {
         }
         String text = String.valueOf(value).trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }

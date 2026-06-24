@@ -1,0 +1,42 @@
+# =============================================================================
+# 希康云医院 - 共享数据库配置（全微服务共用）
+# =============================================================================
+# 切换数据库：修改下方 spring.profiles.active 为 local 或 remote，重启微服务
+# 远程密码：在 .env 中设置 DB_REMOTE_PASSWORD=...（推荐），或配置 database-secrets.yml
+# =============================================================================
+
+spring:
+  profiles:
+    active: remote
+
+---
+# 本地 Docker PostgreSQL
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:3307/xikang_hospital
+    username: postgres
+    password: postgres123
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+
+---
+# 服务器 PostgreSQL（宝塔等）
+spring:
+  config:
+    activate:
+      on-profile: remote
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://43.139.102.203:5432/xikang_hospital
+    username: xikang_hospital
+    password: ${DB_REMOTE_PASSWORD:changeme}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000

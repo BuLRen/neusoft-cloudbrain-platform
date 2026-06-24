@@ -14,4 +14,9 @@ public interface SimulationContextMapper {
     Map<String, Object> selectLatestAiConsultationByRegisterId(@Param("registerId") Long registerId);
 
     List<Map<String, Object>> selectDiseasesByRegisterId(@Param("registerId") Long registerId);
+
+    Map<String, Object> selectLatestAiMedicalRecordLogBySourceType(
+        @Param("registerId") Long registerId,
+        @Param("sourceType") String sourceType
+    );
 }

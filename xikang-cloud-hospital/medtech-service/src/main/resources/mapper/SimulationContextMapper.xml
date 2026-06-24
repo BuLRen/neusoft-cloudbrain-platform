@@ -9,6 +9,7 @@
             present_treat AS "presentTreat",
             history AS "history",
             allergy AS "allergy",
+            physique AS "physique",
             preliminary_diagnosis AS "preliminaryDiagnosis",
             diagnosis AS "diagnosis"
         FROM medical_record
@@ -36,6 +37,18 @@
         INNER JOIN disease d ON d.id = mrd.disease_id
         WHERE mr.register_id = #{registerId}
         ORDER BY d.disease_name
+    </select>
+
+    <select id="selectLatestAiMedicalRecordLogBySourceType" resultType="map">
+        SELECT
+            ai_diagnosis AS "aiDiagnosis",
+            model_id AS "modelId",
+            doctor_modification AS "doctorModification"
+        FROM ai_medical_record_log
+        WHERE register_id = #{registerId}
+          AND source_type = #{sourceType}
+        ORDER BY generation_time DESC, id DESC
+        LIMIT 1
     </select>
 
 </mapper>

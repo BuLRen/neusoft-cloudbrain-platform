@@ -15,15 +15,13 @@ server:
 spring:
   application:
     name: physician-service
-  datasource:
-    driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:3307/xikang_hospital
-    username: postgres
-    password: postgres123
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-      connection-timeout: 30000
+  config:
+    import:
+      - optional:classpath:config/database.yml
+      - optional:file:../config/database.yml
+      - optional:file:./config/database.yml
+      - optional:file:../config/database-secrets.yml
+      - optional:file:./config/database-secrets.yml
 
 # -----------------------------------------------------------------------------
 # MyBatis（SQL 映射）
@@ -104,7 +102,7 @@ xikang:
 
       # ----- W2 开立检查检验推荐（第 3 步 · 走 base-url）-----
       workflow-w2: ${DIFY_WORKFLOW_W2:true}
-      api-key-w2: ${DIFY_API_KEY_W2:app-n27eQFPRzQCZeaSnMzIOTbA8}
+      api-key-w2: ${DIFY_API_KEY_W2:}
       w2-output-keys:
         output-root: ${DIFY_W2_OUTPUT_ROOT:}
 
