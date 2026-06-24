@@ -1,5 +1,6 @@
 package com.xikang.medtech;
 
+import com.xikang.common.env.EnvLoader;
 import com.xikang.common.exception.GlobalExceptionHandler;
 import com.xikang.medtech.ai.DifyAiProperties;
 import org.springframework.boot.SpringApplication;
@@ -16,6 +17,7 @@ import org.springframework.context.annotation.Import;
 public class MedtechApplication {
 
     public static void main(String[] args) {
+        EnvLoader.load();
         SpringApplication.run(MedtechApplication.class, args);
     }
 }

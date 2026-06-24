@@ -4,15 +4,13 @@ server:
 spring:
   application:
     name: medtech-service
-  datasource:
-    driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:3307/xikang_hospital
-    username: postgres
-    password: postgres123
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-      connection-timeout: 30000
+  config:
+    import:
+      - optional:classpath:config/database.yml
+      - optional:file:../config/database.yml
+      - optional:file:./config/database.yml
+      - optional:file:../config/database-secrets.yml
+      - optional:file:./config/database-secrets.yml
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml
@@ -35,6 +33,19 @@ logging:
 
     com.xikang.medtech: DEBUG
 
+# =============================================================================
+# 业务配置：Dify AI 工作流（模拟检查/检验）
+# =============================================================================
+#
+# 调用方式：POST {DIFY_BASE_URL}/v1/workflows/run，Header: Authorization: Bearer {app-xxx}
+# 注意：base-url 只写到主机（和端口），不要带 /v1
+#
+# 与 physician-service 共用 DIFY_ENABLED / DIFY_BASE_URL（自托管云服务器）
+# 初步诊断在 physician-service 中单独走 DIFY_BASE_URL_PRELIMINARY（官网），此处不涉及
+#
+# 开关：workflow-check-simulate 填 true/1/yes/on；勿将 app-xxx 写在此项
+# 未启用或调用失败时走内置 CheckSimulationFallbackEngine
+# =============================================================================
 xikang:
   physician:
     base-url: ${PHYSICIAN_SERVICE_URL:http://localhost:8092}
@@ -43,8 +54,9 @@ xikang:
     dify:
       enabled: ${DIFY_ENABLED:true}
       base-url: ${DIFY_BASE_URL:http://localhost}
-      api-key-check-simulate: ${DIFY_API_KEY_CHECK_SIMULATE:${DIFY_API_KEY_SIMULATE:app-YpflvlBmahrZK9QycNUnq62m}}
+      # ----- 模拟检查/检验（医技 · 检查与检验共用同一 Workflow App）-----
       workflow-check-simulate: ${DIFY_WORKFLOW_CHECK_SIMULATE:true}
+      api-key-check-simulate: ${DIFY_API_KEY_CHECK_SIMULATE:${DIFY_API_KEY_SIMULATE:}}
       connect-timeout-ms: ${DIFY_CONNECT_TIMEOUT_MS:30000}
       read-timeout-ms: ${DIFY_READ_TIMEOUT_MS:300000}
       ct-inference-url: ${CT_INFERENCE_URL:}
