@@ -227,6 +227,31 @@ export interface StatisticsOverview {
   returnedAmount?: number
 }
 
+/** 批量入库单行 */
+export interface BatchInboundItem {
+  drugId: number | null
+  drugName?: string
+  quantity: number | null
+  batchNumber: string
+  productionDate: string
+  expiryDate: string
+  location: string
+}
+
+/** 批量入库响应 */
+export interface BatchInboundResult {
+  successCount?: number
+  totalQuantity?: number
+  totalAmount?: number
+  results?: Array<{
+    drugId: number
+    drugName?: string
+    batchId: number
+    batchNumber?: string
+    quantity: number
+  }>
+}
+
 export interface TopDrugItem {
   drugId?: number
   drugName?: string

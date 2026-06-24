@@ -116,6 +116,9 @@ public class PharmacyService {
     @Transactional
     public void drugInbound(Long drugId, Map<String, Object> inboundInfo) {
         Integer quantity = asInt(inboundInfo.get("quantity"));
+        if (quantity == null || quantity <= 0) {
+            throw new BusinessException(400, "入库数量必须大于 0");
+        }
         String location = (String) inboundInfo.get("location");
         String batchNumber = (String) inboundInfo.get("batchNumber");
         java.time.LocalDate productionDate = inboundInfo.get("productionDate") != null
@@ -124,6 +127,16 @@ public class PharmacyService {
         java.time.LocalDate expiryDate = inboundInfo.get("expiryDate") != null
             ? java.time.LocalDate.parse(inboundInfo.get("expiryDate").toString())
             : null;
+
+        java.time.LocalDate today = java.time.LocalDate.now();
+        if (expiryDate != null) {
+            if (expiryDate.isBefore(today)) {
+                throw new BusinessException(400, "效期日期不能早于今天");
+            }
+            if (productionDate != null && !productionDate.isBefore(expiryDate)) {
+                throw new BusinessException(400, "生产日期必须早于效期日期");
+            }
+        }
 
         DrugStock drugStock = new DrugStock();
         drugStock.setDrugId(drugId);
@@ -372,12 +385,14 @@ public class PharmacyService {
             throw new BusinessException(400, "没有已发药的处方可以退药");
         }
 
-        // 退药明细：按 register_id 取所有行（实际服务只关心 status=1 的，但 mapper 返回聚合后，
-        // 明细行已经包含所有 prescription 行；这里通过 detail.remark 隐含过滤不重要，
-        // 因为退药时已发药的行 drug_state 会被置 '已退'，恢复库存应该针对所有行）。
-        // 保险起见：只对 drug_state='已发' 的行恢复库存。
-        // 简化方案：直接按明细列表恢复（历史上一次性退药只发生一次）。
-        List<PrescriptionDetail> details = prescriptionDetailMapper.selectByPrescriptionId(registerId);
+        // 退药明细：只对 drug_state='已发' 的行恢复库存，避免重复回滚
+        List<PrescriptionDetail> allDetails = prescriptionDetailMapper.selectByPrescriptionId(registerId);
+        List<PrescriptionDetail> details = allDetails.stream()
+            .filter(d -> "已发".equals(d.getDrugState()))
+            .toList();
+        if (details.isEmpty()) {
+            throw new BusinessException(400, "没有可退药的处方行");
+        }
         LocalDateTime now = LocalDateTime.now();
 
         for (PrescriptionDetail detail : details) {
@@ -571,6 +586,265 @@ public class PharmacyService {
         result.put("startDate", startDate);
         result.put("endDate", endDate);
         return result;
+    }
+
+    // ==================== 批量入库 ====================
+
+    /**
+     * 批量入库：单事务，要么全部成功要么全部回滚。
+     * 入参每个 item 必填：drugId、quantity、batchNumber、productionDate、expiryDate、location。
+     */
+    @Transactional
+    public Map<String, Object> batchInbound(List<Map<String, Object>> items) {
+        if (items == null || items.isEmpty()) {
+            throw new BusinessException(400, "批量入库不能为空");
+        }
+
+        List<String> errors = new ArrayList<>();
+        int totalItems = 0;
+        int totalQuantity = 0;
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        LocalDateTime now = LocalDateTime.now();
+
+        // 预先校验所有条目，失败一次抛出整体回滚
+        for (int i = 0; i < items.size(); i++) {
+            Map<String, Object> item = items.get(i);
+            String prefix = "第 " + (i + 1) + " 行：";
+
+            Object drugIdObj = item.get("drugId");
+            if (drugIdObj == null) {
+                errors.add(prefix + "缺少 drugId");
+                continue;
+            }
+            Long drugId = ((Number) drugIdObj).longValue();
+            Integer quantity = asInt(item.get("quantity"));
+            String batchNumber = (String) item.get("batchNumber");
+            String location = (String) item.get("location");
+            java.time.LocalDate productionDate = item.get("productionDate") != null
+                ? java.time.LocalDate.parse(item.get("productionDate").toString())
+                : null;
+            java.time.LocalDate expiryDate = item.get("expiryDate") != null
+                ? java.time.LocalDate.parse(item.get("expiryDate").toString())
+                : null;
+
+            if (quantity == null || quantity <= 0) {
+                errors.add(prefix + "入库数量必须大于 0");
+            }
+            if (batchNumber == null || batchNumber.isBlank()) {
+                errors.add(prefix + "批号不能为空");
+            }
+            if (location == null || location.isBlank()) {
+                errors.add(prefix + "货位不能为空");
+            }
+            if (productionDate == null) {
+                errors.add(prefix + "生产日期不能为空");
+            }
+            if (expiryDate == null) {
+                errors.add(prefix + "失效日期不能为空");
+            }
+            if (productionDate != null && expiryDate != null) {
+                java.time.LocalDate today = java.time.LocalDate.now();
+                if (expiryDate.isBefore(today)) {
+                    errors.add(prefix + "失效日期不能早于今天");
+                } else if (!productionDate.isBefore(expiryDate)) {
+                    errors.add(prefix + "生产日期必须早于失效日期");
+                }
+            }
+
+            DrugInfo drug = drugInfoMapper.selectById(drugId);
+            if (drug == null) {
+                errors.add(prefix + "药品不存在 (id=" + drugId + ")");
+            } else {
+                // 同药品同批号在本药品下不能重复（防御性）
+                // 这里不强制做唯一性检查，由 DB 唯一索引/业务规则决定
+                totalItems++;
+                totalQuantity += quantity == null ? 0 : quantity;
+                if (drug.getPrice() != null && quantity != null) {
+                    totalAmount = totalAmount.add(drug.getPrice().multiply(BigDecimal.valueOf(quantity)));
+                }
+            }
+        }
+
+        if (!errors.isEmpty()) {
+            throw new BusinessException(400, "批量入库校验失败：\n" + String.join("\n", errors));
+        }
+
+        // 全部校验通过，开始执行
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Map<String, Object> item : items) {
+            Long drugId = ((Number) item.get("drugId")).longValue();
+            Integer quantity = asInt(item.get("quantity"));
+            String batchNumber = (String) item.get("batchNumber");
+            String location = (String) item.get("location");
+            java.time.LocalDate productionDate = item.get("productionDate") != null
+                ? java.time.LocalDate.parse(item.get("productionDate").toString())
+                : null;
+            java.time.LocalDate expiryDate = item.get("expiryDate") != null
+                ? java.time.LocalDate.parse(item.get("expiryDate").toString())
+                : null;
+
+            DrugInfo drug = drugInfoMapper.selectById(drugId);
+
+            DrugStock drugStock = new DrugStock();
+            drugStock.setDrugId(drugId);
+            drugStock.setQuantity(quantity);
+            drugStock.setLocation(location);
+            drugStock.setBatchNumber(batchNumber);
+            drugStock.setProductionDate(productionDate);
+            drugStock.setExpiryDate(expiryDate);
+            drugStock.setStatus(1);
+            drugStockMapper.insert(drugStock);
+
+            drugInfoMapper.increaseStock(drugId, quantity);
+
+            PharmacyTransaction transaction = new PharmacyTransaction();
+            transaction.setType("入库");
+            transaction.setDrugId(drugId);
+            transaction.setDrugName(drug != null ? drug.getName() : null);
+            transaction.setQuantity(quantity);
+            transaction.setUnitPrice(drug != null ? drug.getPrice() : null);
+            transaction.setTotalAmount(drug != null && drug.getPrice() != null
+                ? drug.getPrice().multiply(BigDecimal.valueOf(quantity))
+                : null);
+            transaction.setReason("批量入库批号：" + batchNumber);
+            transaction.setTransactionTime(now);
+            pharmacyTransactionMapper.insert(transaction);
+
+            Map<String, Object> r = new HashMap<>();
+            r.put("drugId", drugId);
+            r.put("drugName", drug != null ? drug.getName() : null);
+            r.put("batchId", drugStock.getId());
+            r.put("batchNumber", batchNumber);
+            r.put("quantity", quantity);
+            results.add(r);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("successCount", items.size());
+        result.put("totalQuantity", totalQuantity);
+        result.put("totalAmount", totalAmount);
+        result.put("results", results);
+        log.info("批量入库成功 | count={}, totalQuantity={}, totalAmount={}",
+            items.size(), totalQuantity, totalAmount);
+        return result;
+    }
+
+    // ==================== 报损 ====================
+
+    /**
+     * 药品报损：扣减 drug_info 总库存 + 写 transaction(type='报损')。
+     * 不动 drug_stock 具体批次（按药品粒度报损，不指定批次时从最早过期批次扣减）。
+     */
+    @Transactional
+    public void reportLoss(Long drugId, Map<String, Object> lossInfo) {
+        Integer quantity = asInt(lossInfo.get("quantity"));
+        if (quantity == null || quantity <= 0) {
+            throw new BusinessException(400, "报损数量必须大于 0");
+        }
+        String reason = lossInfo.get("reason") != null
+            ? lossInfo.get("reason").toString()
+            : "药品报损";
+        Long batchId = lossInfo.get("batchId") != null
+            ? ((Number) lossInfo.get("batchId")).longValue()
+            : null;
+        Long operatorId = lossInfo.get("operatorId") != null
+            ? ((Number) lossInfo.get("operatorId")).longValue()
+            : null;
+        String operatorName = (String) lossInfo.get("operatorName");
+
+        DrugInfo drug = drugInfoMapper.selectById(drugId);
+        if (drug == null) {
+            throw new BusinessException(404, "药品不存在");
+        }
+        if (drug.getStockQuantity() == null || drug.getStockQuantity() < quantity) {
+            throw new BusinessException(400, "药品库存不足，当前库存: "
+                + (drug.getStockQuantity() == null ? 0 : drug.getStockQuantity())
+                + "，报损数量: " + quantity);
+        }
+
+        // 优先从指定批次扣减；否则按"早失效优先"扣减
+        if (batchId != null) {
+            DrugStock batch = drugStockMapper.selectById(batchId);
+            if (batch == null || !batch.getDrugId().equals(drugId)) {
+                throw new BusinessException(400, "批次不存在或不属于该药品");
+            }
+            if (batch.getQuantity() == null || batch.getQuantity() < quantity) {
+                throw new BusinessException(400, "批次库存不足，当前: "
+                    + (batch.getQuantity() == null ? 0 : batch.getQuantity())
+                    + "，报损数量: " + quantity);
+            }
+            drugStockMapper.updateQuantity(batchId, batch.getQuantity() - quantity);
+        } else {
+            List<DrugStock> stocks = drugStockMapper.selectByDrugIdAndStatus(drugId);
+            int remain = quantity;
+            for (DrugStock s : stocks) {
+                if (remain <= 0) break;
+                int q = s.getQuantity() == null ? 0 : s.getQuantity();
+                if (q <= 0) continue;
+                int deduct = Math.min(q, remain);
+                drugStockMapper.updateQuantity(s.getId(), q - deduct);
+                remain -= deduct;
+            }
+            if (remain > 0) {
+                throw new BusinessException(400, "批次库存不足以扣减报损数量");
+            }
+        }
+
+        // 扣 drug_info 总库存
+        drugInfoMapper.decreaseStock(drugId, quantity);
+
+        // 写流水
+        PharmacyTransaction transaction = new PharmacyTransaction();
+        transaction.setType("报损");
+        transaction.setDrugId(drugId);
+        transaction.setDrugName(drug.getName());
+        transaction.setQuantity(-quantity);
+        transaction.setUnitPrice(drug.getPrice());
+        transaction.setTotalAmount(drug.getPrice() != null
+            ? drug.getPrice().multiply(BigDecimal.valueOf(quantity)).negate()
+            : null);
+        transaction.setOperatorId(operatorId);
+        transaction.setOperatorName(operatorName);
+        transaction.setReason(reason);
+        transaction.setTransactionTime(LocalDateTime.now());
+        pharmacyTransactionMapper.insert(transaction);
+
+        log.info("药品报损成功 | drugId={}, quantity={}, batchId={}, reason={}",
+            drugId, quantity, batchId, reason);
+    }
+
+    // ==================== 批次冻结/解冻 ====================
+
+    /**
+     * 冻结批次：drug_stock.status = 0
+     */
+    @Transactional
+    public void freezeBatch(Long batchId) {
+        DrugStock batch = drugStockMapper.selectById(batchId);
+        if (batch == null) {
+            throw new BusinessException(404, "批次不存在");
+        }
+        if (batch.getStatus() != null && batch.getStatus() == 0) {
+            return; // 已经是冻结态，幂等
+        }
+        drugStockMapper.updateStatus(batchId, 0);
+        log.info("批次冻结 | batchId={}, drugId={}", batchId, batch.getDrugId());
+    }
+
+    /**
+     * 解冻批次：drug_stock.status = 1
+     */
+    @Transactional
+    public void unfreezeBatch(Long batchId) {
+        DrugStock batch = drugStockMapper.selectById(batchId);
+        if (batch == null) {
+            throw new BusinessException(404, "批次不存在");
+        }
+        if (batch.getStatus() != null && batch.getStatus() == 1) {
+            return; // 已经是可用态，幂等
+        }
+        drugStockMapper.updateStatus(batchId, 1);
+        log.info("批次解冻 | batchId={}, drugId={}", batchId, batch.getDrugId());
     }
 
     // ==================== 转换方法 ====================

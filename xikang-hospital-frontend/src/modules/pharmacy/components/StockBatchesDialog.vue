@@ -4,6 +4,8 @@ import {
   ElButton,
   ElDialog,
   ElEmpty,
+  ElMessage,
+  ElMessageBox,
   ElTable,
   ElTableColumn,
   ElTag,
@@ -17,6 +19,7 @@ import type { DrugOption, DrugStock } from '@/shared/types/pharmacy'
 import InboundDialog from './InboundDialog.vue'
 import StockCheckDialog from './StockCheckDialog.vue'
 import DrugDetailDialog from './DrugDetailDialog.vue'
+import LossDialog from './LossDialog.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -35,6 +38,7 @@ const rows = ref<DrugStock[]>([])
 const inboundVisible = ref(false)
 const checkVisible = ref(false)
 const detailVisible = ref(false)
+const lossVisible = ref(false)
 
 const isLowStock = computed(() => {
   if (!props.drug) return false
@@ -67,6 +71,7 @@ function expiryTone(date?: string): 'danger' | 'warning' | '' {
 }
 
 function rowClass({ row }: { row: DrugStock }) {
+  if (row.status === 0) return 'row-frozen'
   const tone = expiryTone(row.expiryDate)
   if (tone === 'danger') return 'row-critical'
   if (tone === 'warning') return 'row-warning'
@@ -82,10 +87,40 @@ function openCheck() {
 function openDetail() {
   detailVisible.value = true
 }
+function openLoss() {
+  lossVisible.value = true
+}
 
 function onSubSuccess() {
   void load()
   emit('changed')
+}
+
+async function toggleFreeze(row: DrugStock) {
+  const action = row.status === 0 ? '解冻' : '冻结'
+  try {
+    await ElMessageBox.confirm(
+      `确认${action}批次「${row.batchNumber || row.id}」？${
+        action === '冻结' ? '冻结后该批次将不可用于发药' : '解冻后该批次将恢复可用'
+      }`,
+      `${action}批次`,
+      { type: action === '冻结' ? 'warning' : 'info', confirmButtonText: `确认${action}` },
+    )
+  } catch {
+    return
+  }
+  try {
+    if (row.status === 0) {
+      await pharmacyApi.unfreezeBatch(row.id)
+    } else {
+      await pharmacyApi.freezeBatch(row.id)
+    }
+    ElMessage.success(`已${action}批次`)
+    void load()
+    emit('changed')
+  } catch (e) {
+    ElMessage.error(`${action}失败：${(e as Error).message ?? '未知错误'}`)
+  }
 }
 </script>
 
@@ -93,7 +128,8 @@ function onSubSuccess() {
   <ElDialog
     :model-value="modelValue"
     :title="drug ? `${drug.name} · 库存批次` : '库存批次'"
-    width="780px"
+    width="860px"
+    align-center
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template v-if="drug">
@@ -106,11 +142,13 @@ function onSubSuccess() {
             <ElTag v-if="drug.dosageForm" size="small" type="info" effect="plain">
               {{ drug.dosageForm }}
             </ElTag>
+            <ElTag v-if="isLowStock" type="danger" size="small" effect="dark">低库存</ElTag>
           </div>
           <div class="summary__meta">
             <span>规格：{{ drug.specification || '-' }}</span>
             <span>单价：{{ drug.price ?? '-' }} 元</span>
             <span>预警阈值：{{ drug.lowStockThreshold ?? '-' }}</span>
+            <span>批次数：{{ rows.length }}</span>
           </div>
         </div>
         <div class="summary__stock" :class="{ 'is-low': isLowStock }">
@@ -133,11 +171,18 @@ function onSubSuccess() {
           :row-class-name="rowClass"
           size="small"
         >
-          <ElTableColumn prop="batchNumber" label="批次号" min-width="140" />
-          <ElTableColumn prop="quantity" label="数量" min-width="80" />
-          <ElTableColumn prop="location" label="货位" min-width="110" />
+          <ElTableColumn prop="batchNumber" label="批次号" min-width="140">
+            <template #default="{ row }">
+              <span>{{ row.batchNumber || '-' }}</span>
+              <ElTag v-if="row.status === 0" type="info" size="small" effect="plain" class="ml">
+                ❄️ 冻结
+              </ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn prop="quantity" label="数量" min-width="80" align="right" />
+          <ElTableColumn prop="location" label="货位" min-width="100" />
           <ElTableColumn prop="productionDate" label="生产日期" min-width="110" />
-          <ElTableColumn label="失效日期" min-width="140">
+          <ElTableColumn label="失效日期" min-width="180">
             <template #default="{ row }">
               <span>{{ row.expiryDate }}</span>
               <ElTag
@@ -156,14 +201,27 @@ function onSubSuccess() {
               >≤ {{ NEAR_EXPIRY_DAYS }} 天</ElTag>
             </template>
           </ElTableColumn>
+          <ElTableColumn label="操作" width="100" fixed="right" align="center">
+            <template #default="{ row }">
+              <ElButton
+                link
+                size="small"
+                :type="row.status === 0 ? 'primary' : 'info'"
+                @click="toggleFreeze(row as DrugStock)"
+              >
+                {{ row.status === 0 ? '解冻' : '冻结' }}
+              </ElButton>
+            </template>
+          </ElTableColumn>
         </ElTable>
       </div>
     </template>
 
     <template #footer>
       <ElButton @click="emit('update:modelValue', false)">关闭</ElButton>
-      <ElButton @click="openDetail">查看完整详情</ElButton>
-      <ElButton @click="openCheck">库存盘点</ElButton>
+      <ElButton @click="openDetail">查看详情</ElButton>
+      <ElButton @click="openCheck" type="warning" plain>库存盘点</ElButton>
+      <ElButton @click="openLoss" type="danger" plain>报损</ElButton>
       <ElButton type="primary" @click="openInbound">入库</ElButton>
     </template>
 
@@ -182,6 +240,12 @@ function onSubSuccess() {
       v-model="detailVisible"
       :drug="drug"
       @check="openCheck"
+    />
+    <LossDialog
+      v-model="lossVisible"
+      :drug="drug"
+      :batches="rows"
+      @success="onSubSuccess"
     />
   </ElDialog>
 </template>
@@ -211,6 +275,7 @@ function onSubSuccess() {
   align-items: center;
   gap: var(--space-2);
   font-size: 16px;
+  flex-wrap: wrap;
 }
 
 .summary__meta {
@@ -283,5 +348,10 @@ function onSubSuccess() {
 
 :deep(.row-critical) {
   background: var(--color-danger-bg, #fef0f0);
+}
+
+:deep(.row-frozen) {
+  background: var(--color-info-bg, #f4f4f5);
+  color: var(--color-text-muted);
 }
 </style>

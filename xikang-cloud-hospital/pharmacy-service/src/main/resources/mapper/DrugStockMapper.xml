@@ -57,4 +57,8 @@
         UPDATE drug_stock SET quantity = #{quantity} WHERE id = #{id}
     </update>
 
+    <update id="updateStatus">
+        UPDATE drug_stock SET status = #{status} WHERE id = #{id}
+    </update>
+
 </mapper>

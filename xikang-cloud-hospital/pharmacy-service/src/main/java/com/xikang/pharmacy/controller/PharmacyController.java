@@ -183,6 +183,53 @@ public class PharmacyController {
         return Result.success(pharmacyService.getDispensingByRegister(registerId));
     }
 
+    // ==================== 批量入库接口 ====================
+
+    /**
+     * 批量入库：单事务，任一行校验失败全回滚
+     */
+    @PostMapping("/inventory/batch-inbound")
+    public Result<Map<String, Object>> batchInbound(
+            @RequestBody Map<String, Object> payload) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) payload.get("items");
+        Map<String, Object> result = pharmacyService.batchInbound(items);
+        return Result.success("批量入库成功", result);
+    }
+
+    // ==================== 报损接口 ====================
+
+    /**
+     * 药品报损
+     */
+    @PostMapping("/inventory/{drugId}/loss")
+    public Result<Void> reportLoss(
+            @PathVariable Long drugId,
+            @RequestBody Map<String, Object> lossInfo) {
+        pharmacyService.reportLoss(drugId, lossInfo);
+        return Result.success();
+    }
+
+    // ==================== 批次冻结/解冻接口 ====================
+
+    /**
+     * 冻结批次（status → 0）
+     */
+    @PutMapping("/inventory/batch/{batchId}/freeze")
+    public Result<Void> freezeBatch(@PathVariable Long batchId) {
+        pharmacyService.freezeBatch(batchId);
+        return Result.success();
+    }
+
+    /**
+     * 解冻批次（status → 1）
+     */
+    @PutMapping("/inventory/batch/{batchId}/unfreeze")
+    public Result<Void> unfreezeBatch(@PathVariable Long batchId) {
+        pharmacyService.unfreezeBatch(batchId);
+        return Result.success();
+    }
+
     // ==================== 发药接口 ====================
 
     /**

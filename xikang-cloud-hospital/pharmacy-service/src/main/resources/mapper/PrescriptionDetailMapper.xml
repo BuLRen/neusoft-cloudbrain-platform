@@ -29,6 +29,7 @@
         <result column="frequency"     property="frequency"/>
         <result column="duration"      property="duration"/>
         <result column="remark"        property="remark"/>
+        <result column="drug_state"    property="drugState"/>
         <result column="create_time"   property="createTime"/>
     </resultMap>
 
@@ -56,6 +57,7 @@
             NULL                                               AS frequency,
             NULL                                               AS duration,
             p.drug_number                                      AS remark,
+            p.drug_state                                       AS drug_state,
             p.creation_time                                    AS create_time
         FROM prescription p
         LEFT JOIN drug_info d ON d.id = p.drug_id

@@ -28,4 +28,6 @@ public interface DrugStockMapper {
     int update(DrugStock drugStock);
 
     int updateQuantity(@Param("id") Long id, @Param("quantity") Integer quantity);
+
+    int updateStatus(@Param("id") Long id, @Param("status") Integer status);
 }
