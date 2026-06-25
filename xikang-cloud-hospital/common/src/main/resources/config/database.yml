@@ -21,8 +21,8 @@ spring:
     username: postgres
     password: postgres123
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
+      maximum-pool-size: 5
+      minimum-idle: 2
       connection-timeout: 30000
 
 ---
@@ -36,6 +36,10 @@ spring:
     username: xikang_hospital
     password: ${DB_REMOTE_PASSWORD:changeme}
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-      connection-timeout: 30000
+      maximum-pool-size: 3          # 远程开发可再降到 2
+      minimum-idle: 1               # 不要维持大量空闲连接
+      connection-timeout: 10000     # 10s 拿不到连接就失败，便于发现问题
+      idle-timeout: 300000          # 5 分钟空闲就回收
+      max-lifetime: 1800000         # 30 分钟强制换新连接（应小于 PG 侧 timeout）
+      keepalive-time: 30000         # 远程连接保活，防 NAT/防火墙断连
+      leak-detection-threshold: 60000  # 开发环境：60s 未归还连接打 WARN 日志

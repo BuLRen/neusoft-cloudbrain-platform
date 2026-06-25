@@ -99,7 +99,30 @@ Dify 官方接口：`POST {DIFY_BASE_URL}/v1/workflows/run`（`response_mode: bl
 
 未配置 W2 或调用失败时走内置 `FallbackWorkflowEngine`。
 
-### 其它 Dify（W1、W3、W4）
+### Dify W3（查看结果 / 检查检验结果解读）
 
-- `DIFY_WORKFLOW_W1` / `W3` / `W4`：非空时尝试旧版 `invokeWorkflow`（共用 `api-key` 时易命中错误 App，慎用）。
+与 W2 类似：`POST {DIFY_BASE_URL}/v1/workflows/run`，`response_mode: blocking`，独立 API Key。
+
+| 配置项 | 说明 |
+|--------|------|
+| `DIFY_WORKFLOW_W3` | 填 `true` 启用 W3 Dify；**不要**填 `app-xxx` |
+| `DIFY_API_KEY_W3` | **必填（启用 W3 时）**。W3 Workflow App 的 API Key |
+| `DIFY_BASE_URL` | 自托管 Dify 根地址，如 `http://43.139.102.203`（勿带 `/v1`） |
+
+**Dify 开始节点变量（String）：**
+
+- `registerId`
+- `structuredRecordJson` — 后端 `loadStructuredRecord()` 序列化
+- `allResultsJson` — 后端检查 + 检验 `resultText` 列表序列化
+- `preliminaryAssessment` — W2 初步判断（优先进程内缓存，回退病历/推荐理由）
+
+**结束节点输出（与前端 `W3Output` 对齐）：** `registerId`、`examSummaries[]`、`overallAnalysis`、`explicitNonDiagnosis`。
+
+前端第 4 步「运行 W3」→ `POST /api/physician/ai/w3/analyze`；结果持久化后可通过 `GET /api/physician/ai/w3/status` 查询。
+
+未配置 W3 或 Key 为空时走内置 `FallbackWorkflowEngine`。
+
+### 其它 Dify（W1、W4）
+
+- `DIFY_WORKFLOW_W1` / `W4`：非空时尝试旧版 `invokeWorkflow`（共用 `api-key` 时易命中错误 App，慎用）。
 - `CT_INFERENCE_URL`：外部 CT 推理服务，未配置则用内置模拟。

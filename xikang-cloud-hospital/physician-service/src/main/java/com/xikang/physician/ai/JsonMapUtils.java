@@ -20,8 +20,23 @@ final class JsonMapUtils {
         if (value instanceof Map<?, ?> map) {
             return (Map<String, Object>) map;
         }
-        return MAPPER.convertValue(value, new TypeReference<>() {
-        });
+        if (value instanceof String text) {
+            String trimmed = text.trim();
+            if (trimmed.startsWith("{")) {
+                try {
+                    return MAPPER.readValue(trimmed, new TypeReference<>() {
+                    });
+                } catch (Exception ignored) {
+                    return Map.of();
+                }
+            }
+        }
+        try {
+            return MAPPER.convertValue(value, new TypeReference<>() {
+            });
+        } catch (Exception ignored) {
+            return Map.of();
+        }
     }
 
     static String toJson(Object value) {

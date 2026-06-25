@@ -117,8 +117,9 @@ xikang:
       workflow-w1: ${DIFY_WORKFLOW_W1:}
       # W2b 常规检验模拟 + CT 推理
       workflow-w2b: ${DIFY_WORKFLOW_W2B:}
-      # W3  检查结果整理
+      # W3  检查检验结果解读（查看结果页）
       workflow-w3: ${DIFY_WORKFLOW_W3:}
+      api-key-w3: ${DIFY_API_KEY_W3:}
       # W4  门诊确诊与概率
       workflow-w4: ${DIFY_WORKFLOW_W4:}
 

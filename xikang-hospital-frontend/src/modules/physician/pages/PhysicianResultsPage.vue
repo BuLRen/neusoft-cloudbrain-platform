@@ -64,10 +64,11 @@ async function loadW3Status() {
   try {
     const status = await physicianApi.w3Status(registerId.value)
     w3Completed.value = status.completed
-    w3Output.value = status.w3Output ?? null
+    if (status.w3Output) {
+      w3Output.value = status.w3Output
+    }
   } catch {
-    w3Output.value = null
-    w3Completed.value = false
+    // status 接口失败时保留已有解读结果，避免 analyze 成功后页面被清空
   }
 }
 
@@ -87,14 +88,34 @@ async function loadResults() {
   }
 }
 
+function hasResultPayload(raw: unknown): boolean {
+  if (raw == null) return false
+  const text = String(raw).trim()
+  return text.length > 0 && text !== 'null' && text !== 'undefined'
+}
+
+const hasAnalyzableResults = computed(() => {
+  const checks = checkResults.value.some(row => hasResultPayload(row.checkResult))
+  const inspections = inspectionResults.value.some(
+    row => row.inspectionState !== '已归档' && hasResultPayload(row.inspectionResult),
+  )
+  return checks || inspections
+})
+
 async function runW3() {
   if (!registerId.value) return
+  if (!hasAnalyzableResults.value) {
+    ElMessage.warning('暂无检查检验结果可供解读，请等待项目完成后再运行 W3')
+    return
+  }
   w3Loading.value = true
   try {
     w3Output.value = await physicianApi.aiW3(registerId.value)
     w3Completed.value = true
     await loadResults()
     ElMessage.success('W3 结果解读已完成')
+  } catch {
+    // http() 已展示后端错误信息
   } finally {
     w3Loading.value = false
   }
@@ -171,7 +192,6 @@ onMounted(() => {
   <PhysicianStepLayout
     group-label="门诊诊疗"
     title="检查/检验结果"
-    description="汇总查看已完成项目的原始结果；W3 仅做结果解读（异常指标、风险与临床意义），疾病诊断请在下一步「门诊确诊」中运行 W4。"
     patient-card-variant="profile"
     prev-path="/physician/orders"
     next-path="/physician/diagnosis"
@@ -182,7 +202,13 @@ onMounted(() => {
           <ElIcon><Refresh /></ElIcon>
           刷新结果
         </ElButton>
-        <ElButton class="results-toolbar__w3" type="primary" :loading="w3Loading" @click="runW3">
+        <ElButton
+          class="results-toolbar__w3"
+          type="primary"
+          :loading="w3Loading"
+          :disabled="!hasAnalyzableResults"
+          @click="runW3"
+        >
           <ElIcon><MagicStick /></ElIcon>
           运行 W3（结果解读）
         </ElButton>
