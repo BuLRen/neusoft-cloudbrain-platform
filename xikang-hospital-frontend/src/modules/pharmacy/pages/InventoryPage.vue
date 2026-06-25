@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ElButton,
@@ -58,6 +58,24 @@ watch([drugKeyword, drugDosageForm, drugCategory, stockFilter], () => {
   debouncedSearch()
 })
 
+// ===== 预警面板折叠状态 =====
+const expandedLow = ref(false)
+const expandedExpiring = ref(false)
+const lowListRef = ref<HTMLElement | null>(null)
+const expiringListRef = ref<HTMLElement | null>(null)
+
+watch(expandedLow, (v) => {
+  if (v) nextTick(() => {
+    if (lowListRef.value) lowListRef.value.scrollTop = 0
+  })
+})
+
+watch(expandedExpiring, (v) => {
+  if (v) nextTick(() => {
+    if (expiringListRef.value) expiringListRef.value.scrollTop = 0
+  })
+})
+
 // ===== 批次弹窗 =====
 const batchesVisible = ref(false)
 const selectedDrug = ref<DrugOption | null>(null)
@@ -100,8 +118,21 @@ const overview = computed(() => {
   const totalStock = drugs.value.reduce((s, d) => s + (d.stockQuantity ?? 0), 0)
   const lowStockCount = lowStockDrugs.value.length
   const expiringCount = expiringBatches.value.length
-  return { totalDrugs, totalStock, lowStockCount, expiringCount }
+  const criticalExpiringCount = expiringBatches.value.filter(
+    (b) => (b.daysRemaining ?? 999) <= 7,
+  ).length
+  return { totalDrugs, totalStock, lowStockCount, expiringCount, criticalExpiringCount }
 })
+
+// 低库存预警：零库存 vs 低库存分档
+function lowStockTone(d: DrugOption): 'danger' | 'warning' {
+  return (d.stockQuantity ?? 0) === 0 ? 'danger' : 'warning'
+}
+
+// 近效期预警：紧急(≤7天) vs 关注(8-30天) 分档
+function expiryTone(days: number | undefined): 'danger' | 'warning' {
+  return (days ?? 999) <= 7 ? 'danger' : 'warning'
+}
 
 async function loadDrugCatalog() {
   loading.value = true
@@ -182,7 +213,7 @@ onMounted(() => {
       <template #actions>
         <ElButton @click="resetFilters">清空筛选</ElButton>
         <ElButton @click="refreshAll">刷新数据</ElButton>
-        <ElButton type="primary" @click="goBatchInbound">📥 批量入库</ElButton>
+        <ElButton type="primary" @click="goBatchInbound">批量入库</ElButton>
       </template>
     </PageHeader>
 
@@ -199,60 +230,122 @@ onMounted(() => {
       <div class="overview__item" :class="{ 'is-warn': overview.lowStockCount > 0 }">
         <div class="overview__num">{{ overview.lowStockCount }}</div>
         <div class="overview__label">低于阈值</div>
+        <div v-if="overview.lowStockCount > 0" class="overview__hint">需补货</div>
       </div>
-      <div class="overview__item" :class="{ 'is-warn': overview.expiringCount > 0 }">
+      <div
+        class="overview__item"
+        :class="{
+          'is-danger': overview.criticalExpiringCount > 0,
+          'is-warn': overview.expiringCount > 0 && overview.criticalExpiringCount === 0,
+        }"
+      >
         <div class="overview__num">{{ overview.expiringCount }}</div>
         <div class="overview__label">≤ {{ NEAR_EXPIRY_DAYS }} 天到期批次</div>
+        <div v-if="overview.criticalExpiringCount > 0" class="overview__hint overview__hint--danger">
+          紧急 {{ overview.criticalExpiringCount }} 批
+        </div>
       </div>
     </div>
 
-    <!-- 低库存预警条（仅在有低库存时出现）-->
-    <GlassCard v-if="lowStockDrugs.length > 0" class="alert-card" :tone="'warning'">
-      <div class="alert-row">
-        <div class="alert-row__icon">!</div>
-        <div class="alert-row__body">
-          <strong>{{ lowStockDrugs.length }} 种药品库存低于阈值</strong>
-          <ul class="alert-list">
-            <li v-for="d in lowStockDrugs.slice(0, 4)" :key="d.id">
-              {{ d.name }}（{{ d.stockQuantity }} {{ d.unit || '件' }}）
-            </li>
-            <li v-if="lowStockDrugs.length > 4" class="more">
-              …另外 {{ lowStockDrugs.length - 4 }} 种
-            </li>
-          </ul>
+    <!-- 预警面板：低库存 + 近效期，左右并排 -->
+    <div
+      v-if="lowStockDrugs.length > 0 || expiringBatches.length > 0"
+      class="alert-panels"
+    >
+      <!-- 低库存面板 -->
+      <GlassCard v-if="lowStockDrugs.length > 0" class="alert-panel">
+        <div class="alert-panel__head">
+          <div class="alert-panel__title">
+            <span class="alert-panel__badge" :class="lowStockDrugs.some(d => (d.stockQuantity ?? 0) === 0) ? 'is-danger' : 'is-warning'">!</span>
+            <span>库存预警</span>
+          </div>
+          <div class="alert-panel__count">{{ lowStockDrugs.length }}</div>
         </div>
-        <div class="alert-row__action">
+        <div ref="lowListRef" class="alert-panel__list">
+          <div
+            v-for="d in (expandedLow ? lowStockDrugs : lowStockDrugs.slice(0, 3))"
+            :key="d.id"
+            class="alert-panel__item"
+          >
+            <div class="alert-panel__strip" :class="lowStockTone(d)"></div>
+            <div class="alert-panel__body">
+              <div class="alert-panel__name">{{ d.name }}</div>
+              <div class="alert-panel__meta">
+                <span :class="lowStockTone(d) === 'danger' ? 'text-danger' : 'text-warning'">
+                  {{ (d.stockQuantity ?? 0) === 0 ? '缺货' : '低库存' }}
+                </span>
+                <span class="dot">·</span>
+                <span>{{ d.stockQuantity ?? 0 }} {{ d.unit || '件' }}</span>
+                <template v-if="(d.stockQuantity ?? 0) > 0 && d.lowStockThreshold">
+                  <span class="dot">·</span>
+                  <span>阈值 {{ d.lowStockThreshold }}</span>
+                </template>
+              </div>
+            </div>
+          </div>
+          <button
+            v-if="lowStockDrugs.length > 3"
+            type="button"
+            class="alert-panel__more"
+            @click="expandedLow = !expandedLow"
+          >
+            {{ expandedLow ? '收起' : `+ 另外 ${lowStockDrugs.length - 3} 种` }}
+          </button>
+        </div>
+        <div class="alert-panel__foot">
+          <ElButton size="small" @click="stockFilter = 'low'">仅看低库存</ElButton>
+        </div>
+      </GlassCard>
+
+      <!-- 近效期面板 -->
+      <GlassCard v-if="expiringBatches.length > 0" class="alert-panel">
+        <div class="alert-panel__head">
+          <div class="alert-panel__title">
+            <span class="alert-panel__badge" :class="overview.criticalExpiringCount > 0 ? 'is-danger' : 'is-warning'">!</span>
+            <span>近效期预警</span>
+          </div>
+          <div class="alert-panel__count">{{ expiringBatches.length }}</div>
+        </div>
+        <div ref="expiringListRef" class="alert-panel__list">
+          <div
+            v-for="b in (expandedExpiring ? expiringBatches : expiringBatches.slice(0, 3))"
+            :key="b.id"
+            class="alert-panel__item"
+          >
+            <div class="alert-panel__strip" :class="expiryTone(b.daysRemaining)"></div>
+            <div class="alert-panel__body">
+              <div class="alert-panel__name">{{ b.drugName || `#${b.drugId}` }}</div>
+              <div class="alert-panel__meta">
+                <span :class="expiryTone(b.daysRemaining) === 'danger' ? 'text-danger' : 'text-warning'">
+                  {{ expiryTone(b.daysRemaining) === 'danger' ? '紧急' : '关注' }}
+                </span>
+                <span class="dot">·</span>
+                <span>剩 {{ b.daysRemaining ?? '-' }} 天</span>
+                <span class="dot">·</span>
+                <span>批号 {{ b.batchNumber || '-' }}</span>
+              </div>
+            </div>
+          </div>
+          <button
+            v-if="expiringBatches.length > 3"
+            type="button"
+            class="alert-panel__more"
+            @click="expandedExpiring = !expandedExpiring"
+          >
+            {{ expandedExpiring ? '收起' : `+ 另外 ${expiringBatches.length - 3} 个` }}
+          </button>
+        </div>
+        <div class="alert-panel__foot">
           <ElButton
             size="small"
-            @click="stockFilter = 'low'"
-          >仅看低库存</ElButton>
-        </div>
-      </div>
-    </GlassCard>
-
-    <!-- 近效期预警条 -->
-    <GlassCard v-if="expiringBatches.length > 0" class="alert-card" :tone="'warning'">
-      <div class="alert-row">
-        <div class="alert-row__icon">⏰</div>
-        <div class="alert-row__body">
-          <strong>{{ expiringBatches.length }} 个批次将在 {{ NEAR_EXPIRY_DAYS }} 天内到期</strong>
-          <ul class="alert-list">
-            <li v-for="b in expiringBatches.slice(0, 4)" :key="b.id">
-              {{ b.drugName || `#${b.drugId}` }} · 批号 {{ b.batchNumber || '-' }}
-              · 剩余 {{ b.daysRemaining }} 天
-            </li>
-            <li v-if="expiringBatches.length > 4" class="more">
-              …另外 {{ expiringBatches.length - 4 }} 个
-            </li>
-          </ul>
-        </div>
-        <div class="alert-row__action">
-          <ElButton size="small" @click="openLoss(lowStockDrugs[0] ?? drugs[0] ?? null)">
+            :disabled="!lowStockDrugs[0] && !drugs[0]"
+            @click="openLoss(lowStockDrugs[0] ?? drugs[0] ?? null)"
+          >
             快速报损
           </ElButton>
         </div>
-      </div>
-    </GlassCard>
+      </GlassCard>
+    </div>
 
     <!-- 药品目录 -->
     <GlassCard class="catalog-card">
@@ -264,11 +357,7 @@ onMounted(() => {
             placeholder="药品名称 / 通用名"
             clearable
             size="default"
-          >
-            <template #prefix>
-              <span class="field-icon">🔍</span>
-            </template>
-          </ElInput>
+          />
         </div>
         <div class="filter-bar__field">
           <ElSelect
@@ -296,8 +385,8 @@ onMounted(() => {
         <div class="filter-bar__field filter-bar__field--status">
           <ElSelect v-model="stockFilter" size="default" class="full">
             <ElOption value="all" label="全部库存" />
-            <ElOption value="low" label="⚠️ 仅低库存" />
-            <ElOption value="zero" label="⛔ 仅零库存" />
+            <ElOption value="low" label="仅低库存" />
+            <ElOption value="zero" label="仅零库存" />
           </ElSelect>
         </div>
       </div>
@@ -439,29 +528,50 @@ onMounted(() => {
 }
 
 .overview__item:hover {
-  border-color: var(--color-primary, #409eff);
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.08);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(31, 140, 255, 0.08);
 }
 
 .overview__item.is-warn {
-  border-color: var(--color-warning, #e6a23c);
-  background: linear-gradient(180deg, #fffbf0 0%, var(--color-surface) 100%);
+  border-color: var(--color-warning);
+  background: linear-gradient(180deg, rgba(245, 159, 0, 0.06) 0%, var(--color-surface) 100%);
+}
+
+.overview__item.is-danger {
+  border-color: var(--color-danger);
+  background: linear-gradient(180deg, rgba(239, 77, 90, 0.06) 0%, var(--color-surface) 100%);
 }
 
 .overview__num {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 600;
   color: var(--color-text);
   line-height: 1.1;
+  letter-spacing: -0.5px;
 }
 
 .overview__item.is-warn .overview__num {
-  color: var(--color-warning, #e6a23c);
+  color: var(--color-warning);
+}
+
+.overview__item.is-danger .overview__num {
+  color: var(--color-danger);
 }
 
 .overview__label {
   font-size: 13px;
   color: var(--color-text-muted);
+}
+
+.overview__hint {
+  margin-top: var(--space-1);
+  font-size: 12px;
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.overview__hint--danger {
+  color: var(--color-danger);
 }
 
 @media (max-width: 900px) {
@@ -470,53 +580,192 @@ onMounted(() => {
   }
 }
 
-/* ===== 低库存 / 近效期预警条 ===== */
-.alert-card {
-  padding: var(--space-3) var(--space-4);
-  border-left: 4px solid var(--color-warning, #e6a23c);
+/* ===== 预警面板：左右并排 ===== */
+.alert-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-block-end: var(--space-4);
 }
 
-.alert-row {
+.alert-panel {
+  padding: var(--space-4) var(--space-5);
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: var(--space-3);
 }
 
-.alert-row__icon {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
+.alert-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block-end: var(--space-3);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.alert-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.alert-panel__badge {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--color-warning, #e6a23c);
   color: #fff;
   font-weight: 700;
-  font-size: 16px;
-  display: flex;
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.alert-row__body {
+.alert-panel__badge.is-warning {
+  background: var(--color-warning);
+}
+
+.alert-panel__badge.is-danger {
+  background: var(--color-danger);
+}
+
+.alert-panel__count {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.alert-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 264px;
+  overflow-y: auto;
+  padding-inline-end: var(--space-1);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+.alert-panel__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.alert-panel__list::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 3px;
+}
+
+.alert-panel__list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-soft);
+}
+
+.alert-panel__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.alert-panel__item {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-soft);
+  transition: background 0.15s ease;
+}
+
+.alert-panel__item:hover {
+  background: var(--color-primary-soft);
+}
+
+.alert-panel__strip {
+  flex: 0 0 4px;
+  width: 4px;
+  border-radius: 2px;
+}
+
+.alert-panel__strip.is-warning {
+  background: var(--color-warning);
+}
+
+.alert-panel__strip.is-danger {
+  background: var(--color-danger);
+}
+
+.alert-panel__body {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.alert-panel__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alert-panel__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
-  font-size: 13px;
-}
-
-.alert-list {
-  margin: 0;
-  padding-left: var(--space-4);
+  font-size: 12px;
   color: var(--color-text-muted);
 }
 
-.alert-list .more {
-  list-style: none;
-  color: var(--color-text-muted);
+.alert-panel__meta .dot {
+  color: var(--color-text-soft);
 }
 
-.alert-row__action {
-  flex: 0 0 auto;
+.text-warning {
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.text-danger {
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+.alert-panel__more {
+  align-self: flex-start;
+  margin-block-start: var(--space-1);
+  padding: 2px var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.alert-panel__more:hover {
+  background: var(--color-primary-soft);
+}
+
+.alert-panel__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--color-border);
+}
+
+@media (max-width: 980px) {
+  .alert-panels {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ===== 目录卡片 ===== */
@@ -538,11 +787,7 @@ onMounted(() => {
   font-weight: 600;
 }
 
-/* ===== 筛选条：核心样式 =====
-   - 4 个等宽字段，整齐对齐
-   - 高度由 Element Plus size=default 统一控制为 40px
-   - 间距用 gap 一致控制
-*/
+/* ===== 筛选条 ===== */
 .filter-bar {
   display: grid;
   grid-template-columns: 1.4fr 1fr 1fr 1fr;
@@ -557,19 +802,10 @@ onMounted(() => {
   min-width: 0;
 }
 
-.filter-bar__field--status {
-  /* 状态过滤可以稍短 */
-}
-
 .filter-bar__field :deep(.el-input__wrapper),
 .filter-bar__field :deep(.el-select__wrapper) {
   min-height: 40px;
   width: 100%;
-}
-
-.field-icon {
-  font-size: 14px;
-  opacity: 0.6;
 }
 
 @media (max-width: 980px) {
@@ -602,12 +838,12 @@ onMounted(() => {
 }
 
 .stock-low {
-  color: var(--color-warning, #e6a23c);
+  color: var(--color-warning);
   font-weight: 600;
 }
 
 .stock-zero {
-  color: var(--color-danger, #f56c6c);
+  color: var(--color-danger);
   font-weight: 600;
 }
 
@@ -622,11 +858,11 @@ onMounted(() => {
 }
 
 :deep(.row-warning) {
-  background: var(--color-warning-bg, #fdf6ec);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
 }
 
 :deep(.row-zero) {
-  background: var(--color-danger-bg, #fef0f0);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
 }
 
 :deep(.el-table__row) {

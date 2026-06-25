@@ -27,6 +27,12 @@ public interface ExpenseRecordMapper {
 
     List<ExpenseRecord> selectUnrefundedByRegisterId(Long registerId);
 
+    /**
+     * 查该挂号下的药品费行（item_code='MEDICATION_FEE'）。
+     * 用于患者端支付药品费时定位待缴行。
+     */
+    ExpenseRecord selectMedicationFeeByRegisterId(Long registerId);
+
     int insert(ExpenseRecord record);
 
     int update(ExpenseRecord record);

@@ -1,4 +1,19 @@
 import { http } from '../request'
+import axios from 'axios'
+
+// PDF 下载专用客户端：responseType=blob，自动携带 JWT token
+const blobClient = axios.create({
+  baseURL: '/api',
+  timeout: 60_000,
+  withCredentials: true,
+})
+blobClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token') || ''
+  if (token) {
+    config.headers.set('Authorization', `Bearer ${token}`)
+  }
+  return config
+})
 import type {
   BatchInboundItem,
   BatchInboundResult,
@@ -14,6 +29,7 @@ import type {
   FollowUpFeedback,
   FollowUpPlan,
   MedicationGuide,
+  MedicationGuideRecord,
   PendingPrescriptionQuery,
   PharmacyTransaction,
   PrescriptionQuery,
@@ -119,6 +135,37 @@ export const pharmacyApi = {
   medicationGuide(drugId: number) {
     return http<MedicationGuide>({ url: `/pharmacy/drugs/${drugId}/guide`, method: 'POST' })
   },
+  /**
+   * 处方级用药指导单（PDF 延迟生成）
+   * - 查最新一条状态：用于按钮可用性探测
+   * - 重试：手动重新生成 JSON 数据
+   * - 下载 PDF：用 buildMedicationGuidePdfUrl 拿 URL，配合 window.open 触发浏览器下载
+   */
+  medicationGuideStatus(registerId: number) {
+    return http<MedicationGuideRecord | null>({ url: `/pharmacy/medication-guide/${registerId}`, method: 'GET' })
+  },
+  retryMedicationGuide(registerId: number) {
+    return http<MedicationGuideRecord>({ url: `/pharmacy/medication-guide/${registerId}/retry`, method: 'POST' })
+  },
+  /**
+   * 下载用药指导单 PDF：调后端实时渲染接口，拿到 blob 后在浏览器触发下载。
+   * 不走 window.open 是因为 PDF 接口需要 Authorization header（window.open 无法附加）。
+   */
+  async downloadMedicationGuidePdf(registerId: number) {
+    const res = await blobClient.get(`/pharmacy/medication-guide/${registerId}/pdf`, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `medication-guide-${registerId}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    // 释放 blob URL
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
   /** P1-6.2 患者随访计划 */
   patientFollowUpPlans(patientId: number) {
     return http<FollowUpPlan[]>({ url: `/pharmacy/followup/patient/${patientId}`, method: 'GET' })
@@ -138,5 +185,12 @@ export const pharmacyApi = {
   /** P1-8 统计报表 */
   statistics(params?: { startDate?: string; endDate?: string; topLimit?: number }) {
     return http<StatisticsResult>({ url: '/pharmacy/statistics', method: 'GET', params })
+  },
+  /**
+   * 患者端「我的处方」：返回该患者所有处方（按挂号聚合），
+   * 后端会对每个挂号幂等生成药品费 expense_record 行。
+   */
+  patientPrescriptions(patientId: number) {
+    return http<PrescriptionSummary[]>({ url: `/pharmacy/patient/${patientId}/prescriptions`, method: 'GET' })
   },
 }

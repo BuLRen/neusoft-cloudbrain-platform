@@ -11,10 +11,14 @@ spring:
       - optional:file:./config/database.yml
       - optional:file:../config/database-secrets.yml
       - optional:file:./config/database-secrets.yml
+      - optional:file:../.env
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:your-api-key}
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      api-key: ${DEEPSEEK_API_KEY:your-api-key}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-chat}
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml

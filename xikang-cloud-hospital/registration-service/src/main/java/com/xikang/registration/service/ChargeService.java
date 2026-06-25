@@ -127,6 +127,82 @@ public class ChargeService {
     }
 
     /**
+     * 患者自助支付药品费（扣余额）。
+     * 与挂号费支付 {@link #payRegistration(Long)} 完全独立，互不影响。
+     *
+     * <p>流程：</p>
+     * <ol>
+     *   <li>查 MEDICATION_FEE 行（由 pharmacy-service 出账写入），状态必须为 0。</li>
+     *   <li>Feign 调 auth-service 扣余额，businessType=MEDICATION。</li>
+     *   <li>更新 expense_record.status=1，写 pay_time。</li>
+     * </ol>
+     */
+    @Transactional
+    public Map<String, Object> payMedication(Long registerId) {
+        Register register = registrationMapper.selectById(registerId);
+        if (register == null) {
+            throw new BusinessException(404, "挂号记录不存在");
+        }
+        if (register.getPatientId() == null) {
+            throw new BusinessException(400, "该挂号缺少患者信息，无法自助缴费");
+        }
+
+        ExpenseRecord medicationFee = expenseRecordMapper.selectMedicationFeeByRegisterId(registerId);
+        if (medicationFee == null) {
+            throw new BusinessException(400, "未找到药品费账单，请先在患者端查看处方");
+        }
+        if (medicationFee.getStatus() != null && medicationFee.getStatus() == 1) {
+            throw new BusinessException(400, "药品费已支付，无需重复缴费");
+        }
+        if (medicationFee.getStatus() == null || medicationFee.getStatus() != 0) {
+            throw new BusinessException(400, "当前药品费账单状态不允许支付");
+        }
+
+        BigDecimal amount = medicationFee.getTotalAmount();
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(400, "药品费金额异常");
+        }
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("amount", amount);
+        body.put("businessType", "MEDICATION");
+        body.put("businessId", registerId);
+        body.put("operatorId", register.getPatientId());
+        body.put("operatorName", "患者余额");
+        body.put("remark", "患者自助余额支付药品费");
+        Map<String, Object> response = authPatientFeignClient.deductBalance(register.getPatientId().intValue(), body);
+        Map<String, Object> data = unwrapMapData(response, "余额扣款失败");
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", Boolean.TRUE.equals(data.get("success")));
+        result.put("registerId", registerId);
+        result.put("amount", amount);
+        result.put("accountBalance", data.get("accountBalance"));
+
+        if (!Boolean.TRUE.equals(data.get("success"))) {
+            result.put("payStatus", 0);
+            result.put("paymentMessage", String.valueOf(data.getOrDefault("message", "缴费失败")));
+            return result;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        medicationFee.setStatus(1);
+        medicationFee.setPayTime(now);
+        medicationFee.setOperatorId(register.getPatientId());
+        medicationFee.setOperatorName("患者余额");
+        medicationFee.setRemark("患者自助余额支付药品费");
+        expenseRecordMapper.update(medicationFee);
+
+        result.put("payStatus", 1);
+        result.put("payTime", now);
+        result.put("paymentMessage", "药品费支付成功");
+
+        log.info("患者自助支付药品费成功 | registerId={}, patientId={}, amount={}",
+            registerId, register.getPatientId(), amount);
+        return result;
+    }
+
+    /**
      * 收费核心流程：
      * 1. 根据 registerId 查询待缴费项目
      * 2. 计算总金额

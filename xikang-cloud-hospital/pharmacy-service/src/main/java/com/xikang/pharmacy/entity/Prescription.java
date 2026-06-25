@@ -28,4 +28,10 @@ public class Prescription implements Serializable {
     private String remarks;           // 备注
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    /**
+     * 该挂号下的药品费是否已缴清（true=MEDICATION_FEE status=1）。
+     * 非数据库列，由 service 聚合查询时填充，用于发药工作台禁用按钮提示。
+     */
+    private Boolean paid;
 }

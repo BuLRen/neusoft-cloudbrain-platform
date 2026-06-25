@@ -1,11 +1,18 @@
 package com.xikang.pharmacy.controller;
 
+import com.xikang.common.exception.BusinessException;
 import com.xikang.common.result.Result;
 import com.xikang.pharmacy.entity.DrugInfo;
 import com.xikang.pharmacy.entity.DrugStock;
+import com.xikang.pharmacy.entity.MedicationGuide;
+import com.xikang.pharmacy.service.PharmacyPdfRenderer;
 import com.xikang.pharmacy.service.PharmacyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -21,6 +28,7 @@ import java.util.Map;
 public class PharmacyController {
 
     private final PharmacyService pharmacyService;
+    private final PharmacyPdfRenderer pdfRenderer;
 
     // ==================== 药品管理接口 ====================
 
@@ -282,6 +290,45 @@ public class PharmacyController {
         return Result.success(pharmacyService.reviewDispense(registerId));
     }
 
+    // ==================== 用药指导单接口 ====================
+
+    /**
+     * 查询最新一条用药指导单状态（前端按钮探测用）。
+     */
+    @GetMapping("/medication-guide/{registerId}")
+    public Result<MedicationGuide> getMedicationGuide(@PathVariable Long registerId) {
+        return Result.success(pharmacyService.getLatestMedicationGuide(registerId));
+    }
+
+    /**
+     * 手动重试生成用药指导单数据。
+     */
+    @PostMapping("/medication-guide/{registerId}/retry")
+    public Result<MedicationGuide> retryMedicationGuide(@PathVariable Long registerId) {
+        return Result.success("已重新生成", pharmacyService.retryMedicationGuide(registerId));
+    }
+
+    /**
+     * 下载用药指导单 PDF（实时渲染，不落盘）。
+     * <p>用户点击按钮 → 后端取最新一条 medication_guide → JSON 转 PDF → 流式返回。
+     * 浏览器识别 Content-Disposition: attachment 自动弹下载。</p>
+     */
+    @GetMapping("/medication-guide/{registerId}/pdf")
+    public ResponseEntity<byte[]> downloadMedicationGuidePdf(@PathVariable Long registerId) {
+        MedicationGuide guide = pharmacyService.getLatestMedicationGuide(registerId);
+        if (guide == null || !"success".equals(guide.getStatus())) {
+            throw new BusinessException(404, "用药指导单尚未就绪，请稍后重试或点击重新生成");
+        }
+        byte[] pdf = pdfRenderer.render(guide);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDispositionFormData("attachment",
+            "medication-guide-" + registerId + ".pdf");
+        headers.setContentLength(pdf.length);
+        return new ResponseEntity<>(pdf, headers, HttpStatus.OK);
+    }
+
     // ==================== 退药接口 ====================
 
     /**
@@ -319,5 +366,17 @@ public class PharmacyController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
             @RequestParam(defaultValue = "10") int topLimit) {
         return Result.success(pharmacyService.getStatistics(startDate, endDate, topLimit));
+    }
+
+    // ==================== 患者端：处方查看（含出账） ====================
+
+    /**
+     * 患者端「我的处方」：返回该患者所有处方（按挂号聚合），
+     * 并对每个挂号幂等生成药品费 expense_record 行。
+     * 该端点允许 patient 角色访问（gateway 路由 + JWT 角色校验）。
+     */
+    @GetMapping("/patient/{patientId}/prescriptions")
+    public Result<List<Map<String, Object>>> getPatientPrescriptions(@PathVariable Long patientId) {
+        return Result.success(pharmacyService.getPatientPrescriptions(patientId));
     }
 }

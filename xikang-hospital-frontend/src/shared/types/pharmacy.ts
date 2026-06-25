@@ -21,7 +21,11 @@ export interface PrescriptionSummary {
   dispensationStatusName?: string
   dispensationTime?: string
   pharmacist?: string
+  /** 发药单号（仅已发药/已退药时后端附带） */
+  dispensingNo?: string
   createTime?: string
+  /** 药品费是否已缴清（true=允许发药） */
+  paid?: boolean
 }
 
 export interface PrescriptionDetailItem {
@@ -160,6 +164,9 @@ export interface Dispensing {
 
 export interface MedicationGuide {
   drugName?: string
+  genericName?: string
+  specification?: string
+  dosageForm?: string
   usage?: string
   dosage?: string
   frequency?: string
@@ -167,6 +174,45 @@ export interface MedicationGuide {
   sideEffects?: string
   storage?: string
   [key: string]: unknown
+}
+
+/**
+ * 处方级用药指导单（一张处方一条记录，PDF 延迟生成）
+ */
+export interface MedicationGuideItem {
+  drugId?: number
+  drugName?: string
+  specification?: string
+  dosageForm?: string
+  quantity?: number | string
+  usageText?: string      // 医生原话用法
+  howToTake?: string      // AI 生成的服药建议
+  takeWithFood?: string | null
+  precautions?: string | null
+  sideEffects?: string | null
+  storage?: string | null
+}
+
+export interface MedicationGuideContent {
+  items: MedicationGuideItem[]
+  generalAdvice?: string
+  interactionsNote?: string | null
+  generatedAt?: string
+  modelVersion?: string
+}
+
+export interface MedicationGuideRecord {
+  id?: number
+  registerId?: number
+  prescriptionId?: number
+  patientId?: number
+  patientName?: string
+  guideContent?: MedicationGuideContent | string  // 后端返回时可能是字符串，前端按需 parse
+  source?: 'ai' | 'fallback' | 'manual'
+  status?: 'success' | 'failed'
+  errorMessage?: string
+  createTime?: string
+  updateTime?: string
 }
 
 export interface DrugStock {

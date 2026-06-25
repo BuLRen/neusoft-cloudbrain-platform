@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.pharmacy.mapper.ExpenseRecordMapper">
+
+    <!--
+        取该挂号下 MEDICATION_FEE 行的 status。
+        - 返回 null：尚未出账
+        - 返回 0：已出账待缴费
+        - 返回 1：已缴费
+        - 返回 2/3：已退款/已作废
+        若历史脏数据存在多行（不该出现），取最新一条。
+    -->
+    <select id="selectMedicationFeeStatus" resultType="java.lang.Integer">
+        SELECT status FROM expense_record
+        WHERE register_id = #{registerId}
+          AND item_code = 'MEDICATION_FEE'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <!--
+        幂等出账：靠部分唯一索引 uq_expense_record_medication_fee (register_id) 兜底。
+        ON CONFLICT 表示该挂号已存在 MEDICATION_FEE 行时不重复插入。
+        initialStatus 由 service 决定：金额>0 写 0（待缴费）；金额=0 写 1（视为已结清，避免卡死发药流程）。
+    -->
+    <insert id="insertMedicationFee">
+        INSERT INTO expense_record (
+            register_id, patient_id, patient_name,
+            category_name, item_name, item_code,
+            quantity, unit_price, total_amount,
+            status, remark, create_time
+        ) VALUES (
+            #{registerId}, #{patientId}, #{patientName},
+            '药品费', '药品费', 'MEDICATION_FEE',
+            1, #{totalAmount}, #{totalAmount},
+            #{initialStatus}, #{remark}, #{createTime}
+        )
+        ON CONFLICT (register_id) WHERE item_code = 'MEDICATION_FEE' DO NOTHING
+    </insert>
+
+</mapper>

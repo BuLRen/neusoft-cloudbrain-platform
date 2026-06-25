@@ -88,6 +88,15 @@
         ORDER BY create_time DESC
     </select>
 
+    <select id="selectMedicationFeeByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE register_id = #{registerId}
+          AND item_code = 'MEDICATION_FEE'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO expense_record (
             register_id, patient_id, patient_name, category_id, category_name, item_id, item_name,
