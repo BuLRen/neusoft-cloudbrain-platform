@@ -5,10 +5,11 @@ import {
   ElButton,
   ElDescriptions,
   ElDescriptionsItem,
-  ElDialog,
   ElEmpty,
   ElMessage,
   ElMessageBox,
+  ElOption,
+  ElSelect,
   ElTable,
   ElTableColumn,
 } from 'element-plus'
@@ -17,6 +18,8 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import ExpiringStockBanner from '@/modules/pharmacy/components/ExpiringStockBanner.vue'
+import MedicationGuidePrintSheet from '@/shared/components/MedicationGuidePrintSheet.vue'
+import { useMedicationGuideExport } from '@/shared/composables/useMedicationGuideExport'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
 import {
   dispensationStatusName,
@@ -25,7 +28,6 @@ import {
 } from '@/shared/constants/pharmacy'
 import type {
   DispensePayload,
-  Dispensing,
   PrescriptionDetailResponse,
   PrescriptionSummary,
   ReturnDrugPayload,
@@ -34,23 +36,42 @@ import type {
 
 const authStore = useAuthStore()
 
-// ===== 待发药列表 =====
-const pendingLoading = ref(false)
-const pendingPrescriptions = ref<PrescriptionSummary[]>([])
+// ===== 处方列表（所有状态） =====
+const listLoading = ref(false)
+const allPrescriptions = ref<PrescriptionSummary[]>([])
+// -1=全部, 0=待发药, 1=已发药, 2=已退药
+const STATUS_ALL = -1
+const statusFilter = ref<number>(STATUS_ALL)
 const selectedPrescriptionId = ref<number | undefined>()
 const selectedPrescription = ref<PrescriptionDetailResponse | null>(null)
 const reviewing = ref(false)
 
-// ===== 发药单查看 =====
-const dispensingDialogVisible = ref(false)
-const dispensingList = ref<Dispensing[]>([])
-const dispensingLoading = ref(false)
+// 按筛选条件过滤后的列表
+const filteredPrescriptions = computed(() => {
+  // -1=全部，且 ElSelect clearable 清空后变成 undefined/null 也按全部处理
+  if (statusFilter.value == null || statusFilter.value === STATUS_ALL) {
+    return allPrescriptions.value
+  }
+  return allPrescriptions.value.filter((p) => p.dispensationStatus === statusFilter.value)
+})
 
-// ===== 随访跳转 =====
-// 随访计划是独立页面（/pharmacy/follow-up），这里只提供"快速查看该患者"的快捷弹窗
-const followUpQuickVisible = ref(false)
-const followUpLoading = ref(false)
-const followUpPlans = ref<import('@/shared/types/pharmacy').FollowUpPlan[]>([])
+// 各状态计数（筛选栏徽章用）
+const countByStatus = computed(() => {
+  const c = { all: allPrescriptions.value.length, pending: 0, dispensed: 0, returned: 0 }
+  for (const p of allPrescriptions.value) {
+    if (p.dispensationStatus === 0) c.pending++
+    else if (p.dispensationStatus === 1) c.dispensed++
+    else if (p.dispensationStatus === 2) c.returned++
+  }
+  return c
+})
+
+// ===== 用药指导单（处方级 PDF，延迟生成；前端用 html2pdf 渲染，字体走浏览器系统字体） =====
+const guideStatus = ref<import('@/shared/types/pharmacy').MedicationGuideRecord | null>(null)
+const guideStatusLoading = ref(false)
+const guideRetrying = ref(false)
+const { exportPdf: exportGuidePdf, record: guidePrintRecord, exporting: guideExporting } = useMedicationGuideExport()
+const guidePrintSheetRef = ref<InstanceType<typeof MedicationGuidePrintSheet> | null>(null)
 
 const pharmacistId = computed(() => {
   const parsed = Number(authStore.userId)
@@ -64,22 +85,32 @@ function statusTone(status?: number) {
   return 'warning'
 }
 
-async function loadPendingPrescriptions() {
-  pendingLoading.value = true
+async function loadPrescriptions() {
+  listLoading.value = true
   try {
-    pendingPrescriptions.value = await pharmacyApi.pendingPrescriptions()
-    if (pendingPrescriptions.value.length > 0) {
-      const stillThere = selectedPrescriptionId.value
-        && pendingPrescriptions.value.some((p) => p.id === selectedPrescriptionId.value)
-      const targetId = stillThere ? selectedPrescriptionId.value : pendingPrescriptions.value[0].id
-      selectedPrescriptionId.value = targetId
-      await loadPrescriptionDetail(targetId)
+    // 调用 queryPrescriptions（不带过滤参数）拿全部状态处方
+    allPrescriptions.value = await pharmacyApi.queryPrescriptions()
+    // 选中策略：若当前选中的仍在列表里则保持，否则选第一条
+    const stillThere = selectedPrescriptionId.value
+      && allPrescriptions.value.some((p) => p.id === selectedPrescriptionId.value)
+    if (stillThere) {
+      await loadPrescriptionDetail(selectedPrescriptionId.value)
+    } else if (allPrescriptions.value.length > 0) {
+      // 列表变化后选第一条（但要考虑筛选）
+      const firstVisible = filteredPrescriptions.value[0]
+      if (firstVisible) {
+        selectedPrescriptionId.value = firstVisible.id
+        await loadPrescriptionDetail(firstVisible.id)
+      } else {
+        selectedPrescriptionId.value = undefined
+        selectedPrescription.value = null
+      }
     } else {
       selectedPrescriptionId.value = undefined
       selectedPrescription.value = null
     }
   } finally {
-    pendingLoading.value = false
+    listLoading.value = false
   }
 }
 
@@ -89,7 +120,74 @@ async function loadPrescriptionDetail(id?: number) {
     return
   }
   selectedPrescription.value = await pharmacyApi.prescriptionDetail(id)
+  // 处方已发药才探测指导单状态
+  const status = selectedPrescription.value?.prescription?.dispensationStatus
+  if (status === 1) {
+    void refreshGuideStatus()
+  } else {
+    guideStatus.value = null
+  }
 }
+
+async function refreshGuideStatus() {
+  const registerId = selectedPrescription.value?.prescription.registerId
+  if (!registerId) return
+  guideStatusLoading.value = true
+  try {
+    guideStatus.value = await pharmacyApi.medicationGuideStatus(registerId)
+  } catch {
+    guideStatus.value = null
+  } finally {
+    guideStatusLoading.value = false
+  }
+}
+
+async function downloadGuide() {
+  const registerId = selectedPrescription.value?.prescription.registerId
+  if (!registerId) {
+    ElMessage.warning('请先选择一条处方')
+    return
+  }
+  if (!guideStatus.value || guideStatus.value.status !== 'success') {
+    ElMessage.warning('指导单尚未就绪，请稍后再试')
+    return
+  }
+  // 复用已经查到的 guideStatus（含 guideContent），无需再请求一次后端
+  await exportGuidePdf(guideStatus.value, guidePrintSheetRef)
+}
+
+async function retryGuide() {
+  const registerId = selectedPrescription.value?.prescription.registerId
+  if (!registerId) return
+  guideRetrying.value = true
+  try {
+    await pharmacyApi.retryMedicationGuide(registerId)
+    ElMessage.success('已重新生成指导单数据')
+    await refreshGuideStatus()
+  } finally {
+    guideRetrying.value = false
+  }
+}
+
+// 指导单按钮可用性：已发药 + 状态为 success
+const canDownloadGuide = computed(() => {
+  return selectedPrescription.value?.prescription.dispensationStatus === 1
+    && guideStatus.value?.status === 'success'
+})
+
+// 当前选中处方的发药状态（0待发药 / 1已发药 / 2已退药）
+const currentStatus = computed(() => selectedPrescription.value?.prescription.dispensationStatus)
+
+const guideButtonLabel = computed(() => {
+  if (guideStatusLoading.value) return '指导单查询中…'
+  if (!selectedPrescription.value?.prescription
+    || selectedPrescription.value.prescription.dispensationStatus !== 1) {
+    return '下载用药指导单'
+  }
+  if (!guideStatus.value) return '指导单生成中…'
+  if (guideStatus.value.status === 'failed') return '重新生成指导单'
+  return '下载用药指导单'
+})
 
 async function reviewBeforeDispense() {
   const prescription = selectedPrescription.value?.prescription
@@ -153,7 +251,9 @@ async function dispenseSelected() {
   }
   await pharmacyApi.dispense(prescription.registerId, payload)
   ElMessage.success('发药成功，随访计划将在后台自动创建')
-  await loadPendingPrescriptions()
+  await loadPrescriptions()
+  // 指导单在发药 afterCommit 异步生成，前端稍后探测；先清空旧状态
+  guideStatus.value = null
 }
 
 async function returnSelected() {
@@ -182,53 +282,34 @@ async function returnSelected() {
     }
     await pharmacyApi.returnDrug(prescription.registerId, payload)
     ElMessage.success('退药成功，库存已恢复')
-    await loadPendingPrescriptions()
+    await loadPrescriptions()
   } catch {
     // 用户取消
   }
 }
 
-async function viewDispensing() {
-  const registerId = selectedPrescription.value?.prescription.registerId
-  if (!registerId) {
-    ElMessage.warning('请先选择一条处方')
-    return
+/**
+ * 把后端 ISO 字符串（'2026-06-25T13:33:44.013476'）格式化成 '2026-06-25 13:33:44'。
+ * 兼容三种输入：null/空 → '-'; 含 T → 替换 T 为空格并截到秒; 普通 yyyy-MM-dd HH:mm:ss → 原样。
+ */
+function formatDateTime(raw?: string | null): string {
+  if (!raw) return '-'
+  const s = String(raw).trim()
+  if (!s || s === '-') return '-'
+  // 含 'T'（LocalDateTime 默认序列化）→ '2026-06-25T13:33:44.013476'
+  if (s.includes('T')) {
+    // 去掉 T，按空格拼接；小数秒截断到 6 位后取整到秒
+    const [date, time] = s.split('T')
+    // time 可能是 '13:33:44.013476'，取冒号前两段 + 第三段整数部分
+    const cleanTime = time.split('.')[0] || ''
+    return `${date} ${cleanTime}`
   }
-  dispensingDialogVisible.value = true
-  dispensingLoading.value = true
-  try {
-    dispensingList.value = await pharmacyApi.dispensingByRegister(registerId)
-  } finally {
-    dispensingLoading.value = false
-  }
-}
-
-async function viewFollowUpPlans() {
-  const patientId = selectedPrescription.value?.prescription.patientId
-  if (!patientId) {
-    ElMessage.warning('该处方未关联患者')
-    return
-  }
-  followUpQuickVisible.value = true
-  followUpLoading.value = true
-  try {
-    followUpPlans.value = await pharmacyApi.patientFollowUpPlans(patientId)
-  } finally {
-    followUpLoading.value = false
-  }
-}
-
-async function retryFollowUpCreation(prescriptionId: number) {
-  try {
-    await pharmacyApi.retryFollowUp(prescriptionId)
-    ElMessage.success('随访计划已重新创建')
-  } catch {
-    // 拦截器统一报错
-  }
+  // 已经是 'yyyy-MM-dd HH:mm:ss' 或 'yyyy-MM-dd' 直接返回
+  return s
 }
 
 onMounted(() => {
-  void loadPendingPrescriptions()
+  void loadPrescriptions()
 })
 </script>
 
@@ -236,11 +317,11 @@ onMounted(() => {
   <div class="dispensing-page u-page-grid">
     <PageHeader
       title="发药工作台"
-      description="按挂号聚合的待发药处方。发药前可审方预检；发药后自动扣库存、生成发药单、异步创建 AI 随访。"
+      description="按挂号聚合的全部处方。发药前可审方预检；发药后自动扣库存、生成发药单、异步创建 AI 随访；支持按状态筛选。"
       eyebrow="Role B / Pharmacy · ①"
     >
       <template #actions>
-        <ElButton @click="loadPendingPrescriptions">刷新待发药</ElButton>
+        <ElButton @click="loadPrescriptions">刷新列表</ElButton>
       </template>
     </PageHeader>
 
@@ -249,18 +330,35 @@ onMounted(() => {
 
     <GlassCard class="flow-card">
       <div class="split-grid">
-        <!-- 左：待发药列表 -->
+        <!-- 左：处方列表（全部状态，可筛选） -->
         <section class="pane">
           <div class="section-title">
-            <h3>待发药处方</h3>
-            <StatusTag :tone="pendingLoading ? 'warning' : 'primary'">
-              {{ pendingPrescriptions.length }} 条
+            <h3>处方列表</h3>
+            <StatusTag :tone="listLoading ? 'warning' : 'primary'">
+              {{ filteredPrescriptions.length }} / {{ allPrescriptions.length }} 条
             </StatusTag>
           </div>
-          <ElAlert v-if="pendingLoading" type="info" :closable="false" title="正在加载…" />
+
+          <!-- 状态筛选 -->
+          <div class="filter-bar">
+            <ElSelect
+              v-model="statusFilter"
+              placeholder="全部状态"
+              clearable
+              size="small"
+              class="status-select"
+            >
+              <ElOption label="全部状态" :value="-1" />
+              <ElOption :label="`待发药（${countByStatus.pending}）`" :value="0" />
+              <ElOption :label="`已发药（${countByStatus.dispensed}）`" :value="1" />
+              <ElOption :label="`已退药（${countByStatus.returned}）`" :value="2" />
+            </ElSelect>
+          </div>
+
+          <ElAlert v-if="listLoading && !allPrescriptions.length" type="info" :closable="false" title="正在加载…" />
           <div class="prescription-list">
             <button
-              v-for="item in pendingPrescriptions"
+              v-for="item in filteredPrescriptions"
               :key="item.id"
               class="prescription-item"
               :class="{ 'is-active': item.id === selectedPrescriptionId }"
@@ -277,9 +375,15 @@ onMounted(() => {
               <div class="prescription-item__meta">
                 <span>挂号 {{ item.registerId || '-' }}</span>
                 <span>{{ item.totalAmount ?? '-' }} 元</span>
+                <span v-if="item.dispensationStatus === 0 && item.paid === false" class="warn-pay">
+                  · 未缴费
+                </span>
               </div>
             </button>
-            <ElEmpty v-if="!pendingLoading && pendingPrescriptions.length === 0" description="当前暂无待发药处方" />
+            <ElEmpty
+              v-if="!listLoading && filteredPrescriptions.length === 0"
+              :description="allPrescriptions.length === 0 ? '当前暂无处方' : '当前筛选条件下无处方'"
+            />
           </div>
         </section>
 
@@ -294,6 +398,10 @@ onMounted(() => {
               <ElDescriptionsItem label="诊断" :span="2">{{ selectedPrescription.prescription.diagnosis || '-' }}</ElDescriptionsItem>
               <ElDescriptionsItem label="挂号号">{{ selectedPrescription.prescription.registerId || '-' }}</ElDescriptionsItem>
               <ElDescriptionsItem label="总金额">{{ selectedPrescription.prescription.totalAmount ?? '-' }} 元</ElDescriptionsItem>
+              <!-- 已发药/已退药时显示发药信息（替代原"查看发药单"弹窗） -->
+              <ElDescriptionsItem v-if="currentStatus !== 0" label="发药单号">{{ selectedPrescription.prescription.dispensingNo || '-' }}</ElDescriptionsItem>
+              <ElDescriptionsItem v-if="currentStatus !== 0" label="发药人">{{ selectedPrescription.prescription.pharmacist || '-' }}</ElDescriptionsItem>
+              <ElDescriptionsItem v-if="currentStatus !== 0" label="发药时间" :span="2">{{ formatDateTime(selectedPrescription.prescription.dispensationTime) }}</ElDescriptionsItem>
             </ElDescriptions>
 
             <ElTable :data="selectedPrescription.details" class="mt">
@@ -306,50 +414,49 @@ onMounted(() => {
             </ElTable>
 
             <div class="actions">
-              <ElButton :loading="reviewing" @click="reviewBeforeDispense">审方预检</ElButton>
-              <ElButton type="primary" @click="dispenseSelected">确认发药</ElButton>
-              <ElButton type="danger" plain @click="returnSelected">退药</ElButton>
-              <ElButton @click="viewFollowUpPlans">查看该患者随访</ElButton>
-              <ElButton @click="viewDispensing">查看发药单</ElButton>
+              <!-- 待发药：审方预检 + 确认发药 -->
+              <template v-if="currentStatus === 0">
+                <ElButton :loading="reviewing" @click="reviewBeforeDispense">审方预检</ElButton>
+                <ElButton
+                  type="primary"
+                  :disabled="!selectedPrescription.prescription.paid"
+                  @click="dispenseSelected"
+                >确认发药</ElButton>
+                <ElAlert
+                  v-if="!selectedPrescription.prescription.paid"
+                  type="warning"
+                  :closable="false"
+                  title="患者尚未支付药品费，暂不可发药"
+                />
+              </template>
+
+              <!-- 已发药：退药 + 下载用药指导单 -->
+              <template v-else-if="currentStatus === 1">
+                <ElButton type="danger" plain @click="returnSelected">退药</ElButton>
+                <ElButton
+                  :type="guideStatus?.status === 'failed' ? 'warning' : 'success'"
+                  :loading="guideExporting || guideRetrying"
+                  :disabled="!canDownloadGuide && guideStatus?.status !== 'failed'"
+                  @click="guideStatus?.status === 'failed' ? retryGuide() : downloadGuide()"
+                >{{ guideButtonLabel }}</ElButton>
+              </template>
+
+              <!-- 已退药：纯只读，无操作按钮 -->
+              <template v-else-if="currentStatus === 2">
+                <!-- 无操作 -->
+              </template>
             </div>
           </template>
         </section>
       </div>
     </GlassCard>
 
-    <!-- 发药单查看弹窗 -->
-    <ElDialog v-model="dispensingDialogVisible" title="发药单（用药指导单）" width="720px">
-      <ElEmpty v-if="!dispensingLoading && dispensingList.length === 0" description="该挂号暂无发药单" />
-      <ElTable v-else v-loading="dispensingLoading" :data="dispensingList">
-        <ElTableColumn prop="dispensingNo" label="发药单号" min-width="220" />
-        <ElTableColumn prop="prescriptionId" label="处方 ID" min-width="90" />
-        <ElTableColumn prop="amount" label="金额" min-width="100" />
-        <ElTableColumn prop="pharmacist" label="发药人" min-width="100" />
-        <ElTableColumn prop="dispensingTime" label="发药时间" min-width="160" />
-      </ElTable>
-    </ElDialog>
+    <!-- 随访管理请到独立页面 /pharmacy/follow-up -->
 
-    <!-- 随访快捷查看弹窗（完整管理请到 /pharmacy/follow-up）-->
-    <ElDialog v-model="followUpQuickVisible" title="该患者的随访计划" width="720px">
-      <ElEmpty v-if="!followUpLoading && followUpPlans.length === 0" description="该患者暂无随访计划" />
-      <ElTable v-else v-loading="followUpLoading" :data="followUpPlans">
-        <ElTableColumn prop="planId" label="计划 ID" min-width="90" />
-        <ElTableColumn prop="prescriptionId" label="处方 ID" min-width="90" />
-        <ElTableColumn prop="status" label="状态" min-width="100" />
-        <ElTableColumn prop="currentStage" label="当前阶段" min-width="140" />
-        <ElTableColumn prop="nextFollowUpTime" label="下次随访" min-width="160" />
-        <ElTableColumn label="操作" width="120" fixed="right">
-          <template #default="{ row }">
-            <ElButton
-              v-if="row.prescriptionId"
-              link
-              size="small"
-              @click="retryFollowUpCreation(row.prescriptionId)"
-            >重试创建</ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
-    </ElDialog>
+    <!-- PDF 渲染容器：屏幕外，用户不可见；导出时 html2pdf 截图此 DOM -->
+    <div class="mg-print-host" aria-hidden="true">
+      <MedicationGuidePrintSheet ref="guidePrintSheetRef" :record="guidePrintRecord" />
+    </div>
   </div>
 </template>
 
@@ -374,6 +481,19 @@ onMounted(() => {
   justify-content: space-between;
   gap: var(--space-3);
   margin-block-end: var(--space-4);
+}
+
+.filter-bar {
+  margin-block-end: var(--space-3);
+}
+
+.status-select {
+  width: 200px;
+}
+
+.warn-pay {
+  color: var(--color-danger, #d97706);
+  font-weight: 600;
 }
 
 .prescription-list {
@@ -442,5 +562,14 @@ onMounted(() => {
   .split-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* PDF 渲染容器：推到屏幕外，不占布局也不可见，但浏览器仍会正常渲染 */
+.mg-print-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 </style>

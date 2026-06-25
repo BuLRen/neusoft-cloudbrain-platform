@@ -47,6 +47,13 @@ public class AiPharmacyClient {
     }
 
     /**
+     * 生成处方级用药指导单（真 AI 调用，ai-pharmacy 内部含降级）。
+     */
+    public Map<String, Object> generateMedicationGuide(Map<String, Object> ctx) {
+        return postForMap("/api/ai/pharmacy/medication-guide", ctx, "AI药房服务生成用药指导单失败");
+    }
+
+    /**
      * P1-4.1 AI 处方审核
      */
     public Map<String, Object> reviewPrescription(Map<String, Object> prescription) {

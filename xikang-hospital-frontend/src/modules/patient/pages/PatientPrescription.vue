@@ -1,40 +1,110 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import {
+  ElAlert,
+  ElButton,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElEmpty,
+  ElMessage,
+  ElMessageBox,
+  ElTable,
+  ElTableColumn,
+} from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import { useAuthStore } from '@/app/stores/auth'
+import { pharmacyApi } from '@/shared/api/modules/pharmacy'
+import { registrationApi } from '@/shared/api/modules/registration'
+import { dispensationStatusName } from '@/shared/constants/pharmacy'
+import type { PrescriptionDetailResponse, PrescriptionSummary } from '@/shared/types/pharmacy'
 
-// 处方记录（待后端实现后通过 API 获取）
-const prescriptions = ref<any[]>([])
+const authStore = useAuthStore()
 
-const expandedId = ref<number | null>(null)
+const loading = ref(false)
+const prescriptions = ref<PrescriptionSummary[]>([])
+const payingRegisterId = ref<number | null>(null)
 
-function toggleExpand(id: number) {
-  expandedId.value = expandedId.value === id ? null : id
+// 处方详情弹窗
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detail = ref<PrescriptionDetailResponse | null>(null)
+
+const patientId = computed(() => authStore.currentPatientId)
+
+async function load() {
+  if (!patientId.value) {
+    ElMessage.warning('未找到患者档案，请重新登录')
+    return
+  }
+  loading.value = true
+  try {
+    prescriptions.value = await pharmacyApi.patientPrescriptions(patientId.value)
+  } finally {
+    loading.value = false
+  }
 }
 
-function statusTone(status: string) {
-  if (status === 'active') return 'primary'
-  if (status === 'completed') return 'success'
-  return 'neutral'
+async function viewDetail(rx: PrescriptionSummary) {
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    detail.value = await pharmacyApi.prescriptionDetail(rx.id)
+  } finally {
+    detailLoading.value = false
+  }
 }
 
-function statusText(status: string) {
-  if (status === 'active') return '待取药'
-  if (status === 'completed') return '已完成'
-  return '进行中'
+async function pay(rx: PrescriptionSummary) {
+  if (!rx.registerId) return
+  const amount = rx.totalAmount ?? 0
+  try {
+    await ElMessageBox.confirm(
+      `确认支付药品费 ${amount.toFixed(2)} 元？支付成功后可前往药房取药。`,
+      '药品费支付确认',
+      { type: 'warning', confirmButtonText: '确认支付', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  payingRegisterId.value = rx.registerId
+  try {
+    const result = await registrationApi.payMedication(rx.registerId)
+    if (result && (result as { payStatus?: number }).payStatus === 1) {
+      ElMessage.success(`支付成功，剩余余额 ${(result as { accountBalance?: number }).accountBalance ?? '-'} 元`)
+      await load()
+    } else {
+      ElMessage.error((result as { paymentMessage?: string }).paymentMessage || '支付失败')
+    }
+  } finally {
+    payingRegisterId.value = null
+  }
 }
 
-function pharmacyTone(status: string) {
-  if (status === 'pending') return 'warning'
-  if (status === 'completed') return 'success'
-  return 'neutral'
+function statusTone(rx: PrescriptionSummary) {
+  if (rx.dispensationStatus === 1) return 'success'
+  if (rx.dispensationStatus === 2) return 'neutral'
+  return rx.paid ? 'primary' : 'warning'
 }
 
-function pharmacyText(status: string) {
-  if (status === 'pending') return '待取药'
-  if (status === 'completed') return '已取药'
-  return status
+function statusText(rx: PrescriptionSummary) {
+  if (rx.dispensationStatus === 1) return '已发药'
+  if (rx.dispensationStatus === 2) return '已退药'
+  return rx.paid ? '已缴费/待取药' : '待缴费'
 }
+
+function payButtonLabel(rx: PrescriptionSummary) {
+  if (rx.dispensationStatus === 1) return '已发药'
+  if (rx.dispensationStatus === 2) return '已退药'
+  return rx.paid ? '已支付' : '支付药品费'
+}
+
+function payButtonDisabled(rx: PrescriptionSummary) {
+  return rx.paid || (rx.dispensationStatus ?? 0) !== 0
+}
+
+onMounted(load)
 </script>
 
 <template>
@@ -42,77 +112,76 @@ function pharmacyText(status: string) {
     <GlassCard class="prescription-list">
       <div class="list-header">
         <h2>我的处方</h2>
-        <p>查看您的处方记录和用药详情</p>
+        <p>医生开药完成后在此查看药费，支付后前往药房取药</p>
+        <ElButton size="small" :loading="loading" @click="load">刷新</ElButton>
       </div>
 
-      <div class="prescription-items">
+      <ElAlert v-if="loading && !prescriptions.length" type="info" :closable="false" title="正在加载…" />
+      <ElEmpty v-else-if="!prescriptions.length" description="暂无处方记录" />
+
+      <div v-else class="prescription-items">
         <div
           v-for="rx in prescriptions"
           :key="rx.id"
           class="prescription-item"
         >
-          <div class="rx-header" @click="toggleExpand(rx.id)">
-            <div class="rx-date">
-              <span class="date-day">{{ rx.date.split('-')[2] }}</span>
-              <span class="date-month">{{ rx.date.slice(0, 7) }}</span>
-            </div>
-            <div class="rx-info">
-              <div class="rx-main">
-                <span class="rx-dept">{{ rx.department }}</span>
-                <span class="rx-doctor">{{ rx.doctor }}</span>
-                <StatusTag :tone="statusTone(rx.status)">
-                  {{ statusText(rx.status) }}
-                </StatusTag>
-                <StatusTag :tone="pharmacyTone(rx.pharmacyStatus)">
-                  {{ pharmacyText(rx.pharmacyStatus) }}
-                </StatusTag>
-              </div>
-              <div class="rx-meta">
-                <span>诊断：{{ rx.diagnosis }}</span>
-                <span>处方号：{{ rx.id }}</span>
-                <span>金额：¥{{ rx.totalAmount.toFixed(2) }}</span>
-              </div>
-            </div>
-            <div class="rx-expand">
-              <span :class="['expand-icon', { rotated: expandedId === rx.id }]">
-                ▼
+          <div class="rx-info">
+            <div class="rx-main">
+              <span class="rx-id">处方 #{{ rx.id }}</span>
+              <StatusTag :tone="statusTone(rx)">{{ statusText(rx) }}</StatusTag>
+              <span v-if="!rx.paid && (rx.dispensationStatus ?? 0) === 0" class="rx-warn">
+                · 请先支付药品费再取药
               </span>
             </div>
+            <ElDescriptions :column="3" size="small" border>
+              <ElDescriptionsItem label="医生">{{ rx.physicianName || '-' }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="挂号号">{{ rx.registerId || '-' }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="开方时间">{{ rx.createTime || '-' }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="诊断" :span="3">{{ rx.diagnosis || '-' }}</ElDescriptionsItem>
+            </ElDescriptions>
+            <div class="rx-amount-row">
+              <span class="amount-label">药品费合计</span>
+              <span class="amount-value">¥ {{ (rx.totalAmount ?? 0).toFixed(2) }}</span>
+            </div>
           </div>
-
-          <div v-if="expandedId === rx.id" class="rx-detail">
-            <div class="medicines-header">
-              <span>药品名称</span>
-              <span>规格</span>
-              <span>数量</span>
-              <span>用法用量</span>
-              <span>疗程</span>
-              <span>单价</span>
-            </div>
-            <div
-              v-for="(med, idx) in rx.medicines"
-              :key="idx"
-              class="medicine-row"
-            >
-              <span class="med-name">{{ med.name }}</span>
-              <span>{{ med.dosage }}</span>
-              <span>{{ med.quantity }}</span>
-              <span class="med-frequency">{{ med.frequency }}</span>
-              <span>{{ med.duration }}</span>
-              <span>¥{{ med.price.toFixed(2) }}</span>
-            </div>
-            <div class="rx-footer">
-              <span class="total-label">合计</span>
-              <span class="total-amount">¥{{ rx.totalAmount.toFixed(2) }}</span>
-            </div>
+          <div class="rx-actions">
+            <ElButton size="small" @click="viewDetail(rx)">查看明细</ElButton>
+            <ElButton
+              v-if="(rx.dispensationStatus ?? 0) === 0"
+              type="primary"
+              size="small"
+              :disabled="payButtonDisabled(rx)"
+              :loading="payingRegisterId === rx.registerId"
+              @click="pay(rx)"
+            >{{ payButtonLabel(rx) }}</ElButton>
           </div>
         </div>
       </div>
-
-      <div v-if="!prescriptions.length" class="empty-state">
-        <p>暂无处方记录</p>
-      </div>
     </GlassCard>
+
+    <!-- 处方明细弹窗 -->
+    <ElDialog v-model="detailVisible" title="处方明细" width="780px">
+      <ElEmpty v-if="!detailLoading && !detail" description="无明细数据" />
+      <template v-else>
+        <ElDescriptions v-if="detail" :column="2" border>
+          <ElDescriptionsItem label="患者">{{ detail.prescription.patientName || '-' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="医生">{{ detail.prescription.physicianName || '-' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="诊断" :span="2">{{ detail.prescription.diagnosis || '-' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="状态">
+            {{ dispensationStatusName(detail.prescription.dispensationStatus) }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="金额">¥ {{ (detail.prescription.totalAmount ?? 0).toFixed(2) }}</ElDescriptionsItem>
+        </ElDescriptions>
+        <ElTable v-if="detail" :data="detail.details" v-loading="detailLoading" class="mt">
+          <ElTableColumn prop="drugName" label="药品" min-width="160" />
+          <ElTableColumn prop="specification" label="规格" min-width="120" />
+          <ElTableColumn prop="usage" label="用法" min-width="120" />
+          <ElTableColumn prop="dosage" label="剂量" min-width="100" />
+          <ElTableColumn prop="quantity" label="数量" min-width="80" />
+          <ElTableColumn prop="totalAmount" label="金额" min-width="100" />
+        </ElTable>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
@@ -152,168 +221,73 @@ function pharmacyText(status: string) {
 }
 
 .prescription-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-4);
+  align-items: start;
   background: var(--color-surface);
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
-  overflow: hidden;
-}
-
-.rx-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
   padding: var(--space-4);
-  cursor: pointer;
-  transition: background var(--duration-fast);
-}
-
-.rx-header:hover {
-  background: var(--color-surface);
-}
-
-.rx-date {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-md);
-  background: var(--color-primary-soft);
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.date-day {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--color-primary);
-}
-
-.date-month {
-  font-size: 11px;
-  color: var(--color-primary);
-}
-
-.rx-info {
-  flex: 1;
-  display: grid;
-  gap: var(--space-2);
 }
 
 .rx-main {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-}
-
-.rx-dept {
+  margin-bottom: var(--space-3);
   font-size: 16px;
   font-weight: 600;
 }
 
-.rx-doctor {
-  color: var(--color-text-muted);
-}
-
-.rx-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
+.rx-warn {
   font-size: 13px;
-  color: var(--color-text-muted);
+  font-weight: normal;
+  color: var(--color-warning, #d97706);
 }
 
-.rx-expand {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-}
-
-.expand-icon {
-  font-size: 10px;
-  color: var(--color-text-muted);
-  transition: transform var(--duration-fast);
-}
-
-.expand-icon.rotated {
-  transform: rotate(180deg);
-}
-
-/* 药品详情 */
-.rx-detail {
-  border-top: 1px solid var(--color-border);
-  padding: var(--space-4);
-  background: var(--color-surface);
-}
-
-.medicines-header,
-.medicine-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 0.8fr 2fr 1fr 0.8fr;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-2);
-  align-items: center;
-}
-
-.medicines-header {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.medicine-row {
-  font-size: 13px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.medicine-row:last-child {
-  border-bottom: none;
-}
-
-.med-name {
-  font-weight: 600;
-}
-
-.med-frequency {
-  color: var(--color-text-muted);
-}
-
-.rx-footer {
+.rx-amount-row {
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
   margin-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
 }
 
-.total-label {
-  font-weight: 600;
+.amount-label {
   color: var(--color-text-muted);
 }
 
-.total-amount {
+.amount-value {
   font-size: 18px;
   font-weight: 700;
   color: var(--color-primary);
 }
 
-.empty-state {
-  text-align: center;
-  padding: var(--space-8);
-  color: var(--color-text-muted);
+.rx-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mt {
+  margin-top: var(--space-4);
 }
 
 @media (max-width: 768px) {
-  .medicines-header {
-    display: none;
+  .patient-prescription {
+    width: 95%;
+    margin: 0 2.5%;
   }
 
-  .medicine-row {
+  .prescription-item {
     grid-template-columns: 1fr;
-    gap: var(--space-2);
+  }
+
+  .rx-actions {
+    flex-direction: row;
   }
 }
 </style>

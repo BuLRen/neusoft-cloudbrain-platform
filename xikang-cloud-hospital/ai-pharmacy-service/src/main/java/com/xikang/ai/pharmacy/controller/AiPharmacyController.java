@@ -39,6 +39,16 @@ public class AiPharmacyController {
     }
 
     /**
+     * 生成处方级用药指导单（真 AI 调用，含降级）
+     * <p>请求体由 pharmacy-service 组装：{registerId, patientName, diagnosis, items:[...]}
+     */
+    @PostMapping("/medication-guide")
+    public Result<Map<String, Object>> generateMedicationGuide(@RequestBody Map<String, Object> ctx) {
+        Map<String, Object> guide = aiPharmacyService.generateMedicationGuide(ctx);
+        return Result.success(guide);
+    }
+
+    /**
      * 处方审核
      */
     @PostMapping("/review")

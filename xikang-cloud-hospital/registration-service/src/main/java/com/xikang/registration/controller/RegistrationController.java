@@ -100,6 +100,15 @@ public class RegistrationController {
     }
 
     /**
+     * 患者自助支付药品费（扣余额，独立于挂号费支付）。
+     */
+    @PostMapping("/{id}/pay-medication")
+    public Result<Map<String, Object>> payMedication(@PathVariable Long id) {
+        Map<String, Object> result = chargeService.payMedication(id);
+        return Result.success(result);
+    }
+
+    /**
      * 收费
      */
     @PostMapping("/charge")

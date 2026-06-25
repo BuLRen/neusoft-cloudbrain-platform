@@ -110,6 +110,10 @@ export const registrationApi = {
   payRegistration(id: number) {
     return http<ChargeResult>({ url: `/registration/${id}/pay`, method: 'POST' })
   },
+  /** 患者自助支付药品费（扣余额，独立于挂号费） */
+  payMedication(registerId: number) {
+    return http<ChargeResult>({ url: `/registration/${registerId}/pay-medication`, method: 'POST' })
+  },
   expenseRecords(params: ExpenseRecordQuery) {
     return http<ExpenseRecord[]>({ url: '/registration/expense-records', method: 'GET', params })
   },

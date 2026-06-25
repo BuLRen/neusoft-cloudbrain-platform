@@ -1,5 +1,6 @@
 package com.xikang.pharmacy.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.pharmacy.entity.*;
 import com.xikang.pharmacy.mapper.*;
@@ -14,6 +15,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,7 +38,10 @@ public class PharmacyService {
     private final PharmacyTransactionMapper pharmacyTransactionMapper;
     private final DispensingMapper dispensingMapper;
     private final StatisticsMapper statisticsMapper;
+    private final MedicationGuideMapper medicationGuideMapper;
+    private final ExpenseRecordMapper expenseRecordMapper;
     private final AiPharmacyClient aiPharmacyClient;
+    private final ObjectMapper objectMapper;
 
     // ==================== 药品管理 ====================
 
@@ -207,10 +212,14 @@ public class PharmacyService {
 
     /**
      * 待发药列表（按挂号聚合）。
+     * 每条附带药品费支付状态（paid），用于前端禁用「确认发药」按钮。
      */
     public List<Map<String, Object>> getPendingDispensing(Long registrationId) {
         List<Prescription> prescriptions = prescriptionMapper.selectPending(registrationId);
-        return prescriptions.stream().map(this::toPrescriptionMap).toList();
+        return prescriptions.stream()
+            .peek(p -> p.setPaid(isMedicationPaid(p.getRegisterId())))
+            .map(this::toPrescriptionMap)
+            .toList();
     }
 
     /**
@@ -220,7 +229,10 @@ public class PharmacyService {
             LocalDateTime startDate, LocalDateTime endDate) {
         List<Prescription> prescriptions = prescriptionMapper.selectByConditions(
                 patientId, status, startDate, endDate);
-        return prescriptions.stream().map(this::toPrescriptionMap).toList();
+        return prescriptions.stream()
+            .peek(p -> p.setPaid(isMedicationPaid(p.getRegisterId())))
+            .map(this::toPrescriptionMap)
+            .toList();
     }
 
     /**
@@ -236,10 +248,24 @@ public class PharmacyService {
         // 再按 register_id 拿完整的聚合头（带 patientName / totalAmount 等）
         List<Prescription> heads = prescriptionMapper.selectByRegisterId(registerId);
         Prescription head = heads.isEmpty() ? prescription : heads.get(0);
+        // 填充 paid 字段，前端发药按钮的 disabled 依赖此字段
+        head.setPaid(isMedicationPaid(registerId));
         List<PrescriptionDetail> details = prescriptionDetailMapper.selectByPrescriptionId(registerId);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("prescription", toPrescriptionMap(head));
+        Map<String, Object> prescriptionMap = toPrescriptionMap(head);
+        // 已发药/已退药时，附带发药单号（来自最新的 dispensing 行）
+        // 详情区"发药单号 / 发药人 / 发药时间"展示用，避免再开"查看发药单"弹窗
+        Integer status = head.getDispensationStatus();
+        if (status != null && status != 0) {
+            List<Dispensing> dispensings = dispensingMapper.selectByRegisterId(registerId);
+            if (!dispensings.isEmpty()) {
+                // 取最新一条（按 id desc 在 mapper 内排，见 DispensingMapper.xml）
+                Dispensing latest = dispensings.get(0);
+                prescriptionMap.put("dispensingNo", latest.getDispensingNo());
+            }
+        }
+        result.put("prescription", prescriptionMap);
         result.put("details", details.stream().map(this::toDetailMap).toList());
         return result;
     }
@@ -262,6 +288,9 @@ public class PharmacyService {
         if (pendingHeads.isEmpty()) {
             throw new BusinessException(400, "没有待发药的处方");
         }
+
+        // 1.1 校验：药品费必须已缴清才能发药
+        assertMedicationPaid(registerId);
 
         // 2. 取该挂号下的所有明细行（即所有 drug_state='未发' 的 prescription 行）
         List<PrescriptionDetail> details = prescriptionDetailMapper.selectByPrescriptionId(registerId);
@@ -320,8 +349,9 @@ public class PharmacyService {
         dispensing.setDispensingTime(now);
         dispensingMapper.insert(dispensing);
 
-        // 5. 事务提交后异步创建随访
+        // 5. 事务提交后异步创建随访 + 异步生成用药指导单数据（PDF 延迟到下载时渲染）
         registerFollowUpAfterCommit(registerId, head.getPatientId(), head.getId());
+        registerMedicationGuideAfterCommit(registerId, head.getPatientId(), head.getId());
 
         log.info("发药成功 | registerId={}, itemCount={}, totalAmount={}",
             registerId, totalItemCount, totalAmount);
@@ -364,6 +394,220 @@ public class PharmacyService {
             });
         } else {
             followUpTask.run();
+        }
+    }
+
+    /**
+     * 注册事务提交后的用药指导单生成。失败不抛异常，仅写 failed 记录。
+     */
+    private void registerMedicationGuideAfterCommit(Long registerId, Long patientId, Long prescriptionId) {
+        Runnable guideTask = () -> {
+            try {
+                generateAndSaveMedicationGuide(registerId, patientId, prescriptionId);
+            } catch (Exception e) {
+                log.warn("用药指导单生成失败（异步）| registerId={}", registerId, e);
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    guideTask.run();
+                }
+            });
+        } else {
+            guideTask.run();
+        }
+    }
+
+    // ==================== 用药指导单 ====================
+
+    /**
+     * 组装 ctx 并调 ai-pharmacy 生成指导单，落 medication_guide 表。
+     * 生成成功 status='success'；调用失败 status='failed'，仍写一条记录便于追溯。
+     */
+    public void generateAndSaveMedicationGuide(Long registerId, Long patientId, Long prescriptionId) {
+        log.info("生成用药指导单 | registerId={}, patientId={}, prescriptionId={}",
+            registerId, patientId, prescriptionId);
+
+        // 1. 组装 ctx
+        Map<String, Object> ctx = buildMedicationGuideContext(registerId, patientId, prescriptionId);
+
+        Map<String, Object> guideContent;
+        String source;
+        String status;
+        String errorMessage = null;
+
+        try {
+            guideContent = aiPharmacyClient.generateMedicationGuide(ctx);
+            source = "ai";
+            status = "success";
+            // ai-pharmacy 走了降级时 modelVersion 会带 "(fallback)"，这里据此调整 source
+            Object mv = guideContent.get("modelVersion");
+            if (mv instanceof String s && s.contains("fallback")) {
+                source = "fallback";
+            }
+        } catch (Exception e) {
+            log.warn("调 ai-pharmacy 生成指导单失败，落 failed 记录 | registerId={}", registerId, e);
+            guideContent = null;
+            source = "ai";
+            status = "failed";
+            errorMessage = e.getMessage();
+        }
+
+        saveMedicationGuideRecord(registerId, patientId, prescriptionId, ctx, guideContent, source, status, errorMessage);
+    }
+
+    private Map<String, Object> buildMedicationGuideContext(Long registerId, Long patientId, Long prescriptionId) {
+        // 处方聚合头
+        List<Prescription> heads = prescriptionMapper.selectByRegisterId(registerId);
+        Prescription head = heads.isEmpty() ? null : heads.get(0);
+        String patientName = head != null ? head.getPatientName() : null;
+
+        // 明细
+        List<PrescriptionDetail> details = prescriptionDetailMapper.selectByPrescriptionId(registerId);
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (PrescriptionDetail d : details) {
+            DrugInfo drug = d.getDrugId() != null ? drugInfoMapper.selectById(d.getDrugId()) : null;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("drugId", d.getDrugId());
+            item.put("drugName", d.getDrugName() != null ? d.getDrugName() : (drug != null ? drug.getName() : null));
+            item.put("specification", drug != null ? drug.getSpecification() : null);
+            item.put("dosageForm", drug != null ? drug.getDosageForm() : null);
+            item.put("quantity", d.getQuantity());
+            item.put("usageText", d.getUsage());
+            item.put("instructions", drug != null ? drug.getInstructions() : null);
+            item.put("contraindications", drug != null ? drug.getContraindications() : null);
+            item.put("adverseReactions", drug != null ? drug.getAdverseReactions() : null);
+            item.put("storageConditions", drug != null ? drug.getStorageConditions() : null);
+            items.add(item);
+        }
+
+        Map<String, Object> ctx = new LinkedHashMap<>();
+        ctx.put("registerId", registerId);
+        ctx.put("patientId", patientId);
+        ctx.put("patientName", patientName);
+        ctx.put("diagnosis", head != null ? head.getDiagnosis() : null);
+        ctx.put("items", items);
+        return ctx;
+    }
+
+    private void saveMedicationGuideRecord(Long registerId, Long patientId, Long prescriptionId,
+            Map<String, Object> ctx, Map<String, Object> guideContent,
+            String source, String status, String errorMessage) {
+        try {
+            MedicationGuide record = new MedicationGuide();
+            record.setRegisterId(registerId);
+            record.setPrescriptionId(prescriptionId);
+            record.setPatientId(patientId);
+            record.setPatientName((String) ctx.get("patientName"));
+            record.setGuideContent(guideContent != null ? objectMapper.writeValueAsString(guideContent) : "{}");
+            record.setSource(source);
+            record.setStatus(status);
+            record.setErrorMessage(errorMessage);
+            record.setCreateTime(LocalDateTime.now());
+            record.setUpdateTime(LocalDateTime.now());
+            medicationGuideMapper.insert(record);
+            log.info("用药指导单记录已落库 | registerId={}, status={}, source={}",
+                registerId, status, source);
+        } catch (Exception e) {
+            log.error("落库 medication_guide 失败 | registerId={}", registerId, e);
+        }
+    }
+
+    /**
+     * 查询最新一条用药指导单。前端探测按钮状态用。
+     */
+    public MedicationGuide getLatestMedicationGuide(Long registerId) {
+        return medicationGuideMapper.selectLatestByRegisterId(registerId);
+    }
+
+    /**
+     * 手动重试生成（同步）。返回最新一条记录。
+     */
+    public MedicationGuide retryMedicationGuide(Long registerId) {
+        // 先看是否有 patientId/prescriptionId（取发药单据上的）
+        List<Prescription> heads = prescriptionMapper.selectByRegisterId(registerId);
+        if (heads.isEmpty()) {
+            throw new BusinessException(400, "处方不存在");
+        }
+        Prescription head = heads.get(0);
+        generateAndSaveMedicationGuide(registerId, head.getPatientId(), head.getId());
+        return medicationGuideMapper.selectLatestByRegisterId(registerId);
+    }
+
+    // ==================== 患者端：处方查看 + 出账 ====================
+
+    /**
+     * 患者端「我的处方」页：返回该患者所有处方（按挂号聚合），
+     * 并对每个"待发药"挂号幂等地生成药品费 expense_record 行。
+     * 已发药/已退药的处方不再出账（防止脏数据）。
+     * 已存在 MEDICATION_FEE 行的挂号不重写，金额以已落库的为准。
+     */
+    @Transactional
+    public List<Map<String, Object>> getPatientPrescriptions(Long patientId) {
+        List<Prescription> heads = prescriptionMapper.selectByPatientId(patientId);
+        for (Prescription head : heads) {
+            // 只对待发药（dispensationStatus=0）的处方出账
+            if (head.getDispensationStatus() != null && head.getDispensationStatus() == 0) {
+                ensureMedicationFeeCreated(head);
+            }
+            head.setPaid(isMedicationPaid(head.getRegisterId()));
+        }
+        return heads.stream().map(this::toPrescriptionMap).toList();
+    }
+
+    /**
+     * 幂等出账：DB 部分唯一索引 + ON CONFLICT DO NOTHING 兜底并发。
+     * 金额 > 0：写 status=0（待缴费）；金额 = 0/null（数据异常）：写 status=1 直接视为已结清，
+     *           否则 payMedication 会因 amount<=0 抛异常导致流程卡死。
+     */
+    private void ensureMedicationFeeCreated(Prescription head) {
+        Long registerId = head.getRegisterId();
+        if (registerId == null) return;
+
+        BigDecimal amount = head.getTotalAmount();
+        boolean zeroAmount = amount == null || amount.compareTo(BigDecimal.ZERO) <= 0;
+        int initialStatus = zeroAmount ? 1 : 0;
+        BigDecimal safeAmount = zeroAmount ? BigDecimal.ZERO : amount;
+
+        int affected = expenseRecordMapper.insertMedicationFee(
+            registerId,
+            head.getPatientId(),
+            head.getPatientName(),
+            safeAmount,
+            initialStatus,
+            "医生开药后药房自动出账",
+            LocalDateTime.now()
+        );
+        if (affected > 0) {
+            log.info("药品费出账 | registerId={}, patientId={}, amount={}, initialStatus={}",
+                registerId, head.getPatientId(), safeAmount, initialStatus);
+        }
+    }
+
+    /**
+     * 该挂号的药品费是否已缴清（status=1）。
+     * 未出账、已退款、已作废都视为未缴清。
+     */
+    private boolean isMedicationPaid(Long registerId) {
+        if (registerId == null) return false;
+        Integer status = expenseRecordMapper.selectMedicationFeeStatus(registerId);
+        return status != null && status == 1;
+    }
+
+    /**
+     * 发药前置校验：药品费必须已缴清。
+     */
+    private void assertMedicationPaid(Long registerId) {
+        Integer status = expenseRecordMapper.selectMedicationFeeStatus(registerId);
+        if (status == null) {
+            throw new BusinessException(400, "该挂号尚未生成药品费账单，请患者在患者端查看处方后再发药");
+        }
+        if (status != 1) {
+            throw new BusinessException(400, "患者尚未支付药品费，无法发药");
         }
     }
 
@@ -863,6 +1107,7 @@ public class PharmacyService {
         map.put("dispensationTime", prescription.getDispensationTime());
         map.put("pharmacist", prescription.getPharmacist());
         map.put("createTime", prescription.getCreateTime());
+        map.put("paid", prescription.getPaid());
         return map;
     }
 

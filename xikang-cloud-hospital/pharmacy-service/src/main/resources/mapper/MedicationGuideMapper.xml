@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.pharmacy.mapper.MedicationGuideMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.MedicationGuide">
+        <id     column="id"              property="id"/>
+        <result column="register_id"     property="registerId"/>
+        <result column="prescription_id" property="prescriptionId"/>
+        <result column="patient_id"      property="patientId"/>
+        <result column="patient_name"    property="patientName"/>
+        <result column="guide_content"   property="guideContent"/>
+        <result column="source"          property="source"/>
+        <result column="status"          property="status"/>
+        <result column="error_message"   property="errorMessage"/>
+        <result column="create_time"     property="createTime"/>
+        <result column="update_time"     property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Cols">
+        id, register_id, prescription_id, patient_id, patient_name,
+        guide_content, source, status, error_message, create_time, update_time
+    </sql>
+
+    <insert id="insert" parameterType="com.xikang.pharmacy.entity.MedicationGuide" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO medication_guide
+            (register_id, prescription_id, patient_id, patient_name,
+             guide_content, source, status, error_message, create_time, update_time)
+        VALUES
+            (#{registerId}, #{prescriptionId}, #{patientId}, #{patientName},
+             CAST(#{guideContent} AS JSONB), #{source}, #{status}, #{errorMessage},
+             COALESCE(#{createTime}, CURRENT_TIMESTAMP), COALESCE(#{createTime}, CURRENT_TIMESTAMP))
+    </insert>
+
+    <select id="selectLatestByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Cols"/>
+        FROM medication_guide
+        WHERE register_id = #{registerId}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Cols"/>
+        FROM medication_guide
+        WHERE register_id = #{registerId}
+        ORDER BY id DESC
+    </select>
+
+</mapper>
