@@ -33,18 +33,19 @@ public class DifyAiConfigValidator {
                     + "workflow-preliminary 仅填 true 作为开关。"
             );
         }
-        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
-            log.warn(
-                "Dify 已启用但 api-key 为空，初步诊断将走 Fallback。请在环境变量设置 DIFY_API_KEY=app-xxx（与 Dify 文档 Bearer 一致）。"
-            );
-        } else if (difyClient.isPreliminaryEnabled()) {
+        if (difyClient.isPreliminaryEnabled()) {
             log.info(
                 "初步诊断：已启用 Dify Workflow（base-url-preliminary={}）",
                 properties.resolvePreliminaryBaseUrl()
             );
+        } else if (properties.isPreliminaryBaseConfigured() && properties.isPreliminaryWorkflowSwitchOn()) {
+            log.warn(
+                "初步诊断：开关已开但 API Key 为空，将走 Fallback。请设置 DIFY_API_KEY_PRELIMINARY=app-xxx"
+                    + "（官网 Dify 初步诊断 Workflow App 的 Key）。"
+            );
         } else if (properties.isPreliminaryBaseConfigured()) {
             log.info(
-                "初步诊断：未启用 Dify（workflow-preliminary={}，需非空开关且配置 DIFY_API_KEY）",
+                "初步诊断：未启用 Dify（workflow-preliminary={}，需为 true/1/yes/on）",
                 properties.getWorkflowPreliminary()
             );
         }

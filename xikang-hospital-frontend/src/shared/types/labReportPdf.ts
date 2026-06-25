@@ -1,6 +1,7 @@
 import type { InspectionReport } from '@/shared/api/modules/medtech'
 import type { InspectionResult } from '@/shared/api/modules/physician'
 import type { EncounterPatientSummary } from '@/app/stores/encounter'
+import type { ClinicalExamItem, ClinicalNotebookHeader } from '@/shared/api/modules/clinicalRecord'
 import type { SimulatedCheckStructuredOutput } from '@/shared/types/simulatedCheckResult'
 
 export type LabReportPatientSummary = Pick<EncounterPatientSummary, 'realName' | 'caseNumber' | 'gender' | 'age'>
@@ -91,6 +92,27 @@ export function buildLabReportContextFromPhysician(
     position: displayValue(row.inspectionPosition),
     purpose: '-',
     reportTime: formatReportTime(row.inspectionTime),
+    result: structuredOutput,
+  }
+}
+
+export function buildLabReportContextFromClinicalNotebook(
+  item: ClinicalExamItem,
+  structuredOutput: SimulatedCheckStructuredOutput,
+  header?: ClinicalNotebookHeader | null,
+): LabReportPdfContext {
+  return {
+    hospitalName: HOSPITAL_NAME,
+    reportTitle: buildReportTitle(structuredOutput, item.techName),
+    patientName: displayValue(header?.realName),
+    caseNumber: displayValue(header?.caseNumber),
+    gender: displayValue(header?.gender),
+    age: header?.age != null ? String(header.age) : '-',
+    techName: displayValue(item.techName),
+    techCode: '-',
+    position: '-',
+    purpose: '-',
+    reportTime: formatReportTime(item.completedAt),
     result: structuredOutput,
   }
 }

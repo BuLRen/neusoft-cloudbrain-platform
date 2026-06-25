@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElButton, ElDrawer, ElTag } from 'element-plus'
-import ClinicalTimelineContent from './ClinicalTimelineContent.vue'
-import { clinicalRecordApi, type ClinicalTimelineEntry } from '@/shared/api/modules/clinicalRecord'
+import ClinicalNotebookContent from './ClinicalNotebookContent.vue'
+import { clinicalRecordApi, type ClinicalNotebook } from '@/shared/api/modules/clinicalRecord'
 
 const visible = defineModel<boolean>('visible', { default: false })
 
@@ -18,19 +18,24 @@ const props = withDefaults(defineProps<{
 const loading = ref(false)
 const archived = ref(false)
 const message = ref('')
-const timeline = ref<ClinicalTimelineEntry[]>([])
+const notebook = ref<ClinicalNotebook | null>(null)
 const drawerSubtitle = ref('')
-
-const detailMode = computed(() => (props.mode === 'patient' ? 'full' : 'compact'))
 
 const headerTags = computed(() => {
   if (archived.value) return [{ type: 'success' as const, text: '已归档' }]
   return [{ type: 'info' as const, text: props.mode === 'physician' ? '实时' : '待归档' }]
 })
 
-async function loadTimeline() {
+const emptyText = computed(() => {
+  if (props.mode === 'patient' && !archived.value) {
+    return '医生归档后将展示完整病历本。'
+  }
+  return '暂无记录，各环节保存后将自动出现在此处。'
+})
+
+async function loadNotebook() {
   if (!props.registerId) {
-    timeline.value = []
+    notebook.value = null
     archived.value = false
     message.value = ''
     drawerSubtitle.value = props.subtitle || ''
@@ -39,17 +44,20 @@ async function loadTimeline() {
   loading.value = true
   try {
     if (props.mode === 'physician') {
-      const data = await clinicalRecordApi.physicianTimeline(props.registerId)
-      timeline.value = data.timeline || []
+      const data = await clinicalRecordApi.physicianNotebook(props.registerId)
+      notebook.value = data
       archived.value = Boolean(data.archived || data.clinicalArchivedAt)
       message.value = ''
     } else {
-      const data = await clinicalRecordApi.patientVisitDetail(props.registerId)
-      timeline.value = data.timeline || []
+      const data = await clinicalRecordApi.patientNotebook(props.registerId)
       archived.value = Boolean(data.archived)
       message.value = data.message || ''
-      if (!props.subtitle) {
-        drawerSubtitle.value = [data.physicianName, data.visitDate ? String(data.visitDate).slice(0, 16) : ''].filter(Boolean).join(' · ')
+      notebook.value = data.archived ? data : null
+      if (!props.subtitle && data.archived) {
+        drawerSubtitle.value = [
+          data.header?.physicianName,
+          data.header?.visitDate ? String(data.header.visitDate).slice(0, 16) : '',
+        ].filter(Boolean).join(' · ')
       }
     }
     if (props.subtitle) {
@@ -57,7 +65,7 @@ async function loadTimeline() {
     }
   } catch (error) {
     console.warn('加载病历本失败:', error)
-    timeline.value = []
+    notebook.value = null
   } finally {
     loading.value = false
   }
@@ -65,17 +73,17 @@ async function loadTimeline() {
 
 watch(visible, (open) => {
   if (open) {
-    void loadTimeline()
+    void loadNotebook()
   }
 })
 
 watch(() => props.registerId, () => {
   if (visible.value) {
-    void loadTimeline()
+    void loadNotebook()
   }
 })
 
-defineExpose({ reload: loadTimeline })
+defineExpose({ reload: loadNotebook })
 </script>
 
 <template>
@@ -83,7 +91,7 @@ defineExpose({ reload: loadTimeline })
     v-model="visible"
     :title="title"
     direction="rtl"
-    size="min(520px, 100vw)"
+    size="min(680px, 100vw)"
     append-to-body
     :lock-scroll="true"
     class="clinical-record-drawer"
@@ -98,16 +106,16 @@ defineExpose({ reload: loadTimeline })
 
       <p v-if="message" class="clinical-record-drawer__notice">{{ message }}</p>
 
-      <ClinicalTimelineContent
-        :timeline="timeline"
+      <ClinicalNotebookContent
+        :notebook="notebook"
         :loading="loading"
         :archived="archived"
-        :detail-mode="detailMode"
-        :empty-text="mode === 'patient' && !archived ? '医生归档后将展示完整病历时间线。' : '暂无记录，各环节保存后将自动出现在此处。'"
+        :mode="mode"
+        :empty-text="emptyText"
       />
 
       <div class="clinical-record-drawer__footer">
-        <ElButton size="small" :loading="loading" @click="loadTimeline">刷新</ElButton>
+        <ElButton size="small" :loading="loading" @click="loadNotebook">刷新</ElButton>
       </div>
     </div>
   </ElDrawer>
