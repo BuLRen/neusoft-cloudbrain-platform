@@ -118,4 +118,11 @@
         WHERE session_uuid = #{sessionUuid}
     </update>
 
+    <!-- 查询患者档案里的过敏史（预问诊采集时作为已知信息注入 prompt） -->
+    <select id="selectPatientAllergy" resultType="java.lang.String">
+        SELECT allergy_history
+        FROM patient
+        WHERE id = #{patientId}
+    </select>
+
 </mapper>

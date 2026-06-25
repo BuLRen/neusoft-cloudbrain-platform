@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 希康云医院 - 本地 Docker PostgreSQL → 服务器 PostgreSQL 迁移脚本
+# 熙康云医院 - 本地 Docker PostgreSQL → 服务器 PostgreSQL 迁移脚本
 #
 # 用法:
 #   cp migrate-to-server.env.example migrate-to-server.env   # 首次配置
@@ -116,7 +116,7 @@ do_export() {
     local header_file="${dump_file}.header"
     cat > "${header_file}" <<EOF
 -- =============================================================================
--- 希康云医院 数据库迁移导出
+-- 熙康云医院 数据库迁移导出
 -- 导出时间: $(date '+%Y-%m-%d %H:%M:%S')
 -- 来源    : ${LOCAL_HOST}:${LOCAL_PORT}/${LOCAL_DB}
 -- 目标    : ${REMOTE_HOST:-<待填写>}:${REMOTE_PORT:-5432}/${REMOTE_DB:-xikang_hospital}
