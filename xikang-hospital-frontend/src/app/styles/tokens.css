@@ -23,6 +23,8 @@
     --color-primary-soft: rgba(31, 140, 255, 0.14);
     --color-success: #20b486;
     --color-warning: #f59f00;
+    --color-warning-soft: rgba(245, 159, 0, 0.12);
+    --color-warning-strong: #c2710a;
     --color-danger: #ef4d5a;
     --color-ai: #7c5cff;
     --gradient-page: radial-gradient(circle at 10% 10%, rgba(31, 140, 255, 0.2), transparent 30%), radial-gradient(circle at 90% 0%, rgba(124, 92, 255, 0.18), transparent 28%), linear-gradient(135deg, #eef5ff 0%, #f8fbff 52%, #eef8f6 100%);

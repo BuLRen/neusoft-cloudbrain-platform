@@ -1,25 +1,21 @@
 package com.xikang.ai.consult.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xikang.ai.consult.ai.memory.PreVisitChatMemoryRepository;
+import com.xikang.ai.consult.ai.util.PromptUtils;
 import com.xikang.ai.consult.entity.AiPreVisitRecord;
+import com.xikang.ai.consult.entity.PreVisitSummary;
 import com.xikang.ai.consult.mapper.AiPreVisitRecordMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StreamUtils;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,6 +27,12 @@ import java.util.function.Consumer;
  * 数据模型：每轮对话 = ai_consultation_record 一行
  *   - 同一 sessionUuid 的多行 = 一次预问诊会话
  *   - 最后一行（汇总行）填 chiefComplaint / historySummary 等结构化字段
+ *
+ * Spring AI 用法说明：
+ *   - prompt 模板通过 @Value("classpath:...") 注入 Resource，用 PromptTemplate 渲染占位符
+ *   - 对话历史通过 Spring AI 的 ChatMemoryRepository（PreVisitChatMemoryRepository）读取
+ *   - 结构化总结用 ChatClient.entity() 直接转 PreVisitSummary，无需手工抠 JSON
+ *   - 流式调用用 chatClient.prompt().messages(...).stream().content()
  */
 @Slf4j
 @Service
@@ -39,38 +41,16 @@ public class PreConsultService {
 
     private final ChatClient chatClient;
     private final AiPreVisitRecordMapper mapper;
-    private final ObjectMapper objectMapper;
-    private final ResourceLoader resourceLoader;
+    private final PreVisitChatMemoryRepository chatMemoryRepository;
+
+    @Value("classpath:prompts/previsit-prompt.st")
+    private Resource previsitPromptResource;
+
+    @Value("classpath:prompts/previsit-summary-prompt.st")
+    private Resource summaryPromptResource;
 
     @Value("${spring.ai.openai.chat.options.model:deepseek-chat}")
     private String modelId;
-
-    private String previsitPromptTemplate;
-    private String summaryPromptTemplate;
-
-    private String getPrevisitPromptTemplate() {
-        if (previsitPromptTemplate == null) {
-            previsitPromptTemplate = loadPrompt("classpath:prompts/previsit-prompt.st");
-        }
-        return previsitPromptTemplate;
-    }
-
-    private String getSummaryPromptTemplate() {
-        if (summaryPromptTemplate == null) {
-            summaryPromptTemplate = loadPrompt("classpath:prompts/previsit-summary-prompt.st");
-        }
-        return summaryPromptTemplate;
-    }
-
-    private String loadPrompt(String location) {
-        try {
-            Resource resource = resourceLoader.getResource(location);
-            return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            log.error("加载 prompt 模板失败: {}", location, e);
-            return "";
-        }
-    }
 
     // ============================================================
     // 公开 API
@@ -88,18 +68,23 @@ public class PreConsultService {
         String sessionUuid = UUID.randomUUID().toString();
         log.info("[预问诊开始] registerId={}, patientId={}, sessionUuid={}", registerId, patientId, sessionUuid);
 
-        // 第一次 AI 提问：空历史
-        String aiReply = callAi(buildHistory(new ArrayList<>(), ""), tokenConsumer);
+        // 第一次 AI 提问：空历史（repository 此时还没有这个 sessionUuid 的数据）
+        String patientAllergy = safeQueryPatientAllergy(patientId);
+        List<Message> messages = buildPromptMessages(sessionUuid, "", patientAllergy);
+        String aiReply = callAi(messages, tokenConsumer);
+        boolean finished = PromptUtils.isConsultationFinished(aiReply);
+        // 入库前清理 DONE 标记，保证数据库 ai_question 字段干净，回看时不污染前端
+        String cleanReply = PromptUtils.cleanDoneToken(aiReply);
 
         // 持久化第 1 轮
-        AiPreVisitRecord row = newRoundRow(registerId, patientId, sessionUuid, 1, aiReply, null, "in_progress");
+        AiPreVisitRecord row = newRoundRow(registerId, patientId, sessionUuid, 1, cleanReply, null, "in_progress");
         mapper.insert(row);
 
         Map<String, Object> result = new HashMap<>();
         result.put("sessionUuid", sessionUuid);
         result.put("registerId", registerId);
         result.put("roundNumber", 1);
-        result.put("finished", aiReply.contains("<<PRECONSULT_DONE>>"));
+        result.put("finished", finished);
         return result;
     }
 
@@ -119,7 +104,15 @@ public class PreConsultService {
         Integer patientId = history.get(0).getPatientId();
         int nextRound = mapper.selectMaxRoundNumber(sessionUuid) + 1;
 
-        // 2. 把"患者回答"写进第 nextRound 行的 patient_answer（先把 ai_question 留空，AI 响应后再回填）
+        // 2. 构造 AI 调用消息：先通过 ChatMemoryRepository 读历史（此时 DB 还没写入本次 answer，
+        //    所以 collectedHint 和历史 turns 都不含本次 answer），再把本次 answer 显式追加为
+        //    最后一条 UserMessage。这样 AI 能正确识别"这是用户本轮新输入"。
+        //    （先 buildMessages 再 insert，是为了让 prompt 结构与旧实现严格等价；
+        //    insert 仍在 callAi 之前执行，保证 AI 调用失败时患者回答也不会丢失。）
+        String patientAllergy = safeQueryPatientAllergy(patientId);
+        List<Message> messages = buildPromptMessages(sessionUuid, patientAnswer, patientAllergy);
+
+        // 3. 把"患者回答"持久化到第 nextRound 行
         AiPreVisitRecord answerRow = new AiPreVisitRecord();
         answerRow.setRegisterId(registerId);
         answerRow.setPatientId(patientId);
@@ -132,25 +125,24 @@ public class PreConsultService {
         answerRow.setModelId(modelId);
         mapper.insert(answerRow);
 
-        // 3. 构造历史并调用 AI
-        String conversationText = buildConversationText(history, patientAnswer);
-        String collected = buildCollectedSummary(history, patientAnswer);
-        String aiReply = callAi(buildHistory(history, patientAnswer), tokenConsumer);
+        // 4. 调用 AI 流式生成下一句提问
+        String aiReply = callAi(messages, tokenConsumer);
+        boolean finished = PromptUtils.isConsultationFinished(aiReply);
+        // 入库前清理 DONE 标记，保证数据库 ai_question 字段干净，回看时不污染前端
+        String cleanReply = PromptUtils.cleanDoneToken(aiReply);
 
-        // 4. 写一行只有 ai_question 的记录（专门承载本轮 AI 提问）
+        // 5. 写一行只有 ai_question 的记录（专门承载本轮 AI 提问）
         AiPreVisitRecord aiRow = new AiPreVisitRecord();
         aiRow.setRegisterId(registerId);
         aiRow.setPatientId(patientId);
         aiRow.setSessionUuid(sessionUuid);
         aiRow.setRoundNumber(nextRound + 1);
-        aiRow.setAiQuestion(aiReply);
+        aiRow.setAiQuestion(cleanReply);
         aiRow.setConsultationState("in_progress");
         aiRow.setCreationTime(LocalDateTime.now());
         aiRow.setUpdatedAt(LocalDateTime.now());
         aiRow.setModelId(modelId);
         mapper.insert(aiRow);
-
-        boolean finished = aiReply.contains("<<PRECONSULT_DONE>>");
 
         Map<String, Object> result = new HashMap<>();
         result.put("sessionUuid", sessionUuid);
@@ -171,46 +163,54 @@ public class PreConsultService {
         }
 
         String conversationText = historyToText(history);
-        String prompt = getSummaryPromptTemplate().replace("{conversation}", conversationText);
+        PromptTemplate pt = new PromptTemplate(summaryPromptResource);
+        String prompt = pt.render(Map.of("conversation", conversationText));
 
-        String aiSummary;
+        PreVisitSummary summary;
         try {
-            aiSummary = chatClient.prompt()
-                .messages(new UserMessage(prompt))
-                .call()
-                .content();
+            summary = chatClient.prompt()
+                    .user(prompt)
+                    .call()
+                    .entity(PreVisitSummary.class);
         } catch (Exception e) {
-            log.error("AI 生成总结失败", e);
-            aiSummary = "{}";
+            log.error("AI 生成结构化总结失败，使用空总结兜底", e);
+            summary = emptySummary();
         }
 
-        Map<String, Object> summaryMap = parseSummary(aiSummary);
-
-        // 把总结字段写到 session 的所有行（实际只需要写一行，但用 updateSummaryBySessionUuid
-        // 保险起见更新整个会话的状态和 completion_time）
+        // 写回 session 汇总字段 + 状态
         AiPreVisitRecord update = new AiPreVisitRecord();
         update.setSessionUuid(sessionUuid);
         update.setConsultationState("completed");
         update.setCompletionTime(LocalDateTime.now());
-        update.setChiefComplaint((String) summaryMap.get("chiefComplaint"));
-        update.setSymptomDuration((String) summaryMap.get("symptomDuration"));
-        update.setHistorySummary((String) summaryMap.get("historySummary"));
-        update.setAllergySummary((String) summaryMap.get("allergySummary"));
-        update.setMedicationSummary((String) summaryMap.get("medicationSummary"));
-        update.setAiSummary((String) summaryMap.getOrDefault("presentIllness", ""));
+        update.setChiefComplaint(summary.chiefComplaint());
+        update.setSymptomDuration(summary.symptomDuration());
+        update.setHistorySummary(summary.historySummary());
+        update.setAllergySummary(summary.allergySummary());
+        update.setMedicationSummary(summary.medicationSummary());
+        update.setAiSummary(summary.presentIllness());
         mapper.updateSummaryBySessionUuid(update);
 
-        // 建议检查合并到 suggestedExam 字段
-        Object suggested = summaryMap.get("suggestedExam");
-        if (suggested instanceof List<?> list) {
-            try {
-                AiPreVisitRecord examUpdate = new AiPreVisitRecord();
-                examUpdate.setSessionUuid(sessionUuid);
-                examUpdate.setSuggestedExam(objectMapper.writeValueAsString(list));
-                mapper.updateSummaryBySessionUuid(examUpdate);
-            } catch (Exception ignored) {}
+        // 建议检查列表序列化后单独更新（字段类型是 String）
+        // 即使为空也写 "[]"，保持与旧实现一致，避免前端读到 null
+        AiPreVisitRecord examUpdate = new AiPreVisitRecord();
+        examUpdate.setSessionUuid(sessionUuid);
+        List<String> examList = summary.suggestedExam() != null ? summary.suggestedExam() : List.of();
+        try {
+            examUpdate.setSuggestedExam(toJsonArray(examList));
+            mapper.updateSummaryBySessionUuid(examUpdate);
+        } catch (Exception e) {
+            log.warn("写入 suggestedExam 失败", e);
         }
 
+        // 返回前端用的 Map（保持旧字段名，不破坏 API 契约）
+        Map<String, Object> summaryMap = new LinkedHashMap<>();
+        summaryMap.put("chiefComplaint", summary.chiefComplaint());
+        summaryMap.put("symptomDuration", summary.symptomDuration());
+        summaryMap.put("presentIllness", summary.presentIllness());
+        summaryMap.put("historySummary", summary.historySummary());
+        summaryMap.put("allergySummary", summary.allergySummary());
+        summaryMap.put("medicationSummary", summary.medicationSummary());
+        summaryMap.put("suggestedExam", summary.suggestedExam() != null ? summary.suggestedExam() : List.of());
         return summaryMap;
     }
 
@@ -223,7 +223,6 @@ public class PreConsultService {
             return Map.of("exists", false);
         }
 
-        // 取该 registerId 的所有行，按 round_number 升序
         String sessionUuid = rows.get(0).getSessionUuid();
         String state = rows.get(0).getConsultationState();
 
@@ -264,95 +263,137 @@ public class PreConsultService {
     // ============================================================
 
     /**
-     * 调用 AI（流式），返回完整文本
+     * 调用 AI（流式），返回完整文本。
+     *
+     * <p>注意：{@code <<PRECONSULT_DONE>>} 标记会在流式过程中被过滤掉，**不会**推给前端；
+     * 但返回的完整文本里仍然保留该标记，供 start/reply 判断 finished 状态使用。
      */
     private String callAi(List<Message> messages, Consumer<String> tokenConsumer) {
         AtomicBoolean done = new AtomicBoolean(false);
         StringBuilder full = new StringBuilder();
+        // 用流式过滤器处理"标记可能跨 chunk 分片"的场景，避免前端看到 <<PRECONSULT_DONE>>
+        PromptUtils.DoneTokenStreamFilter filter = new PromptUtils.DoneTokenStreamFilter();
 
         chatClient.prompt()
-            .messages(messages)
-            .stream()
-            .content()
-            .doOnNext(chunk -> {
-                if (chunk != null && !chunk.isEmpty() && !done.get()) {
-                    full.append(chunk);
-                    try {
-                        tokenConsumer.accept(chunk);
-                    } catch (Exception e) {
-                        log.warn("tokenConsumer 处理失败", e);
+                .messages(messages)
+                .stream()
+                .content()
+                .doOnNext(chunk -> {
+                    if (chunk != null && !chunk.isEmpty() && !done.get()) {
+                        full.append(chunk);
+                        try {
+                            String safe = filter.accept(chunk);
+                            if (!safe.isEmpty()) {
+                                tokenConsumer.accept(safe);
+                            }
+                        } catch (Exception e) {
+                            log.warn("tokenConsumer 处理失败", e);
+                        }
                     }
-                }
-            })
-            .doOnComplete(() -> done.set(true))
-            .doOnError(e -> {
-                log.error("AI 流式调用失败", e);
-                done.set(true);
-            })
-            .blockLast();
+                })
+                .doOnComplete(() -> {
+                    done.set(true);
+                    // 流结束：下发 buffer 里剩余的内容（此时不会再有后续 chunk，安全）
+                    try {
+                        String tail = filter.flush();
+                        if (!tail.isEmpty()) {
+                            tokenConsumer.accept(tail);
+                        }
+                    } catch (Exception e) {
+                        log.warn("flush tokenConsumer 处理失败", e);
+                    }
+                })
+                .doOnError(e -> {
+                    log.error("AI 流式调用失败", e);
+                    done.set(true);
+                })
+                .blockLast();
 
         return full.toString();
     }
 
-    private List<Message> buildHistory(List<AiPreVisitRecord> history, String newUserAnswer) {
-        List<Message> messages = new ArrayList<>();
-        String collectedHint = collectedFromHistory(history);
-        String systemPrompt = getPrevisitPromptTemplate().replace("{collected}", collectedHint);
-        messages.add(new SystemMessage(systemPrompt));
+    /**
+     * 构造一次 AI 调用的完整消息序列：
+     *   SystemMessage（含已采集信息 prompt） + ChatMemory 中的历史消息 + 可选的当前用户回答。
+     *
+     * <p>历史消息通过 {@link PreVisitChatMemoryRepository} 读取，与手写拼装解耦。
+     * 当 newUserAnswer 非空时（reply 场景：本次回答尚未写入 DB，作为独立 UserMessage 追加），
+     * 追加到末尾；为空（start 场景）时不追加。
+     *
+     * @param sessionUuid    会话 ID（conversationId）
+     * @param newUserAnswer  当前轮用户回答，null/空表示不追加
+     * @param patientAllergy 患者档案里的过敏史（用于预问诊时确认），null/空表示档案无过敏史
+     */
+    private List<Message> buildPromptMessages(String sessionUuid, String newUserAnswer, String patientAllergy) {
+        // 1. 通过 ChatMemoryRepository 读历史消息
+        List<Message> historyMessages = chatMemoryRepository.findByConversationId(sessionUuid);
 
-        for (AiPreVisitRecord r : history) {
-            if (r.getAiQuestion() != null && !r.getAiQuestion().isBlank()) {
-                messages.add(new AssistantMessage(cleanDoneToken(r.getAiQuestion())));
-            }
-            if (r.getPatientAnswer() != null && !r.getPatientAnswer().isBlank()) {
-                messages.add(new UserMessage(r.getPatientAnswer()));
-            }
-        }
+        // 2. 渲染 SystemMessage：把已有消息序列作为"已采集信息"、档案过敏史嵌入 prompt
+        String collectedHint = messagesToText(historyMessages);
+        String allergyHint = (patientAllergy == null || patientAllergy.isBlank()) ? "无" : patientAllergy;
+        PromptTemplate pt = new PromptTemplate(previsitPromptResource);
+        String systemPrompt = pt.render(Map.of(
+                "collected", collectedHint,
+                "patientAllergy", allergyHint
+        ));
+
+        // 3. 组装：SystemMessage 在前，历史消息随后，最后追加新回答（如果有）
+        List<Message> messages = new ArrayList<>(historyMessages.size() + 2);
+        messages.add(new SystemMessage(systemPrompt));
+        messages.addAll(historyMessages);
         if (newUserAnswer != null && !newUserAnswer.isBlank()) {
             messages.add(new UserMessage(newUserAnswer));
         }
         return messages;
     }
 
-    private String buildConversationText(List<AiPreVisitRecord> history, String latestAnswer) {
-        StringBuilder sb = new StringBuilder();
-        for (AiPreVisitRecord r : history) {
-            if (r.getAiQuestion() != null && !r.getAiQuestion().isBlank()) {
-                sb.append("AI: ").append(cleanDoneToken(r.getAiQuestion())).append("\n");
-            }
-            if (r.getPatientAnswer() != null && !r.getPatientAnswer().isBlank()) {
-                sb.append("患者: ").append(r.getPatientAnswer()).append("\n");
-            }
+    /**
+     * 安全查询患者过敏史：失败时返回 null，不阻断预问诊流程。
+     */
+    private String safeQueryPatientAllergy(Integer patientId) {
+        if (patientId == null) {
+            return null;
         }
-        if (latestAnswer != null && !latestAnswer.isBlank()) {
-            sb.append("患者: ").append(latestAnswer).append("\n");
+        try {
+            return mapper.selectPatientAllergy(patientId);
+        } catch (Exception e) {
+            log.warn("查询患者过敏史失败，patientId={}, 继续预问诊流程", patientId, e);
+            return null;
+        }
+    }
+
+    /**
+     * 把消息序列渲染成 "AI: xxx\n患者: xxx\n" 的纯文本，用于 prompt 中的"已采集信息"占位符。
+     * AssistantMessage → "AI:"，UserMessage → "患者:"。
+     */
+    private String messagesToText(List<Message> messages) {
+        StringBuilder sb = new StringBuilder();
+        for (Message m : messages) {
+            String text = PromptUtils.cleanDoneToken(m.getText());
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            String role = switch (m.getMessageType()) {
+                case ASSISTANT -> "AI";
+                case USER -> "患者";
+                default -> null;
+            };
+            if (role != null) {
+                sb.append(role).append(": ").append(text).append("\n");
+            }
         }
         return sb.toString();
     }
 
-    private String buildCollectedSummary(List<AiPreVisitRecord> history, String latestAnswer) {
-        return collectedFromHistory(history)
-            + (latestAnswer != null && !latestAnswer.isBlank() ? "\n患者最近说：" + latestAnswer : "");
-    }
-
-    private String collectedFromHistory(List<AiPreVisitRecord> history) {
-        StringBuilder sb = new StringBuilder();
-        for (AiPreVisitRecord r : history) {
-            if (r.getAiQuestion() != null && !r.getAiQuestion().isBlank()) {
-                sb.append("AI: ").append(cleanDoneToken(r.getAiQuestion())).append("\n");
-            }
-            if (r.getPatientAnswer() != null && !r.getPatientAnswer().isBlank()) {
-                sb.append("患者: ").append(r.getPatientAnswer()).append("\n");
-            }
-        }
-        return sb.toString();
-    }
-
+    /**
+     * 把数据库历史行渲染为纯文本（finish 总结 prompt 用）。
+     * 直接基于 DB 行，不走 ChatMemoryRepository，避免依赖消息类型映射。
+     */
     private String historyToText(List<AiPreVisitRecord> history) {
         StringBuilder sb = new StringBuilder();
         for (AiPreVisitRecord r : history) {
             if (r.getAiQuestion() != null && !r.getAiQuestion().isBlank()) {
-                sb.append("AI: ").append(cleanDoneToken(r.getAiQuestion())).append("\n");
+                sb.append("AI: ").append(PromptUtils.cleanDoneToken(r.getAiQuestion())).append("\n");
             }
             if (r.getPatientAnswer() != null && !r.getPatientAnswer().isBlank()) {
                 sb.append("患者: ").append(r.getPatientAnswer()).append("\n");
@@ -361,45 +402,19 @@ public class PreConsultService {
         return sb.toString();
     }
 
-    private String cleanDoneToken(String text) {
-        return text == null ? "" : text.replace("<<PRECONSULT_DONE>>", "").trim();
+    private PreVisitSummary emptySummary() {
+        return new PreVisitSummary("", "", "", "", "", "", List.of());
     }
 
-    private Map<String, Object> parseSummary(String aiText) {
-        Map<String, Object> result = new HashMap<>();
-        try {
-            String json = extractJson(aiText);
-            JsonNode node = objectMapper.readTree(json);
-            result.put("chiefComplaint", textOrEmpty(node, "chiefComplaint"));
-            result.put("symptomDuration", textOrEmpty(node, "symptomDuration"));
-            result.put("presentIllness", textOrEmpty(node, "presentIllness"));
-            result.put("historySummary", textOrEmpty(node, "historySummary"));
-            result.put("allergySummary", textOrEmpty(node, "allergySummary"));
-            result.put("medicationSummary", textOrEmpty(node, "medicationSummary"));
-            JsonNode exam = node.get("suggestedExam");
-            List<String> exams = new ArrayList<>();
-            if (exam != null && exam.isArray()) {
-                exam.forEach(n -> exams.add(n.asText()));
-            }
-            result.put("suggestedExam", exams);
-        } catch (Exception e) {
-            log.warn("解析 AI 总结失败: {}", e.getMessage());
+    private String toJsonArray(List<String> items) {
+        // 简单 JSON 数组序列化（避免引入额外依赖；元素本身已是纯文本）
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append("\"").append(items.get(i).replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");
         }
-        return result;
-    }
-
-    private String textOrEmpty(JsonNode node, String field) {
-        JsonNode n = node.get(field);
-        return n == null || n.isNull() ? "" : n.asText("");
-    }
-
-    private String extractJson(String text) {
-        int start = text.indexOf("{");
-        int end = text.lastIndexOf("}");
-        if (start >= 0 && end > start) {
-            return text.substring(start, end + 1);
-        }
-        return text;
+        sb.append("]");
+        return sb.toString();
     }
 
     private AiPreVisitRecord newRoundRow(Integer registerId, Integer patientId, String sessionUuid,

@@ -1990,16 +1990,23 @@ const showSuccessCard = computed(() => {
 
 .btn-warning {
   padding: 8px 16px;
-  background: linear-gradient(135deg, #ffb060 0%, #f59f00 100%);
-  color: #fff;
-  border: none;
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
+  border: 1px solid rgba(245, 159, 0, 0.42);
   font-size: 13px;
-  box-shadow: 0 4px 12px rgba(245, 159, 0, 0.28);
+  font-weight: 600;
+  box-shadow: none;
 }
 
-.btn-warning:hover {
+.btn-warning:hover:not(:disabled) {
+  background: rgba(245, 159, 0, 0.18);
+  border-color: var(--color-warning);
   transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(245, 159, 0, 0.36);
+}
+
+.btn-warning:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 小号按钮（列表行内动作） */

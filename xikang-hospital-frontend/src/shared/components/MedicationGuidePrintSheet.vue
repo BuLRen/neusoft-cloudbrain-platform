@@ -45,7 +45,7 @@ function formatTime(t?: string) {
 <template>
   <article v-if="record && content" class="mg-sheet">
     <header class="mg-sheet__header">
-      <h1 class="mg-sheet__hospital">希康云医院</h1>
+      <h1 class="mg-sheet__hospital">熙康云医院</h1>
       <h2 class="mg-sheet__title">用药指导单</h2>
     </header>
 

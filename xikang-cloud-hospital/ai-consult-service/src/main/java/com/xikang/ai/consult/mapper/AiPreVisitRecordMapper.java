@@ -31,4 +31,7 @@ public interface AiPreVisitRecordMapper {
 
     /** 更新整个会话的状态/汇总字段（不依赖单条 id） */
     int updateSummaryBySessionUuid(AiPreVisitRecord record);
+
+    /** 查询患者档案里登记的过敏史（patient.allergy_history），用于预问诊时确认 */
+    String selectPatientAllergy(Integer patientId);
 }

@@ -92,7 +92,7 @@ public class PharmacyPdfRenderer {
 
         // 医院标题
         sb.append("<div class=\"hospital-header\">");
-        sb.append("<h1>希康云医院</h1>");
+        sb.append("<h1>熙康云医院</h1>");
         sb.append("<h2>用药指导单</h2>");
         sb.append("</div>");
 
