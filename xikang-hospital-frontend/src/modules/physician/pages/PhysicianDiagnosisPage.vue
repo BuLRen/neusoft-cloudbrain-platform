@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElAlert, ElButton, ElCard, ElForm, ElFormItem, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
+import { ElAlert, ElButton, ElCard, ElCollapse, ElCollapseItem, ElForm, ElFormItem, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
 import { physicianApi, type Disease, type W3Status, type W4Output } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
@@ -21,6 +21,13 @@ const diagnosisForm = reactive({
 })
 
 const w3Completed = computed(() => Boolean(w3Status.value?.completed))
+const w3ClinicalImpression = computed(
+  () => w3Status.value?.clinicalImpression || w3Status.value?.w3Output?.clinicalImpression || '',
+)
+const w3OverallAnalysis = computed(
+  () => w3Status.value?.overallAnalysis || w3Status.value?.w3Output?.overallAnalysis || '',
+)
+const hasW3Summary = computed(() => Boolean(w3ClinicalImpression.value || w3OverallAnalysis.value))
 
 async function loadDiseases() {
   diseases.value = await physicianApi.diseases()
@@ -94,9 +101,15 @@ onMounted(() => {
       show-icon
     />
 
-    <ElCard v-else-if="w3Status?.overallAnalysis" class="w3-summary-card" shadow="never">
+    <ElCard v-else-if="hasW3Summary" class="w3-summary-card" shadow="never">
       <strong class="w3-summary-card__title">W3 结果解读摘要</strong>
-      <p class="w3-summary-card__text">{{ w3Status.overallAnalysis }}</p>
+      <p v-if="w3ClinicalImpression" class="w3-summary-card__impression">{{ w3ClinicalImpression }}</p>
+      <ElCollapse v-if="w3OverallAnalysis && w3OverallAnalysis !== w3ClinicalImpression" class="w3-summary-card__collapse">
+        <ElCollapseItem title="查看综合解读" name="overall">
+          <p class="w3-summary-card__text">{{ w3OverallAnalysis }}</p>
+        </ElCollapseItem>
+      </ElCollapse>
+      <p v-else-if="w3OverallAnalysis" class="w3-summary-card__text">{{ w3OverallAnalysis }}</p>
       <p class="w3-summary-card__hint">以上为结果解读，非最终诊断。请结合临床判断运行 W4。</p>
     </ElCard>
 
@@ -160,6 +173,33 @@ onMounted(() => {
 .w3-summary-card__title {
   display: block;
   font-size: 15px;
+}
+
+.w3-summary-card__impression {
+  margin: var(--space-2) 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.w3-summary-card__collapse {
+  margin-block-start: var(--space-2);
+  border: none;
+  background: transparent;
+}
+
+.w3-summary-card__collapse :deep(.el-collapse-item__header) {
+  height: auto;
+  min-height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--color-primary-strong);
+  font-size: 13px;
+}
+
+.w3-summary-card__collapse :deep(.el-collapse-item__wrap) {
+  border: none;
+  background: transparent;
 }
 
 .w3-summary-card__text,

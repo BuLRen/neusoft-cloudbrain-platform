@@ -65,5 +65,22 @@ public class DifyAiConfigValidator {
                 properties.getWorkflowW2()
             );
         }
+        String w3Switch = properties.getWorkflowW3();
+        if (w3Switch != null && w3Switch.startsWith("app-")) {
+            log.error(
+                "配置错误：workflow-w3 填了 API Key (app-xxx)。请设置 DIFY_WORKFLOW_W3=true，"
+                    + "并将 Key 放到 DIFY_API_KEY_W3。"
+            );
+        }
+        if (properties.isW3WorkflowSwitchOn() && properties.resolveW3ApiKey().isBlank()) {
+            log.warn("workflow-w3 已启用但 api-key-w3 / DIFY_API_KEY_W3 为空，W3 将走内置 Fallback。");
+        } else if (difyClient.isW3Enabled()) {
+            log.info("W3 结果解读：已启用 Dify Workflow（使用 api-key-w3）");
+        } else if (properties.isDifyBaseConfigured()) {
+            log.info(
+                "W3 结果解读：未启用 Dify（workflow-w3={}，需为 true/1/yes 且配置 DIFY_API_KEY_W3）",
+                properties.getWorkflowW3()
+            );
+        }
     }
 }

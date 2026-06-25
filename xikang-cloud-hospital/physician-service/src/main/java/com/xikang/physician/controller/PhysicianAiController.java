@@ -87,8 +87,24 @@ public class PhysicianAiController {
 
     @PostMapping("/w3/analyze")
     public Result<Map<String, Object>> runW3(@RequestBody Map<String, Object> request) {
-        Long registerId = toLong(request.get("registerId"));
-        return Result.success("W3 结果解读完成", pipelineService.runW3(registerId));
+        try {
+            Long registerId = toLong(request.get("registerId"));
+            if (registerId == null) {
+                return Result.error("registerId 不能为空");
+            }
+            return Result.success("W3 结果解读完成", pipelineService.runW3(registerId));
+        } catch (IllegalArgumentException ex) {
+            return Result.error(ex.getMessage());
+        } catch (DifyWorkflowException ex) {
+            if (ex.isPaused()) {
+                return Result.error("AI 工作流需人工介入，当前系统暂不支持，请稍后重试");
+            }
+            String detail = ex.getMessage();
+            if (detail != null && !detail.isBlank() && !detail.contains("请稍后重试")) {
+                return Result.error("AI 结果解读失败：" + detail);
+            }
+            return Result.error("AI 结果解读失败，请稍后重试");
+        }
     }
 
     @PostMapping("/w3/trigger-async")

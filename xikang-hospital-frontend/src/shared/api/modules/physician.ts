@@ -4,6 +4,8 @@ import { http } from '../request'
 const PRELIMINARY_AI_TIMEOUT_MS = 5 * 60 * 1000
 /** Dify W2 检查推荐 blocking 调用超时 */
 const W2_AI_TIMEOUT_MS = 5 * 60 * 1000
+/** Dify W3 结果解读 blocking 调用超时 */
+const W3_AI_TIMEOUT_MS = 5 * 60 * 1000
 import type { PageResult } from '../result'
 
 export interface AiConsultSummary {
@@ -223,13 +225,29 @@ export interface W2Output {
   modelId?: string
 }
 
+export interface W3IndicatorRow {
+  itemCode?: string
+  itemName: string
+  value: string | number
+  unit?: string
+  referenceRange?: string
+  status: string
+  aiNote?: string
+}
+
+export interface W3ExamSummary {
+  techName: string
+  techType?: string
+  riskLevel?: string
+  clinicalImpression?: string
+  indicatorRows?: W3IndicatorRow[]
+  keyFindings?: string[]
+  interpretation?: string
+}
+
 export interface W3Output {
-  examSummaries?: Array<{
-    techName: string
-    keyFindings?: string[]
-    interpretation?: string
-    riskLevel?: string
-  }>
+  clinicalImpression?: string
+  examSummaries?: W3ExamSummary[]
   overallAnalysis?: string
   explicitNonDiagnosis?: boolean
 }
@@ -238,6 +256,7 @@ export interface W3Status {
   registerId?: number
   completed: boolean
   examSummaryCount?: number
+  clinicalImpression?: string
   overallAnalysis?: string
   explicitNonDiagnosis?: boolean
   w3Output?: W3Output
@@ -352,7 +371,12 @@ export const physicianApi = {
     })
   },
   aiW3(registerId: number) {
-    return http<W3Output>({ url: '/physician/ai/w3/analyze', method: 'POST', data: { registerId } })
+    return http<W3Output>({
+      url: '/physician/ai/w3/analyze',
+      method: 'POST',
+      data: { registerId },
+      timeout: W3_AI_TIMEOUT_MS,
+    })
   },
   w3Status(registerId: number) {
     return http<W3Status>({ url: '/physician/ai/w3/status', method: 'GET', params: { registerId } })

@@ -325,8 +325,19 @@ public class PhysicianService {
                 "outputs", List.of("simulatedResults")
             ),
             "w3Analyze", Map.of(
-                "inputs", List.of("registerId", "structuredRecord", "preliminaryAssessment", "allResults"),
-                "outputs", List.of("examSummaries", "overallAnalysis", "explicitNonDiagnosis")
+                "inputs", List.of(
+                    "registerId",
+                    "structuredRecordJson",
+                    "allResultsJson",
+                    "preliminaryAssessment"
+                ),
+                "outputs", List.of(
+                    "registerId",
+                    "clinicalImpression",
+                    "examSummaries",
+                    "overallAnalysis",
+                    "explicitNonDiagnosis"
+                )
             ),
             "w4Diagnose", Map.of(
                 "inputs", List.of("registerId", "structuredRecord", "w3Output", "diseaseCatalog"),
