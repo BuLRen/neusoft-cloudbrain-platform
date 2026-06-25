@@ -65,6 +65,38 @@ export function formatResultPayloadSummary(raw?: string | null): string {
   return '-'
 }
 
+/** 表格「结果摘要」列：仅展示主结果字段（如 inspectionResult / checkResult），不含备注等附属字段 */
+export function formatPrimaryResultSummary(
+  raw?: string | null,
+  primaryKey: 'checkResult' | 'inspectionResult' = 'checkResult',
+): string {
+  const payload = parseResultPayload(raw)
+  if (!payload) return '-'
+  if (payload.legacyText) return payload.legacyText
+
+  const primary = payload.values?.[primaryKey]
+  if (primary != null && String(primary).trim()) {
+    return String(primary).trim()
+  }
+
+  if (raw?.trim().startsWith('{')) {
+    try {
+      const data = JSON.parse(raw.trim()) as Record<string, unknown>
+      const structured = data.structuredOutput ?? data.structured_output
+      if (structured && typeof structured === 'object') {
+        const conclusion = (structured as Record<string, unknown>).conclusion
+        if (conclusion != null && String(conclusion).trim()) {
+          return String(conclusion).trim()
+        }
+      }
+    } catch {
+      // ignore malformed JSON
+    }
+  }
+
+  return '-'
+}
+
 export function resultPayloadEntries(raw?: string | null): Array<{ key: string; label: string; value: string }> {
   const payload = parseResultPayload(raw)
   if (!payload) return []

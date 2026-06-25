@@ -209,47 +209,122 @@ public class FallbackWorkflowEngine {
 
         for (Map<String, Object> result : allResults) {
             String name = str(result.get("techName"));
+            String techType = str(result.get("techType"));
             String resultText = str(result.get("resultText"));
-            Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("techId", result.get("techId"));
-            summary.put("techName", name);
+            List<Map<String, Object>> indicatorRows = extractIndicatorRows(resultText);
             List<String> keyFindings = new ArrayList<>();
             String interpretation;
             String riskLevel = "normal";
+            String clinicalImpression;
 
-            if (name.contains("血常规") || resultText.contains("WBC")) {
+            if (!indicatorRows.isEmpty()) {
+                for (Map<String, Object> row : indicatorRows) {
+                    String status = str(row.get("status"));
+                    if (!"normal".equals(status)) {
+                        riskLevel = "attention";
+                        keyFindings.add(str(row.get("itemName")) + " " + str(row.get("value")) + str(row.get("unit")));
+                    }
+                }
+                interpretation = name + "：部分指标偏离参考范围，建议结合临床症状综合判断。";
+                clinicalImpression = name + "存在异常指标，需结合临床关注。";
+            } else if (name.contains("血常规") || resultText.contains("WBC")) {
                 keyFindings.add("白细胞升高");
                 keyFindings.add("中性粒细胞比例升高");
                 interpretation = "白细胞及中性粒细胞比例升高，提示可能存在感染或炎症反应，建议结合临床症状综合判断。";
+                clinicalImpression = "血常规提示感染或炎症反应可能。";
                 riskLevel = "attention";
             } else if (name.contains("CT") || result.get("imagingAi") != null) {
                 keyFindings.add("影像学可见异常密度影");
                 interpretation = "影像学所见需结合实验室指标与症状，注意排除肺炎等病变。";
+                clinicalImpression = "影像学可见异常改变，需结合临床。";
                 riskLevel = "attention";
             } else if (resultText.contains("CRP")) {
                 keyFindings.add("C反应蛋白升高");
                 interpretation = "炎症指标升高，提示体内可能存在炎症反应。";
+                clinicalImpression = "炎症指标升高。";
                 riskLevel = "attention";
             } else {
                 interpretation = name + "未见明显异常指标。";
+                clinicalImpression = name + "未见明显异常。";
             }
+
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("techId", result.get("techId"));
+            summary.put("techName", name);
+            summary.put("techType", techType);
+            summary.put("clinicalImpression", clinicalImpression);
+            summary.put("indicatorRows", indicatorRows);
             summary.put("keyFindings", keyFindings);
             summary.put("interpretation", interpretation);
             summary.put("riskLevel", riskLevel);
             summaries.add(summary);
         }
 
+        String overallAnalysis = summaries.isEmpty()
+            ? "暂无检查结果可供分析。"
+            : "目前实验室与影像检查支持存在炎症/感染可能，尚未形成唯一确诊结论，需进入诊断推理步骤。";
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("registerId", registerId);
-        out.put("examSummaries", summaries);
         out.put(
-            "overallAnalysis",
-            summaries.isEmpty()
-                ? "暂无检查结果可供分析。"
-                : "目前实验室与影像检查支持存在炎症/感染可能，尚未形成唯一确诊结论，需进入诊断推理步骤。"
+            "clinicalImpression",
+            summaries.stream()
+                .map(item -> str(item.get("clinicalImpression")))
+                .filter(text -> !text.isBlank())
+                .findFirst()
+                .orElse("")
         );
+        out.put("examSummaries", summaries);
+        out.put("overallAnalysis", overallAnalysis);
         out.put("explicitNonDiagnosis", true);
         return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> extractIndicatorRows(String resultText) {
+        if (resultText == null || resultText.isBlank() || !resultText.trim().startsWith("{")) {
+            return List.of();
+        }
+        try {
+            Map<String, Object> parsed = JsonMapUtils.asMap(resultText);
+            Object structured = parsed.get("structuredOutput");
+            if (structured == null) {
+                structured = parsed.get("structured_output");
+            }
+            Map<String, Object> structuredMap = structured instanceof Map<?, ?> map
+                ? (Map<String, Object>) map
+                : parsed;
+            Object rawItems = structuredMap.get("resultItems");
+            if (!(rawItems instanceof List<?> list) || list.isEmpty()) {
+                return List.of();
+            }
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> map)) {
+                    continue;
+                }
+                Map<String, Object> source = (Map<String, Object>) map;
+                String itemName = str(source.get("itemName"));
+                if (itemName.isBlank()) {
+                    itemName = str(source.get("name"));
+                }
+                if (itemName.isBlank()) {
+                    continue;
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("itemCode", str(source.get("itemCode")));
+                row.put("itemName", itemName);
+                row.put("value", source.get("value") == null ? "" : source.get("value"));
+                row.put("unit", str(source.get("unit")));
+                row.put("referenceRange", strOr(source.get("referenceRange"), str(source.get("reference"))));
+                row.put("status", strOr(source.get("status"), "normal"));
+                row.put("aiNote", str(source.get("meaning")));
+                rows.add(row);
+            }
+            return rows;
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     public Map<String, Object> runW4(Map<String, Object> input) {

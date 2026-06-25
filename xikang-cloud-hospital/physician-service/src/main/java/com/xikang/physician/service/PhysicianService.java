@@ -331,7 +331,13 @@ public class PhysicianService {
                     "allResultsJson",
                     "preliminaryAssessment"
                 ),
-                "outputs", List.of("registerId", "examSummaries", "overallAnalysis", "explicitNonDiagnosis")
+                "outputs", List.of(
+                    "registerId",
+                    "clinicalImpression",
+                    "examSummaries",
+                    "overallAnalysis",
+                    "explicitNonDiagnosis"
+                )
             ),
             "w4Diagnose", Map.of(
                 "inputs", List.of("registerId", "structuredRecord", "w3Output", "diseaseCatalog"),

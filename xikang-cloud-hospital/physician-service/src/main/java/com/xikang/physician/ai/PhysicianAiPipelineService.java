@@ -333,6 +333,7 @@ public class PhysicianAiPipelineService {
         status.put("registerId", registerId);
         status.put("completed", !analyses.isEmpty());
         status.put("examSummaryCount", listOfMaps(w3Output.get("examSummaries")).size());
+        status.put("clinicalImpression", w3Output.get("clinicalImpression"));
         status.put("overallAnalysis", w3Output.get("overallAnalysis"));
         status.put("explicitNonDiagnosis", true);
         status.put("w3Output", w3Output);
@@ -554,36 +555,66 @@ public class PhysicianAiPipelineService {
             ? String.valueOf(modelIdHint)
             : (difyClient.isW3Enabled() ? "dify-w3" : "fallback-w3");
         Map<String, String> techTypeByName = buildTechTypeByName(registerId);
+        String globalClinicalImpression = String.valueOf(output.getOrDefault("clinicalImpression", "")).trim();
+        String overallAnalysis = String.valueOf(output.getOrDefault("overallAnalysis", "")).trim();
 
         List<Map<String, Object>> summaries = listOfMaps(output.get("examSummaries"));
         if (summaries.isEmpty()) {
-            String overall = String.valueOf(output.getOrDefault("overallAnalysis", "")).trim();
-            if (!overall.isEmpty()) {
+            if (!overallAnalysis.isEmpty()) {
                 Map<String, Object> row = new HashMap<>();
                 row.put("registerId", registerId);
                 row.put("analysisType", "check");
                 row.put("originalResult", "");
-                row.put("abnormalIndicators", buildW3AbnormalIndicatorsJson("综合解读", List.of()));
+                row.put(
+                    "abnormalIndicators",
+                    buildW3AbnormalIndicatorsJson(
+                        "综合解读",
+                        "",
+                        "",
+                        List.of(),
+                        List.of(),
+                        globalClinicalImpression,
+                        overallAnalysis
+                    )
+                );
                 row.put("riskLevel", "normal");
-                row.put("analysisReport", overall);
-                row.put("correlationAnalysis", overall);
+                row.put("analysisReport", overallAnalysis);
+                row.put("correlationAnalysis", overallAnalysis);
                 row.put("modelId", modelId);
                 physicianMapper.insertExamAnalysis(row);
             }
             return;
         }
 
-        for (Map<String, Object> summary : summaries) {
+        for (int index = 0; index < summaries.size(); index++) {
+            Map<String, Object> summary = summaries.get(index);
             String techName = String.valueOf(summary.getOrDefault("techName", "")).trim();
+            String techType = String.valueOf(summary.getOrDefault("techType", "")).trim();
+            String clinicalImpression = String.valueOf(summary.getOrDefault("clinicalImpression", "")).trim();
+            List<String> keyFindings = listOfStrings(summary.get("keyFindings"));
+            List<Map<String, Object>> indicatorRows = listOfMaps(summary.get("indicatorRows"));
             String dbAnalysisType = resolveDbAnalysisType(summary, techTypeByName);
+            boolean isFirst = index == 0;
+
             Map<String, Object> row = new HashMap<>();
             row.put("registerId", registerId);
             row.put("analysisType", dbAnalysisType);
-            row.put("originalResult", String.join("；", listOfStrings(summary.get("keyFindings"))));
-            row.put("abnormalIndicators", buildW3AbnormalIndicatorsJson(techName, listOfStrings(summary.get("keyFindings"))));
+            row.put("originalResult", String.join("；", keyFindings));
+            row.put(
+                "abnormalIndicators",
+                buildW3AbnormalIndicatorsJson(
+                    techName,
+                    techType,
+                    clinicalImpression,
+                    keyFindings,
+                    indicatorRows,
+                    isFirst ? globalClinicalImpression : "",
+                    isFirst ? overallAnalysis : ""
+                )
+            );
             row.put("riskLevel", normalizeRiskLevelForDb(summary.getOrDefault("riskLevel", "normal")));
             row.put("analysisReport", summary.get("interpretation"));
-            row.put("correlationAnalysis", output.get("overallAnalysis"));
+            row.put("correlationAnalysis", isFirst ? overallAnalysis : null);
             row.put("modelId", modelId);
             physicianMapper.insertExamAnalysis(row);
         }
@@ -665,7 +696,9 @@ public class PhysicianAiPipelineService {
     private Map<String, Object> loadW3Output(Long registerId) {
         List<Map<String, Object>> analyses = physicianMapper.selectExamAnalysisByRegisterId(registerId);
         List<Map<String, Object>> summaries = new ArrayList<>();
-        StringBuilder overall = new StringBuilder();
+        String overallAnalysis = "";
+        String globalClinicalImpression = "";
+
         for (Map<String, Object> row : analyses) {
             Map<String, Object> indicators = parseW3AbnormalIndicators(row.get("abnormalIndicators"));
             String techName = String.valueOf(indicators.getOrDefault("techName", "")).trim();
@@ -675,19 +708,41 @@ public class PhysicianAiPipelineService {
                     techName = legacyType;
                 }
             }
+
+            Map<String, Object> w3Global = JsonMapUtils.asMap(indicators.get("w3Global"));
+            if (globalClinicalImpression.isEmpty()) {
+                globalClinicalImpression = String.valueOf(w3Global.getOrDefault("clinicalImpression", "")).trim();
+            }
+            if (overallAnalysis.isEmpty()) {
+                String fromGlobal = String.valueOf(w3Global.getOrDefault("overallAnalysis", "")).trim();
+                if (!fromGlobal.isEmpty()) {
+                    overallAnalysis = fromGlobal;
+                }
+            }
+            if (overallAnalysis.isEmpty() && row.get("correlationAnalysis") != null) {
+                String correlation = String.valueOf(row.get("correlationAnalysis")).trim();
+                if (!correlation.isEmpty()) {
+                    overallAnalysis = correlation;
+                }
+            }
+
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("techName", techName);
+            summary.put("techType", indicators.get("techType"));
+            summary.put("clinicalImpression", indicators.get("clinicalImpression"));
+            summary.put("indicatorRows", listOfMaps(indicators.get("indicatorRows")));
             summary.put("keyFindings", listOfStrings(indicators.get("keyFindings")));
             summary.put("interpretation", row.get("analysisReport"));
             summary.put("riskLevel", row.get("riskLevel"));
-            summaries.add(summary);
-            if (row.get("correlationAnalysis") != null) {
-                overall.append(row.get("correlationAnalysis"));
+            if (!techName.isEmpty() || !listOfStrings(indicators.get("keyFindings")).isEmpty()) {
+                summaries.add(summary);
             }
         }
+
         Map<String, Object> out = new LinkedHashMap<>();
+        out.put("clinicalImpression", globalClinicalImpression);
         out.put("examSummaries", summaries);
-        out.put("overallAnalysis", overall.length() > 0 ? overall.toString() : "暂无分析");
+        out.put("overallAnalysis", overallAnalysis.isEmpty() ? "暂无分析" : overallAnalysis);
         out.put("explicitNonDiagnosis", true);
         return out;
     }
@@ -788,6 +843,10 @@ public class PhysicianAiPipelineService {
     }
 
     private static String resolveDbAnalysisType(Map<String, Object> summary, Map<String, String> techTypeByName) {
+        String techType = String.valueOf(summary.getOrDefault("techType", "")).trim();
+        if ("check".equals(techType) || "inspection".equals(techType)) {
+            return techType;
+        }
         String techName = String.valueOf(summary.getOrDefault("techName", "")).trim();
         if (!techName.isEmpty()) {
             String mapped = techTypeByName.get(techName);
@@ -810,21 +869,40 @@ public class PhysicianAiPipelineService {
         return "check".equals(value) || "inspection".equals(value);
     }
 
-    private static String buildW3AbnormalIndicatorsJson(String techName, List<String> keyFindings) {
+    private static String buildW3AbnormalIndicatorsJson(
+        String techName,
+        String techType,
+        String clinicalImpression,
+        List<String> keyFindings,
+        List<Map<String, Object>> indicatorRows,
+        String globalClinicalImpression,
+        String overallAnalysis
+    ) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("techName", techName == null ? "" : techName);
+        payload.put("techType", techType == null ? "" : techType);
+        payload.put("clinicalImpression", clinicalImpression == null ? "" : clinicalImpression);
         payload.put("keyFindings", keyFindings == null ? List.of() : keyFindings);
+        payload.put("indicatorRows", indicatorRows == null ? List.of() : indicatorRows);
+        if ((globalClinicalImpression != null && !globalClinicalImpression.isBlank())
+            || (overallAnalysis != null && !overallAnalysis.isBlank())) {
+            Map<String, Object> w3Global = new LinkedHashMap<>();
+            w3Global.put("clinicalImpression", globalClinicalImpression == null ? "" : globalClinicalImpression);
+            w3Global.put("overallAnalysis", overallAnalysis == null ? "" : overallAnalysis);
+            payload.put("w3Global", w3Global);
+        }
         return JsonMapUtils.toJson(payload);
     }
 
     private Map<String, Object> parseW3AbnormalIndicators(Object raw) {
         Map<String, Object> parsed = JsonMapUtils.asMap(raw);
-        if (parsed.containsKey("keyFindings") || parsed.containsKey("techName")) {
+        if (parsed.containsKey("keyFindings") || parsed.containsKey("techName") || parsed.containsKey("indicatorRows")) {
             return parsed;
         }
         Map<String, Object> legacy = new LinkedHashMap<>();
         legacy.put("techName", "");
         legacy.put("keyFindings", listOfStrings(raw));
+        legacy.put("indicatorRows", List.of());
         return legacy;
     }
 

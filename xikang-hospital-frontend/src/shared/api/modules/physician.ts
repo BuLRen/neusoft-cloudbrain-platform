@@ -225,13 +225,29 @@ export interface W2Output {
   modelId?: string
 }
 
+export interface W3IndicatorRow {
+  itemCode?: string
+  itemName: string
+  value: string | number
+  unit?: string
+  referenceRange?: string
+  status: string
+  aiNote?: string
+}
+
+export interface W3ExamSummary {
+  techName: string
+  techType?: string
+  riskLevel?: string
+  clinicalImpression?: string
+  indicatorRows?: W3IndicatorRow[]
+  keyFindings?: string[]
+  interpretation?: string
+}
+
 export interface W3Output {
-  examSummaries?: Array<{
-    techName: string
-    keyFindings?: string[]
-    interpretation?: string
-    riskLevel?: string
-  }>
+  clinicalImpression?: string
+  examSummaries?: W3ExamSummary[]
   overallAnalysis?: string
   explicitNonDiagnosis?: boolean
 }
@@ -240,6 +256,7 @@ export interface W3Status {
   registerId?: number
   completed: boolean
   examSummaryCount?: number
+  clinicalImpression?: string
   overallAnalysis?: string
   explicitNonDiagnosis?: boolean
   w3Output?: W3Output

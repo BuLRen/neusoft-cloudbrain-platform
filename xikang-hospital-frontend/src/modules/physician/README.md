@@ -116,9 +116,16 @@ Dify 官方接口：`POST {DIFY_BASE_URL}/v1/workflows/run`（`response_mode: bl
 - `allResultsJson` — 后端检查 + 检验 `resultText` 列表序列化
 - `preliminaryAssessment` — W2 初步判断（优先进程内缓存，回退病历/推荐理由）
 
-**结束节点输出（与前端 `W3Output` 对齐）：** `registerId`、`examSummaries[]`、`overallAnalysis`、`explicitNonDiagnosis`。
+**结束节点输出（与前端 `W3Output` 对齐）：**
 
-前端第 4 步「运行 W3」→ `POST /api/physician/ai/w3/analyze`；结果持久化后可通过 `GET /api/physician/ai/w3/status` 查询。
+- `registerId`
+- `clinicalImpression` — 全局一句话临床印象
+- `examSummaries[]` — 每项含 `techName`、`techType`、`riskLevel`、`clinicalImpression`、`indicatorRows[]`、`interpretation`、`keyFindings`
+- `indicatorRows[]` — `itemCode`、`itemName`、`value`、`unit`、`referenceRange`、`status`、`aiNote`
+- `overallAnalysis`
+- `explicitNonDiagnosis`
+
+前端第 4 步「查看结果」使用 `W3LabReportPanel` 以检验报告式表格展示（异常指标优先、正常项折叠）。
 
 未配置 W3 或 Key 为空时走内置 `FallbackWorkflowEngine`。
 

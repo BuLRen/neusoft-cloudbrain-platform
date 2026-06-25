@@ -20,6 +20,7 @@ public class DifyW3OutputMapper {
     public Map<String, Object> toW3Result(Map<String, Object> rawOutputs) {
         Map<String, Object> source = unwrapSource(rawOutputs);
         Map<String, Object> out = new LinkedHashMap<>();
+        out.put("clinicalImpression", firstString(source, "clinicalImpression", "clinical_impression"));
         out.put("examSummaries", firstExamSummaries(source));
         out.put("overallAnalysis", firstString(source, "overallAnalysis", "overall_analysis"));
         out.put("explicitNonDiagnosis", true);
@@ -47,7 +48,8 @@ public class DifyW3OutputMapper {
             }
         }
 
-        if (rawOutputs.containsKey("examSummaries") || rawOutputs.containsKey("overallAnalysis")) {
+        if (rawOutputs.containsKey("examSummaries") || rawOutputs.containsKey("overallAnalysis")
+            || rawOutputs.containsKey("clinicalImpression")) {
             return rawOutputs;
         }
 
