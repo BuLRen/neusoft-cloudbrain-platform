@@ -543,10 +543,10 @@
 
     <insert id="insertExamAnalysis" parameterType="map" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO ai_exam_analysis (
-            register_id, analysis_type, original_result, abnormal_indicators,
+            register_id, check_request_id, inspection_request_id, analysis_type, original_result, abnormal_indicators,
             risk_level, analysis_report, correlation_analysis, model_id
         ) VALUES (
-            #{registerId}, #{analysisType}, #{originalResult}, #{abnormalIndicators},
+            #{registerId}, #{checkRequestId}, #{inspectionRequestId}, #{analysisType}, #{originalResult}, #{abnormalIndicators},
             #{riskLevel}, #{analysisReport}, #{correlationAnalysis}, #{modelId}
         )
     </insert>

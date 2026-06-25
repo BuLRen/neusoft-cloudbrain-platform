@@ -21,6 +21,11 @@ public class ClinicalRecordController {
         return Result.success(clinicalRecordService.getVisitTimeline(registerId));
     }
 
+    @GetMapping("/visit/{registerId}/notebook")
+    public Result<Map<String, Object>> getNotebook(@PathVariable Long registerId) {
+        return Result.success(clinicalRecordService.getVisitNotebook(registerId));
+    }
+
     @PostMapping("/visit/{registerId}/archive")
     public Result<Map<String, Object>> archiveVisit(@PathVariable Long registerId) {
         return Result.success("病历已归档并发布给患者", clinicalRecordService.archiveVisit(registerId));

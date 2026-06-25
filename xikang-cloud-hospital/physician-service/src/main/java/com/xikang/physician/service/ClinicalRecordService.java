@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,19 @@ public class ClinicalRecordService {
         result.put("clinicalArchivedAt", header.get("clinicalArchivedAt"));
         result.put("archived", header.get("clinicalArchivedAt") != null);
         result.put("timeline", buildTimeline(registerId, true));
+        return result;
+    }
+
+    public Map<String, Object> getVisitNotebook(Long registerId) {
+        assertRegisterAccess(registerId);
+        Map<String, Object> header = clinicalRecordMapper.selectRegisterHeader(registerId);
+        if (header == null) {
+            throw new BusinessException(404, "就诊记录不存在");
+        }
+        Map<String, Object> result = buildNotebook(registerId, header);
+        result.put("registerId", registerId);
+        result.put("clinicalArchivedAt", header.get("clinicalArchivedAt"));
+        result.put("archived", header.get("clinicalArchivedAt") != null);
         return result;
     }
 
@@ -286,6 +300,214 @@ public class ClinicalRecordService {
             Comparator.nullsLast(Comparator.naturalOrder())
         ));
         return events;
+    }
+
+    private Map<String, Object> buildNotebook(Long registerId, Map<String, Object> header) {
+        Map<String, Object> notebook = new LinkedHashMap<>();
+
+        Map<String, Object> headerSection = new LinkedHashMap<>();
+        headerSection.put("caseNumber", header.get("caseNumber"));
+        headerSection.put("realName", header.get("realName"));
+        headerSection.put("gender", header.get("gender"));
+        headerSection.put("age", header.get("age"));
+        headerSection.put("departmentName", header.get("departmentName"));
+        headerSection.put("physicianName", header.get("physicianName"));
+        headerSection.put("visitDate", header.get("visitDate"));
+        notebook.put("header", headerSection);
+
+        Map<String, Object> medicalRecord = clinicalRecordMapper.selectMedicalRecord(registerId);
+        Map<String, Object> medicalSummary = new LinkedHashMap<>();
+        if (medicalRecord != null) {
+            medicalSummary.put("readme", medicalRecord.get("readme"));
+            medicalSummary.put("present", medicalRecord.get("present"));
+            medicalSummary.put("history", medicalRecord.get("history"));
+            medicalSummary.put("allergy", medicalRecord.get("allergy"));
+            medicalSummary.put("physique", medicalRecord.get("physique"));
+        }
+        notebook.put("medicalSummary", medicalSummary);
+        notebook.put("preliminaryDiagnosis", medicalRecord != null
+            ? stringValue(medicalRecord.get("preliminaryDiagnosis"))
+            : "");
+
+        Map<Long, String> aiByCheckId = new HashMap<>();
+        Map<Long, String> aiByInspectionId = new HashMap<>();
+        for (Map<String, Object> row : physicianMapper.selectCheckResults(registerId)) {
+            Long id = toLong(row.get("id"));
+            String analysis = extractAiAnalysisText(row);
+            if (id != null && analysis != null) {
+                aiByCheckId.put(id, analysis);
+            }
+        }
+        for (Map<String, Object> row : physicianMapper.selectInspectionResults(registerId)) {
+            Long id = toLong(row.get("id"));
+            String analysis = extractAiAnalysisText(row);
+            if (id != null && analysis != null) {
+                aiByInspectionId.put(id, analysis);
+            }
+        }
+        Map<String, String> aiByTechName = buildAiAnalysisByTechName(registerId);
+
+        List<Map<String, Object>> examItems = new ArrayList<>();
+        for (Map<String, Object> row : clinicalRecordMapper.selectCheckRequests(registerId)) {
+            examItems.add(buildExamItem(row, "check", aiByCheckId, aiByTechName));
+        }
+        for (Map<String, Object> row : clinicalRecordMapper.selectInspectionRequests(registerId)) {
+            examItems.add(buildExamItem(row, "inspection", aiByInspectionId, aiByTechName));
+        }
+        notebook.put("examItems", examItems);
+
+        notebook.put("w3Analysis", buildW3AnalysisSection(registerId));
+
+        Map<String, Object> diagnosis = new LinkedHashMap<>();
+        if (medicalRecord != null) {
+            diagnosis.put("diagnosis", medicalRecord.get("diagnosis"));
+            diagnosis.put("cure", medicalRecord.get("cure"));
+            diagnosis.put("careful", medicalRecord.get("careful"));
+            Long medicalRecordId = toLong(medicalRecord.get("id"));
+            if (medicalRecordId != null) {
+                diagnosis.put("diseases", clinicalRecordMapper.selectDiseasesByMedicalRecordId(medicalRecordId));
+            } else {
+                diagnosis.put("diseases", List.of());
+            }
+        } else {
+            diagnosis.put("diseases", List.of());
+        }
+        notebook.put("diagnosis", diagnosis);
+
+        List<Map<String, Object>> prescriptionItems = clinicalRecordMapper.selectPrescriptions(registerId).stream()
+            .map(item -> {
+                Map<String, Object> mapped = new LinkedHashMap<>();
+                mapped.put("drugName", item.get("drugName"));
+                mapped.put("drugUsage", item.get("drugUsage"));
+                mapped.put("drugNumber", item.get("drugNumber"));
+                return mapped;
+            })
+            .toList();
+        notebook.put("prescription", Map.of("items", prescriptionItems));
+
+        return notebook;
+    }
+
+    private Map<String, Object> buildExamItem(
+        Map<String, Object> row,
+        String category,
+        Map<Long, String> aiById,
+        Map<String, String> aiByTechName
+    ) {
+        Long id = toLong(row.get("id"));
+        String techName = stringValue(row.get("techName"));
+        String state = "check".equals(category)
+            ? stringValue(row.get("checkState"))
+            : stringValue(row.get("inspectionState"));
+        Object resultRaw = "check".equals(category) ? row.get("checkResult") : row.get("inspectionResult");
+        Object completedAt = "check".equals(category) ? row.get("checkTime") : row.get("inspectionTime");
+
+        String aiAnalysis = id != null ? aiById.get(id) : null;
+        if ((aiAnalysis == null || aiAnalysis.isBlank()) && techName != null) {
+            aiAnalysis = aiByTechName.get(techName);
+        }
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", id);
+        item.put("techName", techName);
+        item.put("category", category);
+        item.put("state", state != null ? state : "");
+        item.put("resultSummary", summarizeResult(resultRaw, category));
+        item.put("resultRaw", resultRaw != null ? String.valueOf(resultRaw) : null);
+        item.put("aiAnalysis", aiAnalysis);
+        item.put("orderedAt", row.get("creationTime"));
+        item.put("completedAt", completedAt);
+        return item;
+    }
+
+    private Map<String, Object> buildW3AnalysisSection(Long registerId) {
+        List<Map<String, Object>> analyses = physicianMapper.selectExamAnalysisByRegisterId(registerId);
+        Map<String, Object> section = new LinkedHashMap<>();
+        boolean completed = !analyses.isEmpty();
+        section.put("completed", completed);
+
+        String overallAnalysis = "";
+        for (Map<String, Object> row : analyses) {
+            Map<String, Object> indicators = parseJsonMap(row.get("abnormalIndicators"));
+            Map<String, Object> w3Global = indicators != null
+                ? castMap(indicators.get("w3Global"))
+                : null;
+            if (w3Global != null) {
+                String fromGlobal = stringValue(w3Global.get("overallAnalysis"));
+                if (fromGlobal != null && !fromGlobal.isBlank()) {
+                    overallAnalysis = fromGlobal.trim();
+                    break;
+                }
+            }
+            String correlation = stringValue(row.get("correlationAnalysis"));
+            if (correlation != null && !correlation.isBlank()) {
+                overallAnalysis = correlation.trim();
+                break;
+            }
+        }
+        if (!overallAnalysis.isBlank()) {
+            section.put("overallAnalysis", overallAnalysis);
+        }
+        return section;
+    }
+
+    private Map<String, String> buildAiAnalysisByTechName(Long registerId) {
+        Map<String, String> map = new HashMap<>();
+        for (Map<String, Object> row : physicianMapper.selectExamAnalysisByRegisterId(registerId)) {
+            Map<String, Object> indicators = parseJsonMap(row.get("abnormalIndicators"));
+            String techName = indicators != null ? stringValue(indicators.get("techName")) : null;
+            if (techName == null || techName.isBlank()) {
+                continue;
+            }
+            String report = stringValue(row.get("analysisReport"));
+            if (report != null && !report.isBlank()) {
+                map.put(techName.trim(), report.trim());
+            }
+        }
+        return map;
+    }
+
+    private String extractAiAnalysisText(Map<String, Object> row) {
+        String report = stringValue(row.get("analysisReport"));
+        return report != null && !report.isBlank() ? report.trim() : null;
+    }
+
+    private String summarizeResult(Object resultRaw, String category) {
+        if (resultRaw == null) {
+            return "";
+        }
+        String raw = String.valueOf(resultRaw).trim();
+        if (raw.isEmpty() || "null".equals(raw)) {
+            return "";
+        }
+        return raw.length() > 120 ? raw.substring(0, 120) + "…" : raw;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseJsonMap(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty() || !text.startsWith("{")) {
+            return null;
+        }
+        try {
+            return (Map<String, Object>) new com.fasterxml.jackson.databind.ObjectMapper().readValue(text, Map.class);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return null;
     }
 
     private Map<String, Object> event(String eventType, Object occurredAt, String title, String summary,

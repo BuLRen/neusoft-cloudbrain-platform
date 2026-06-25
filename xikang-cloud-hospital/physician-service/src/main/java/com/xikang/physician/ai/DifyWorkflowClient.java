@@ -47,9 +47,8 @@ public class DifyWorkflowClient {
 
     public boolean isPreliminaryEnabled() {
         return properties.isPreliminaryBaseConfigured()
-            && properties.getApiKey() != null && !properties.getApiKey().isBlank()
-            && properties.getWorkflowPreliminary() != null
-            && !properties.getWorkflowPreliminary().isBlank();
+            && properties.isPreliminaryWorkflowSwitchOn()
+            && !properties.resolvePreliminaryApiKey().isBlank();
     }
 
     public boolean isW2Enabled() {
@@ -71,12 +70,13 @@ public class DifyWorkflowClient {
         if (!properties.isPreliminaryBaseConfigured()) {
             throw new DifyWorkflowException("Dify 未启用或未配置 base-url-preliminary");
         }
-        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
-            throw new DifyWorkflowException("Dify API Key 未配置");
+        String apiKey = properties.resolvePreliminaryApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("Dify 初步诊断 API Key 未配置");
         }
         return runWorkflowBlockingInternal(
             properties.resolvePreliminaryBaseUrl(),
-            properties.getApiKey(),
+            apiKey,
             inputs,
             user,
             traceId

@@ -40,6 +40,17 @@ public class ClinicalRecordController {
         return Result.success(detail);
     }
 
+    @GetMapping("/visit/{registerId}/notebook")
+    public Result<Map<String, Object>> getVisitNotebook(
+        @PathVariable Long registerId,
+        HttpServletRequest request
+    ) {
+        Long userId = (Long) request.getAttribute("clinicalRecordUserId");
+        boolean admin = Boolean.TRUE.equals(request.getAttribute("clinicalRecordAdmin"));
+        clinicalRecordService.assertRegisterPatientAccess(userId, registerId, admin);
+        return Result.success(clinicalRecordService.getVisitNotebook(registerId, ClinicalRecordService.VIEWER_PATIENT));
+    }
+
     @GetMapping("/patient/{patientId}/profile")
     public Result<Map<String, Object>> getProfile(
         @PathVariable Long patientId,

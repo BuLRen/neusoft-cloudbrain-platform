@@ -19,6 +19,8 @@ public class DifyAiProperties {
     private String workflowW3 = "";
     private String workflowW4 = "";
     private String workflowPreliminary = "";
+    /** 初步诊断 Workflow App 的 API Key（app-xxx）；为空时回退 api-key */
+    private String apiKeyPreliminary = "";
     /** W2 检查推荐 Workflow App 的 API Key（app-xxx）；为空时回退 api-key */
     private String apiKeyW2 = "";
     /** W3 结果解读 Workflow App 的 API Key（app-xxx）；为空时不启用 W3 Dify */
@@ -111,6 +113,14 @@ public class DifyAiProperties {
         this.workflowPreliminary = workflowPreliminary;
     }
 
+    public String getApiKeyPreliminary() {
+        return apiKeyPreliminary;
+    }
+
+    public void setApiKeyPreliminary(String apiKeyPreliminary) {
+        this.apiKeyPreliminary = apiKeyPreliminary;
+    }
+
     public String getApiKeyW2() {
         return apiKeyW2;
     }
@@ -133,6 +143,13 @@ public class DifyAiProperties {
 
     public void setW2OutputKeys(W2OutputKeys w2OutputKeys) {
         this.w2OutputKeys = w2OutputKeys == null ? new W2OutputKeys() : w2OutputKeys;
+    }
+
+    /**
+     * 初步诊断开关：仅 {@code true}/{@code 1}/{@code yes}/{@code on} 视为启用（勿将 app-xxx 写在此项）。
+     */
+    public boolean isPreliminaryWorkflowSwitchOn() {
+        return isWorkflowSwitchOn(workflowPreliminary);
     }
 
     /**
@@ -171,6 +188,14 @@ public class DifyAiProperties {
 
     public boolean isPreliminaryBaseConfigured() {
         return enabled && !resolvePreliminaryBaseUrl().isBlank();
+    }
+
+    /** 初步诊断专用 Key，优先 api-key-preliminary，回退 api-key。 */
+    public String resolvePreliminaryApiKey() {
+        if (apiKeyPreliminary != null && !apiKeyPreliminary.isBlank()) {
+            return apiKeyPreliminary.trim();
+        }
+        return apiKey == null ? "" : apiKey.trim();
     }
 
     public String resolveW2ApiKey() {

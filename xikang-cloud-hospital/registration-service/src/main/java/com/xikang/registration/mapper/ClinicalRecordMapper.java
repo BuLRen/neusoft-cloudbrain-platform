@@ -38,4 +38,10 @@ public interface ClinicalRecordMapper {
     int archiveRegister(@Param("registerId") Long registerId, @Param("employeeId") Long employeeId);
 
     String selectLatestCaseNumberByPatient(@Param("patientId") Long patientId);
+
+    List<Map<String, Object>> selectCheckResults(@Param("registerId") Long registerId);
+
+    List<Map<String, Object>> selectInspectionResults(@Param("registerId") Long registerId);
+
+    List<Map<String, Object>> selectExamAnalysisByRegisterId(@Param("registerId") Long registerId);
 }

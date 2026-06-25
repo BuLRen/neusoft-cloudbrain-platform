@@ -11,6 +11,68 @@ export interface ClinicalTimelineEntry {
   detail?: Record<string, unknown>
 }
 
+export interface ClinicalNotebookHeader {
+  caseNumber?: string
+  realName?: string
+  gender?: string
+  age?: number
+  departmentName?: string
+  physicianName?: string
+  visitDate?: string
+}
+
+export interface ClinicalMedicalSummary {
+  readme?: string
+  present?: string
+  history?: string
+  allergy?: string
+  physique?: string
+}
+
+export interface ClinicalExamItem {
+  id: number
+  techName: string
+  category: 'check' | 'inspection'
+  state: string
+  resultSummary: string
+  resultRaw?: string | null
+  aiAnalysis?: string | null
+  orderedAt?: string
+  completedAt?: string
+}
+
+export interface ClinicalW3Analysis {
+  completed: boolean
+  overallAnalysis?: string
+}
+
+export interface ClinicalDiagnosisSection {
+  diagnosis?: string
+  cure?: string
+  careful?: string
+  diseases?: Array<{ diseaseName?: string; diseaseCode?: string }>
+}
+
+export interface ClinicalPrescriptionItem {
+  drugName?: string
+  drugUsage?: string
+  drugNumber?: string | number
+}
+
+export interface ClinicalNotebook {
+  registerId: number
+  archived: boolean
+  clinicalArchivedAt?: string
+  message?: string
+  header: ClinicalNotebookHeader
+  medicalSummary: ClinicalMedicalSummary
+  preliminaryDiagnosis: string
+  examItems: ClinicalExamItem[]
+  w3Analysis: ClinicalW3Analysis
+  diagnosis: ClinicalDiagnosisSection
+  prescription: { items: ClinicalPrescriptionItem[] }
+}
+
 export interface ClinicalVisitSummary {
   registerId: number
   caseNumber?: string
@@ -63,6 +125,13 @@ export const clinicalRecordApi = {
     })
   },
 
+  physicianNotebook(registerId: number) {
+    return http<ClinicalNotebook>({
+      url: `/physician/clinical-record/visit/${registerId}/notebook`,
+      method: 'GET',
+    })
+  },
+
   physicianArchive(registerId: number) {
     return http<{ registerId: number; timeline: ClinicalTimelineEntry[] }>({
       url: `/physician/clinical-record/visit/${registerId}/archive`,
@@ -87,6 +156,13 @@ export const clinicalRecordApi = {
   patientVisitDetail(registerId: number) {
     return http<ClinicalVisitDetail>({
       url: `/registration/clinical-record/visit/${registerId}`,
+      method: 'GET',
+    })
+  },
+
+  patientNotebook(registerId: number) {
+    return http<ClinicalNotebook>({
+      url: `/registration/clinical-record/visit/${registerId}/notebook`,
       method: 'GET',
     })
   },

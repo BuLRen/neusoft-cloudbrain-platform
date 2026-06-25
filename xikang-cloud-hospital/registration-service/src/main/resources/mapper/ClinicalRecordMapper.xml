@@ -175,6 +175,60 @@
         ORDER BY p.creation_time ASC, p.id ASC
     </select>
 
+    <select id="selectCheckResults" resultType="map">
+        SELECT
+            cr.id AS "id",
+            mt.tech_name AS "techName",
+            cr.check_position AS "checkPosition",
+            cr.check_result AS "checkResult",
+            cr.check_state AS "checkState",
+            cr.check_time AS "checkTime",
+            cr.check_remark AS "checkRemark",
+            a.risk_level AS "riskLevel",
+            a.analysis_report AS "analysisReport",
+            a.abnormal_indicators AS "abnormalIndicators",
+            a.correlation_analysis AS "correlationAnalysis"
+        FROM check_request cr
+        INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+        LEFT JOIN ai_exam_analysis a ON a.check_request_id = cr.id
+        WHERE cr.register_id = #{registerId}
+        ORDER BY cr.creation_time DESC, cr.id DESC
+    </select>
+
+    <select id="selectInspectionResults" resultType="map">
+        SELECT
+            ir.id AS "id",
+            mt.tech_name AS "techName",
+            ir.inspection_position AS "inspectionPosition",
+            ir.inspection_result AS "inspectionResult",
+            ir.inspection_state AS "inspectionState",
+            ir.inspection_time AS "inspectionTime",
+            ir.inspection_remark AS "inspectionRemark",
+            a.risk_level AS "riskLevel",
+            a.analysis_report AS "analysisReport",
+            a.abnormal_indicators AS "abnormalIndicators",
+            a.correlation_analysis AS "correlationAnalysis"
+        FROM inspection_request ir
+        INNER JOIN medical_technology mt ON mt.id = ir.medical_technology_id
+        LEFT JOIN ai_exam_analysis a ON a.inspection_request_id = ir.id
+        WHERE ir.register_id = #{registerId}
+        ORDER BY ir.creation_time DESC, ir.id DESC
+    </select>
+
+    <select id="selectExamAnalysisByRegisterId" resultType="map">
+        SELECT
+            id AS "id",
+            analysis_type AS "analysisType",
+            original_result AS "originalResult",
+            abnormal_indicators AS "abnormalIndicators",
+            risk_level AS "riskLevel",
+            analysis_report AS "analysisReport",
+            correlation_analysis AS "correlationAnalysis"
+        FROM ai_exam_analysis
+        WHERE register_id = #{registerId}
+        ORDER BY analysis_time DESC, id DESC
+    </select>
+
     <select id="countUserPatientAccess" resultType="int">
         SELECT COUNT(*)
         FROM user_patient_managed

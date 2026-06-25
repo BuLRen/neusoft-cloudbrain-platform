@@ -3384,7 +3384,7 @@ SELECT pg_catalog.setval('public.ai_follow_up_record_id_seq', 1, false);
 -- Name: ai_medical_record_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.ai_medical_record_log_id_seq', 7, true);
+SELECT pg_catalog.setval('public.ai_medical_record_log_id_seq', 9, true);
 
 
 --

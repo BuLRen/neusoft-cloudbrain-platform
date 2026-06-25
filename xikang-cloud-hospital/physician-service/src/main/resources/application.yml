@@ -94,8 +94,10 @@ xikang:
       read-timeout-ms: ${DIFY_READ_TIMEOUT_MS:300000}
 
       # ----- 初步诊断（第 2 步 · 走 base-url-preliminary）-----
-      # api-key：云端初步诊断 Workflow App 的 Key（Dify 控制台 → 访问 API）
-      api-key: ${DIFY_API_KEY:app-bIAUyQ4wA6rT8dt5rQ95R4hk}
+      # api-key-preliminary：官网 Dify 初步诊断 Workflow App 的 Key（与 W2/W3 独立，避免 DIFY_API_KEY 留空时误禁用）
+      api-key-preliminary: ${DIFY_API_KEY_PRELIMINARY:}
+      # api-key：W1 等遗留工作流；勿与 W2/W3 混用时可留空
+      api-key: ${DIFY_API_KEY:}
       workflow-preliminary: ${DIFY_WORKFLOW_PRELIMINARY:true}
       preliminary-output-keys:
         # 映射 Dify 结束节点输出变量名 → 后端/前端字段，一般与 Dify 画布一致即可

@@ -96,6 +96,7 @@ public class PhysicianAiPipelineService {
 
         Map<String, Object> output;
         if (difyClient.isPreliminaryEnabled()) {
+            log.info("初步诊断 registerId={} 调用 Dify（base-url-preliminary）", registerId);
             String model = String.valueOf(request.getOrDefault("model", "")).trim();
             Map<String, Object> difyInputs = new LinkedHashMap<>();
             difyInputs.put("text", text);
@@ -113,6 +114,10 @@ public class PhysicianAiPipelineService {
             output.put("llmModel", model.isBlank() ? null : model);
             output.put("workflowRunId", run.getWorkflowRunId());
         } else {
+            log.warn(
+                "初步诊断 registerId={} 未启用 Dify，走内置 Fallback（请检查 DIFY_WORKFLOW_PRELIMINARY 与 DIFY_API_KEY_PRELIMINARY）",
+                registerId
+            );
             output = fallbackEngine.runPreliminaryDiagnosis(fallbackInput);
             output.put("modelId", "fallback-preliminary");
         }
@@ -555,6 +560,8 @@ public class PhysicianAiPipelineService {
             ? String.valueOf(modelIdHint)
             : (difyClient.isW3Enabled() ? "dify-w3" : "fallback-w3");
         Map<String, String> techTypeByName = buildTechTypeByName(registerId);
+        Map<String, Long> checkRequestIdByTechName = buildCheckRequestIdByTechName(registerId);
+        Map<String, Long> inspectionRequestIdByTechName = buildInspectionRequestIdByTechName(registerId);
         String globalClinicalImpression = String.valueOf(output.getOrDefault("clinicalImpression", "")).trim();
         String overallAnalysis = String.valueOf(output.getOrDefault("overallAnalysis", "")).trim();
 
@@ -598,6 +605,11 @@ public class PhysicianAiPipelineService {
 
             Map<String, Object> row = new HashMap<>();
             row.put("registerId", registerId);
+            if ("check".equals(dbAnalysisType) && !techName.isEmpty()) {
+                row.put("checkRequestId", checkRequestIdByTechName.get(techName));
+            } else if ("inspection".equals(dbAnalysisType) && !techName.isEmpty()) {
+                row.put("inspectionRequestId", inspectionRequestIdByTechName.get(techName));
+            }
             row.put("analysisType", dbAnalysisType);
             row.put("originalResult", String.join("；", keyFindings));
             row.put(
@@ -840,6 +852,30 @@ public class PhysicianAiPipelineService {
             }
         }
         return techTypeByName;
+    }
+
+    private Map<String, Long> buildCheckRequestIdByTechName(Long registerId) {
+        Map<String, Long> map = new HashMap<>();
+        for (Map<String, Object> row : physicianMapper.selectCheckResults(registerId)) {
+            String name = String.valueOf(row.getOrDefault("techName", "")).trim();
+            Long id = toLong(row.get("id"));
+            if (!name.isEmpty() && id != null) {
+                map.put(name, id);
+            }
+        }
+        return map;
+    }
+
+    private Map<String, Long> buildInspectionRequestIdByTechName(Long registerId) {
+        Map<String, Long> map = new HashMap<>();
+        for (Map<String, Object> row : physicianMapper.selectInspectionResults(registerId)) {
+            String name = String.valueOf(row.getOrDefault("techName", "")).trim();
+            Long id = toLong(row.get("id"));
+            if (!name.isEmpty() && id != null) {
+                map.put(name, id);
+            }
+        }
+        return map;
     }
 
     private static String resolveDbAnalysisType(Map<String, Object> summary, Map<String, String> techTypeByName) {
