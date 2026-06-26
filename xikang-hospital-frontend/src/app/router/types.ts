@@ -10,7 +10,7 @@ declare module 'vue-router' {
     roles?: UserRole[]
     requiresAuth?: boolean
     hidden?: boolean
-    group?: 'attending' | 'exam'
+    group?: 'attending' | 'exam' | 'follow-up'
     step?: number
     owner?: 'A' | 'B' | '共同'
   }

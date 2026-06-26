@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpOutcomeMapper">
+
+    <select id="selectFollowUpPatients" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.age AS "age",
+            r.visit_state AS "visitState"
+        FROM register r
+        WHERE (
+            EXISTS (
+                SELECT 1 FROM follow_up_health_metric m
+                WHERE m.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM ai_follow_up_record fr
+                WHERE fr.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM medical_record mr
+                INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+                WHERE mr.register_id = r.id
+            )
+        )
+        <if test="visitState != null">
+            AND r.visit_state = #{visitState}
+        </if>
+        ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
+    </select>
+
+    <select id="selectPatientProfile" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.age AS "age",
+            r.visit_state AS "visitState",
+            mr.diagnosis AS "diagnosis",
+            mr.preliminary_diagnosis AS "preliminaryDiagnosis"
+        FROM register r
+        LEFT JOIN medical_record mr ON mr.register_id = r.id
+        WHERE r.id = #{registerId}
+        LIMIT 1
+    </select>
+
+    <select id="selectPatientDetail" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.card_number AS "cardNumber",
+            r.birthdate AS "birthdate",
+            r.age AS "age",
+            r.age_type AS "ageType",
+            r.home_address AS "homeAddress",
+            r.visit_date AS "visitDate",
+            r.noon AS "noon",
+            r.is_book AS "isBook",
+            r.regist_method AS "registMethod",
+            r.regist_money AS "registMoney",
+            r.visit_state AS "visitState",
+            d.dept_name AS "departmentName",
+            e.realname AS "physicianName",
+            rl.regist_name AS "registLevelName",
+            sc.settle_name AS "settleCategoryName",
+            mr.diagnosis AS "diagnosis",
+            mr.preliminary_diagnosis AS "preliminaryDiagnosis",
+            mr.readme AS "chiefComplaint",
+            mr.present AS "presentIllness",
+            mr.history AS "pastHistory",
+            mr.allergy AS "allergy",
+            mr.physique AS "physique",
+            mr.proposal AS "treatmentProposal",
+            mr.careful AS "precautions",
+            COALESCE(
+                r.card_number,
+                (
+                    SELECT ph.id_card
+                    FROM patient ph
+                    WHERE ph.real_name = r.real_name
+                      AND ph.birthdate = r.birthdate
+                      AND ph.delmark = 1
+                    LIMIT 1
+                )
+            ) AS "idCard",
+            COALESCE(
+                r.home_address,
+                (
+                    SELECT ph.home_address
+                    FROM patient ph
+                    WHERE ph.real_name = r.real_name
+                      AND ph.birthdate = r.birthdate
+                      AND ph.delmark = 1
+                    LIMIT 1
+                )
+            ) AS "contactAddress",
+            COALESCE(
+                (
+                    SELECT ph.phone
+                    FROM patient ph
+                    WHERE ph.real_name = r.real_name
+                      AND ph.birthdate = r.birthdate
+                      AND ph.delmark = 1
+                    LIMIT 1
+                ),
+                (
+                    SELECT u.phone
+                    FROM users u
+                    WHERE u.real_name = r.real_name
+                      AND u.status = 1
+                    LIMIT 1
+                )
+            ) AS "phone",
+            (
+                SELECT u.email
+                FROM users u
+                WHERE u.real_name = r.real_name
+                  AND u.status = 1
+                LIMIT 1
+            ) AS "email",
+            (
+                SELECT ac.allergy_summary
+                FROM ai_consultation_record ac
+                WHERE ac.register_id = r.id
+                ORDER BY ac.id DESC
+                LIMIT 1
+            ) AS "consultationAllergy"
+        FROM register r
+        LEFT JOIN department d ON d.id = r.deptment_id
+        LEFT JOIN employee e ON e.id = r.employee_id
+        LEFT JOIN regist_level rl ON rl.id = r.regist_level_id
+        LEFT JOIN settle_category sc ON sc.id = r.settle_category_id
+        LEFT JOIN medical_record mr ON mr.register_id = r.id
+        WHERE r.id = #{registerId}
+        LIMIT 1
+    </select>
+
+    <select id="selectPatientDiseases" resultType="map">
+        SELECT
+            d.id AS "diseaseId",
+            d.disease_name AS "diseaseName",
+            d.disease_category AS "diseaseCategory",
+            d.diseaseicd AS "diseaseIcd"
+        FROM medical_record mr
+        INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+        INNER JOIN disease d ON d.id = mrd.disease_id
+        WHERE mr.register_id = #{registerId}
+        ORDER BY d.disease_name
+    </select>
+
+    <select id="selectHealthMetrics" resultType="map">
+        SELECT
+            m.id AS "id",
+            m.register_id AS "registerId",
+            m.record_date AS "recordDate",
+            COALESCE(m.recorded_at, m.record_date::timestamp + TIME '09:00:00') AS "recordedAt",
+            m.metric_key AS "metricKey",
+            m.metric_value AS "metricValue",
+            m.unit AS "unit",
+            m.source AS "source",
+            m.note AS "note"
+        FROM follow_up_health_metric m
+        WHERE m.register_id = #{registerId}
+        <if test="from != null">
+            AND m.record_date &gt;= #{from}
+        </if>
+        <if test="to != null">
+            AND m.record_date &lt;= #{to}
+        </if>
+        <if test="metricKeys != null and metricKeys.size() &gt; 0">
+            AND m.metric_key IN
+            <foreach collection="metricKeys" item="key" open="(" separator="," close=")">
+                #{key}
+            </foreach>
+        </if>
+        ORDER BY m.record_date ASC, m.metric_key ASC
+    </select>
+
+    <select id="selectFollowUpRecords" resultType="map">
+        SELECT
+            fr.id AS "id",
+            fr.follow_up_plan_id AS "followUpPlanId",
+            fr.register_id AS "registerId",
+            fr.symptom_relief AS "symptomRelief",
+            fr.has_side_effect AS "hasSideEffect",
+            fr.patient_feedback AS "patientFeedback",
+            fr.ai_assessment AS "aiAssessment",
+            fr.ai_advice AS "aiAdvice",
+            fr.follow_up_time AS "followUpTime"
+        FROM ai_follow_up_record fr
+        WHERE fr.register_id = #{registerId}
+        ORDER BY fr.follow_up_time DESC NULLS LAST, fr.id DESC
+    </select>
+
+    <select id="selectInterviewSchedules" resultType="map">
+        SELECT
+            s.id AS "id",
+            s.register_id AS "registerId",
+            s.case_number AS "caseNumber",
+            s.patient_name AS "patientName",
+            s.week_start_date AS "weekStartDate",
+            s.status AS "status",
+            s.trigger_reason AS "triggerReason",
+            s.trigger_metric_key AS "triggerMetricKey",
+            s.patient_notified AS "patientNotified",
+            s.creation_time AS "creationTime"
+        FROM follow_up_interview_schedule s
+        <where>
+            <if test="weekStart != null">
+                s.week_start_date = #{weekStart}
+            </if>
+            <if test="status != null and status != ''">
+                AND s.status = #{status}
+            </if>
+        </where>
+        ORDER BY s.week_start_date DESC, s.creation_time DESC
+    </select>
+
+    <select id="selectInterviewScheduleByRegisterAndWeek" resultType="map">
+        SELECT
+            s.id AS "id",
+            s.register_id AS "registerId",
+            s.week_start_date AS "weekStartDate",
+            s.status AS "status"
+        FROM follow_up_interview_schedule s
+        WHERE s.register_id = #{registerId}
+          AND s.week_start_date = #{weekStartDate}
+        LIMIT 1
+    </select>
+
+    <insert id="insertInterviewSchedule" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_interview_schedule (
+            register_id, case_number, patient_name, week_start_date,
+            status, trigger_reason, trigger_metric_key, created_by, patient_notified
+        ) VALUES (
+            #{registerId}, #{caseNumber}, #{patientName}, #{weekStartDate},
+            COALESCE(#{status}, 'scheduled'), #{triggerReason}, #{triggerMetricKey}, #{createdBy}, 0
+        )
+    </insert>
+
+</mapper>
