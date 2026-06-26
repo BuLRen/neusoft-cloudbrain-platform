@@ -96,15 +96,21 @@ public final class EnvLoader {
      *
      * <p>策略（命中即停）：
      * <ol>
-     *   <li>从 user.dir 向上找 Maven 根 pom（pom.xml 含 &lt;modules&gt;）</li>
-     *   <li>从 user.dir 向下扫一级子目录，找含 &lt;modules&gt; 的 pom.xml（兼容 cwd 在项目外层的情况）</li>
+     *   <li>user.dir/.env（JAR 部署目录）</li>
+     *   <li>从 user.dir 向上找 Maven 根 pom（pom.xml 含 &lt;modules&gt;），在其目录找 .env</li>
+     *   <li>从 user.dir 向下扫子目录找 Maven 根 pom，在其目录找 .env</li>
      * </ol>
      */
     private static Path locateEnvFile() {
         Path userDir = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        System.out.println("[ENV] user.dir = " + userDir);
 
-        // 1) 向上找
+        // 1) 运行目录下的 .env（宝塔 / 服务器 JAR 部署：JAR 与 .env 同目录即可）
+        Path cwdEnv = userDir.resolve(".env");
+        if (Files.exists(cwdEnv)) {
+            return cwdEnv;
+        }
+
+        // 2) 从 user.dir 向上找 Maven 根 pom
         Path rootDir = findProjectRootUpward(userDir);
         if (rootDir != null) {
             Path envPath = rootDir.resolve(".env");
@@ -113,7 +119,7 @@ public final class EnvLoader {
             }
         }
 
-        // 2) 向下扫一级子目录（cwd 在项目外层如 XIKANG/ 时，XIKANG/xikang-cloud-hospital/pom.xml 就是根）
+        // 3) 从 user.dir 向下扫子目录（兼容 cwd 在项目外层的情况）
         Path rootDirDown = findProjectRootDownward(userDir, 3);
         if (rootDirDown != null) {
             Path envPath = rootDirDown.resolve(".env");
@@ -122,7 +128,6 @@ public final class EnvLoader {
             }
         }
 
-        // 3) 找不到：返回 null
         return null;
     }
 

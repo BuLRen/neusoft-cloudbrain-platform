@@ -351,6 +351,41 @@
         LIMIT 50
     </select>
 
+    <select id="searchDiseasesForAi" resultType="map">
+        SELECT
+            id AS "id",
+            disease_code AS "diseaseCode",
+            disease_name AS "diseaseName",
+            diseaseicd AS "diseaseIcd",
+            disease_category AS "diseaseCategory"
+        FROM disease
+        <where>
+            <trim prefix="(" suffix=")" prefixOverrides="OR">
+                <if test="diseaseKeywords != null and diseaseKeywords.size() &gt; 0">
+                    <foreach collection="diseaseKeywords" item="keyword" separator=" OR ">
+                        disease_name ILIKE CONCAT('%', #{keyword}, '%')
+                        OR disease_code ILIKE CONCAT('%', #{keyword}, '%')
+                        OR diseaseicd ILIKE CONCAT('%', #{keyword}, '%')
+                        OR disease_category ILIKE CONCAT('%', #{keyword}, '%')
+                    </foreach>
+                </if>
+                <if test="icdPrefixes != null and icdPrefixes.size() &gt; 0">
+                    <foreach collection="icdPrefixes" item="prefix" separator=" OR ">
+                        OR diseaseicd ILIKE CONCAT(#{prefix}, '%')
+                        OR disease_code ILIKE CONCAT(#{prefix}, '%')
+                    </foreach>
+                </if>
+                <if test="categoryKeywords != null and categoryKeywords.size() &gt; 0">
+                    <foreach collection="categoryKeywords" item="category" separator=" OR ">
+                        OR disease_category ILIKE CONCAT('%', #{category}, '%')
+                    </foreach>
+                </if>
+            </trim>
+        </where>
+        ORDER BY disease_name
+        LIMIT #{fetchLimit}
+    </select>
+
     <select id="selectDrugs" resultType="map">
         SELECT
             id AS "id",
