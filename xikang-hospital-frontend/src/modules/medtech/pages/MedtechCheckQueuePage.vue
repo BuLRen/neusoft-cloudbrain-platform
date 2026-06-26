@@ -14,7 +14,7 @@ import {
   ElTableColumn,
   ElTag,
 } from 'element-plus'
-import { medtechApi, type MedtechApplication, type MedtechTechType } from '@/shared/api/modules/medtech'
+import { medtechApi, type MedtechApplication, type MedtechProfile, type MedtechTechType } from '@/shared/api/modules/medtech'
 import MedtechApplicationDetailDialog from '../components/MedtechApplicationDetailDialog.vue'
 import MedtechArchiveDialog from '../components/MedtechArchiveDialog.vue'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
@@ -61,6 +61,18 @@ const detailEmphasizeResult = ref(false)
 const detailApplication = ref<MedtechApplication | null>(null)
 const archiveVisible = ref(false)
 const archiveApplication = ref<MedtechApplication | null>(null)
+const profile = ref<MedtechProfile | null>(null)
+
+const scopeHint = computed(() => {
+  if (!profile.value) return ''
+  if (profile.value.adminAllAccess) {
+    return '管理员视图：显示全部医技科室的申请。'
+  }
+  if (profile.value.departmentName) {
+    return `当前科室：${profile.value.departmentName}。仅显示分配给本科室执行的检查/检验/处置申请。`
+  }
+  return '当前仅显示分配给本科室执行的申请。'
+})
 
 const emptyDescription = computed(() => {
   if (statusTab.value === 'pending') return '暂无待执行申请'
@@ -180,6 +192,11 @@ function onArchived() {
 }
 
 onMounted(() => {
+  void medtechApi.profile().then((data) => {
+    profile.value = data
+  }).catch(() => {
+    profile.value = null
+  })
   void loadApplications()
 })
 </script>
@@ -191,6 +208,15 @@ onMounted(() => {
     :show-steps="false"
     title="医技申请"
   >
+    <ElAlert
+      v-if="scopeHint"
+      type="info"
+      :title="scopeHint"
+      show-icon
+      :closable="false"
+      class="scope-alert"
+    />
+
     <ElTabs v-model="statusTab" class="queue-tabs" @tab-change="onStatusTabChange">
       <ElTabPane label="待执行" name="pending" />
       <ElTabPane label="执行中" name="inProgress" />
@@ -281,6 +307,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.scope-alert {
+  margin-block-end: var(--space-4);
+}
+
 .queue-tabs {
   margin-block-end: var(--space-4);
 }

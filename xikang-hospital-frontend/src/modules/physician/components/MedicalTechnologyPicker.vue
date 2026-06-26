@@ -50,7 +50,8 @@ const panelEmptyText = computed(() => {
 })
 
 function formatLabel(item: MedicalTechnology) {
-  return `${item.techName} / ${TECH_TYPE_LABEL[item.techType]} / ${item.techPrice}元`
+  const deptSuffix = item.deptName ? ` / ${item.deptName}` : ''
+  return `${item.techName} / ${TECH_TYPE_LABEL[item.techType]} / ${item.techPrice}元${deptSuffix}`
 }
 
 async function fetchResults(keyword = '') {
@@ -292,7 +293,9 @@ onMounted(() => {
             <ElTableColumn label="价格" width="88" align="right">
               <template #default="{ row }">{{ row.techPrice }} 元</template>
             </ElTableColumn>
-            <ElTableColumn prop="deptName" label="科室" min-width="100" show-overflow-tooltip />
+            <ElTableColumn prop="deptName" label="执行科室" min-width="100" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.deptName || '未指定' }}</template>
+            </ElTableColumn>
           </ElTable>
         </div>
       </template>

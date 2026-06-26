@@ -14,11 +14,17 @@ public interface DisposalRequestMapper {
 
     DisposalRequest selectById(Long id);
 
-    List<DisposalRequest> selectByRegisterId(Long registerId);
+    List<DisposalRequest> selectByRegisterId(
+        @Param("registerId") Long registerId,
+        @Param("departmentId") Long departmentId
+    );
 
-    List<DisposalRequest> selectByDisposalState(String disposalState);
+    List<DisposalRequest> selectByDisposalState(
+        @Param("disposalState") String disposalState,
+        @Param("departmentId") Long departmentId
+    );
 
-    List<DisposalRequest> selectPending();
+    List<DisposalRequest> selectPending(@Param("departmentId") Long departmentId);
 
     int updateDisposalState(@Param("id") Long id, @Param("disposalState") String disposalState);
 

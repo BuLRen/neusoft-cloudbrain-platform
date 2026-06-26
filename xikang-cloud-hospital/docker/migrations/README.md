@@ -45,6 +45,24 @@ docker exec -i xikang-postgres psql -U postgres -d xikang_hospital < docker/migr
 docker exec -i xikang-postgres psql -U postgres -d xikang_hospital < docker/migrations/incremental_to_local_20250618.sql
 ```
 
+### 场景 D：迁远程 / 导入快照后 — 同步主键序列（必跑）
+
+任何向库里写入**带显式 id** 的数据后（快照、`init.sql` 种子、增量迁移），请执行一次：
+
+```bash
+# 远程库（按实际主机/用户替换）
+psql -h 43.139.102.203 -p 5432 -U xikang_hospital -d xikang_hospital \
+  -f docker/migrations/007_sync_all_sequences.sql
+
+# 本地 Docker
+docker exec -i xikang-postgres psql -U postgres -d xikang_hospital \
+  < docker/migrations/007_sync_all_sequences.sql
+```
+
+脚本会扫描 `public` 下所有 SERIAL/BIGSERIAL 列，将序列对齐到 `MAX(id)`，避免 `duplicate key` 主键冲突。可重复执行。
+
+> 单表补丁 `004`、`006` 仍保留，但日常只需跑 `007` 即可覆盖全库。
+
 ### 场景 C：对照完整 DDL
 
 完整建表语句（从本地库 `pg_dump --schema-only` 导出）：

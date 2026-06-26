@@ -3363,7 +3363,7 @@ SELECT pg_catalog.setval('public.ai_exam_analysis_id_seq', 1, true);
 -- Name: ai_exam_suggestion_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.ai_exam_suggestion_id_seq', 7, true);
+SELECT pg_catalog.setval('public.ai_exam_suggestion_id_seq', 17, true);
 
 
 --

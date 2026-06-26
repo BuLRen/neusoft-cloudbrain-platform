@@ -51,21 +51,30 @@
         WHERE cr.id = #{id}
     </select>
 
+    <sql id="Department_Filter">
+        <if test="departmentId != null">
+            AND mt.deptment_id = #{departmentId}
+        </if>
+    </sql>
+
     <select id="selectByRegisterId" resultMap="BaseResultMap">
         <include refid="Join_Select"/>
         WHERE cr.register_id = #{registerId}
+        <include refid="Department_Filter"/>
         ORDER BY cr.creation_time DESC, cr.id DESC
     </select>
 
     <select id="selectByCheckState" resultMap="BaseResultMap">
         <include refid="Join_Select"/>
         WHERE cr.check_state = #{checkState}
+        <include refid="Department_Filter"/>
         ORDER BY cr.creation_time ASC, cr.id ASC
     </select>
 
     <select id="selectPending" resultMap="BaseResultMap">
         <include refid="Join_Select"/>
         WHERE cr.check_state = '待检查'
+        <include refid="Department_Filter"/>
         ORDER BY cr.creation_time ASC, cr.id ASC
     </select>
 

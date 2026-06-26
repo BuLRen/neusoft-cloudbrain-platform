@@ -3,6 +3,7 @@ package com.xikang.medtech.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.client.PhysicianW3Client;
+import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.entity.*;
 import com.xikang.medtech.mapper.*;
 import lombok.RequiredArgsConstructor;
@@ -40,13 +41,14 @@ public class MedtechService {
      * 获取待检查患者列表
      */
     public List<Map<String, Object>> getCheckApplications(Long registrationId, String checkState) {
+        Long departmentId = departmentIdFilter();
         List<CheckRequest> requests;
         if (registrationId != null) {
-            requests = checkRequestMapper.selectByRegisterId(registrationId);
+            requests = checkRequestMapper.selectByRegisterId(registrationId, departmentId);
         } else if (checkState != null && !checkState.isBlank()) {
-            requests = checkRequestMapper.selectByCheckState(checkState.trim());
+            requests = checkRequestMapper.selectByCheckState(checkState.trim(), departmentId);
         } else {
-            requests = checkRequestMapper.selectPending();
+            requests = checkRequestMapper.selectPending(departmentId);
         }
         return requests.stream().map(this::toCheckMap).toList();
     }
@@ -64,7 +66,8 @@ public class MedtechService {
         if (!"待检查".equals(request.getCheckState())) {
             throw new BusinessException(400, "当前状态不允许开始检查");
         }
-        Long checkEmployeeId = extractLong(operatorInfo, "checkEmployeeId");
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        Long checkEmployeeId = resolveOperatorEmployeeId(operatorInfo, "checkEmployeeId");
         if (checkEmployeeId != null) {
             checkRequestMapper.updateCheckStateWithEmployee(id, "检查中", checkEmployeeId);
         } else {
@@ -86,6 +89,7 @@ public class MedtechService {
         if (!"检查中".equals(request.getCheckState())) {
             throw new BusinessException(400, "当前状态不允许录入结果");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
 
         String checkResult = resultFormService.buildResultPayload(request.getMedicalTechnologyId(), resultData);
 
@@ -93,7 +97,7 @@ public class MedtechService {
         request.setCheckState("已完成");
         request.setCheckTime(LocalDateTime.now());
         request.setCheckRemark(trimToNull((String) resultData.get("checkRemark")));
-        request.setInputcheckEmployeeId(extractLong(resultData, "inputcheckEmployeeId"));
+        request.setInputcheckEmployeeId(resolveOperatorEmployeeId(resultData, "inputcheckEmployeeId"));
         checkRequestMapper.updateResult(request);
 
         Map<String, Object> response = new HashMap<>();
@@ -113,6 +117,7 @@ public class MedtechService {
         if (request == null) {
             throw new BusinessException(404, "检查申请不存在");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         return toCheckDetailMap(request);
     }
 
@@ -129,6 +134,7 @@ public class MedtechService {
         if (!isArchivableCheckState(request.getCheckState())) {
             throw new BusinessException(400, "当前状态不允许归档");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         String remark = buildArchiveRemark(archiveData);
         checkRequestMapper.updateArchive(id, "已归档", remark);
     }
@@ -139,13 +145,14 @@ public class MedtechService {
      * 获取待检验患者列表
      */
     public List<Map<String, Object>> getInspectionApplications(Long registrationId, String inspectionState) {
+        Long departmentId = departmentIdFilter();
         List<InspectionRequest> requests;
         if (registrationId != null) {
-            requests = inspectionRequestMapper.selectByRegisterId(registrationId);
+            requests = inspectionRequestMapper.selectByRegisterId(registrationId, departmentId);
         } else if (inspectionState != null && !inspectionState.isBlank()) {
-            requests = inspectionRequestMapper.selectByInspectionState(inspectionState.trim());
+            requests = inspectionRequestMapper.selectByInspectionState(inspectionState.trim(), departmentId);
         } else {
-            requests = inspectionRequestMapper.selectPending();
+            requests = inspectionRequestMapper.selectPending(departmentId);
         }
         return requests.stream().map(this::toInspectionMap).toList();
     }
@@ -163,7 +170,8 @@ public class MedtechService {
         if (!"待检验".equals(request.getInspectionState())) {
             throw new BusinessException(400, "当前状态不允许开始检验");
         }
-        Long inspectionEmployeeId = extractLong(operatorInfo, "inspectionEmployeeId");
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        Long inspectionEmployeeId = resolveOperatorEmployeeId(operatorInfo, "inspectionEmployeeId");
         if (inspectionEmployeeId != null) {
             inspectionRequestMapper.updateInspectionStateWithEmployee(id, "检验中", inspectionEmployeeId);
         } else {
@@ -184,6 +192,7 @@ public class MedtechService {
         if (!"检验中".equals(request.getInspectionState())) {
             throw new BusinessException(400, "当前状态不允许记录采样");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         inspectionRequestMapper.updateInspectionTime(id, LocalDateTime.now());
     }
 
@@ -201,6 +210,7 @@ public class MedtechService {
         if (!"检验中".equals(request.getInspectionState())) {
             throw new BusinessException(400, "当前状态不允许录入结果");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
 
         String inspectionResult;
         if (resultData.get("values") instanceof Map<?, ?>) {
@@ -226,7 +236,7 @@ public class MedtechService {
             }
         }
         request.setInspectionRemark(remark);
-        request.setInputinspectionEmployeeId(extractLong(resultData, "inputinspectionEmployeeId"));
+        request.setInputinspectionEmployeeId(resolveOperatorEmployeeId(resultData, "inputinspectionEmployeeId"));
         inspectionRequestMapper.updateResult(request);
 
         Map<String, Object> response = new HashMap<>();
@@ -245,6 +255,7 @@ public class MedtechService {
         if (request == null) {
             throw new BusinessException(404, "检验申请不存在");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         return toInspectionDetailMap(request);
     }
 
@@ -261,6 +272,7 @@ public class MedtechService {
         if (!isArchivableInspectionState(request.getInspectionState())) {
             throw new BusinessException(400, "当前状态不允许归档");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         String remark = buildArchiveRemark(archiveData);
         inspectionRequestMapper.updateArchive(id, "已归档", remark);
     }
@@ -271,13 +283,14 @@ public class MedtechService {
      * 获取待处置患者列表
      */
     public List<Map<String, Object>> getDisposalApplications(Long registrationId, String disposalState) {
+        Long departmentId = departmentIdFilter();
         List<DisposalRequest> requests;
         if (registrationId != null) {
-            requests = disposalRequestMapper.selectByRegisterId(registrationId);
+            requests = disposalRequestMapper.selectByRegisterId(registrationId, departmentId);
         } else if (disposalState != null && !disposalState.isBlank()) {
-            requests = disposalRequestMapper.selectByDisposalState(disposalState.trim());
+            requests = disposalRequestMapper.selectByDisposalState(disposalState.trim(), departmentId);
         } else {
-            requests = disposalRequestMapper.selectPending();
+            requests = disposalRequestMapper.selectPending(departmentId);
         }
         return requests.stream().map(this::toDisposalMap).toList();
     }
@@ -295,7 +308,8 @@ public class MedtechService {
         if (!"待处置".equals(request.getDisposalState())) {
             throw new BusinessException(400, "当前状态不允许开始处置");
         }
-        Long disposalEmployeeId = extractLong(operatorInfo, "disposalEmployeeId");
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        Long disposalEmployeeId = resolveOperatorEmployeeId(operatorInfo, "disposalEmployeeId");
         if (disposalEmployeeId != null) {
             disposalRequestMapper.updateDisposalStateWithEmployee(id, "处置中", disposalEmployeeId);
         } else {
@@ -317,6 +331,7 @@ public class MedtechService {
         if (!"处置中".equals(request.getDisposalState())) {
             throw new BusinessException(400, "当前状态不允许录入结果");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
 
         String disposalResult = trimToNull((String) resultData.get("disposalResult"));
         if (disposalResult == null) {
@@ -330,7 +345,7 @@ public class MedtechService {
         request.setDisposalState("已完成");
         request.setDisposalTime(LocalDateTime.now());
         request.setDisposalRemark(trimToNull((String) resultData.get("disposalRemark")));
-        request.setInputdisposalEmployeeId(extractLong(resultData, "inputdisposalEmployeeId"));
+        request.setInputdisposalEmployeeId(resolveOperatorEmployeeId(resultData, "inputdisposalEmployeeId"));
         disposalRequestMapper.updateResult(request);
     }
 
@@ -342,6 +357,7 @@ public class MedtechService {
         if (request == null) {
             throw new BusinessException(404, "处置申请不存在");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         return toDisposalDetailMap(request);
     }
 
@@ -358,11 +374,27 @@ public class MedtechService {
         if (!isArchivableDisposalState(request.getDisposalState())) {
             throw new BusinessException(400, "当前状态不允许归档");
         }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         String remark = buildArchiveRemark(archiveData);
         disposalRequestMapper.updateArchive(id, "已归档", remark);
     }
 
     // ==================== 基础数据 ====================
+
+    public Map<String, Object> getCurrentProfile() {
+        MedtechAuthContext.Context ctx = MedtechAuthContext.get();
+        if (ctx == null) {
+            throw new BusinessException(401, "未授权");
+        }
+        Map<String, Object> profile = new LinkedHashMap<>();
+        profile.put("userId", ctx.userId());
+        profile.put("role", ctx.role());
+        profile.put("employeeId", ctx.employeeId());
+        profile.put("departmentId", ctx.departmentId());
+        profile.put("departmentName", ctx.departmentName());
+        profile.put("adminAllAccess", ctx.adminAllAccess());
+        return profile;
+    }
 
     private static final Set<String> ALLOWED_TECH_TYPES = Set.of("check", "inspection", "disposal");
 
@@ -642,5 +674,34 @@ public class MedtechService {
             }
         }
         return null;
+    }
+
+    private Long departmentIdFilter() {
+        return MedtechAuthContext.departmentIdOrNull();
+    }
+
+    private void assertRequestDepartmentAccess(Long medicalTechnologyId) {
+        if (MedtechAuthContext.isAdminAllAccess()) {
+            return;
+        }
+        Long departmentId = MedtechAuthContext.departmentIdOrNull();
+        if (departmentId == null) {
+            throw new BusinessException(403, "医技账号未绑定执行科室");
+        }
+        MedicalTechnology technology = medicalTechnologyMapper.selectById(medicalTechnologyId);
+        if (technology == null) {
+            throw new BusinessException(404, "医技项目不存在");
+        }
+        if (technology.getDeptmentId() == null || !departmentId.equals(technology.getDeptmentId())) {
+            throw new BusinessException(403, "无权操作其他科室的申请");
+        }
+    }
+
+    private Long resolveOperatorEmployeeId(Map<String, Object> data, String key) {
+        Long fromRequest = extractLong(data, key);
+        if (fromRequest != null) {
+            return fromRequest;
+        }
+        return MedtechAuthContext.employeeIdOrNull();
     }
 }

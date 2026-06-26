@@ -31,6 +31,7 @@ import UserPermissionManagement from '@/modules/admin/pages/UserPermissionManage
 import OperationsMonitoring from '@/modules/admin/pages/OperationsMonitoring.vue'
 import StatisticsReports from '@/modules/admin/pages/StatisticsReports.vue'
 import PhysicianManagement from '@/modules/admin/pages/PhysicianManagement.vue'
+import AdminMedtechEmployeePage from '@/modules/admin/pages/AdminMedtechEmployeePage.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
 import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.vue'
@@ -327,6 +328,12 @@ export const routes: RouteRecordRaw[] = [
             name: 'PhysicianManagement',
             component: PhysicianManagement,
             meta: { title: '诊疗医生维护', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'medtech-employees',
+            name: 'AdminMedtechEmployeeManagement',
+            component: AdminMedtechEmployeePage,
+            meta: { title: '医技人员维护', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
             path: 'master-data',

@@ -18,6 +18,11 @@
         VALUES (#{username}, #{password}, #{realName}, 2, #{employeeId}, 1, NOW(), NOW())
     </insert>
 
+    <insert id="insertMedtechAccount" useGeneratedKeys="true" keyProperty="userId" keyColumn="id">
+        INSERT INTO users (username, password, real_name, user_type, employee_id, status, create_time, update_time)
+        VALUES (#{username}, #{password}, #{realName}, 4, #{employeeId}, 1, NOW(), NOW())
+    </insert>
+
     <update id="updatePassword">
         UPDATE users SET password = #{password}, update_time = NOW() WHERE id = #{userId}
     </update>
