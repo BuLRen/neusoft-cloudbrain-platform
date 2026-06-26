@@ -14,13 +14,16 @@ const props = withDefaults(
     prevPath?: string
     nextPath?: string
     showSteps?: boolean
+    moduleLabel?: string
   }>(),
-  { showSteps: true },
+  { showSteps: true, moduleLabel: '医技管理' },
 )
 
 const router = useRouter()
 const eyebrow = computed(() =>
-  props.showSteps ? `医技管理 · 第 ${props.step}/${props.totalSteps} 步` : '医技管理',
+  props.showSteps
+    ? `${props.moduleLabel} · 第 ${props.step}/${props.totalSteps} 步`
+    : props.moduleLabel,
 )
 </script>
 
