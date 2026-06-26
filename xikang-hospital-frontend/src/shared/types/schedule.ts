@@ -94,7 +94,7 @@ export type AiTaskStatus = 'running' | 'success' | 'failed' | 'cancelled'
 export type AiTaskStage =
   | 'validating'
   | 'loading_doctors'
-  | 'calling_coze'
+  | 'calling_dify'
   | 'parsing_ai'
   | 'ready_to_save'
   | 'saving_plan'

@@ -34,30 +34,27 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * Coze 集成服务
+ * Dify 集成服务（替代原 CozeIntegrationService）
+ * <p>调用 Dify 工作流 {@code POST /v1/workflows/run}，blocking 模式。
+ * 开始节点不支持 Array/Object，复合类型字段统一 JSON.stringify 成 String 传入。</p>
  */
 @Slf4j
 @Service
-public class CozeIntegrationService {
+public class DifyIntegrationService {
 
     private static final DateTimeFormatter MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM");
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final String DEFAULT_GENERATE_TYPE = "full";
     private static final int DEFAULT_AI_VERSION = 1;
-    private static final String STREAM_EVENT_PREFIX = "data:";
 
-    /** Coze 调用阶段进度区间下限（含），到达后由 chunk 计数在线性推到上限 */
-    private static final int COZE_PHASE_PERCENT_MIN = 30;
-    private static final int COZE_PHASE_PERCENT_MAX = 85;
-    /** 经验值：Coze 流式返回的非 PING event 大致数量，用于把 chunk 数换算成 0~1 进度 */
-    private static final int EXPECTED_COZE_EVENTS = 6;
+    /** Dify 调用阶段进度区间（blocking 模式下进度从 MIN 直跳到 MAX） */
+    private static final int DIFY_PHASE_PERCENT_MIN = 30;
+    private static final int DIFY_PHASE_PERCENT_MAX = 85;
 
     private final RegistrationClient registrationClient;
     private final SchedulePlanService schedulePlanService;
@@ -65,23 +62,20 @@ public class CozeIntegrationService {
     private final ObjectMapper objectMapper;
     private final WebClient.Builder webClientBuilder;
 
-    @Value("${coze.api-key:}")
-    private String cozeApiKey;
+    @Value("${dify.api-key:}")
+    private String difyApiKey;
 
-    @Value("${coze.workflow-id:}")
-    private String cozeWorkflowId;
+    @Value("${dify.base-url:http://43.139.102.203}")
+    private String difyBaseUrl;
 
-    @Value("${coze.api-url:https://api.coze.cn}")
-    private String cozeApiUrl;
+    @Value("${dify.timeout-ms:660000}")
+    private Long difyTimeoutMs;
 
-    @Value("${coze.timeout-ms:130000}")
-    private Long cozeTimeoutMs;
-
-    public CozeIntegrationService(RegistrationClient registrationClient,
-                                  SchedulePlanService schedulePlanService,
-                                  DoctorScheduleService doctorScheduleService,
-                                  ObjectMapper objectMapper,
-                                  WebClient.Builder webClientBuilder) {
+    public DifyIntegrationService(RegistrationClient registrationClient,
+                                   SchedulePlanService schedulePlanService,
+                                   DoctorScheduleService doctorScheduleService,
+                                   ObjectMapper objectMapper,
+                                   WebClient.Builder webClientBuilder) {
         this.registrationClient = registrationClient;
         this.schedulePlanService = schedulePlanService;
         this.doctorScheduleService = doctorScheduleService;
@@ -90,55 +84,53 @@ public class CozeIntegrationService {
     }
 
     @PostConstruct
-    public void logCozeConfigurationOnStartup() {
-        logCozeConfiguration("startup");
+    public void logDifyConfigurationOnStartup() {
+        logDifyConfiguration("startup");
     }
 
     /**
-     * 处理医生请假（AI 理解 + 生成调整方案）
+     * 处理医生请假（AI 理解 + 生成调整方案）—— 预留
      */
     public void processLeaveWithAI(LeaveRequest leaveRequest) {
-        log.info("【预留】Coze AI 处理请假：leaveId={}, physicianId={}",
+        log.info("【预留】Dify AI 处理请假：leaveId={}, physicianId={}",
                 leaveRequest.getId(), leaveRequest.getPhysicianId());
     }
 
     /**
-     * 分析号源分布
+     * 分析号源分布 —— 预留
      */
     public void analyzeQuotaDistribution(Long departmentId, int daysAhead) {
-        log.info("【预留】Coze AI 分析号源分布：departmentId={}, days={}", departmentId, daysAhead);
+        log.info("【预留】Dify AI 分析号源分布：departmentId={}, days={}", departmentId, daysAhead);
     }
 
     /**
-     * 理解自然语言请假请求
+     * 理解自然语言请假请求 —— 预留
      */
     public String parseLeaveRequest(String rawText) {
-        log.info("【预留】Coze AI 理解自然语言请假：{}", rawText);
+        log.info("【预留】Dify AI 理解自然语言请假：{}", rawText);
         return "{}";
     }
 
     /**
-     * 获取 Coze API 配置状态
+     * 获取 Dify API 配置状态
      */
     public boolean isConfigured() {
-        return StringUtils.hasText(cozeApiKey)
-                && StringUtils.hasText(cozeWorkflowId)
-                && StringUtils.hasText(cozeApiUrl);
+        return StringUtils.hasText(difyApiKey)
+                && StringUtils.hasText(difyBaseUrl);
     }
 
-    private void logCozeConfiguration(String stage) {
-        log.info("Coze config [{}]: apiKeyPresent={}, workflowIdPresent={}, apiUrl='{}', timeoutMs={}",
+    private void logDifyConfiguration(String stage) {
+        log.info("Dify config [{}]: apiKeyPresent={}, baseUrl='{}', timeoutMs={}",
                 stage,
-                StringUtils.hasText(cozeApiKey),
-                StringUtils.hasText(cozeWorkflowId),
-                cozeApiUrl,
-                cozeTimeoutMs);
+                StringUtils.hasText(difyApiKey),
+                difyBaseUrl,
+                difyTimeoutMs);
     }
 
     // ==================== 异步编排入口（AiGenerateTaskService 调用） ====================
 
     /**
-     * 编排阶段：参数校验 → 拉科室医生 → 调 Coze → 解析。
+     * 编排阶段：参数校验 → 拉科室医生 → 调 Dify → 解析。
      * <p>无 @Transactional，由 AiGenerateTaskService 在异步线程里调用。
      * 落库动作通过 {@link #persistAiPlanAndSchedules} 单独事务完成。</p>
      */
@@ -148,8 +140,8 @@ public class CozeIntegrationService {
         validateGenerateRequest(request);
 
         if (!isConfigured()) {
-            logCozeConfiguration("orchestrate");
-            throw new RuntimeException("Coze 工作流配置不完整，请检查 schedule-service 的 coze 配置");
+            logDifyConfiguration("orchestrate");
+            throw new RuntimeException("Dify 工作流配置不完整，请检查 schedule-service 的 dify 配置");
         }
 
         String month = normalizeMonth(request.getMonth());
@@ -165,9 +157,9 @@ public class CozeIntegrationService {
         Map<String, Object> workflowInput = buildWorkflowInput(
                 request.getDepartmentId(), department, month, doctors);
 
-        emitStage(progressSink, "calling_coze", COZE_PHASE_PERCENT_MIN, "调用 Coze 工作流");
-        String rawResponse = callCozeWorkflow(workflowInput, progressSink);
-        log.info("Coze raw response [len={}]", rawResponse == null ? 0 : rawResponse.length());
+        emitStage(progressSink, "calling_dify", DIFY_PHASE_PERCENT_MIN, "调用 Dify 工作流");
+        String rawResponse = callDifyWorkflow(workflowInput, progressSink);
+        log.info("Dify raw response [len={}]", rawResponse == null ? 0 : rawResponse.length());
 
         emitStage(progressSink, "parsing_ai", 88, "解析 AI 返回");
         AiGeneratePlanResult result = parseWorkflowResult(rawResponse);
@@ -298,18 +290,35 @@ public class CozeIntegrationService {
         return result.getData() == null ? Collections.emptyList() : result.getData();
     }
 
+    /**
+     * 构造 Dify 工作流 inputs。
+     * <p>⚠️ Dify 开始节点的所有字段（包括 department_id）都是 text-input 类型，
+     * 必须传 String。复合类型字段也要 JSON.stringify 成 String。
+     * 字段命名与 WF-01 设计文档保持一致：physicians_json / weekday_patterns_json / holidays_json。</p>
+     */
     private Map<String, Object> buildWorkflowInput(Long departmentId,
                                                    DepartmentDTO department,
                                                    String month,
                                                    List<EmployeeDTO> doctors) {
         Map<String, Object> input = new LinkedHashMap<>();
-        input.put("department_id", departmentId);
+        // Dify 开始节点全是 text-input，所有字段统一传 String
+        input.put("department_id", String.valueOf(departmentId));
         input.put("department_name", department.getName());
         input.put("month", month);
-        input.put("physicians", doctors.stream().map(this::toPhysicianPayload).collect(Collectors.toList()));
-        input.put("weekday_patterns", buildWeekdayPatterns(month, doctors));
-        input.put("holidays", buildHolidays(month));
+        // 复合类型字段 String 化（Dify 开始节点限制）
+        input.put("physicians_json", toJsonString(
+                doctors.stream().map(this::toPhysicianPayload).collect(Collectors.toList())));
+        input.put("weekday_patterns_json", toJsonString(buildWeekdayPatterns(month, doctors)));
+        input.put("holidays_json", toJsonString(buildHolidays(month)));
         return input;
+    }
+
+    private String toJsonString(Object obj) {
+        try {
+            return objectMapper.writeValueAsString(obj);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("序列化失败：" + e.getMessage(), e);
+        }
     }
 
     private Map<String, Object> toPhysicianPayload(EmployeeDTO doctor) {
@@ -359,201 +368,157 @@ public class CozeIntegrationService {
     }
 
     /**
-     * 调用 Coze stream_run 工作流。
-     * 改为 bodyToFlux 累积，每收到一个 chunk 推进 Coze 阶段进度。
-     * <p>Coze SSE 块可能是 text/event-stream 增量到 String 的 bodyToFlux&lt;String&gt;（整段）
-     * 或 bodyToFlux&lt;DataBuffer&gt;（分段）。本实现按"完整响应字符串"取：WebClient 串行追加。</p>
+     * 调用 Dify 工作流（blocking 模式）。
+     * <p>Dify blocking 模式一次性返回完整 JSON，无需 SSE 解析。
+     * 响应结构：{@code { data: { outputs: {...}, status: "succeeded", elapsed_time, total_tokens } }}。</p>
      */
-    private String callCozeWorkflow(Map<String, Object> workflowInput,
-                                    Consumer<StageProgress> progressSink) {
+    private String callDifyWorkflow(Map<String, Object> workflowInput,
+                                     Consumer<StageProgress> progressSink) {
         Map<String, Object> requestBody = new LinkedHashMap<>();
-        requestBody.put("workflow_id", cozeWorkflowId);
-        requestBody.put("parameters", workflowInput);
-        requestBody.put("app_id", "schedule-service");
+        requestBody.put("inputs", workflowInput);
+        requestBody.put("response_mode", "blocking");
+        requestBody.put("user", "schedule-service");
+
+        // 打印请求体用于排查 4xx（不打印 api-key）
+        try {
+            log.info("Dify request body: {}", objectMapper.writeValueAsString(requestBody));
+        } catch (JsonProcessingException ignored) {
+        }
+        log.info("Dify api-key present: {}, startsWith app-: {}",
+                StringUtils.hasText(difyApiKey),
+                difyApiKey != null && difyApiKey.startsWith("app-"));
 
         WebClient client = webClientBuilder
-                .baseUrl(trimTrailingSlash(cozeApiUrl))
-                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + cozeApiKey)
+                .baseUrl(trimTrailingSlash(difyBaseUrl))
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + difyApiKey)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader(HttpHeaders.ACCEPT, MediaType.TEXT_EVENT_STREAM_VALUE)
                 .build();
 
-        StringBuilder buffer = new StringBuilder();
-        AtomicLong chunkCount = new AtomicLong(0);
-
-        return client.post()
-                .uri("/v1/workflow/stream_run")
-                .bodyValue(requestBody)
-                .retrieve()
-                .bodyToFlux(String.class)
-                .timeout(java.time.Duration.ofMillis(cozeTimeoutMs))
-                .doOnNext(chunk -> {
-                    buffer.append(chunk);
-                    long n = chunkCount.incrementAndGet();
-                    // 把 chunk 数换算到 30~85 之间
-                    double ratio = Math.min(1.0, (double) n / EXPECTED_COZE_EVENTS);
-                    int percent = COZE_PHASE_PERCENT_MIN
-                            + (int) Math.round((COZE_PHASE_PERCENT_MAX - COZE_PHASE_PERCENT_MIN) * ratio);
-                    if (progressSink != null) {
-                        try {
-                            progressSink.accept(new StageProgress("calling_coze", percent,
-                                    "调用 Coze 工作流（已收到 " + n + " 个数据块）"));
-                        } catch (RuntimeException ignored) {
-                        }
-                    }
-                })
-                .collectList()
-                .blockOptional()
-                .map(chunks -> buffer.toString())
-                .orElseThrow(() -> new RuntimeException("Coze 工作流未返回结果"));
+        // blocking 模式：单次 HTTP 请求等到工作流跑完才返回完整结果
+        // 注意：上层 gateway / vite 代理 / WebClient.timeout 都必须 >= Dify 实际执行时间
+        try {
+            String raw = client.post()
+                    .uri("/v1/workflows/run")
+                    .bodyValue(requestBody)
+                    .exchangeToMono(response -> {
+                        // 不管 200 还是 4xx/5xx，都把 body 读出来
+                        return response.bodyToMono(String.class)
+                                .defaultIfEmpty("[EMPTY BODY]")
+                                .map(body -> {
+                                    if (response.statusCode().isError()) {
+                                        // 4xx/5xx：先 log 出 Dify 返回的真实错误内容，再抛
+                                        log.error("Dify HTTP {} - response body: {}",
+                                                response.statusCode(), body);
+                                        throw new RuntimeException("Dify 返回 HTTP "
+                                                + response.statusCode() + "，错误内容：" + body);
+                                    }
+                                    return body;
+                                });
+                    })
+                    .timeout(java.time.Duration.ofMillis(difyTimeoutMs))
+                    .block();
+            emitStage(progressSink, "calling_dify", DIFY_PHASE_PERCENT_MAX,
+                    "Dify 工作流执行完成");
+            return raw;
+        } catch (RuntimeException ex) {
+            // 兜底：exchangeToMono 里抛的异常会带完整错误体
+            throw ex;
+        }
     }
 
     private String trimTrailingSlash(String url) {
         return url != null && url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
+    /**
+     * 解析 Dify blocking 响应。结构：
+     * <pre>{@code
+     * {
+     *   "task_id": "...",
+     *   "workflow_run_id": "...",
+     *   "data": {
+     *     "id": "...",
+     *     "workflow_id": "...",
+     *     "status": "succeeded",
+     *     "outputs": { "validated_schedules_json": "[...]", "statistics": {...}, "errors": [...], "warnings": [...], "message": "..." },
+     *     "elapsed_time": 12.34,
+     *     "total_tokens": 5678
+     *   }
+     * }
+     * }</pre>
+     */
     private AiGeneratePlanResult parseWorkflowResult(String rawResponse) {
         if (!StringUtils.hasText(rawResponse)) {
-            throw new RuntimeException("Coze 返回为空");
-        }
-
-        String trimmed = rawResponse.trim();
-        if (!trimmed.startsWith("id:") && !trimmed.startsWith("data:")) {
-            try {
-                JsonNode payload = parseJsonObjectStreamPayload(trimmed);
-                if (payload == null) {
-                    throw new RuntimeException("Coze 返回中未找到有效结果");
-                }
-                return parseFromPayload(payload);
-            } catch (java.io.IOException exception) {
-                throw new RuntimeException("解析 Coze 返回结果失败", exception);
-            }
-        }
-
-        JsonNode finalEvent = null;
-        String currentEvent = null;
-        StringBuilder dataBuffer = new StringBuilder();
-        for (String rawLine : trimmed.split("\\R")) {
-            String line = rawLine.trim();
-            if (line.isEmpty()) {
-                if (dataBuffer.length() > 0) {
-                    JsonNode eventNode = tryParseJson(dataBuffer.toString());
-                    JsonNode candidate = pickPayloadCandidate(eventNode, currentEvent);
-                    if (candidate != null) {
-                        finalEvent = candidate;
-                    }
-                }
-                currentEvent = null;
-                dataBuffer.setLength(0);
-                continue;
-            }
-            if (line.startsWith("event:")) {
-                currentEvent = line.substring("event:".length()).trim();
-                continue;
-            }
-            if (line.startsWith(STREAM_EVENT_PREFIX)) {
-                if (dataBuffer.length() > 0) {
-                    dataBuffer.append('\n');
-                }
-                dataBuffer.append(line.substring(STREAM_EVENT_PREFIX.length()).trim());
-                continue;
-            }
-        }
-        if (dataBuffer.length() > 0) {
-            JsonNode eventNode = tryParseJson(dataBuffer.toString());
-            JsonNode candidate = pickPayloadCandidate(eventNode, currentEvent);
-            if (candidate != null) {
-                finalEvent = candidate;
-            }
-        }
-
-        if (finalEvent == null) {
-            throw new RuntimeException("Coze 流式返回中未找到有效结果");
-        }
-        return parseFromPayload(finalEvent);
-    }
-
-    private JsonNode parseJsonObjectStreamPayload(String text) throws java.io.IOException {
-        JsonNode finalPayload = null;
-        com.fasterxml.jackson.databind.MappingIterator<JsonNode> iterator = objectMapper
-                .readerFor(JsonNode.class)
-                .readValues(text);
-        while (iterator.hasNextValue()) {
-            JsonNode eventNode = iterator.nextValue();
-            JsonNode candidate = extractPayloadNode(eventNode);
-            if (candidate != null) {
-                finalPayload = candidate;
-            }
-        }
-        return finalPayload;
-    }
-
-    private JsonNode tryParseJson(String text) {
-        if (!StringUtils.hasText(text)) {
-            return null;
+            throw new RuntimeException("Dify 返回为空");
         }
         try {
-            return objectMapper.readTree(text);
-        } catch (JsonProcessingException exception) {
-            log.debug("跳过无法解析的 Coze 流片段: {}", text.substring(0, Math.min(text.length(), 120)));
-            return null;
-        }
-    }
+            JsonNode root = objectMapper.readTree(rawResponse);
 
-    private JsonNode pickPayloadCandidate(JsonNode eventNode, String eventName) {
-        if (eventNode == null) {
-            return null;
-        }
-        if (eventName != null && !"Message".equalsIgnoreCase(eventName)) {
-            return null;
-        }
-        return extractPayloadNode(eventNode);
-    }
+            // Dify 错误响应（如 API key 无效、工作流不存在）
+            if (root.has("error")) {
+                String errMsg = root.path("error").asText("Dify 返回错误");
+                throw new RuntimeException("Dify 调用失败：" + errMsg);
+            }
 
-    private JsonNode extractPayloadNode(JsonNode node) {
-        if (node == null || node.isMissingNode() || node.isNull()) {
-            return null;
-        }
-        if (node.has("validated_schedules")) {
-            return node;
-        }
-        if (node.isTextual()) {
-            String text = node.asText();
-            if (!StringUtils.hasText(text) || !looksLikeJson(text)) {
-                return null;
+            JsonNode dataNode = root.path("data");
+            String status = dataNode.path("status").asText("");
+            if (!"succeeded".equalsIgnoreCase(status)) {
+                String error = dataNode.path("error").asText("");
+                throw new RuntimeException("Dify 工作流未成功：status=" + status
+                        + (StringUtils.hasText(error) ? ", error=" + error : ""));
             }
-            try {
-                return extractPayloadNode(objectMapper.readTree(text));
-            } catch (JsonProcessingException exception) {
-                return null;
+
+            JsonNode outputs = dataNode.path("outputs");
+            if (outputs.isMissingNode() || outputs.isNull()) {
+                throw new RuntimeException("Dify 返回中缺少 outputs 字段");
             }
-        }
-        JsonNode content = node.get("content");
-        if (content != null) {
-            JsonNode inner = extractPayloadNode(content);
-            if (inner != null) {
-                return inner;
-            }
-        }
-        if (node.isObject()) {
-            for (Entry<String, JsonNode> entry : iterable(node.fields())) {
-                JsonNode candidate = extractPayloadNode(entry.getValue());
-                if (candidate != null) {
-                    return candidate;
+
+            // 排查用：把 data 节点的所有字段名 + outputs 的原始结构打出来
+            java.util.List<String> dataFields = new java.util.ArrayList<>();
+            dataNode.fieldNames().forEachRemaining(dataFields::add);
+            log.info("Dify data fields: {}", dataFields);
+            log.info("Dify outputs raw type={}, value (first 2000 chars)={}",
+                    outputs.getNodeType(),
+                    outputs.toString().substring(0, Math.min(outputs.toString().length(), 2000)));
+
+            // outputs 内可能整体是 string（Dify 兼容模式下会字符串化），先解一层
+            JsonNode outputsNode = outputs;
+            if (outputsNode.isTextual()) {
+                String text = outputsNode.asText();
+                if (StringUtils.hasText(text) && looksLikeJson(text)) {
+                    outputsNode = objectMapper.readTree(text);
                 }
             }
+
+            log.info("Dify outputs keys: {}",
+                    outputsNode.isObject() ? outputsNode.fieldNames() : outputsNode.getNodeType());
+
+            return parseFromPayload(outputsNode);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("解析 Dify 返回结果失败", e);
         }
-        return null;
     }
 
     private AiGeneratePlanResult parseFromPayload(JsonNode payloadNode) {
         try {
+            // 排查用：把 payloadNode 顶层所有字段名打出来
+            java.util.List<String> payloadFields = new java.util.ArrayList<>();
+            payloadNode.fieldNames().forEachRemaining(payloadFields::add);
+            log.info("Dify outputs payload fields: {}", payloadFields);
+
             AiGeneratePlanResult result = objectMapper.treeToValue(payloadNode, AiGeneratePlanResult.class);
             if (result == null) {
-                throw new RuntimeException("Coze 返回为空");
+                throw new RuntimeException("Dify 返回为空");
             }
+            log.info("Parsed result: validatedSchedules.size={}, statistics={}, message={}",
+                    result.getValidatedSchedules() == null ? "null" : result.getValidatedSchedules().size(),
+                    result.getStatistics(),
+                    result.getMessage());
             if (result.getValidatedSchedules() == null || result.getValidatedSchedules().isEmpty()) {
+                log.info("validated_schedules is empty, falling back to manual parse");
                 result.setValidatedSchedules(parseValidatedSchedules(payloadNode));
+                log.info("After manual parse: validatedSchedules.size={}",
+                        result.getValidatedSchedules() == null ? "null" : result.getValidatedSchedules().size());
             }
             if (result.getErrors() == null) {
                 result.setErrors(Collections.emptyList());
@@ -565,13 +530,21 @@ public class CozeIntegrationService {
                 throw new RuntimeException("AI 排班校验失败：" + stringify(result.getErrors()));
             }
             return result;
-        } catch (JsonProcessingException exception) {
-            throw new RuntimeException("解析 Coze 返回结果失败", exception);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("解析 Dify 返回结果失败", e);
         }
     }
 
     private List<AiGeneratePlanResult.ValidatedScheduleDTO> parseValidatedSchedules(JsonNode payloadNode) throws JsonProcessingException {
-        JsonNode schedulesNode = payloadNode == null ? null : payloadNode.get("validated_schedules");
+        if (payloadNode == null) {
+            return Collections.emptyList();
+        }
+        // v4.3：节点5 改为输出 validated_schedules_json（String，绕开 Dify 30 元素限制），
+        //      但仍兼容老的 validated_schedules（Array）字段名
+        JsonNode schedulesNode = payloadNode.get("validated_schedules_json");
+        if (schedulesNode == null || schedulesNode.isNull() || schedulesNode.isMissingNode()) {
+            schedulesNode = payloadNode.get("validated_schedules");
+        }
         if (schedulesNode == null || schedulesNode.isNull() || schedulesNode.isMissingNode()) {
             return Collections.emptyList();
         }
@@ -582,7 +555,7 @@ public class CozeIntegrationService {
             }
             JsonNode parsed = objectMapper.readTree(text);
             if (!parsed.isArray()) {
-                log.warn("Coze validated_schedules string is not array: nodeType={}", parsed.getNodeType());
+                log.warn("Dify validated_schedules_json string is not array: nodeType={}", parsed.getNodeType());
                 return Collections.emptyList();
             }
             return objectMapper.readValue(parsed.toString(),
@@ -597,10 +570,6 @@ public class CozeIntegrationService {
         return Collections.emptyList();
     }
 
-    private <T> Iterable<T> iterable(java.util.Iterator<T> iterator) {
-        return () -> iterator;
-    }
-
     private boolean looksLikeJson(String text) {
         String trimmed = text.trim();
         return trimmed.startsWith("{") || trimmed.startsWith("[");
@@ -609,7 +578,7 @@ public class CozeIntegrationService {
     private String stringify(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException exception) {
+        } catch (JsonProcessingException e) {
             return String.valueOf(value);
         }
     }
