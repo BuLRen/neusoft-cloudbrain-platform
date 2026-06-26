@@ -68,7 +68,7 @@ function handleMenuSelect(index: string) {
   <!-- 患者角色时隐藏左侧菜单 -->
   <aside v-if="!isPatient" class="app-sidebar">
     <RouterLink class="app-sidebar__brand" to="/dashboard">
-      <span class="app-sidebar__logo">希</span>
+      <span class="app-sidebar__logo">熙</span>
       <span>
         <strong>{{ appName }}</strong>
         <small>Cloud Hospital</small>

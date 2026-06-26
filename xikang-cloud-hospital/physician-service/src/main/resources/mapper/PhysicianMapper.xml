@@ -71,6 +71,58 @@
         </where>
     </select>
 
+    <select id="selectHistoricalSummary" resultType="map">
+        SELECT
+            COALESCE(SUM(CASE WHEN r.visit_state = 3 THEN 1 ELSE 0 END), 0) AS "totalCompletedVisits",
+            COALESCE(SUM(CASE WHEN r.visit_state = 3 AND r.visit_date::date = CURRENT_DATE THEN 1 ELSE 0 END), 0) AS "todayCompletedVisits",
+            COALESCE(COUNT(DISTINCT CASE WHEN r.visit_state IN (2, 3, 5, 6) AND r.patient_id IS NOT NULL THEN r.patient_id END), 0) AS "uniquePatientsServed",
+            COALESCE(SUM(CASE WHEN r.visit_state IN (2, 3, 5, 6) THEN 1 ELSE 0 END), 0) AS "totalEncounters",
+            (
+                SELECT COUNT(*)
+                FROM check_request cr
+                INNER JOIN register rr ON rr.id = cr.register_id
+                <where>
+                    <if test="employeeId != null">
+                        rr.employee_id = #{employeeId}
+                    </if>
+                </where>
+            ) AS "totalCheckOrders",
+            (
+                SELECT COUNT(*)
+                FROM inspection_request ir
+                INNER JOIN register rr ON rr.id = ir.register_id
+                <where>
+                    <if test="employeeId != null">
+                        rr.employee_id = #{employeeId}
+                    </if>
+                </where>
+            ) AS "totalInspectionOrders",
+            (
+                SELECT COUNT(*)
+                FROM check_request cr
+                INNER JOIN register rr ON rr.id = cr.register_id
+                WHERE rr.visit_date::date = CURRENT_DATE
+                <if test="employeeId != null">
+                    AND rr.employee_id = #{employeeId}
+                </if>
+            ) AS "todayCheckOrders",
+            (
+                SELECT COUNT(*)
+                FROM inspection_request ir
+                INNER JOIN register rr ON rr.id = ir.register_id
+                WHERE rr.visit_date::date = CURRENT_DATE
+                <if test="employeeId != null">
+                    AND rr.employee_id = #{employeeId}
+                </if>
+            ) AS "todayInspectionOrders"
+        FROM register r
+        <where>
+            <if test="employeeId != null">
+                r.employee_id = #{employeeId}
+            </if>
+        </where>
+    </select>
+
     <select id="selectPatientByRegisterId" resultType="map">
         SELECT
             r.id AS "registerId",

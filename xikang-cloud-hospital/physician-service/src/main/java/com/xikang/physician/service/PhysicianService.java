@@ -60,6 +60,10 @@ public class PhysicianService {
         return physicianMapper.selectPatientStats(PhysicianAuthContext.employeeIdOrNull());
     }
 
+    public Map<String, Object> getHistoricalSummary() {
+        return physicianMapper.selectHistoricalSummary(PhysicianAuthContext.employeeIdOrNull());
+    }
+
     public Map<String, Object> getPatient(Long registerId) {
         assertRegisterAccess(registerId);
         Map<String, Object> row = physicianMapper.selectPatientByRegisterId(registerId);

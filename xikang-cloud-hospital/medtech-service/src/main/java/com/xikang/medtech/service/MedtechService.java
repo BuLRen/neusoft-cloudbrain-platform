@@ -31,6 +31,7 @@ public class MedtechService {
     private final InspectionRequestMapper inspectionRequestMapper;
     private final DisposalRequestMapper disposalRequestMapper;
     private final MedicalTechnologyMapper medicalTechnologyMapper;
+    private final MedtechStatsMapper medtechStatsMapper;
     private final ResultFormService resultFormService;
     private final ObjectMapper objectMapper;
     private final PhysicianW3Client physicianW3Client;
@@ -394,6 +395,34 @@ public class MedtechService {
         profile.put("departmentName", ctx.departmentName());
         profile.put("adminAllAccess", ctx.adminAllAccess());
         return profile;
+    }
+
+    public Map<String, Object> getHistoricalSummary() {
+        Map<String, Object> raw = medtechStatsMapper.selectHistoricalSummary(departmentIdFilter());
+        Map<String, Object> summary = new LinkedHashMap<>(raw);
+        long totalChecks = toLong(raw.get("totalCompletedChecks"));
+        long totalInspections = toLong(raw.get("totalCompletedInspections"));
+        long totalDisposals = toLong(raw.get("totalCompletedDisposals"));
+        long todayChecks = toLong(raw.get("todayCompletedChecks"));
+        long todayInspections = toLong(raw.get("todayCompletedInspections"));
+        long todayDisposals = toLong(raw.get("todayCompletedDisposals"));
+        summary.put("totalCompletedAll", totalChecks + totalInspections + totalDisposals);
+        summary.put("todayCompletedAll", todayChecks + todayInspections + todayDisposals);
+        return summary;
+    }
+
+    private static long toLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return 0L;
+        }
     }
 
     private static final Set<String> ALLOWED_TECH_TYPES = Set.of("check", "inspection", "disposal");
