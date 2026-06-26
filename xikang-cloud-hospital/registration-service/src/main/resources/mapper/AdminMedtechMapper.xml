@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.AdminMedtechMapper">
+
+    <sql id="Medtech_Employee_Where">
+        FROM employee e
+        INNER JOIN department d ON d.id = e.deptment_id AND d.dept_type = '医技科室'
+        LEFT JOIN users u ON u.employee_id = e.id
+        WHERE 1 = 1
+        <if test="includeDisabled == null or includeDisabled == false">
+            AND e.delmark = 0
+        </if>
+        <if test="departmentId != null">
+            AND e.deptment_id = #{departmentId}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND e.realname ILIKE CONCAT('%', #{keyword}, '%')
+        </if>
+    </sql>
+
+    <select id="countMedtechEmployees" resultType="long">
+        SELECT COUNT(*)
+        <include refid="Medtech_Employee_Where"/>
+    </select>
+
+    <select id="selectMedtechEmployeePage" resultType="com.xikang.registration.dto.MedtechAdminView">
+        SELECT
+            e.id,
+            e.deptment_id AS deptmentId,
+            d.dept_name AS deptName,
+            e.realname,
+            e.delmark,
+            u.id AS userId,
+            u.username,
+            u.status AS accountStatus
+        <include refid="Medtech_Employee_Where"/>
+        ORDER BY e.deptment_id, e.id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="selectMedtechEmployeeById" resultType="com.xikang.registration.dto.MedtechAdminView">
+        SELECT
+            e.id,
+            e.deptment_id AS deptmentId,
+            d.dept_name AS deptName,
+            e.realname,
+            e.delmark,
+            u.id AS userId,
+            u.username,
+            u.status AS accountStatus
+        FROM employee e
+        INNER JOIN department d ON d.id = e.deptment_id AND d.dept_type = '医技科室'
+        LEFT JOIN users u ON u.employee_id = e.id
+        WHERE e.id = #{id}
+    </select>
+
+</mapper>

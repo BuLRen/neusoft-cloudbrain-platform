@@ -14,11 +14,17 @@ public interface CheckRequestMapper {
 
     CheckRequest selectById(Long id);
 
-    List<CheckRequest> selectByRegisterId(Long registerId);
+    List<CheckRequest> selectByRegisterId(
+        @Param("registerId") Long registerId,
+        @Param("departmentId") Long departmentId
+    );
 
-    List<CheckRequest> selectByCheckState(String checkState);
+    List<CheckRequest> selectByCheckState(
+        @Param("checkState") String checkState,
+        @Param("departmentId") Long departmentId
+    );
 
-    List<CheckRequest> selectPending();
+    List<CheckRequest> selectPending(@Param("departmentId") Long departmentId);
 
     int updateCheckState(@Param("id") Long id, @Param("checkState") String checkState);
 

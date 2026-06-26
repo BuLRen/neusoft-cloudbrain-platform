@@ -278,6 +278,17 @@ export interface W4Output {
   clinicalAdvice?: string
 }
 
+export interface PhysicianHistoricalSummary {
+  totalCompletedVisits: number
+  todayCompletedVisits: number
+  uniquePatientsServed: number
+  totalEncounters: number
+  totalCheckOrders: number
+  totalInspectionOrders: number
+  todayCheckOrders: number
+  todayInspectionOrders: number
+}
+
 export const physicianApi = {
   get<T>(url: string, params?: Record<string, unknown>) {
     return http<T>({ url, method: 'GET', params })
@@ -299,6 +310,9 @@ export const physicianApi = {
   },
   patientStats() {
     return http<{ totalVisited: number; totalWaiting: number }>({ url: '/physician/patient-stats', method: 'GET' })
+  },
+  statsSummary() {
+    return http<PhysicianHistoricalSummary>({ url: '/physician/stats/summary', method: 'GET' })
   },
   startEncounter(registerId: number) {
     return http<{ registerId: number; visitState: number }>({

@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/app/stores/auth'
 import AdminDashboard from '@/modules/admin/pages/AdminDashboard.vue'
+import PhysicianDashboard from '@/modules/physician/pages/PhysicianDashboard.vue'
+import MedtechDashboard from '@/modules/medtech/pages/MedtechDashboard.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
@@ -10,6 +12,8 @@ import StatusTag from '@/shared/components/StatusTag.vue'
 const router = useRouter()
 const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.role === 'admin')
+const isPhysician = computed(() => authStore.role === 'physician')
+const isMedtech = computed(() => authStore.role === 'medtech')
 const modules = [
   { title: '诊疗流程', owner: '人员A', path: '/physician/queue', description: '医生接诊、病历、申请、确诊、开方。' },
   { title: '入口与支撑流程', owner: '人员B', path: '/registration', description: '导诊、挂号、收费、执行、发药、随访。' },
@@ -19,6 +23,8 @@ const modules = [
 
 <template>
   <AdminDashboard v-if="isAdmin" />
+  <PhysicianDashboard v-else-if="isPhysician" />
+  <MedtechDashboard v-else-if="isMedtech" />
   <div v-else class="dashboard u-page-grid">
     <PageHeader
       title="前端框架仪表盘"

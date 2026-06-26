@@ -311,6 +311,22 @@ public class MedtechController {
     // ==================== 基础数据接口 ====================
 
     /**
+     * 当前登录医技人员信息（含所属科室）
+     */
+    @GetMapping("/profile")
+    public Result<Map<String, Object>> getProfile() {
+        return Result.success(medtechService.getCurrentProfile());
+    }
+
+    /**
+     * 历史累计统计（检查/检验/处置完成量）
+     */
+    @GetMapping("/stats/summary")
+    public Result<Map<String, Object>> getHistoricalSummary() {
+        return Result.success(medtechService.getHistoricalSummary());
+    }
+
+    /**
      * 科室下拉（维护医技项目执行科室）
      */
     @GetMapping("/departments")

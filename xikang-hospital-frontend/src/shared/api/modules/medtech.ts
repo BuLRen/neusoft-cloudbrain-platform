@@ -74,6 +74,26 @@ export interface ArchiveRequest {
   remark?: string
 }
 
+export interface MedtechProfile {
+  userId: number
+  role: string
+  employeeId?: number
+  departmentId?: number
+  departmentName?: string
+  adminAllAccess?: boolean
+}
+
+export interface MedtechHistoricalSummary {
+  totalCompletedChecks: number
+  totalCompletedInspections: number
+  totalCompletedDisposals: number
+  totalCompletedAll: number
+  todayCompletedChecks: number
+  todayCompletedInspections: number
+  todayCompletedDisposals: number
+  todayCompletedAll: number
+}
+
 /** Dify 模拟检查 blocking 调用超时（与后端 read-timeout-ms 一致） */
 const CHECK_SIMULATE_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -89,6 +109,14 @@ export const medtechApi = {
   },
   delete<T>(url: string) {
     return http<T>({ url, method: 'DELETE' })
+  },
+
+  profile() {
+    return http<MedtechProfile>({ url: '/medtech/profile', method: 'GET' })
+  },
+
+  statsSummary() {
+    return http<MedtechHistoricalSummary>({ url: '/medtech/stats/summary', method: 'GET' })
   },
 
   checkApplications(params?: { registrationId?: number; checkState?: string; status?: number }) {

@@ -34,6 +34,11 @@ public class PhysicianController {
         return Result.success(physicianService.getPatientStats());
     }
 
+    @GetMapping("/stats/summary")
+    public Result<Map<String, Object>> getHistoricalSummary() {
+        return Result.success(physicianService.getHistoricalSummary());
+    }
+
     @GetMapping("/patients/{registerId}")
     public Result<Map<String, Object>> getPatient(@PathVariable Long registerId) {
         Map<String, Object> patient = physicianService.getPatient(registerId);

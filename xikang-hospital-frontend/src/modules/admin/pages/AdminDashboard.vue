@@ -39,6 +39,7 @@ const quickEntries = [
   { title: 'AI 分诊台', description: '处理 AI 分诊台和基础支撑动作。', path: '/admin/triage', tone: 'primary' as const },
   { title: '智能排班', description: '查看计划、确认调整、发布排班。', path: '/admin/schedule', tone: 'warning' as const },
   { title: '诊疗医生维护', description: '维护医生档案与登录账号。', path: '/admin/physicians', tone: 'success' as const },
+  { title: '医技人员维护', description: '维护医技科室人员与执行账号。', path: '/admin/medtech-employees', tone: 'success' as const },
   { title: '基础资料', description: '维护科室、挂号级别、药品与项目目录。', path: '/admin/master-data', tone: 'success' as const },
   { title: '统计报表', description: '查看真实经营分析与趋势。', path: '/admin/reports', tone: 'ai' as const },
 ]

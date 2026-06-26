@@ -49,6 +49,7 @@ interface RequestDraft {
 interface BasketItem extends RequestDraft {
   techName: string
   techType: TechType
+  deptName?: string
 }
 
 const TECH_TYPE_LABEL: Record<TechType, string> = {
@@ -65,6 +66,7 @@ const requestDraft = reactive<RequestDraft>({ info: '', position: '', remark: ''
 const selectedTechnology = ref<MedicalTechnology | null>(null)
 const technologyPickerRef = ref<InstanceType<typeof MedicalTechnologyPicker> | null>(null)
 const requestBasket = ref<BasketItem[]>([])
+const techCatalog = ref<MedicalTechnology[]>([])
 
 const aiLoading = ref(false)
 const w2Output = ref<W2Output | null>(null)
@@ -81,6 +83,16 @@ function recommendationIcon(item: W2RecommendedExamination): Component {
   if (/血|化验|检验|蛋白|常规/.test(name)) return Odometer
   if (/CT|MRI|X|超声|影像|片/.test(name)) return Picture
   return Odometer
+}
+
+async function loadTechCatalog() {
+  techCatalog.value = await physicianApi.medicalTechnologies()
+}
+
+function resolveDeptName(techId?: number, fallback?: string) {
+  if (fallback) return fallback
+  if (!techId) return undefined
+  return techCatalog.value.find((item) => item.id === techId)?.deptName
 }
 
 async function loadClinicalContext() {
@@ -114,6 +126,7 @@ function addTechnologyToBasket() {
     medicalTechnologyId: technology.id,
     techName: technology.techName,
     techType: technology.techType,
+    deptName: technology.deptName,
     info: requestDraft.info,
     position: requestDraft.position,
     remark: requestDraft.remark,
@@ -201,6 +214,7 @@ function addW2RecommendationToBasket(item: W2RecommendedExamination) {
     medicalTechnologyId: item.techId,
     techName: item.techName,
     techType,
+    deptName: resolveDeptName(item.techId),
     info: item.purpose?.trim() || item.reason?.trim() || '',
     position: item.position?.trim() || '',
     remark: item.remark?.trim() || '',
@@ -223,7 +237,15 @@ watch(registerId, () => {
   void loadClinicalContext()
 })
 
+watch(
+  () => requestDraft.medicalTechnologyId,
+  (id) => {
+    if (!id) selectedTechnology.value = null
+  },
+)
+
 onMounted(() => {
+  void loadTechCatalog()
   void loadClinicalContext()
 })
 </script>
@@ -266,6 +288,10 @@ onMounted(() => {
                     class="orders-form__picker"
                     @select="onTechnologySelected"
                   />
+                  <p v-if="selectedTechnology" class="orders-form__tech-detail">
+                    <span class="orders-form__tech-detail-label">执行科室</span>
+                    <span>{{ selectedTechnology.deptName || '未指定' }}</span>
+                  </p>
                 </div>
               </div>
 
@@ -331,6 +357,9 @@ onMounted(() => {
             <h3 class="orders-section__title">申请篮</h3>
             <ElTable :data="requestBasket" class="orders-basket-table" stripe>
               <ElTableColumn prop="techName" label="项目" min-width="120" />
+              <ElTableColumn label="执行科室" min-width="100">
+                <template #default="{ row }">{{ row.deptName || '未指定' }}</template>
+              </ElTableColumn>
               <ElTableColumn label="类型" width="80">
                 <template #default="{ row }">{{ TECH_TYPE_LABEL[row.techType as TechType] }}</template>
               </ElTableColumn>
@@ -541,6 +570,23 @@ onMounted(() => {
 }
 
 .orders-form__hint {
+  color: var(--color-text-soft);
+}
+
+.orders-form__picker {
+  width: 100%;
+}
+
+.orders-form__tech-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted);
+}
+
+.orders-form__tech-detail-label {
   color: var(--color-text-soft);
 }
 

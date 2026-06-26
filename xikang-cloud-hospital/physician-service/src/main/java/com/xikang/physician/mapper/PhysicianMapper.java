@@ -20,6 +20,8 @@ public interface PhysicianMapper {
 
     Map<String, Object> selectPatientStats(@Param("employeeId") Long employeeId);
 
+    Map<String, Object> selectHistoricalSummary(@Param("employeeId") Long employeeId);
+
     Map<String, Object> selectMedicalRecordByRegisterId(@Param("registerId") Long registerId);
 
     List<Map<String, Object>> selectDiseasesByMedicalRecordId(@Param("medicalRecordId") Long medicalRecordId);

@@ -110,7 +110,8 @@
     <select id="selectDepartmentOptions" resultType="map">
         SELECT id AS "id", dept_name AS "deptName"
         FROM department
-        WHERE delmark = 1
+        WHERE dept_type = '医技科室'
+          AND delmark = 0
         ORDER BY dept_name
     </select>
 

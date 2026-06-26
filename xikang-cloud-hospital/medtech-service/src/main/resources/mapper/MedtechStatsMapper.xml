@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.MedtechStatsMapper">
+
+    <sql id="Department_Filter">
+        <if test="departmentId != null">
+            AND mt.deptment_id = #{departmentId}
+        </if>
+    </sql>
+
+    <select id="selectHistoricalSummary" resultType="map">
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM check_request cr
+                INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+                WHERE cr.check_state IN ('已完成', '已归档')
+                <include refid="Department_Filter"/>
+            ) AS "totalCompletedChecks",
+            (
+                SELECT COUNT(*)
+                FROM inspection_request ir
+                INNER JOIN medical_technology mt ON mt.id = ir.medical_technology_id
+                WHERE ir.inspection_state IN ('已完成', '已归档')
+                <include refid="Department_Filter"/>
+            ) AS "totalCompletedInspections",
+            (
+                SELECT COUNT(*)
+                FROM disposal_request dr
+                INNER JOIN medical_technology mt ON mt.id = dr.medical_technology_id
+                WHERE dr.disposal_state IN ('已完成', '已归档')
+                <include refid="Department_Filter"/>
+            ) AS "totalCompletedDisposals",
+            (
+                SELECT COUNT(*)
+                FROM check_request cr
+                INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+                WHERE cr.check_state IN ('已完成', '已归档')
+                  AND cr.check_time::date = CURRENT_DATE
+                <include refid="Department_Filter"/>
+            ) AS "todayCompletedChecks",
+            (
+                SELECT COUNT(*)
+                FROM inspection_request ir
+                INNER JOIN medical_technology mt ON mt.id = ir.medical_technology_id
+                WHERE ir.inspection_state IN ('已完成', '已归档')
+                  AND ir.inspection_time::date = CURRENT_DATE
+                <include refid="Department_Filter"/>
+            ) AS "todayCompletedInspections",
+            (
+                SELECT COUNT(*)
+                FROM disposal_request dr
+                INNER JOIN medical_technology mt ON mt.id = dr.medical_technology_id
+                WHERE dr.disposal_state IN ('已完成', '已归档')
+                  AND dr.disposal_time::date = CURRENT_DATE
+                <include refid="Department_Filter"/>
+            ) AS "todayCompletedDisposals"
+    </select>
+</mapper>

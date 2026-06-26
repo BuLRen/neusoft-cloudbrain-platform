@@ -14,11 +14,17 @@ public interface InspectionRequestMapper {
 
     InspectionRequest selectById(Long id);
 
-    List<InspectionRequest> selectByRegisterId(Long registerId);
+    List<InspectionRequest> selectByRegisterId(
+        @Param("registerId") Long registerId,
+        @Param("departmentId") Long departmentId
+    );
 
-    List<InspectionRequest> selectByInspectionState(String inspectionState);
+    List<InspectionRequest> selectByInspectionState(
+        @Param("inspectionState") String inspectionState,
+        @Param("departmentId") Long departmentId
+    );
 
-    List<InspectionRequest> selectPending();
+    List<InspectionRequest> selectPending(@Param("departmentId") Long departmentId);
 
     int updateInspectionState(@Param("id") Long id, @Param("inspectionState") String inspectionState);
 

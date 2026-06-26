@@ -49,21 +49,30 @@
         WHERE ir.id = #{id}
     </select>
 
+    <sql id="Department_Filter">
+        <if test="departmentId != null">
+            AND mt.deptment_id = #{departmentId}
+        </if>
+    </sql>
+
     <select id="selectByRegisterId" resultMap="BaseResultMap">
         <include refid="Join_Select"/>
         WHERE ir.register_id = #{registerId}
+        <include refid="Department_Filter"/>
         ORDER BY ir.creation_time DESC, ir.id DESC
     </select>
 
     <select id="selectByInspectionState" resultMap="BaseResultMap">
         <include refid="Join_Select"/>
         WHERE ir.inspection_state = #{inspectionState}
+        <include refid="Department_Filter"/>
         ORDER BY ir.creation_time ASC, ir.id ASC
     </select>
 
     <select id="selectPending" resultMap="BaseResultMap">
         <include refid="Join_Select"/>
         WHERE ir.inspection_state = '待检验'
+        <include refid="Department_Filter"/>
         ORDER BY ir.creation_time ASC, ir.id ASC
     </select>
 
