@@ -20,12 +20,11 @@ mybatis:
     map-underscore-to-camel-case: true
     # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 关闭 SQL 打印，调试时取消注释
 
-# Coze 配置
-coze:
-  api-key: ${COZE_API_KEY:}
-  workflow-id: ${COZE_WORKFLOW_ID:}
-  api-url: ${COZE_API_URL:https://api.coze.cn}
-  timeout-ms: ${COZE_TIMEOUT_MS:300000}
+# Dify 配置（替代原 Coze）
+dify:
+  api-key: ${DIFY_API_KEY:}                              # 必填，格式 app-xxxx
+  base-url: ${DIFY_BASE_URL:http://43.139.102.203}       # Dify 部署地址
+  timeout-ms: ${DIFY_TIMEOUT_MS:660000}                  # blocking 模式下要够长（11 分钟，覆盖月度排班 10 分钟上限）
 
 # 号源预警阈值
 quota:

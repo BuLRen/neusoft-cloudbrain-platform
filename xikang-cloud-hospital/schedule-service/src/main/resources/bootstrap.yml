@@ -11,8 +11,7 @@ spring:
   config:
     import: optional:file:./.env
 
-coze:
-  api-key: ${COZE_API_KEY:}
-  workflow-id: ${COZE_WORKFLOW_ID:}
-  api-url: ${COZE_API_URL:https://api.coze.cn}
-  timeout-ms: ${COZE_TIMEOUT_MS:300000}
+dify:
+  api-key: ${DIFY_API_KEY:}
+  base-url: ${DIFY_BASE_URL:http://43.139.102.203}
+  timeout-ms: ${DIFY_TIMEOUT_MS:660000}

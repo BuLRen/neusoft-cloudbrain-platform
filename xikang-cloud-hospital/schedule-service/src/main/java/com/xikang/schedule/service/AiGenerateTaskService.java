@@ -44,10 +44,10 @@ public class AiGenerateTaskService {
         return thread;
     });
 
-    private final CozeIntegrationService cozeIntegrationService;
+    private final DifyIntegrationService difyIntegrationService;
 
-    public AiGenerateTaskService(CozeIntegrationService cozeIntegrationService) {
-        this.cozeIntegrationService = cozeIntegrationService;
+    public AiGenerateTaskService(DifyIntegrationService difyIntegrationService) {
+        this.difyIntegrationService = difyIntegrationService;
     }
 
     @PostConstruct
@@ -117,7 +117,7 @@ public class AiGenerateTaskService {
     }
 
     private void runTask(TaskRecord record, AiGeneratePlanRequest request) {
-        Consumer<CozeIntegrationService.StageProgress> sink = progress -> {
+        Consumer<DifyIntegrationService.StageProgress> sink = progress -> {
             if (record.cancelled.get()) {
                 throw new RuntimeException("__TASK_CANCELLED__");
             }
@@ -128,17 +128,14 @@ public class AiGenerateTaskService {
         };
 
         try {
-            // Coze 阶段需要拿到 disposable 才能取消
-            // 改用包一层：在 orchestrate 之外取 disposable 的方式不可行，
-            // 因此这里通过自定义 sink 抛 RuntimeException 中断；但更稳妥的是在 orchestrate 内部
-            // 给 WebClient 加 takeUntil。由于 takeUntil 需要外部信号，简化做法：靠 sink 内 cancelled
-            // 抛异常让 Flux 终止（Flux 报错会自动 dispose 链）。
-            AiGeneratePlanResult result = cozeIntegrationService.orchestrate(request, sink);
+            // Dify blocking 模式：HTTP 请求会一直阻塞到工作流跑完（最长 11 分钟）
+            // 取消机制：靠 sink 内 cancelled 抛异常让 Flux 终止（Flux 报错会自动 dispose 链）。
+            AiGeneratePlanResult result = difyIntegrationService.orchestrate(request, sink);
             if (record.cancelled.get()) {
                 markCancelled(record);
                 return;
             }
-            cozeIntegrationService.persistAiPlanAndSchedules(request, result, sink);
+            difyIntegrationService.persistAiPlanAndSchedules(request, result, sink);
             if (record.cancelled.get()) {
                 markCancelled(record);
                 return;

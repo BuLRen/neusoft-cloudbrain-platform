@@ -21,7 +21,7 @@ public class LeaveRequestService {
     private final LeaveRequestMapper leaveRequestMapper;
     private final DoctorScheduleMapper doctorScheduleMapper;
     private final ScheduleAdjustService scheduleAdjustService;
-    private final CozeIntegrationService cozeIntegrationService;
+    private final DifyIntegrationService difyIntegrationService;
 
     /**
      * 获取所有请假申请
@@ -60,7 +60,7 @@ public class LeaveRequestService {
 
     /**
      * 创建请假申请
-     * 如果启用 Coze，会自动生成调整方案
+     * 如果启用 Dify，会自动生成调整方案
      */
     @Transactional
     public LeaveRequest createLeave(LeaveRequest leaveRequest, boolean autoProcess) {
@@ -72,9 +72,9 @@ public class LeaveRequestService {
                 leaveRequest.getPhysicianId(), leaveRequest.getLeaveDate(), leaveRequest.getTimeSlot());
 
         if (autoProcess) {
-            // 调用 Coze 生成调整方案（预留，明天填充）
+            // 调用 Dify 生成调整方案（预留，明天填充）
             try {
-                cozeIntegrationService.processLeaveWithAI(leaveRequest);
+                difyIntegrationService.processLeaveWithAI(leaveRequest);
             } catch (Exception e) {
                 log.warn("AI处理请假失败，将手动处理：{}", e.getMessage());
             }
@@ -110,7 +110,7 @@ public class LeaveRequestService {
 
     /**
      * 处理请假（生成调整申请）
-     * 由 Coze 触发或管理员手动触发
+     * 由 Dify 触发或管理员手动触发
      */
     @Transactional
     public ScheduleAdjustRequest processLeave(Long leaveId) {

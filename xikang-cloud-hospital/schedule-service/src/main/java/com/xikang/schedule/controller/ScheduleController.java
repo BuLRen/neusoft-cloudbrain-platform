@@ -6,7 +6,7 @@ import com.xikang.schedule.dto.AiGenerateTaskView;
 import com.xikang.schedule.service.AiGenerateTaskService;
 import com.xikang.schedule.entity.DoctorSchedule;
 import com.xikang.schedule.entity.SchedulePlan;
-import com.xikang.schedule.service.CozeIntegrationService;
+import com.xikang.schedule.service.DifyIntegrationService;
 import com.xikang.schedule.service.DoctorScheduleService;
 import com.xikang.schedule.service.SchedulePlanService;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +28,7 @@ public class ScheduleController {
 
     private final SchedulePlanService schedulePlanService;
     private final DoctorScheduleService doctorScheduleService;
-    private final CozeIntegrationService cozeIntegrationService;
+    private final DifyIntegrationService difyIntegrationService;
     private final AiGenerateTaskService aiGenerateTaskService;
 
     // ==================== 排班计划 API ====================
@@ -341,7 +341,7 @@ public class ScheduleController {
     }
 
     /**
-     * 号源分析（供 Coze 调用）
+     * 号源分析（供 Dify 调用）
      */
     @GetMapping("/quota-analysis")
     public Map<String, Object> quotaAnalysis(

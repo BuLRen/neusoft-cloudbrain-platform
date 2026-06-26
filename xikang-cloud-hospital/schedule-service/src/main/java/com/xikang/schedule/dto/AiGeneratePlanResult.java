@@ -35,6 +35,20 @@ public class AiGeneratePlanResult implements Serializable {
 
     @com.fasterxml.jackson.annotation.JsonSetter("validated_schedules")
     public void setValidatedSchedulesFromString(com.fasterxml.jackson.databind.JsonNode node) throws com.fasterxml.jackson.core.JsonProcessingException {
+        applyValidatedSchedulesNode(node);
+    }
+
+    /**
+     * v4.3：Dify Code 节点对 Array 输出有 30 元素限制，节点5 已改为输出
+     * {@code validated_schedules_json}（String，JSON 序列化后的字符串）。
+     * 后端通过这个别名 setter 接收，复用同一套解析逻辑。
+     */
+    @com.fasterxml.jackson.annotation.JsonSetter("validated_schedules_json")
+    public void setValidatedSchedulesFromJsonString(com.fasterxml.jackson.databind.JsonNode node) throws com.fasterxml.jackson.core.JsonProcessingException {
+        applyValidatedSchedulesNode(node);
+    }
+
+    private void applyValidatedSchedulesNode(com.fasterxml.jackson.databind.JsonNode node) throws com.fasterxml.jackson.core.JsonProcessingException {
         if (node == null || node.isNull() || node.isMissingNode()) {
             this.validatedSchedules = java.util.Collections.emptyList();
             return;

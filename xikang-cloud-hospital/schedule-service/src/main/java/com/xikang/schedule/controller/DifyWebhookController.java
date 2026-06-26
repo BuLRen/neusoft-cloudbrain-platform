@@ -8,14 +8,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Coze Webhook 回调 Controller
- * 预留接口，明天配置 Coze 工作流时填写具体逻辑
+ * Dify Webhook 回调 Controller
+ * 预留接口，明天配置 Dify 工作流时填写具体逻辑
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/schedule/webhook")
 @RequiredArgsConstructor
-public class CozeWebhookController {
+public class DifyWebhookController {
 
     /**
      * AI 生成排班完成回调
@@ -23,7 +23,7 @@ public class CozeWebhookController {
      */
     @PostMapping("/ai-generate")
     public Map<String, Object> onAiGenerate(@RequestBody Map<String, Object> payload) {
-        log.info("【预留】收到 Coze AI 生成排班回调：{}", payload);
+        log.info("【预留】收到 Dify AI 生成排班回调：{}", payload);
 
         // TODO: 明天实现
         // 1. 解析 payload 中的 plan_id, schedules[]
@@ -47,7 +47,7 @@ public class CozeWebhookController {
      */
     @PostMapping("/leave-processed")
     public Map<String, Object> onLeaveProcessed(@RequestBody Map<String, Object> payload) {
-        log.info("【预留】收到 Coze 请假处理回调：{}", payload);
+        log.info("【预留】收到 Dify 请假处理回调：{}", payload);
 
         // TODO: 明天实现
         // 1. 解析 payload 中的 leave_id, adjust_id
@@ -66,7 +66,7 @@ public class CozeWebhookController {
      */
     @PostMapping("/quota-alert")
     public Map<String, Object> onQuotaAlert(@RequestBody Map<String, Object> payload) {
-        log.info("【预留】收到 Coze 号源预警回调：{}", payload);
+        log.info("【预留】收到 Dify 号源预警回调：{}", payload);
 
         // TODO: 明天实现
         // 1. 解析预警信息
@@ -86,7 +86,7 @@ public class CozeWebhookController {
         Map<String, Object> result = new HashMap<>();
         result.put("status", "ok");
         result.put("service", "schedule-service");
-        result.put("coze_configured", false); // 明天配置后更新
+        result.put("dify_configured", false); // 明天配置后更新
         return result;
     }
 }
