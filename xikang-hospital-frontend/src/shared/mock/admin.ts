@@ -23,9 +23,10 @@ export const adminKpiCards: AdminKpiCard[] = [
 ]
 
 export const adminQuickEntries: AdminQuickEntry[] = [
-  { title: '管理员支撑', description: '处理 AI 分诊台和基础支撑动作。', path: '/admin', tone: 'primary' },
+  { title: 'AI 分诊台', description: '处理待确认分诊记录。', path: '/admin/triage', tone: 'primary' },
   { title: '智能排班', description: '查看计划、确认调整、发布排班。', path: '/schedule', tone: 'warning' },
-  { title: '基础资料', description: '维护科室、医生、药品与项目目录。', path: '/admin/master-data', tone: 'success' },
+  { title: '人员管理', description: '维护诊疗医生与医技人员档案及账号。', path: '/admin/personnel', tone: 'success' },
+  { title: '基础资料', description: '维护科室、挂号级别与药品目录。', path: '/admin/master-data', tone: 'success' },
   { title: '用户权限', description: '维护账号状态、角色分配与权限范围。', path: '/admin/users', tone: 'ai' },
 ]
 

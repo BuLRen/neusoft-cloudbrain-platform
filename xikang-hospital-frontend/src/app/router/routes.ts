@@ -28,10 +28,9 @@ import AdminWorkspace from '@/modules/admin/AdminWorkspace.vue'
 import ScheduleManagement from '@/modules/admin/pages/ScheduleManagement.vue'
 import MasterDataManagement from '@/modules/admin/pages/MasterDataManagement.vue'
 import UserPermissionManagement from '@/modules/admin/pages/UserPermissionManagement.vue'
-import OperationsMonitoring from '@/modules/admin/pages/OperationsMonitoring.vue'
-import StatisticsReports from '@/modules/admin/pages/StatisticsReports.vue'
-import PhysicianManagement from '@/modules/admin/pages/PhysicianManagement.vue'
-import AdminMedtechEmployeePage from '@/modules/admin/pages/AdminMedtechEmployeePage.vue'
+import PersonnelManagement from '@/modules/admin/pages/PersonnelManagement.vue'
+import MedtechItemsManagement from '@/modules/admin/pages/MedtechItemsManagement.vue'
+import OperationsCenter from '@/modules/admin/pages/OperationsCenter.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
 import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.vue'
@@ -324,16 +323,10 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: '智能排班', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
-            path: 'physicians',
-            name: 'PhysicianManagement',
-            component: PhysicianManagement,
-            meta: { title: '诊疗医生维护', roles: ['admin'], requiresAuth: true, owner: 'B' },
-          },
-          {
-            path: 'medtech-employees',
-            name: 'AdminMedtechEmployeeManagement',
-            component: AdminMedtechEmployeePage,
-            meta: { title: '医技人员维护', roles: ['admin'], requiresAuth: true, owner: 'B' },
+            path: 'personnel',
+            name: 'PersonnelManagement',
+            component: PersonnelManagement,
+            meta: { title: '人员管理', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
             path: 'master-data',
@@ -342,34 +335,58 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: '基础资料', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
+            path: 'medtech-items',
+            name: 'MedtechItemsManagement',
+            component: MedtechItemsManagement,
+            meta: { title: '医技项目', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'operations',
+            name: 'OperationsCenter',
+            component: OperationsCenter,
+            meta: { title: '运营中心', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
             path: 'users',
             name: 'UserPermissionManagement',
             component: UserPermissionManagement,
             meta: { title: '用户权限', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
+            path: 'physicians',
+            redirect: { path: '/admin/personnel', query: { tab: 'physicians' } },
+            meta: { hidden: true, roles: ['admin'], requiresAuth: true },
+          },
+          {
+            path: 'medtech-employees',
+            redirect: { path: '/admin/personnel', query: { tab: 'medtech' } },
+            meta: { hidden: true, roles: ['admin'], requiresAuth: true },
+          },
+          {
             path: 'check-equipment',
-            name: 'AdminCheckEquipment',
-            component: () => import('@/modules/admin/pages/AdminCheckEquipmentPage.vue'),
-            meta: { title: '检查项目', roles: ['admin'], requiresAuth: true, owner: 'B' },
+            redirect: { path: '/admin/medtech-items', query: { tab: 'catalog' } },
+            meta: { hidden: true, roles: ['admin'], requiresAuth: true },
           },
           {
             path: 'result-form',
-            name: 'AdminResultForm',
-            component: () => import('@/modules/admin/pages/AdminResultFormPage.vue'),
-            meta: { title: '结果表单配置', roles: ['admin'], requiresAuth: true, owner: 'B' },
+            redirect: (to) => ({
+              path: '/admin/medtech-items',
+              query: {
+                tab: 'result-form',
+                ...(to.query.techId ? { techId: to.query.techId } : {}),
+              },
+            }),
+            meta: { hidden: true, roles: ['admin'], requiresAuth: true },
           },
           {
             path: 'monitoring',
-            name: 'OperationsMonitoring',
-            component: OperationsMonitoring,
-            meta: { title: '运营监控', roles: ['admin'], requiresAuth: true, owner: 'B' },
+            redirect: { path: '/admin/operations', query: { tab: 'monitoring' } },
+            meta: { hidden: true, roles: ['admin'], requiresAuth: true },
           },
           {
             path: 'reports',
-            name: 'StatisticsReports',
-            component: StatisticsReports,
-            meta: { title: '统计报表', roles: ['admin'], requiresAuth: true, owner: 'B' },
+            redirect: { path: '/admin/operations', query: { tab: 'reports' } },
+            meta: { hidden: true, roles: ['admin'], requiresAuth: true },
           },
         ],
       },

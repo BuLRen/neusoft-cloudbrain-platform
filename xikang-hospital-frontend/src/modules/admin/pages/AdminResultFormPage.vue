@@ -21,6 +21,8 @@ import { adminApi, type MedicalTechnologyItem } from '@/shared/api/modules/admin
 import { resultFormApi, type ResultFormCategory } from '@/shared/api/modules/resultForm'
 import type { ResultFormField, ResultFormFieldType } from '@/shared/types/resultForm'
 
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
+
 const route = useRoute()
 
 const activeTab = ref<'category' | 'tech'>('category')
@@ -197,7 +199,7 @@ watch(selectedTechId, () => {
 })
 
 onMounted(async () => {
-  if (route.query.tab === 'tech') {
+  if (route.query.tab === 'tech' || (route.query.tab === 'result-form' && route.query.techId)) {
     activeTab.value = 'tech'
   }
   await Promise.all([loadCategories(), loadTechItems()])
@@ -213,6 +215,7 @@ onMounted(async () => {
 <template>
   <div class="result-form-admin">
     <PageHeader
+      v-if="!embedded"
       title="检查结果表单配置"
       description="维护分类通用模板，并为具体检查项目追加专属字段。"
     />

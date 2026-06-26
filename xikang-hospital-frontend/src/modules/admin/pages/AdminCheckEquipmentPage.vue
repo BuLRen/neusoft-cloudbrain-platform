@@ -22,6 +22,8 @@ import {
 } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
+
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
 import {
   adminApi,
   type DepartmentOption,
@@ -193,7 +195,7 @@ async function submitForm() {
 }
 
 function goResultForm(row: MedicalTechnologyItem) {
-  router.push({ path: '/admin/result-form', query: { tab: 'tech', techId: String(row.id) } })
+  router.push({ path: '/admin/medtech-items', query: { tab: 'result-form', techId: String(row.id) } })
 }
 
 async function confirmDelete(row: MedicalTechnologyItem) {
@@ -225,6 +227,7 @@ onMounted(() => {
 <template>
   <div class="check-admin">
     <PageHeader
+      v-if="!embedded"
       title="检查项目"
       description="维护医生「开立检查检验」可选项目。检查类型（检查/检验/处置）即项目业务分类，与开单下拉一致。"
       eyebrow="管理端"

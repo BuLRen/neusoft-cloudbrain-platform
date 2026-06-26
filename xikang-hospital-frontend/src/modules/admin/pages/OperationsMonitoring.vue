@@ -18,6 +18,8 @@ import StatusTag from '@/shared/components/StatusTag.vue'
 import { monitoringAlerts, monitoringMetrics } from '@/shared/mock/admin'
 import type { AdminMonitoringAlert } from '@/shared/types/admin'
 
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
+
 const keyword = ref('')
 const selectedLevel = ref('')
 const selectedStatus = ref('')
@@ -67,8 +69,9 @@ function markResolved(alert: AdminMonitoringAlert) {
 </script>
 
 <template>
-  <div class="operations-monitoring-page u-page-grid">
+  <div class="operations-monitoring-page" :class="{ 'u-page-grid': !embedded }">
     <PageHeader
+      v-if="!embedded"
       title="运营监控"
       description="从分诊、排班、收费、药房等跨模块视角统一查看异常和预警，形成管理员治理闭环。"
       eyebrow="Role Admin / Monitoring"
