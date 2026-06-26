@@ -23,12 +23,10 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { registrationApi } from '@/shared/api/modules/registration'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
-import { medtechApi } from '@/shared/api/modules/medtech'
 import type { DepartmentOption, RegistLevelOption, SettleCategoryOption } from '@/shared/types/registration'
 import type { DrugOption } from '@/shared/types/pharmacy'
-import type { MedicalTechnologyCatalogItem } from '@/shared/types/medtech'
 
-type TabKey = 'departments' | 'registLevels' | 'settleCategories' | 'drugs' | 'items'
+type TabKey = 'departments' | 'registLevels' | 'settleCategories' | 'drugs'
 
 const activeTab = ref<TabKey>('departments')
 
@@ -37,7 +35,6 @@ const departments = ref<DepartmentOption[]>([])
 const registLevels = ref<RegistLevelOption[]>([])
 const settleCategories = ref<SettleCategoryOption[]>([])
 const drugs = ref<DrugOption[]>([])
-const items = ref<MedicalTechnologyCatalogItem[]>([])
 
 // 科室编辑/新增
 const deptDialogVisible = ref(false)
@@ -66,18 +63,16 @@ const selectedDrug = ref<DrugOption | null>(null)
 async function loadAll() {
   loading.value = true
   try {
-    const [dept, level, settle, drug, item] = await Promise.all([
+    const [dept, level, settle, drug] = await Promise.all([
       registrationApi.departments(),
       registrationApi.registLevels(),
       registrationApi.settleCategories(),
       pharmacyApi.drugs(),
-      medtechApi.medicalTechnologies(),
     ])
     departments.value = dept
     registLevels.value = level
     settleCategories.value = settle
     drugs.value = drug
-    items.value = item
   } finally {
     loading.value = false
   }
@@ -184,13 +179,6 @@ function openDrugDetail(row: DrugOption) {
   drugDialogVisible.value = true
 }
 
-function typeLabel(type?: string) {
-  if (type === 'check') return '检查'
-  if (type === 'inspection') return '检验'
-  if (type === 'disposal') return '处置'
-  return type || '-'
-}
-
 onMounted(loadAll)
 </script>
 
@@ -198,7 +186,7 @@ onMounted(loadAll)
   <div class="master-data-page u-page-grid">
     <PageHeader
       title="基础资料管理"
-      description="统一维护管理员端关注的主数据：科室、挂号级别、结算类别、药品与检查检验项目。数据来自 registration / pharmacy / medtech 真实服务。"
+      description="维护科室、挂号级别、结算类别与药品目录。检查/检验项目请前往「医技项目」管理。"
       eyebrow="Role Admin / Master Data"
     >
       <template #actions>
@@ -309,34 +297,6 @@ onMounted(loadAll)
                 >
                   {{ row.stockQuantity ?? 0 }} {{ row.unit || '' }}
                 </StatusTag>
-              </template>
-            </ElTableColumn>
-          </ElTable>
-        </ElTabPane>
-
-        <!-- 医技项目 -->
-        <ElTabPane label="检查检验项目" name="items">
-          <div class="section-header">
-            <div>
-              <h3>检查检验项目</h3>
-              <p>来源于 medtech-service · medical_technology 表，当前版本只读展示。</p>
-            </div>
-            <StatusTag tone="primary">{{ items.length }} 条</StatusTag>
-          </div>
-          <ElTable :data="items">
-            <ElTableColumn prop="code" label="项目编码" min-width="120" />
-            <ElTableColumn prop="name" label="项目名称" min-width="160" />
-            <ElTableColumn label="类型" min-width="90">
-              <template #default="{ row }">
-                <StatusTag :tone="row.type === 'check' ? 'primary' : row.type === 'inspection' ? 'warning' : 'ai'">
-                  {{ typeLabel(row.type) }}
-                </StatusTag>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn prop="departmentName" label="执行科室" min-width="140" />
-            <ElTableColumn label="单价" min-width="100" align="right">
-              <template #default="{ row }">
-                <span class="price-value">¥ {{ row.price ?? 0 }}</span>
               </template>
             </ElTableColumn>
           </ElTable>

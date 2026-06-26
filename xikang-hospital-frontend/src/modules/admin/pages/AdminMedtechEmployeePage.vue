@@ -22,6 +22,8 @@ import { adminMedtechApi, type MedtechAdminRecord } from '@/shared/api/modules/a
 import { registrationApi } from '@/shared/api/modules/registration'
 import type { DepartmentOption } from '@/shared/types/registration'
 
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
+
 const loading = ref(false)
 const records = ref<MedtechAdminRecord[]>([])
 const medtechDepartments = ref<DepartmentOption[]>([])
@@ -205,8 +207,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="medtech-employee-management u-page-grid">
+  <div class="medtech-employee-management" :class="{ 'u-page-grid': !embedded }">
+    <div v-if="embedded" class="embedded-actions">
+      <ElButton type="primary" @click="openCreate">新增医技人员</ElButton>
+      <ElButton @click="loadRecords">刷新</ElButton>
+    </div>
     <PageHeader
+      v-if="!embedded"
       title="医技人员维护"
       description="维护医技科室人员档案，并创建或管理其登录账号。医技人员登录后仅能看到本科室待执行的检查/检验/处置申请。"
       eyebrow="管理员"
@@ -348,6 +355,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.embedded-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-block-end: var(--space-4);
+}
 .panel {
   padding: var(--space-4);
 }

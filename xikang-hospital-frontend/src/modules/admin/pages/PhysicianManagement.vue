@@ -22,6 +22,8 @@ import { adminPhysicianApi, type PhysicianAdminRecord } from '@/shared/api/modul
 import { registrationApi } from '@/shared/api/modules/registration'
 import type { DepartmentOption, RegistLevelOption } from '@/shared/types/registration'
 
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
+
 const loading = ref(false)
 const records = ref<PhysicianAdminRecord[]>([])
 const departments = ref<DepartmentOption[]>([])
@@ -218,8 +220,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="physician-management u-page-grid">
+  <div class="physician-management" :class="{ 'u-page-grid': !embedded }">
+    <div v-if="embedded" class="embedded-actions">
+      <ElButton type="primary" @click="openCreate">新增医生</ElButton>
+      <ElButton @click="loadRecords">刷新</ElButton>
+    </div>
     <PageHeader
+      v-if="!embedded"
       title="诊疗医生维护"
       description="维护临床科室医生档案，并创建或管理其登录账号（用户名、密码、启用状态）。"
       eyebrow="管理员"
@@ -367,6 +374,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.embedded-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-block-end: var(--space-4);
+}
 .panel {
   padding: var(--space-4);
 }

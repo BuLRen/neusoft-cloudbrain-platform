@@ -10,6 +10,8 @@ import type {
   DailyTrendPoint,
 } from '@/shared/api/modules/registration'
 
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
+
 const loading = ref(false)
 const workload = ref<DepartmentWorkloadItem[]>([])
 const trend = ref<DailyTrendPoint[]>([])
@@ -71,8 +73,9 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="statistics-reports-page u-page-grid">
+  <div class="statistics-reports-page" :class="{ 'u-page-grid': !embedded }">
     <PageHeader
+      v-if="!embedded"
       title="统计报表"
       description="基于 register / medical_record / check_request / inspection_request / disposal_request / prescription / expense_record 真实数据聚合。"
       eyebrow="Role Admin / Reports"
@@ -81,6 +84,9 @@ onMounted(load)
         <ElButton @click="load">刷新</ElButton>
       </template>
     </PageHeader>
+    <div v-if="embedded" class="embedded-actions">
+      <ElButton @click="load">刷新</ElButton>
+    </div>
 
     <GlassCard class="filter-card">
       <div class="filter-row">
@@ -181,6 +187,12 @@ onMounted(load)
 </template>
 
 <style scoped>
+.embedded-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-block-end: var(--space-4);
+}
 .filter-card,
 .summary-card,
 .panel {

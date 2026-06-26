@@ -11,29 +11,21 @@ import {
   ElMessage,
   ElOption,
   ElSelect,
-  ElTable,
-  ElTableColumn,
-  ElTabPane,
-  ElTabs,
 } from 'element-plus'
 import { useAuthStore } from '@/app/stores/auth'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { registrationApi } from '@/shared/api/modules/registration'
-import type { DepartmentOption, RegistLevelOption, SettleCategoryOption, TriageDeskRecord } from '@/shared/types/registration'
+import type { DepartmentOption, TriageDeskRecord } from '@/shared/types/registration'
 import type { DoctorInfo } from '@/shared/api/modules/registration'
 
 const authStore = useAuthStore()
-const activeTab = ref('triage')
 
 const departments = ref<DepartmentOption[]>([])
-const registLevels = ref<RegistLevelOption[]>([])
-const settleCategories = ref<SettleCategoryOption[]>([])
 const triagePending = ref<TriageDeskRecord[]>([])
 const selectedTriageId = ref<number | undefined>()
 const selectedTriage = ref<TriageDeskRecord | null>(null)
-// 分诊确认使用的医生下拉（按所选科室动态拉取）
 const triageDoctors = ref<DoctorInfo[]>([])
 
 const triageConfirmForm = reactive({
@@ -44,15 +36,8 @@ const triageConfirmForm = reactive({
   remark: '',
 })
 
-async function loadBaseData() {
-  const [departmentList, levelList, settleList] = await Promise.all([
-    registrationApi.departments(),
-    registrationApi.registLevels(),
-    registrationApi.settleCategories(),
-  ])
-  departments.value = departmentList
-  registLevels.value = levelList
-  settleCategories.value = settleList
+async function loadDepartments() {
+  departments.value = await registrationApi.departments()
 }
 
 function updateTriageDepartmentName(departmentId?: number) {
@@ -60,7 +45,6 @@ function updateTriageDepartmentName(departmentId?: number) {
   triageConfirmForm.departmentName = department?.name || triageConfirmForm.departmentName
 }
 
-// 加载当前分诊确认科室下的医生列表
 async function loadTriageDoctors(departmentId?: number) {
   if (!departmentId) {
     triageDoctors.value = []
@@ -84,7 +68,6 @@ function updateTriagePhysicianName(physicianId?: number) {
   }
 }
 
-// 监听科室切换，重新拉医生下拉；同时切换医生时清空姓名
 watch(
   () => triageConfirmForm.departmentId,
   (newId, oldId) => {
@@ -124,7 +107,6 @@ async function loadTriageDetail(id?: number) {
   triageConfirmForm.departmentName = selectedTriage.value.recommendedDepartment || ''
   triageConfirmForm.physicianId = selectedTriage.value.recommendedPhysicianId
   triageConfirmForm.physicianName = selectedTriage.value.recommendedPhysicianName || ''
-  // 加载该科室下的真实医生列表
   await loadTriageDoctors(triageConfirmForm.departmentId)
 }
 
@@ -156,160 +138,111 @@ async function cancelTriage() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadBaseData(), loadTriagePending()])
+  await Promise.all([loadDepartments(), loadTriagePending()])
 })
 </script>
 
 <template>
   <div class="admin-workspace u-page-grid">
     <PageHeader
-      title="管理员支撑工作台"
-      description="当前范围覆盖管理员支撑能力：AI 分诊台处理，以及科室、挂号级别、结算类别等基础数据查看。"
-      eyebrow="Role B / Admin"
+      title="AI 分诊台"
+      description="处理 AI 导诊推荐的分诊记录，人工确认目标科室与医生后进入挂号流程。"
+      eyebrow="管理员"
     >
       <template #actions>
         <ElButton @click="loadTriagePending">刷新分诊台</ElButton>
-        <ElButton type="primary" @click="loadBaseData">刷新基础数据</ElButton>
       </template>
     </PageHeader>
 
     <GlassCard class="flow-card">
-      <ElTabs v-model="activeTab">
-        <ElTabPane label="AI 分诊台" name="triage">
-          <div class="split-grid">
-            <section>
-              <div class="section-title">
-                <h3>待确认分诊记录</h3>
-                <StatusTag tone="warning">{{ triagePending.length }} 条</StatusTag>
+      <div class="split-grid">
+        <section>
+          <div class="section-title">
+            <h3>待确认分诊记录</h3>
+            <StatusTag tone="warning">{{ triagePending.length }} 条</StatusTag>
+          </div>
+          <div class="triage-list">
+            <button
+              v-for="item in triagePending"
+              :key="item.id"
+              class="triage-item"
+              :class="{ 'is-active': item.id === selectedTriageId }"
+              type="button"
+              @click="selectedTriageId = item.id; loadTriageDetail(item.id)"
+            >
+              <strong>#{{ item.id }} · {{ item.patientName || '-' }}</strong>
+              <span>{{ item.symptoms || '-' }}</span>
+              <div class="item-meta">
+                <StatusTag :tone="item.riskLevel === 'high' ? 'danger' : item.riskLevel === 'medium' ? 'warning' : 'success'">
+                  {{ item.riskLevelName || item.riskLevel || '-' }}
+                </StatusTag>
+                <span>{{ item.recommendedDepartment || '-' }}</span>
               </div>
-              <div class="triage-list">
-                <button
-                  v-for="item in triagePending"
-                  :key="item.id"
-                  class="triage-item"
-                  :class="{ 'is-active': item.id === selectedTriageId }"
-                  type="button"
-                  @click="selectedTriageId = item.id; loadTriageDetail(item.id)"
+            </button>
+            <ElEmpty v-if="triagePending.length === 0" description="暂无待处理分诊记录" />
+          </div>
+        </section>
+
+        <section>
+          <h3>分诊确认</h3>
+          <ElEmpty v-if="!selectedTriage" description="请选择一条分诊记录" />
+          <template v-else>
+            <ElDescriptions :column="1" border class="triage-summary">
+              <ElDescriptionsItem label="患者">{{ selectedTriage.patientName || '-' }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="症状">{{ selectedTriage.symptoms || '-' }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="AI 推荐科室">
+                <span class="ai-chip">{{ selectedTriage.recommendedDepartment || '-' }}</span>
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="AI 推荐医生">
+                <span class="ai-chip">{{ selectedTriage.recommendedPhysicianName || '-' }}</span>
+              </ElDescriptionsItem>
+            </ElDescriptions>
+            <ElForm label-position="top" class="mt">
+              <ElFormItem label="确认科室">
+                <ElSelect
+                  v-model="triageConfirmForm.departmentId"
+                  filterable
+                  placeholder="选择科室"
+                  class="full-width"
+                  @change="updateTriageDepartmentName"
                 >
-                  <strong>#{{ item.id }} · {{ item.patientName || '-' }}</strong>
-                  <span>{{ item.symptoms || '-' }}</span>
-                  <div class="item-meta">
-                    <StatusTag :tone="item.riskLevel === 'high' ? 'danger' : item.riskLevel === 'medium' ? 'warning' : 'success'">
-                      {{ item.riskLevelName || item.riskLevel || '-' }}
-                    </StatusTag>
-                    <span>{{ item.recommendedDepartment || '-' }}</span>
-                  </div>
-                </button>
-                <ElEmpty v-if="triagePending.length === 0" description="暂无待处理分诊记录" />
-              </div>
-            </section>
-
-            <section>
-              <h3>分诊确认</h3>
-              <ElEmpty v-if="!selectedTriage" description="请选择一条分诊记录" />
-              <template v-else>
-                <ElDescriptions :column="1" border class="triage-summary">
-                  <ElDescriptionsItem label="患者">{{ selectedTriage.patientName || '-' }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="症状">{{ selectedTriage.symptoms || '-' }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="AI 推荐科室">
-                    <span class="ai-chip">{{ selectedTriage.recommendedDepartment || '-' }}</span>
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="AI 推荐医生">
-                    <span class="ai-chip">{{ selectedTriage.recommendedPhysicianName || '-' }}</span>
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-                <ElForm label-position="top" class="mt">
-                  <ElFormItem label="确认科室">
-                    <ElSelect
-                      v-model="triageConfirmForm.departmentId"
-                      filterable
-                      placeholder="选择科室"
-                      class="full-width"
-                      @change="updateTriageDepartmentName"
-                    >
-                      <ElOption
-                        v-for="item in departments"
-                        :key="item.id"
-                        :label="item.name"
-                        :value="item.id"
-                      />
-                    </ElSelect>
-                  </ElFormItem>
-                  <ElFormItem label="确认医生">
-                    <ElSelect
-                      v-model="triageConfirmForm.physicianId"
-                      filterable
-                      clearable
-                      placeholder="请选择医生（按当前科室加载）"
-                      class="full-width"
-                      no-data-text="请先选择科室"
-                      @change="updateTriagePhysicianName"
-                    >
-                      <ElOption
-                        v-for="d in triageDoctors"
-                        :key="d.id"
-                        :label="`${d.realname}${d.registName ? ' / ' + d.registName : ''}`"
-                        :value="d.id"
-                      />
-                    </ElSelect>
-                  </ElFormItem>
-                  <ElFormItem label="备注">
-                    <ElInput v-model="triageConfirmForm.remark" type="textarea" :rows="3" />
-                  </ElFormItem>
-                </ElForm>
-                <div class="actions">
-                  <ElButton type="primary" @click="confirmTriage">确认分诊</ElButton>
-                  <ElButton type="danger" plain @click="cancelTriage">取消分诊</ElButton>
-                </div>
-              </template>
-            </section>
-          </div>
-        </ElTabPane>
-
-        <ElTabPane label="基础数据" name="base">
-          <div class="base-grid">
-            <GlassCard class="inner-card">
-              <div class="section-title">
-                <h3>科室</h3>
-                <StatusTag tone="primary">{{ departments.length }} 条</StatusTag>
-              </div>
-              <ElTable :data="departments">
-                <ElTableColumn prop="name" label="名称" min-width="160" />
-                <ElTableColumn prop="code" label="编码" min-width="120" />
-                <ElTableColumn prop="type" label="类型" min-width="120" />
-              </ElTable>
-            </GlassCard>
-
-            <GlassCard class="inner-card">
-              <div class="section-title">
-                <h3>挂号级别</h3>
-                <StatusTag tone="primary">{{ registLevels.length }} 条</StatusTag>
-              </div>
-              <ElTable :data="registLevels">
-                <ElTableColumn prop="name" label="名称" min-width="140" />
-                <ElTableColumn prop="price" label="价格" min-width="100" align="right">
-                  <template #default="{ row }">
-                    <span class="price-value">¥ {{ row.price }}</span>
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn prop="description" label="说明" min-width="180" />
-              </ElTable>
-            </GlassCard>
-
-            <GlassCard class="inner-card">
-              <div class="section-title">
-                <h3>结算类别</h3>
-                <StatusTag tone="primary">{{ settleCategories.length }} 条</StatusTag>
-              </div>
-              <ElTable :data="settleCategories">
-                <ElTableColumn prop="name" label="名称" min-width="140" />
-                <ElTableColumn prop="code" label="编码" min-width="120" />
-                <ElTableColumn prop="description" label="说明" min-width="180" />
-              </ElTable>
-            </GlassCard>
-          </div>
-        </ElTabPane>
-      </ElTabs>
+                  <ElOption
+                    v-for="item in departments"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.id"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="确认医生">
+                <ElSelect
+                  v-model="triageConfirmForm.physicianId"
+                  filterable
+                  clearable
+                  placeholder="请选择医生（按当前科室加载）"
+                  class="full-width"
+                  no-data-text="请先选择科室"
+                  @change="updateTriagePhysicianName"
+                >
+                  <ElOption
+                    v-for="d in triageDoctors"
+                    :key="d.id"
+                    :label="`${d.realname}${d.registName ? ' / ' + d.registName : ''}`"
+                    :value="d.id"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="备注">
+                <ElInput v-model="triageConfirmForm.remark" type="textarea" :rows="3" />
+              </ElFormItem>
+            </ElForm>
+            <div class="actions">
+              <ElButton type="primary" @click="confirmTriage">确认分诊</ElButton>
+              <ElButton type="danger" plain @click="cancelTriage">取消分诊</ElButton>
+            </div>
+          </template>
+        </section>
+      </div>
     </GlassCard>
   </div>
 </template>
@@ -321,8 +254,7 @@ onMounted(async () => {
   gap: var(--space-5);
 }
 
-.flow-card,
-.inner-card {
+.flow-card {
   padding: var(--space-5);
 }
 
@@ -331,12 +263,6 @@ onMounted(async () => {
   grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
-}
-
-.base-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
 }
 
 .full-width {
@@ -475,36 +401,7 @@ onMounted(async () => {
   margin-block-start: var(--space-4);
 }
 
-.price-value {
-  font-weight: 600;
-  color: var(--color-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.flow-card :deep(.el-tabs__content) {
-  padding-block-start: var(--space-4);
-}
-
-.flow-card :deep(.el-tabs__header) {
-  margin-block-end: 0;
-}
-
-.flow-card :deep(.el-tabs__item) {
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.inner-card :deep(.el-table) {
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.inner-card :deep(.el-table tr:hover > td) {
-  background: var(--color-primary-soft) !important;
-}
-
 @media (max-width: 1200px) {
-  .base-grid,
   .split-grid {
     grid-template-columns: 1fr;
   }
