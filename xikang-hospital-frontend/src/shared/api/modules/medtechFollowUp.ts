@@ -1,21 +1,28 @@
 import { http } from '../request'
 import type {
+  FollowUpDashboardContext,
+  FollowUpDashboardPatient,
+  FollowUpDayScheduleItem,
   FollowUpHealthMetric,
+  FollowUpObservationConfirmPayload,
+  FollowUpObservationStatus,
   FollowUpOutcomeRecord,
   FollowUpPatientDetail,
   FollowUpPatientOption,
   FollowUpPatientProfile,
+  FollowUpSchedulePayload,
   InterviewScheduleItem,
   InterviewSchedulePayload,
   InterviewScheduleStatus,
 } from '@/shared/types/medtechFollowUp'
 
-const base = '/medtech/follow-up/outcome'
+const outcomeBase = '/medtech/follow-up/outcome'
+const dashboardBase = '/medtech/follow-up/dashboard'
 
 export const medtechFollowUpApi = {
   listPatients(visitState = 3) {
     return http<FollowUpPatientOption[]>({
-      url: `${base}/patients`,
+      url: `${outcomeBase}/patients`,
       method: 'GET',
       params: { visitState },
     })
@@ -23,21 +30,21 @@ export const medtechFollowUpApi = {
 
   getProfile(registerId: number) {
     return http<FollowUpPatientProfile>({
-      url: `${base}/profile/${registerId}`,
+      url: `${outcomeBase}/profile/${registerId}`,
       method: 'GET',
     })
   },
 
   getPatientDetail(registerId: number) {
     return http<FollowUpPatientDetail>({
-      url: `${base}/patient-detail/${registerId}`,
+      url: `${outcomeBase}/patient-detail/${registerId}`,
       method: 'GET',
     })
   },
 
   getMetrics(registerId: number, params?: { from?: string; to?: string; metricKeys?: string[] }) {
     return http<FollowUpHealthMetric[]>({
-      url: `${base}/metrics/${registerId}`,
+      url: `${outcomeBase}/metrics/${registerId}`,
       method: 'GET',
       params,
     })
@@ -45,14 +52,14 @@ export const medtechFollowUpApi = {
 
   getRecords(registerId: number) {
     return http<FollowUpOutcomeRecord[]>({
-      url: `${base}/records/${registerId}`,
+      url: `${outcomeBase}/records/${registerId}`,
       method: 'GET',
     })
   },
 
   listInterviewSchedules(params?: { weekStart?: string; status?: string }) {
     return http<InterviewScheduleItem[]>({
-      url: `${base}/interview-schedule`,
+      url: `${outcomeBase}/interview-schedule`,
       method: 'GET',
       params,
     })
@@ -60,16 +67,72 @@ export const medtechFollowUpApi = {
 
   getInterviewScheduleStatus(registerId: number) {
     return http<InterviewScheduleStatus>({
-      url: `${base}/interview-schedule/status/${registerId}`,
+      url: `${outcomeBase}/interview-schedule/status/${registerId}`,
       method: 'GET',
     })
   },
 
   createInterviewSchedule(payload: InterviewSchedulePayload) {
     return http<InterviewScheduleItem>({
-      url: `${base}/interview-schedule`,
+      url: `${outcomeBase}/interview-schedule`,
       method: 'POST',
       data: payload,
+    })
+  },
+
+  getDashboardContext(params?: { date?: string; departmentId?: number }) {
+    return http<FollowUpDashboardContext>({
+      url: `${dashboardBase}/context`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  listDashboardPatients(params?: { date?: string; departmentId?: number }) {
+    return http<FollowUpDashboardPatient[]>({
+      url: `${dashboardBase}/patients`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  listDaySchedules(params: { from: string; to: string; departmentId?: number }) {
+    return http<FollowUpDayScheduleItem[]>({
+      url: `${dashboardBase}/schedule`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  createDaySchedule(payload: FollowUpSchedulePayload) {
+    return http<FollowUpDayScheduleItem>({
+      url: `${dashboardBase}/schedule`,
+      method: 'POST',
+      data: payload,
+    })
+  },
+
+  updateDayScheduleStatus(id: number, status: 'planned' | 'completed' | 'cancelled') {
+    return http<FollowUpDayScheduleItem>({
+      url: `${dashboardBase}/schedule/${id}`,
+      method: 'PATCH',
+      data: { status },
+    })
+  },
+
+  confirmObservation(payload: FollowUpObservationConfirmPayload) {
+    return http<FollowUpObservationStatus>({
+      url: `${dashboardBase}/observation/confirm`,
+      method: 'POST',
+      data: payload,
+    })
+  },
+
+  getObservationStatus(registerId: number, date?: string) {
+    return http<FollowUpObservationStatus>({
+      url: `${dashboardBase}/observation/status/${registerId}`,
+      method: 'GET',
+      params: date ? { date } : undefined,
     })
   },
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import {
   ElButton,
@@ -30,6 +31,7 @@ import {
 import { buildReliefTrendOption, buildTrendOption } from '@/shared/composables/useECharts'
 import {
   formatBeijingDateTime,
+  beijingTodayYmd,
   OUTCOME_RANGE_OPTIONS,
   resolveOutcomeRange,
   type OutcomeRangePreset,
@@ -43,12 +45,16 @@ import type {
   FollowUpPatientProfile,
 } from '@/shared/types/medtechFollowUp'
 
+const route = useRoute()
+const router = useRouter()
 const patients = ref<FollowUpPatientOption[]>([])
 const selectedRegisterId = ref<number | undefined>()
 const profile = ref<FollowUpPatientProfile | null>(null)
 const metrics = ref<FollowUpHealthMetric[]>([])
 const records = ref<FollowUpOutcomeRecord[]>([])
 const scheduleScheduled = ref(false)
+const observedToday = ref(false)
+const confirmingObservation = ref(false)
 const loading = ref(false)
 const scheduling = ref(false)
 
@@ -310,7 +316,10 @@ async function loadPatients() {
       ElMessage.warning('未找到随访患者，请确认后端已重启且演示数据已导入')
       return
     }
-    if (!selectedRegisterId.value) {
+    const queryRegisterId = Number(route.query.registerId)
+    if (queryRegisterId && patients.value.some((item) => item.registerId === queryRegisterId)) {
+      selectedRegisterId.value = queryRegisterId
+    } else if (!selectedRegisterId.value) {
       selectedRegisterId.value = patients.value[0]?.registerId
     }
   } catch {
@@ -323,21 +332,48 @@ async function loadPatientData() {
   loading.value = true
   try {
     const { from, to } = currentQueryRange()
-    const [profileRes, metricsRes, recordsRes, scheduleRes] = await Promise.all([
+    const [profileRes, metricsRes, recordsRes, scheduleRes, observationRes] = await Promise.all([
       medtechFollowUpApi.getProfile(selectedRegisterId.value),
       medtechFollowUpApi.getMetrics(selectedRegisterId.value, { from, to }),
       medtechFollowUpApi.getRecords(selectedRegisterId.value),
       getWeeklyScheduleStatus(selectedRegisterId.value),
+      medtechFollowUpApi.getObservationStatus(selectedRegisterId.value, beijingTodayYmd()).catch(() => ({
+        registerId: selectedRegisterId.value!,
+        observationDate: beijingTodayYmd(),
+        observed: false,
+      })),
     ])
     profile.value = profileRes
     metrics.value = metricsRes
     records.value = recordsRes
     scheduleScheduled.value = Boolean(scheduleRes.scheduled)
+    observedToday.value = Boolean(observationRes.observed)
     await renderCharts()
   } catch {
     ElMessage.error('加载患者疗效数据失败')
   } finally {
     loading.value = false
+  }
+}
+
+function goToDashboard() {
+  void router.push({ name: 'FollowUpDashboard' })
+}
+
+async function handleConfirmObservation() {
+  if (!selectedRegisterId.value || observedToday.value) return
+  confirmingObservation.value = true
+  try {
+    await medtechFollowUpApi.confirmObservation({
+      registerId: selectedRegisterId.value,
+      observationDate: beijingTodayYmd(),
+    })
+    observedToday.value = true
+    ElMessage.success('已确认今日观察')
+  } catch {
+    // 统一错误提示
+  } finally {
+    confirmingObservation.value = false
   }
 }
 
@@ -384,6 +420,16 @@ watch(rangePreset, () => {
   void loadPatientData()
 })
 
+watch(
+  () => route.query.registerId,
+  (value) => {
+    const registerId = Number(value)
+    if (registerId && registerId !== selectedRegisterId.value) {
+      selectedRegisterId.value = registerId
+    }
+  },
+)
+
 onUnmounted(() => {
   disposeCharts()
   disposeMetricDialogChart()
@@ -401,6 +447,10 @@ void loadPatients().then(() => loadPatientData())
     title="疗效评估"
     description="基于模拟术后健康指标与随访反馈，按患者所患疾病匹配主视角图表，支持趋势筛查与加入每周访谈日程。"
   >
+    <template #header-actions>
+      <ElButton class="outcome-header-back" @click="goToDashboard">返回仪表盘</ElButton>
+    </template>
+
     <GlassCard class="outcome-card" v-loading="loading">
       <div class="toolbar">
         <div class="toolbar__left">
@@ -431,6 +481,13 @@ void loadPatients().then(() => loadPatientData())
         </div>
         <div class="toolbar__right">
           <ElButton :disabled="!selectedRegisterId" @click="openPatientDetail">查看患者信息</ElButton>
+          <ElButton
+            :disabled="!selectedRegisterId || observedToday"
+            :loading="confirmingObservation"
+            @click="handleConfirmObservation"
+          >
+            {{ observedToday ? '今日已观察' : '确认今日已观察' }}
+          </ElButton>
           <ElButton
             type="primary"
             :disabled="!selectedRegisterId || scheduleScheduled"
@@ -667,6 +724,18 @@ void loadPatients().then(() => loadPatientData())
 </template>
 
 <style scoped>
+.outcome-header-back {
+  --el-button-text-color: var(--color-text);
+  --el-button-bg-color: #fff;
+  --el-button-border-color: color-mix(in srgb, var(--color-text) 22%, transparent);
+  --el-button-hover-text-color: var(--color-text);
+  --el-button-hover-bg-color: #fff;
+  --el-button-hover-border-color: color-mix(in srgb, var(--color-text) 35%, transparent);
+  margin-inline-end: calc(var(--space-5) * 2);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .outcome-card {
   padding: var(--space-5);
   margin-block-end: var(--space-4);

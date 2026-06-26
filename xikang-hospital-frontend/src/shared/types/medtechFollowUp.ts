@@ -121,3 +121,86 @@ export interface PatientNotifyPayload {
   weekStartDate: string
   message?: string
 }
+
+export type FollowUpPriorityLevel = 'normal' | 'high' | 'critical'
+
+export interface FollowUpTrackedDate {
+  trackedDate: string
+  trackedType?: string
+}
+
+export interface FollowUpDashboardPatient {
+  registerId: number
+  caseNumber?: string
+  realName?: string
+  gender?: string
+  age?: number
+  departmentId?: number
+  priorityLevel?: FollowUpPriorityLevel
+  interviewIntervalDays?: number
+  observationIntervalDays?: number
+  lastInterviewDate?: string
+  lastTrackedDate?: string
+  observedToday?: boolean
+  interviewDueToday?: boolean
+  observationDueToday?: boolean
+  interviewScheduledToday?: boolean
+  trackedDates?: FollowUpTrackedDate[]
+  diseases?: FollowUpDisease[]
+}
+
+export interface FollowUpDayScheduleItem {
+  id: number
+  registerId?: number
+  departmentId?: number
+  scheduleDate: string
+  itemType?: 'interview' | 'observation' | 'custom'
+  title: string
+  status?: 'planned' | 'completed' | 'cancelled'
+  createdBy?: number
+  creationTime?: string
+  patientName?: string
+  caseNumber?: string
+}
+
+export interface FollowUpDashboardStats {
+  totalPatients?: number
+  todayInterviewsPlanned?: number
+  todayObservationPending?: number
+}
+
+export interface FollowUpDashboardContext {
+  userId?: number
+  role?: string
+  employeeId?: number
+  departmentId?: number
+  departmentName?: string
+  employeeRealName?: string
+  adminAllAccess?: boolean
+  targetDate?: string
+  effectiveDepartmentId?: number
+  stats?: FollowUpDashboardStats
+}
+
+export interface FollowUpObservationStatus {
+  registerId: number
+  observationDate: string
+  observed: boolean
+  observedBy?: number
+  confirmedAt?: string
+  note?: string
+}
+
+export interface FollowUpSchedulePayload {
+  registerId?: number
+  departmentId?: number
+  scheduleDate: string
+  itemType?: 'interview' | 'observation' | 'custom'
+  title?: string
+}
+
+export interface FollowUpObservationConfirmPayload {
+  registerId: number
+  observationDate?: string
+  note?: string
+}

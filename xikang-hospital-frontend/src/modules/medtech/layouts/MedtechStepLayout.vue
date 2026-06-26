@@ -29,7 +29,11 @@ const eyebrow = computed(() =>
 
 <template>
   <div class="u-page-grid">
-    <PageHeader :title="title" :description="description" :eyebrow="eyebrow" />
+    <PageHeader :title="title" :description="description" :eyebrow="eyebrow">
+      <template v-if="$slots['header-actions']" #actions>
+        <slot name="header-actions" />
+      </template>
+    </PageHeader>
 
     <GlassCard class="step-layout__panel">
       <template v-if="showSteps">
