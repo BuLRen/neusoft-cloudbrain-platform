@@ -30,7 +30,7 @@ const activeTab = computed<OperationsTab>({
       eyebrow="管理员"
     />
 
-    <GlassCard class="operations-center__card">
+    <GlassCard class="operations-center__card admin-shell-card admin-panel-surface">
       <ElTabs v-model="activeTab">
         <ElTabPane label="运营监控" name="monitoring">
           <OperationsMonitoring embedded />
@@ -52,9 +52,5 @@ const activeTab = computed<OperationsTab>({
 
 .operations-center__card {
   padding: var(--space-5);
-}
-
-.operations-center__card :deep(.el-tabs__content) {
-  padding-block-start: var(--space-4);
 }
 </style>

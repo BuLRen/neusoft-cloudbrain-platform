@@ -207,7 +207,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="medtech-employee-management" :class="{ 'u-page-grid': !embedded }">
+  <div class="medtech-employee-management" :class="{ 'u-page-grid': !embedded, 'admin-embedded-surface': embedded }">
+    <div v-if="embedded" class="admin-section-header">
+      <div class="admin-section-header__text">
+        <h3>医技人员</h3>
+        <p>维护医技科室人员档案，并管理其登录账号。</p>
+      </div>
+    </div>
     <div v-if="embedded" class="embedded-actions">
       <ElButton type="primary" @click="openCreate">新增医技人员</ElButton>
       <ElButton @click="loadRecords">刷新</ElButton>
@@ -360,6 +366,12 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: var(--space-2);
   margin-block-end: var(--space-4);
+}
+
+.medtech-employee-management.admin-embedded-surface .embedded-actions {
+  margin-block-end: 0;
+  padding-block-end: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
 }
 .panel {
   padding: var(--space-4);

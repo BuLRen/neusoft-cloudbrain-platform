@@ -30,7 +30,7 @@ const activeTab = computed<PersonnelTab>({
       eyebrow="管理员"
     />
 
-    <GlassCard class="personnel-page__card">
+    <GlassCard class="personnel-page__card admin-shell-card admin-panel-surface">
       <ElTabs v-model="activeTab">
         <ElTabPane label="诊疗医生" name="physicians">
           <PhysicianManagement embedded />
@@ -52,9 +52,5 @@ const activeTab = computed<PersonnelTab>({
 
 .personnel-page__card {
   padding: var(--space-5);
-}
-
-.personnel-page__card :deep(.el-tabs__content) {
-  padding-block-start: var(--space-4);
 }
 </style>

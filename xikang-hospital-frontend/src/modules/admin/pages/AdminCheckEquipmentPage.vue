@@ -3,7 +3,6 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ElButton,
-  ElCard,
   ElDialog,
   ElForm,
   ElFormItem,
@@ -22,14 +21,14 @@ import {
 } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
-
-const { embedded = false } = defineProps<{ embedded?: boolean }>()
 import {
   adminApi,
   type DepartmentOption,
   type ExaminationItemPayload,
   type MedicalTechnologyItem,
 } from '@/shared/api/modules/admin'
+
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
 
 const router = useRouter()
 
@@ -90,6 +89,10 @@ function techTypeTag(type: MedicalTechnologyItem['techType']) {
   return TECH_TYPE_TAG[type]
 }
 
+function castItem(row: unknown): MedicalTechnologyItem {
+  return row as MedicalTechnologyItem
+}
+
 function resetForm() {
   form.techCode = ''
   form.techName = ''
@@ -132,7 +135,7 @@ async function loadList(resetPage = false) {
     total.value = result.total
     page.value = result.page
     pageSize.value = result.size
-    if (result.total > 0 && rows.value.length === 0 && page.value > 1) {
+    if (result.total > 0 && result.totalPages > 0 && rows.value.length === 0 && page.value > 1) {
       page.value = result.totalPages
       await loadList()
     }
@@ -141,14 +144,13 @@ async function loadList(resetPage = false) {
   }
 }
 
-function onPageChange(nextPage: number) {
-  page.value = nextPage
+function onPageChange() {
   void loadList()
 }
 
-function onPageSizeChange(nextSize: number) {
-  pageSize.value = nextSize
-  void loadList(true)
+function onPageSizeChange() {
+  page.value = 1
+  void loadList()
 }
 
 function onSearch() {
@@ -225,7 +227,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="check-admin">
+  <div class="check-admin" :class="{ 'admin-embedded-surface': embedded }">
     <PageHeader
       v-if="!embedded"
       title="检查项目"
@@ -233,8 +235,18 @@ onMounted(() => {
       eyebrow="管理端"
     />
 
-    <ElCard shadow="never" class="check-admin__card">
-      <div class="check-admin__toolbar">
+    <div v-if="embedded" class="admin-section-header">
+      <div class="admin-section-header__text">
+        <h3>项目目录</h3>
+        <p>维护医生「开立检查检验」可选项目，与开单下拉数据一致。</p>
+      </div>
+    </div>
+
+    <div
+      class="check-admin__panel"
+      :class="embedded ? 'admin-tab-pane' : 'check-admin__panel--standalone'"
+    >
+      <div class="check-admin__toolbar" :class="{ 'admin-embedded-toolbar': embedded }">
         <ElInput
           v-model="keyword"
           clearable
@@ -262,7 +274,7 @@ onMounted(() => {
         v-loading="loading"
         :data="rows"
         border
-        stripe
+        class="admin-data-table"
         style="width: 100%"
         empty-text="暂无项目"
       >
@@ -273,26 +285,26 @@ onMounted(() => {
         <ElTableColumn prop="techName" label="名称" min-width="120" show-overflow-tooltip />
         <ElTableColumn label="检查类型" width="96" align="center">
           <template #default="{ row }">
-            <ElTag size="small" :type="techTypeTag(row.techType)">{{ techTypeLabel(row.techType) }}</ElTag>
+            <ElTag size="small" :type="techTypeTag(castItem(row).techType)">{{ techTypeLabel(castItem(row).techType) }}</ElTag>
           </template>
         </ElTableColumn>
         <ElTableColumn prop="techFormat" label="规格" width="90" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.techFormat || '—' }}</template>
+          <template #default="{ row }">{{ castItem(row).techFormat || '—' }}</template>
         </ElTableColumn>
         <ElTableColumn label="单价（元）" width="110" align="right">
-          <template #default="{ row }">{{ formatPrice(row.techPrice) }}</template>
+          <template #default="{ row }">{{ formatPrice(castItem(row).techPrice) }}</template>
         </ElTableColumn>
         <ElTableColumn prop="priceType" label="费用分类" width="100" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.priceType || '—' }}</template>
+          <template #default="{ row }">{{ castItem(row).priceType || '—' }}</template>
         </ElTableColumn>
         <ElTableColumn prop="deptName" label="执行科室" min-width="100" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.deptName || '—' }}</template>
+          <template #default="{ row }">{{ castItem(row).deptName || '—' }}</template>
         </ElTableColumn>
-        <ElTableColumn label="操作" width="220" fixed="right" align="center">
+        <ElTableColumn label="操作" width="220" align="center">
           <template #default="{ row }">
-            <ElButton v-if="row.techType === 'check'" link type="primary" @click="goResultForm(row)">结果表单</ElButton>
-            <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
-            <ElButton link type="danger" @click="confirmDelete(row)">删除</ElButton>
+            <ElButton v-if="castItem(row).techType === 'check'" link type="primary" @click="goResultForm(castItem(row))">结果表单</ElButton>
+            <ElButton link type="primary" @click="openEdit(castItem(row))">编辑</ElButton>
+            <ElButton link type="danger" @click="confirmDelete(castItem(row))">删除</ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -309,7 +321,7 @@ onMounted(() => {
           @size-change="onPageSizeChange"
         />
       </div>
-    </ElCard>
+    </div>
 
     <ElDialog
       v-model="dialogVisible"
@@ -362,8 +374,11 @@ onMounted(() => {
   gap: var(--space-4);
 }
 
-.check-admin__card {
+.check-admin__panel--standalone {
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
+  background: var(--color-surface);
 }
 
 .check-admin__toolbar {
@@ -373,6 +388,10 @@ onMounted(() => {
   justify-content: space-between;
   gap: var(--space-3);
   margin-block-end: var(--space-4);
+}
+
+.check-admin .admin-embedded-toolbar {
+  margin-block-end: 0;
 }
 
 .check-admin__search {
