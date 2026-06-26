@@ -43,6 +43,7 @@ import MedtechCheckResultPage from '@/modules/medtech/pages/MedtechCheckResultPa
 import MedtechInspectionStartPage from '@/modules/medtech/pages/MedtechInspectionStartPage.vue'
 import MedtechDisposalStartPage from '@/modules/medtech/pages/MedtechDisposalStartPage.vue'
 import OutcomeAssessmentPage from '@/modules/medtech/follow-up/pages/OutcomeAssessmentPage.vue'
+import FollowUpDashboardPage from '@/modules/medtech/follow-up/pages/FollowUpDashboardPage.vue'
 import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
@@ -251,13 +252,13 @@ export const routes: RouteRecordRaw[] = [
         path: 'follow-up',
         name: 'FollowUp',
         component: RouteGroupView,
-        redirect: '/follow-up/outcome',
+        redirect: '/follow-up/dashboard',
         meta: { title: '随访系统', description: '疗效评估、医患沟通、随访计划与记录', icon: 'Calendar', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up' },
         children: [
           {
             path: 'dashboard',
             name: 'FollowUpDashboard',
-            component: RoutePlaceholder,
+            component: FollowUpDashboardPage,
             meta: { title: '随访工作台', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 1 },
           },
           {

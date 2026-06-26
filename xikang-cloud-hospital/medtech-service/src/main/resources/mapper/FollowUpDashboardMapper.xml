@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpDashboardMapper">
+
+    <select id="selectDashboardPatients" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.age AS "age",
+            r.deptment_id AS "departmentId",
+            fp.priority_level AS "priorityLevel",
+            fp.interview_interval_days AS "interviewIntervalDays",
+            fp.observation_interval_days AS "observationIntervalDays",
+            (
+                SELECT MAX(s.schedule_date)
+                FROM follow_up_day_schedule s
+                WHERE s.register_id = r.id
+                  AND s.item_type = 'interview'
+                  AND s.status = 'completed'
+            ) AS "lastInterviewDate",
+            EXISTS (
+                SELECT 1 FROM follow_up_daily_observation o
+                WHERE o.register_id = r.id
+                  AND o.observation_date = #{targetDate}
+            ) AS "observedToday",
+            EXISTS (
+                SELECT 1 FROM follow_up_day_schedule s
+                WHERE s.register_id = r.id
+                  AND s.schedule_date = #{targetDate}
+                  AND s.item_type = 'interview'
+                  AND s.status = 'planned'
+            ) AS "interviewScheduledToday",
+            (
+                SELECT MAX(s.schedule_date)
+                FROM follow_up_day_schedule s
+                WHERE s.register_id = r.id
+                  AND s.item_type IN ('interview', 'observation')
+                  AND s.status IN ('planned', 'completed')
+            ) AS "lastTrackedDate"
+        FROM follow_up_patient_profile fp
+        INNER JOIN register r ON r.id = fp.register_id
+        <where>
+            <if test="departmentId != null">
+                fp.department_id = #{departmentId}
+            </if>
+        </where>
+        ORDER BY
+            CASE fp.priority_level
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                ELSE 3
+            END,
+            r.real_name
+    </select>
+
+    <select id="selectTrackedDates" resultType="map">
+        SELECT DISTINCT tracked_date AS "trackedDate", tracked_type AS "trackedType"
+        FROM (
+            SELECT s.schedule_date AS tracked_date, s.item_type AS tracked_type
+            FROM follow_up_day_schedule s
+            WHERE s.register_id = #{registerId}
+              AND s.status IN ('planned', 'completed')
+              AND s.schedule_date BETWEEN #{from} AND #{to}
+            UNION
+            SELECT o.observation_date AS tracked_date, 'observation' AS tracked_type
+            FROM follow_up_daily_observation o
+            WHERE o.register_id = #{registerId}
+              AND o.observation_date BETWEEN #{from} AND #{to}
+            UNION
+            SELECT m.record_date AS tracked_date, 'metric' AS tracked_type
+            FROM follow_up_health_metric m
+            WHERE m.register_id = #{registerId}
+              AND m.record_date BETWEEN #{from} AND #{to}
+        ) t
+        ORDER BY tracked_date DESC
+    </select>
+
+    <select id="selectDaySchedules" resultType="map">
+        SELECT
+            s.id AS "id",
+            s.register_id AS "registerId",
+            s.department_id AS "departmentId",
+            s.schedule_date AS "scheduleDate",
+            s.item_type AS "itemType",
+            s.title AS "title",
+            s.status AS "status",
+            s.created_by AS "createdBy",
+            s.creation_time AS "creationTime",
+            r.real_name AS "patientName",
+            r.case_number AS "caseNumber"
+        FROM follow_up_day_schedule s
+        LEFT JOIN register r ON r.id = s.register_id
+        <where>
+            <if test="departmentId != null">
+                s.department_id = #{departmentId}
+            </if>
+            <if test="from != null">
+                AND s.schedule_date &gt;= #{from}
+            </if>
+            <if test="to != null">
+                AND s.schedule_date &lt;= #{to}
+            </if>
+        </where>
+        ORDER BY s.schedule_date ASC, s.id ASC
+    </select>
+
+    <select id="selectDayScheduleById" resultType="map">
+        SELECT
+            s.id AS "id",
+            s.register_id AS "registerId",
+            s.department_id AS "departmentId",
+            s.schedule_date AS "scheduleDate",
+            s.item_type AS "itemType",
+            s.title AS "title",
+            s.status AS "status",
+            s.created_by AS "createdBy"
+        FROM follow_up_day_schedule s
+        WHERE s.id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectExistingInterviewSchedule" resultType="map">
+        SELECT id AS "id"
+        FROM follow_up_day_schedule
+        WHERE register_id = #{registerId}
+          AND schedule_date = #{scheduleDate}
+          AND item_type = 'interview'
+        LIMIT 1
+    </select>
+
+    <insert id="insertDaySchedule" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_day_schedule (
+            register_id, department_id, schedule_date, item_type, title, status, created_by
+        ) VALUES (
+            #{registerId}, #{departmentId}, #{scheduleDate}, #{itemType}, #{title},
+            COALESCE(#{status}, 'planned'), #{createdBy}
+        )
+    </insert>
+
+    <update id="updateDayScheduleStatus">
+        UPDATE follow_up_day_schedule
+        SET status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectDailyObservation" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            observation_date AS "observationDate",
+            observed_by AS "observedBy",
+            confirmed_at AS "confirmedAt",
+            note AS "note"
+        FROM follow_up_daily_observation
+        WHERE register_id = #{registerId}
+          AND observation_date = #{observationDate}
+        LIMIT 1
+    </select>
+
+    <insert id="insertDailyObservation" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_daily_observation (
+            register_id, observation_date, observed_by, note
+        ) VALUES (
+            #{registerId}, #{observationDate}, #{observedBy}, #{note}
+        )
+    </insert>
+
+    <select id="selectDashboardStats" resultType="map">
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM follow_up_patient_profile fp
+                <where>
+                    <if test="departmentId != null">fp.department_id = #{departmentId}</if>
+                </where>
+            ) AS "totalPatients",
+            (
+                SELECT COUNT(*)
+                FROM follow_up_day_schedule s
+                WHERE s.schedule_date = #{targetDate}
+                  AND s.item_type = 'interview'
+                  AND s.status = 'planned'
+                  <if test="departmentId != null">AND s.department_id = #{departmentId}</if>
+            ) AS "todayInterviewsPlanned",
+            (
+                SELECT COUNT(*)
+                FROM follow_up_patient_profile fp
+                <where>
+                    <if test="departmentId != null">fp.department_id = #{departmentId}</if>
+                </where>
+            ) - (
+                SELECT COUNT(*)
+                FROM follow_up_daily_observation o
+                INNER JOIN follow_up_patient_profile fp ON fp.register_id = o.register_id
+                WHERE o.observation_date = #{targetDate}
+                  <if test="departmentId != null">AND fp.department_id = #{departmentId}</if>
+            ) AS "todayObservationPending"
+    </select>
+
+    <select id="selectEmployeeBrief" resultType="map">
+        SELECT
+            e.id AS "employeeId",
+            e.realname AS "realName",
+            d.dept_name AS "departmentName",
+            d.id AS "departmentId"
+        FROM employee e
+        LEFT JOIN department d ON d.id = e.deptment_id
+        WHERE e.id = #{employeeId}
+        LIMIT 1
+    </select>
+
+    <select id="selectRegisterDepartmentId" resultType="long">
+        SELECT deptment_id FROM register WHERE id = #{registerId} LIMIT 1
+    </select>
+
+</mapper>
