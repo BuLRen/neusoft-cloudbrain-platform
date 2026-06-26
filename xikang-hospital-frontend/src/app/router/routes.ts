@@ -222,6 +222,45 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: '① 医技申请', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 1 },
           },
           {
+            path: 'follow-up',
+            name: 'MedtechFollowUp',
+            component: RouteGroupView,
+            redirect: '/medtech/follow-up/dashboard',
+            meta: { title: '② 随访系统', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 2 },
+            children: [
+              {
+                path: 'dashboard',
+                name: 'MedtechFollowUpDashboard',
+                component: RoutePlaceholder,
+                meta: { title: '随访工作台', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+              },
+              {
+                path: 'outcome',
+                name: 'MedtechFollowUpOutcome',
+                component: RoutePlaceholder,
+                meta: { title: '疗效评估', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+              },
+              {
+                path: 'communication',
+                name: 'MedtechFollowUpCommunication',
+                component: RoutePlaceholder,
+                meta: { title: '医患沟通', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+              },
+              {
+                path: 'plans',
+                name: 'MedtechFollowUpPlans',
+                component: RoutePlaceholder,
+                meta: { title: '随访计划', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+              },
+              {
+                path: 'records',
+                name: 'MedtechFollowUpRecords',
+                component: RoutePlaceholder,
+                meta: { title: '随访记录', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+              },
+            ],
+          },
+          {
             path: 'check-start',
             name: 'MedtechCheckStart',
             component: MedtechCheckStartPage,

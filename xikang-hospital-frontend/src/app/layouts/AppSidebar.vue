@@ -30,7 +30,12 @@ const menuRoutes = computed(() => {
   return (root?.children || [])
     .filter(isRouteAccessible)
     .map((item: any) => {
-      const children = (item.children || []).filter(isRouteAccessible)
+      const children = (item.children || [])
+        .filter(isRouteAccessible)
+        .map((child: any) => {
+          const grandchildren = (child.children || []).filter(isRouteAccessible)
+          return grandchildren.length ? { ...child, children: grandchildren } : child
+        })
       return { ...item, children }
     })
     .filter((item: any) => !item.children?.length || item.children.length > 0)
@@ -40,8 +45,8 @@ function iconComponent(name?: string) {
   return name && name in iconMap ? iconMap[name as keyof typeof iconMap] : Menu
 }
 
-function childPath(parentPath: string, childPathSegment: string) {
-  return `/${parentPath}/${childPathSegment}`
+function joinPath(...segments: string[]) {
+  return `/${segments.filter(Boolean).join('/')}`
 }
 
 function isPhysicianStepDisabled(path: string) {
@@ -87,15 +92,33 @@ function handleMenuSelect(index: string) {
             <span>{{ item.meta?.title }}</span>
           </template>
 
-          <el-menu-item
-            v-for="child in item.children"
-            :key="child.path"
-            :index="childPath(item.path, child.path)"
-            :disabled="isPhysicianStepDisabled(childPath(item.path, child.path))"
-            :class="{ 'app-sidebar__item--disabled': isPhysicianStepDisabled(childPath(item.path, child.path)) }"
-          >
-            <span>{{ child.meta?.title }}</span>
-          </el-menu-item>
+          <template v-for="child in item.children" :key="child.path">
+            <el-sub-menu
+              v-if="child.children?.length"
+              :index="joinPath(item.path, child.path)"
+            >
+              <template #title>
+                <span>{{ child.meta?.title }}</span>
+              </template>
+
+              <el-menu-item
+                v-for="grandchild in child.children"
+                :key="grandchild.path"
+                :index="joinPath(item.path, child.path, grandchild.path)"
+              >
+                <span>{{ grandchild.meta?.title }}</span>
+              </el-menu-item>
+            </el-sub-menu>
+
+            <el-menu-item
+              v-else
+              :index="joinPath(item.path, child.path)"
+              :disabled="isPhysicianStepDisabled(joinPath(item.path, child.path))"
+              :class="{ 'app-sidebar__item--disabled': isPhysicianStepDisabled(joinPath(item.path, child.path)) }"
+            >
+              <span>{{ child.meta?.title }}</span>
+            </el-menu-item>
+          </template>
         </el-sub-menu>
 
         <el-menu-item v-else :index="`/${item.path}`">
