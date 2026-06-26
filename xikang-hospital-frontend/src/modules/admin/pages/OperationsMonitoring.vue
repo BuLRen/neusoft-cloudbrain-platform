@@ -69,13 +69,27 @@ function markResolved(alert: AdminMonitoringAlert) {
 </script>
 
 <template>
-  <div class="operations-monitoring-page" :class="{ 'u-page-grid': !embedded }">
+  <div
+    class="operations-monitoring-page"
+    :class="{
+      'u-page-grid': !embedded,
+      'operations-monitoring-page--embedded': embedded,
+      'admin-embedded-surface': embedded,
+    }"
+  >
     <PageHeader
       v-if="!embedded"
       title="运营监控"
       description="从分诊、排班、收费、药房等跨模块视角统一查看异常和预警，形成管理员治理闭环。"
       eyebrow="Role Admin / Monitoring"
     />
+
+    <div v-if="embedded" class="admin-section-header">
+      <div class="admin-section-header__text">
+        <h3>运营监控</h3>
+        <p>从分诊、排班、收费、药房等跨模块视角统一查看异常和预警。</p>
+      </div>
+    </div>
 
     <section class="metric-grid">
       <GlassCard v-for="item in monitoringMetrics" :key="item.title" class="metric-card">
@@ -101,7 +115,7 @@ function markResolved(alert: AdminMonitoringAlert) {
         <StatusTag tone="warning">{{ filteredAlerts.length }} 条异常</StatusTag>
       </div>
 
-      <ElTable :data="filteredAlerts">
+      <ElTable :data="filteredAlerts" class="admin-data-table" border>
         <ElTableColumn prop="module" label="模块" min-width="120" />
         <ElTableColumn prop="title" label="异常标题" min-width="220" />
         <ElTableColumn label="等级" min-width="100">
@@ -116,7 +130,7 @@ function markResolved(alert: AdminMonitoringAlert) {
         </ElTableColumn>
         <ElTableColumn prop="owner" label="责任人" min-width="120" />
         <ElTableColumn prop="updatedAt" label="更新时间" min-width="160" />
-        <ElTableColumn label="操作" min-width="220" fixed="right">
+        <ElTableColumn label="操作" min-width="220" align="center">
           <template #default="{ row }">
             <ElButton link type="primary" @click="openAlert(row)">查看详情</ElButton>
             <ElButton v-if="row.status === 'pending'" link type="warning" @click="markProcessing(row)">转处理中</ElButton>
@@ -146,6 +160,15 @@ function markResolved(alert: AdminMonitoringAlert) {
 </template>
 
 <style scoped>
+.operations-monitoring-page--embedded .metric-grid {
+  gap: var(--space-3);
+}
+
+.operations-monitoring-page--embedded .metric-card,
+.operations-monitoring-page--embedded .panel {
+  padding: var(--space-4);
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -769,7 +769,7 @@ onMounted(async () => {
               <StatusTag :tone="getStatusTone(row.status)">{{ row.status }}</StatusTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="AI建议" min-width="180">
+          <ElTableColumn label="AI建议" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.aiSuggestion" class="ai-suggestion">
                 <span class="ai-dot" />
@@ -917,15 +917,30 @@ onMounted(async () => {
   padding: var(--space-4) var(--space-5);
 }
 
+.calendar-card,
+.adjust-card,
+.schedule-list-card {
+  padding: var(--space-5);
+}
+
+.calendar-card :deep(.el-table),
+.schedule-list-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--color-table-header);
+  --el-table-row-hover-bg-color: var(--color-primary-soft);
+}
+
 .filter-row {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .dept-select {
-  width: 220px;
+  width: min(220px, 100%);
 }
 
 .month-input {
@@ -936,6 +951,8 @@ onMounted(async () => {
   display: flex;
   gap: var(--space-3);
   margin-left: auto;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .stat-item {
@@ -945,8 +962,10 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-width: 92px;
-  padding: var(--space-2) var(--space-4);
+  min-width: 0;
+  flex: 1 1 88px;
+  max-width: 120px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-primary-soft);
@@ -965,12 +984,21 @@ onMounted(async () => {
   line-height: 1.1;
   color: var(--color-primary);
   letter-spacing: -0.02em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stat-label {
   font-size: 0.72rem;
   font-weight: 500;
   color: var(--color-text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .stat-highlight {
@@ -988,6 +1016,8 @@ onMounted(async () => {
   display: flex;
   gap: var(--space-2);
   align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .main-content {
@@ -1015,8 +1045,23 @@ onMounted(async () => {
 .section-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
+  min-width: 0;
+}
+
+.section-header > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.section-header p {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .section-header--panel {
@@ -1031,13 +1076,6 @@ onMounted(async () => {
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--color-text);
-}
-
-.section-header p {
-  margin: 6px 0 0;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: var(--color-text-muted);
 }
 
 .section-actions {
@@ -1099,6 +1137,7 @@ onMounted(async () => {
 .calendar-day {
   position: relative;
   min-height: 86px;
+  min-width: 0;
   padding: var(--space-2) var(--space-2) var(--space-3);
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
@@ -1141,35 +1180,60 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 4px;
   margin-bottom: var(--space-2);
+  min-width: 0;
 }
 
 .day-number {
   font-weight: 600;
   font-size: 0.95rem;
+  flex-shrink: 0;
 }
 
 .weekday {
   font-size: 0.7rem;
   color: var(--color-text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .day-content {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .slot-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 4px;
   font-size: 0.72rem;
   font-weight: 500;
   padding: 4px 6px;
   border-radius: var(--radius-sm);
   background: var(--color-control);
   color: var(--color-text-muted);
+  min-width: 0;
+}
+
+.slot-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.slot-info span:first-child {
+  flex-shrink: 0;
+}
+
+.slot-info span:last-child {
+  flex: 1;
+  text-align: end;
 }
 
 .slot-info.morning {
@@ -1240,11 +1304,13 @@ onMounted(async () => {
   align-items: center;
   margin-bottom: var(--space-2);
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .adjust-time {
   font-size: 0.72rem;
   color: var(--color-text-soft);
+  flex-shrink: 0;
 }
 
 .adjust-content {
@@ -1252,13 +1318,24 @@ onMounted(async () => {
   font-size: 0.9rem;
   color: var(--color-text);
   line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .adjust-meta {
   display: flex;
   justify-content: space-between;
+  gap: var(--space-2);
   font-size: 0.72rem;
   color: var(--color-text-muted);
+  flex-wrap: wrap;
+}
+
+.adjust-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* 通用样式 */
@@ -1283,9 +1360,14 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 100%;
   font-size: 0.78rem;
   color: var(--color-text-muted);
   font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .ai-dot {
@@ -1420,6 +1502,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .ai-task-banner__month {
@@ -1429,15 +1513,15 @@ onMounted(async () => {
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid currentColor;
   opacity: 0.7;
+  flex-shrink: 0;
 }
 
 .ai-task-banner__message {
   font-size: 12px;
   opacity: 0.85;
   margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ai-task-banner__progress {

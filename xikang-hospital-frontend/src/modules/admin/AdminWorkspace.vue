@@ -154,37 +154,40 @@ onMounted(async () => {
       </template>
     </PageHeader>
 
-    <GlassCard class="flow-card">
-      <div class="split-grid">
-        <section>
-          <div class="section-title">
-            <h3>待确认分诊记录</h3>
-            <StatusTag tone="warning">{{ triagePending.length }} 条</StatusTag>
-          </div>
-          <div class="triage-list">
-            <button
-              v-for="item in triagePending"
-              :key="item.id"
-              class="triage-item"
-              :class="{ 'is-active': item.id === selectedTriageId }"
-              type="button"
-              @click="selectedTriageId = item.id; loadTriageDetail(item.id)"
-            >
-              <strong>#{{ item.id }} · {{ item.patientName || '-' }}</strong>
-              <span>{{ item.symptoms || '-' }}</span>
-              <div class="item-meta">
-                <StatusTag :tone="item.riskLevel === 'high' ? 'danger' : item.riskLevel === 'medium' ? 'warning' : 'success'">
-                  {{ item.riskLevelName || item.riskLevel || '-' }}
-                </StatusTag>
-                <span>{{ item.recommendedDepartment || '-' }}</span>
-              </div>
-            </button>
-            <ElEmpty v-if="triagePending.length === 0" description="暂无待处理分诊记录" />
-          </div>
-        </section>
+    <div class="triage-grid">
+      <GlassCard class="triage-panel">
+        <div class="panel-header">
+          <h3>待确认分诊记录</h3>
+          <StatusTag tone="warning">{{ triagePending.length }} 条</StatusTag>
+        </div>
+        <div class="triage-list">
+          <button
+            v-for="item in triagePending"
+            :key="item.id"
+            class="triage-item"
+            :class="{ 'is-active': item.id === selectedTriageId }"
+            type="button"
+            @click="selectedTriageId = item.id; loadTriageDetail(item.id)"
+          >
+            <strong>#{{ item.id }} · {{ item.patientName || '-' }}</strong>
+            <span>{{ item.symptoms || '-' }}</span>
+            <div class="item-meta">
+              <StatusTag :tone="item.riskLevel === 'high' ? 'danger' : item.riskLevel === 'medium' ? 'warning' : 'success'">
+                {{ item.riskLevelName || item.riskLevel || '-' }}
+              </StatusTag>
+              <span>{{ item.recommendedDepartment || '-' }}</span>
+            </div>
+          </button>
+          <ElEmpty v-if="triagePending.length === 0" description="暂无待处理分诊记录" />
+        </div>
+      </GlassCard>
 
-        <section>
+      <GlassCard class="triage-panel">
+        <div class="panel-header">
           <h3>分诊确认</h3>
+          <StatusTag v-if="selectedTriage" tone="primary">#{{ selectedTriage.id }}</StatusTag>
+        </div>
+        <div class="triage-confirm-body">
           <ElEmpty v-if="!selectedTriage" description="请选择一条分诊记录" />
           <template v-else>
             <ElDescriptions :column="1" border class="triage-summary">
@@ -241,9 +244,9 @@ onMounted(async () => {
               <ElButton type="danger" plain @click="cancelTriage">取消分诊</ElButton>
             </div>
           </template>
-        </section>
-      </div>
-    </GlassCard>
+        </div>
+      </GlassCard>
+    </div>
   </div>
 </template>
 
@@ -254,31 +257,32 @@ onMounted(async () => {
   gap: var(--space-5);
 }
 
-.flow-card {
-  padding: var(--space-5);
-}
-
-.split-grid {
+.triage-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1fr);
+  grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1fr);
   gap: var(--space-5);
-  align-items: start;
+  align-items: stretch;
 }
 
-.full-width {
-  width: 100%;
+.triage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  min-height: 520px;
 }
 
-.section-title,
-.item-meta,
-.actions {
+.panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+  padding-block-end: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  min-height: 52px;
 }
 
-.section-title h3 {
+.panel-header h3 {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 600;
@@ -286,17 +290,39 @@ onMounted(async () => {
   color: var(--color-text);
 }
 
-.actions {
+.triage-confirm-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.triage-confirm-body .actions {
+  display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  margin-block-start: var(--space-4);
   gap: var(--space-2);
+  margin-block-start: auto;
+  padding-block-start: var(--space-4);
 }
 
 .triage-list {
   display: grid;
   gap: var(--space-3);
-  max-block-size: 480px;
+  flex: 1;
+  min-height: 0;
+  max-block-size: none;
   overflow-y: auto;
   padding-inline-end: 4px;
 }
@@ -360,10 +386,6 @@ onMounted(async () => {
   background: var(--gradient-primary);
 }
 
-.item-meta {
-  justify-content: space-between;
-}
-
 .triage-summary {
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -402,8 +424,12 @@ onMounted(async () => {
 }
 
 @media (max-width: 1200px) {
-  .split-grid {
+  .triage-grid {
     grid-template-columns: 1fr;
+  }
+
+  .triage-panel {
+    min-height: auto;
   }
 }
 </style>

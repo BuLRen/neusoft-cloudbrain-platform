@@ -213,17 +213,24 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="result-form-admin">
+  <div class="result-form-admin" :class="{ 'admin-embedded-surface': embedded, 'result-form-admin--embedded': embedded }">
     <PageHeader
       v-if="!embedded"
       title="检查结果表单配置"
       description="维护分类通用模板，并为具体检查项目追加专属字段。"
     />
 
-    <ElTabs v-model="activeTab">
+    <div v-if="embedded" class="admin-section-header">
+      <div class="admin-section-header__text">
+        <h3>结果表单配置</h3>
+        <p>维护分类通用模板，并为具体检查项目追加专属字段。</p>
+      </div>
+    </div>
+
+    <ElTabs v-model="activeTab" :class="{ 'result-form-admin__tabs--embedded': embedded }">
       <ElTabPane label="分类通用模板" name="category">
-        <ElCard shadow="never" class="result-form-admin__card">
-          <div class="result-form-admin__toolbar">
+        <ElCard shadow="never" class="result-form-admin__card" :body-style="embedded ? { padding: 0 } : undefined">
+          <div class="result-form-admin__toolbar" :class="{ 'admin-embedded-toolbar': embedded }">
             <ElFormItem label="表单分类" label-width="80px" class="result-form-admin__selector">
               <ElSelect v-model="selectedCategory" class="result-form-admin__field-full">
                 <ElOption
@@ -239,7 +246,7 @@ onMounted(async () => {
             <ElButton type="success" :loading="saving" @click="saveCategoryFields">保存分类模板</ElButton>
           </div>
 
-          <ElTable v-loading="loading" :data="categoryFields" border>
+          <ElTable v-loading="loading" :data="categoryFields" border class="admin-data-table">
             <ElTableColumn label="字段标识" min-width="140">
               <template #default="{ row }">
                 <ElInput v-model="row.fieldKey" placeholder="如 findings" />
@@ -282,8 +289,8 @@ onMounted(async () => {
       </ElTabPane>
 
       <ElTabPane label="检查项目扩展" name="tech">
-        <ElCard shadow="never" class="result-form-admin__card">
-          <div class="result-form-admin__toolbar">
+        <ElCard shadow="never" class="result-form-admin__card" :body-style="embedded ? { padding: 0 } : undefined">
+          <div class="result-form-admin__toolbar" :class="{ 'admin-embedded-toolbar': embedded }">
             <ElInput v-model="techKeyword" placeholder="搜索项目编码或名称" @keyup.enter="loadTechItems" />
             <ElButton :icon="Refresh" :loading="loading" @click="loadTechItems">查询项目</ElButton>
             <ElSelect v-model="selectedTechId" placeholder="选择检查项目" class="result-form-admin__tech-select">
@@ -304,7 +311,7 @@ onMounted(async () => {
           </div>
 
           <h4 class="result-form-admin__subtitle">继承的基础字段（只读）</h4>
-          <ElTable :data="baseFields" border class="result-form-admin__readonly-table">
+          <ElTable :data="baseFields" border class="admin-data-table result-form-admin__readonly-table">
             <ElTableColumn prop="fieldKey" label="字段标识" />
             <ElTableColumn prop="fieldLabel" label="显示标签" />
             <ElTableColumn prop="fieldType" label="类型" width="100" />
@@ -314,7 +321,7 @@ onMounted(async () => {
           </ElTable>
 
           <h4 class="result-form-admin__subtitle">项目专属扩展字段</h4>
-          <ElTable v-loading="loading" :data="extensionFields" border>
+          <ElTable v-loading="loading" :data="extensionFields" border class="admin-data-table">
             <ElTableColumn label="字段标识" min-width="140">
               <template #default="{ row }">
                 <ElInput v-model="row.fieldKey" placeholder="如 contrastReaction" />
@@ -376,6 +383,18 @@ onMounted(async () => {
   gap: var(--space-2);
   align-items: center;
   margin-block-end: var(--space-4);
+}
+
+.result-form-admin--embedded .result-form-admin__toolbar.admin-embedded-toolbar {
+  margin-block-end: 0;
+}
+
+.result-form-admin--embedded .result-form-admin__tabs--embedded :deep(.el-tabs__header) {
+  margin-block-end: var(--space-3);
+}
+
+.result-form-admin--embedded .result-form-admin__tabs--embedded :deep(.el-tabs__content) {
+  padding: 0;
 }
 
 .result-form-admin__selector {

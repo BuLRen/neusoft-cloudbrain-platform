@@ -80,11 +80,12 @@ function handleMenuSelect(index: string) {
       </span>
     </RouterLink>
 
-    <el-menu
-      class="app-sidebar__menu"
-      :default-active="route.path"
-      @select="handleMenuSelect"
-    >
+    <div class="app-sidebar__nav">
+      <el-menu
+        class="app-sidebar__menu"
+        :default-active="route.path"
+        @select="handleMenuSelect"
+      >
       <template v-for="item in menuRoutes" :key="item.path">
         <el-sub-menu v-if="item.children?.length" :index="`/${item.path}`">
           <template #title>
@@ -127,6 +128,7 @@ function handleMenuSelect(index: string) {
         </el-menu-item>
       </template>
     </el-menu>
+    </div>
   </aside>
 </template>
 
@@ -134,6 +136,8 @@ function handleMenuSelect(index: string) {
 .app-sidebar {
   position: sticky;
   inset-block-start: var(--shell-gap);
+  display: flex;
+  flex-direction: column;
   width: var(--sidebar-width);
   height: calc(100vh - var(--shell-gap) * 2);
   padding: var(--space-3);
@@ -142,6 +146,7 @@ function handleMenuSelect(index: string) {
   background: var(--color-sidebar);
   box-shadow: var(--shadow-md);
   backdrop-filter: var(--blur-glass);
+  overflow: hidden;
 }
 
 .app-sidebar__brand {
@@ -150,6 +155,30 @@ function handleMenuSelect(index: string) {
   gap: var(--space-2);
   padding: var(--space-2);
   border-radius: var(--radius-lg);
+  flex-shrink: 0;
+}
+
+.app-sidebar__nav {
+  flex: 1;
+  min-height: 0;
+  margin-block-start: var(--space-4);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-inline-end: 2px;
+}
+
+.app-sidebar__nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-sidebar__nav::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.35);
+}
+
+.app-sidebar__nav::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .app-sidebar__logo {
@@ -182,7 +211,7 @@ function handleMenuSelect(index: string) {
 }
 
 .app-sidebar__menu {
-  margin-block-start: var(--space-4);
+  border-inline-end: none;
 }
 
 .app-sidebar :deep(.el-menu),

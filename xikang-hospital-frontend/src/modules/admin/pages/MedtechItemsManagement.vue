@@ -34,7 +34,7 @@ const activeTab = computed<MedtechItemsTab>({
       eyebrow="管理员"
     />
 
-    <GlassCard class="medtech-items-page__card">
+    <GlassCard class="medtech-items-page__card admin-shell-card admin-panel-surface">
       <ElTabs v-model="activeTab">
         <ElTabPane label="项目目录" name="catalog">
           <AdminCheckEquipmentPage embedded />
@@ -56,9 +56,5 @@ const activeTab = computed<MedtechItemsTab>({
 
 .medtech-items-page__card {
   padding: var(--space-5);
-}
-
-.medtech-items-page__card :deep(.el-tabs__content) {
-  padding-block-start: var(--space-4);
 }
 </style>

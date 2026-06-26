@@ -73,7 +73,14 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="statistics-reports-page" :class="{ 'u-page-grid': !embedded }">
+  <div
+    class="statistics-reports-page"
+    :class="{
+      'u-page-grid': !embedded,
+      'statistics-reports-page--embedded': embedded,
+      'admin-embedded-surface': embedded,
+    }"
+  >
     <PageHeader
       v-if="!embedded"
       title="统计报表"
@@ -84,11 +91,18 @@ onMounted(load)
         <ElButton @click="load">刷新</ElButton>
       </template>
     </PageHeader>
-    <div v-if="embedded" class="embedded-actions">
+    <div v-if="embedded" class="admin-embedded-toolbar admin-embedded-toolbar--end">
       <ElButton @click="load">刷新</ElButton>
     </div>
 
-    <GlassCard class="filter-card">
+    <div v-if="embedded" class="admin-section-header">
+      <div class="admin-section-header__text">
+        <h3>统计报表</h3>
+        <p>基于挂号、病历、检查、处方与费用记录的真实数据聚合。</p>
+      </div>
+    </div>
+
+    <GlassCard v-if="!embedded" class="filter-card">
       <div class="filter-row">
         <ElSelect v-model="filter.period" class="field field--small" @change="load">
           <ElOption label="近 7 天" value="week" />
@@ -97,6 +111,16 @@ onMounted(load)
         <StatusTag tone="primary">数据来自 registration-service 实时聚合</StatusTag>
       </div>
     </GlassCard>
+
+    <div v-else class="admin-tab-pane admin-reports-filter">
+      <div class="filter-row">
+        <ElSelect v-model="filter.period" class="field field--small" @change="load">
+          <ElOption label="近 7 天" value="week" />
+          <ElOption label="近 30 天" value="month" />
+        </ElSelect>
+        <StatusTag tone="primary">数据来自 registration-service 实时聚合</StatusTag>
+      </div>
+    </div>
 
     <section class="summary-grid" v-loading="loading">
       <GlassCard class="summary-card">
@@ -174,8 +198,8 @@ onMounted(load)
             <p>挂号量 / 接诊量 / 检查量 / 处方量，按挂号量降序。</p>
           </div>
         </div>
-        <ElTable :data="workload">
-          <ElTableColumn prop="departmentName" label="科室" min-width="120" />
+        <ElTable :data="workload" class="admin-data-table" border>
+          <ElTableColumn prop="departmentName" label="科室" min-width="120" show-overflow-tooltip />
           <ElTableColumn prop="registrations" label="挂号量" min-width="100" align="right" />
           <ElTableColumn prop="visits" label="接诊量" min-width="100" align="right" />
           <ElTableColumn prop="inspections" label="检查量" min-width="100" align="right" />
@@ -187,12 +211,28 @@ onMounted(load)
 </template>
 
 <style scoped>
-.embedded-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-block-end: var(--space-4);
+.statistics-reports-page--embedded {
+  display: grid;
+  gap: var(--space-4);
 }
+
+.statistics-reports-page--embedded .summary-card,
+.statistics-reports-page--embedded .panel {
+  padding: var(--space-4);
+}
+
+.statistics-reports-page--embedded .summary-card strong {
+  font-size: 24px;
+}
+
+.admin-reports-filter .filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .filter-card,
 .summary-card,
 .panel {
@@ -304,7 +344,7 @@ onMounted(load)
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--color-surface-strong);
 }
 
 .ranking-item strong {

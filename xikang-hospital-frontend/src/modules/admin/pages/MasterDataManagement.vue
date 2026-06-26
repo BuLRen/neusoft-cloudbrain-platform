@@ -204,41 +204,44 @@ onMounted(loadAll)
       </template>
     </PageHeader>
 
-    <GlassCard class="panel" v-loading="loading">
-      <ElTabs v-model="activeTab">
+    <GlassCard class="panel admin-shell-card admin-panel-surface" v-loading="loading">
+      <ElTabs v-model="activeTab" class="master-data-tabs">
         <!-- 科室 -->
         <ElTabPane label="科室资料" name="departments">
-          <div class="section-header">
-            <div>
-              <h3>科室资料</h3>
-              <p>来源于 registration-service · department 表，支持新增、编辑、删除。</p>
+          <div class="admin-tab-pane">
+            <div class="admin-section-header">
+              <div class="admin-section-header__text">
+                <h3>科室资料</h3>
+                <p>来源于 registration-service · department 表，支持新增、编辑、删除。</p>
+              </div>
+              <StatusTag tone="primary">{{ departments.length }} 条</StatusTag>
             </div>
-            <StatusTag tone="primary">{{ departments.length }} 条</StatusTag>
-          </div>
-          <ElTable :data="departments">
+            <ElTable :data="departments" class="admin-data-table" border>
             <ElTableColumn prop="code" label="科室编码" min-width="120" />
             <ElTableColumn prop="name" label="科室名称" min-width="140" />
             <ElTableColumn prop="type" label="类型" min-width="110" />
             <ElTableColumn prop="description" label="简介" min-width="280" show-overflow-tooltip />
-            <ElTableColumn label="操作" min-width="160" fixed="right">
+            <ElTableColumn label="操作" min-width="160" align="center">
               <template #default="{ row }">
                 <ElButton link type="primary" @click="openEditDept(row)">编辑</ElButton>
                 <ElButton link type="danger" @click="removeDept(row)">删除</ElButton>
               </template>
             </ElTableColumn>
           </ElTable>
+          </div>
         </ElTabPane>
 
         <!-- 挂号级别 -->
         <ElTabPane label="挂号级别" name="registLevels">
-          <div class="section-header">
-            <div>
-              <h3>挂号级别</h3>
-              <p>来源于 registration-service · regist_level 表，支持新增、编辑、删除。</p>
+          <div class="admin-tab-pane">
+            <div class="admin-section-header">
+              <div class="admin-section-header__text">
+                <h3>挂号级别</h3>
+                <p>来源于 registration-service · regist_level 表，支持新增、编辑、删除。</p>
+              </div>
+              <StatusTag tone="primary">{{ registLevels.length }} 条</StatusTag>
             </div>
-            <StatusTag tone="primary">{{ registLevels.length }} 条</StatusTag>
-          </div>
-          <ElTable :data="registLevels">
+            <ElTable :data="registLevels" class="admin-data-table" border>
             <ElTableColumn prop="code" label="编码" min-width="100" />
             <ElTableColumn prop="name" label="名称" min-width="140" />
             <ElTableColumn label="挂号费" min-width="100" align="right">
@@ -246,41 +249,45 @@ onMounted(loadAll)
                 <span class="price-value">¥ {{ row.price ?? 0 }}</span>
               </template>
             </ElTableColumn>
-            <ElTableColumn label="操作" min-width="160" fixed="right">
+            <ElTableColumn label="操作" min-width="160" align="center">
               <template #default="{ row }">
                 <ElButton link type="primary" @click="openEditLevel(row)">编辑</ElButton>
                 <ElButton link type="danger" @click="removeLevel(row)">删除</ElButton>
               </template>
             </ElTableColumn>
           </ElTable>
+          </div>
         </ElTabPane>
 
         <!-- 结算类别 -->
         <ElTabPane label="结算类别" name="settleCategories">
-          <div class="section-header">
-            <div>
-              <h3>结算类别</h3>
-              <p>来源于 registration-service · settle_category 表，当前版本只读展示。</p>
+          <div class="admin-tab-pane">
+            <div class="admin-section-header">
+              <div class="admin-section-header__text">
+                <h3>结算类别</h3>
+                <p>来源于 registration-service · settle_category 表，当前版本只读展示。</p>
+              </div>
+              <StatusTag tone="primary">{{ settleCategories.length }} 条</StatusTag>
             </div>
-            <StatusTag tone="primary">{{ settleCategories.length }} 条</StatusTag>
-          </div>
-          <ElTable :data="settleCategories">
+            <ElTable :data="settleCategories" class="admin-data-table" border>
             <ElTableColumn prop="code" label="编码" min-width="120" />
             <ElTableColumn prop="name" label="名称" min-width="140" />
             <ElTableColumn prop="description" label="说明" min-width="220" show-overflow-tooltip />
           </ElTable>
+          </div>
         </ElTabPane>
 
         <!-- 药品 -->
         <ElTabPane label="药品目录" name="drugs">
-          <div class="section-header">
-            <div>
-              <h3>药品目录</h3>
-              <p>来源于 pharmacy-service · drug_info 表，当前版本只读展示（点击行查看详情）。</p>
+          <div class="admin-tab-pane">
+            <div class="admin-section-header">
+              <div class="admin-section-header__text">
+                <h3>药品目录</h3>
+                <p>来源于 pharmacy-service · drug_info 表，当前版本只读展示（点击行查看详情）。</p>
+              </div>
+              <StatusTag tone="primary">{{ drugs.length }} 条</StatusTag>
             </div>
-            <StatusTag tone="primary">{{ drugs.length }} 条</StatusTag>
-          </div>
-          <ElTable :data="drugs" @row-click="openDrugDetail">
+            <ElTable :data="drugs" class="admin-data-table admin-data-table--clickable" border @row-click="openDrugDetail">
             <ElTableColumn prop="name" label="药品名称" min-width="160" />
             <ElTableColumn prop="specification" label="规格" min-width="140" />
             <ElTableColumn prop="dosageForm" label="剂型" min-width="100" />
@@ -300,6 +307,7 @@ onMounted(loadAll)
               </template>
             </ElTableColumn>
           </ElTable>
+          </div>
         </ElTabPane>
       </ElTabs>
     </GlassCard>
@@ -386,26 +394,8 @@ onMounted(loadAll)
   padding: var(--space-5);
 }
 
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-block-end: var(--space-4);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.section-header p {
-  margin-block-start: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  line-height: 1.6;
+.admin-data-table--clickable :deep(.el-table__body tr) {
+  cursor: pointer;
 }
 
 .full-width {
