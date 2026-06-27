@@ -56,15 +56,15 @@ CREATE INDEX IF NOT EXISTS idx_followup_daily_observation_date
 
 COMMENT ON TABLE follow_up_daily_observation IS '随访每日疗效观察确认记录';
 
--- 演示患者纳入随访池（科室 1: 1001/1002/1004，科室 2: 1003/1005）
+-- 演示患者纳入随访池（在管科室 35 放射科，供 medtech01 联调；register 临床科室仍为 1/2）
 INSERT INTO follow_up_patient_profile (
     register_id, department_id, priority_level, interview_interval_days, observation_interval_days
 ) VALUES
-    (1001, 1, 'high', 3, 1),
-    (1002, 1, 'normal', 7, 1),
-    (1003, 2, 'critical', 1, 1),
-    (1004, 1, 'normal', 7, 1),
-    (1005, 2, 'high', 3, 1)
+    (1001, 35, 'high', 3, 1),
+    (1002, 35, 'normal', 7, 1),
+    (1003, 35, 'critical', 1, 1),
+    (1004, 35, 'normal', 7, 1),
+    (1005, 35, 'high', 3, 1)
 ON CONFLICT (register_id) DO UPDATE SET
     department_id = EXCLUDED.department_id,
     priority_level = EXCLUDED.priority_level,
@@ -79,12 +79,12 @@ UPDATE register SET visit_state = 3 WHERE id BETWEEN 1001 AND 1005;
 DELETE FROM follow_up_day_schedule WHERE register_id BETWEEN 1001 AND 1005;
 
 INSERT INTO follow_up_day_schedule (register_id, department_id, schedule_date, item_type, title, status, created_by) VALUES
-    (1001, 1, CURRENT_DATE, 'interview', E'张三 · 电话访谈', 'planned', 1),
-    (1003, 2, CURRENT_DATE, 'interview', E'王五 · 重点随访访谈', 'planned', 2),
-    (1002, 1, CURRENT_DATE + 2, 'interview', E'李四 · 随访访谈', 'planned', 1),
-    (1005, 2, CURRENT_DATE + 1, 'interview', E'孙七 · 随访访谈', 'planned', 2),
-    (1001, 1, CURRENT_DATE - 3, 'interview', E'张三 · 上周访谈', 'completed', 1),
-    (1003, 2, CURRENT_DATE - 1, 'interview', E'王五 · 昨日访谈', 'completed', 2);
+    (1001, 35, CURRENT_DATE, 'interview', E'张三 · 电话访谈', 'planned', 1),
+    (1003, 35, CURRENT_DATE, 'interview', E'王五 · 重点随访访谈', 'planned', 2),
+    (1002, 35, CURRENT_DATE + 2, 'interview', E'李四 · 随访访谈', 'planned', 1),
+    (1005, 35, CURRENT_DATE + 1, 'interview', E'孙七 · 随访访谈', 'planned', 2),
+    (1001, 35, CURRENT_DATE - 3, 'interview', E'张三 · 上周访谈', 'completed', 1),
+    (1003, 35, CURRENT_DATE - 1, 'interview', E'王五 · 昨日访谈', 'completed', 2);
 
 -- 今日观察：1002、1004 已确认，其余待观察
 DELETE FROM follow_up_daily_observation WHERE register_id BETWEEN 1001 AND 1005 AND observation_date = CURRENT_DATE;

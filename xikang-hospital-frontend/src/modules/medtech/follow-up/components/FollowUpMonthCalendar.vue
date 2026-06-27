@@ -2,23 +2,20 @@
 import { computed } from 'vue'
 import { ElButton } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
-import { buildMonthCells } from '@/modules/medtech/follow-up/constants/followUpPriority'
+import { buildMonthCells, resolveInterviewScheduleVisualStatus } from '@/modules/medtech/follow-up/constants/followUpPriority'
 import type { FollowUpDayScheduleItem } from '@/shared/types/medtechFollowUp'
 
 const props = defineProps<{
   year: number
   month: number
   todayYmd: string
-  selectedDate: string
   schedules: FollowUpDayScheduleItem[]
 }>()
 
 const emit = defineEmits<{
   'update:year': [value: number]
   'update:month': [value: number]
-  selectDate: [date: string]
-  dropPatient: [registerId: number, date: string]
-  addSchedule: [date: string]
+  openDay: [date: string]
 }>()
 
 const weekdayLabels = ['一', '二', '三', '四', '五', '六', '日']
@@ -54,22 +51,6 @@ function nextMonth() {
   }
   emit('update:month', props.month + 1)
 }
-
-function onDrop(date: string, event: DragEvent) {
-  event.preventDefault()
-  const raw = event.dataTransfer?.getData('application/x-followup-register-id')
-    || event.dataTransfer?.getData('text/plain')
-  const registerId = Number(raw)
-  if (!registerId) return
-  emit('dropPatient', registerId, date)
-}
-
-function onDragOver(event: DragEvent) {
-  event.preventDefault()
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move'
-  }
-}
 </script>
 
 <template>
@@ -77,7 +58,7 @@ function onDragOver(event: DragEvent) {
     <div class="follow-up-calendar__head">
       <div>
         <h3>工作安排</h3>
-        <p>点击日期添加事项，或将患者卡片拖拽到日期格安排访谈。</p>
+        <p>点击日期查看当日访谈与其他日程，并添加新事项。</p>
       </div>
       <div class="follow-up-calendar__nav">
         <ElButton @click="prevMonth">上月</ElButton>
@@ -99,12 +80,8 @@ function onDragOver(event: DragEvent) {
         :class="{
           'follow-up-calendar__cell--muted': !cell.inMonth,
           'follow-up-calendar__cell--today': cell.isToday,
-          'follow-up-calendar__cell--selected': cell.date === selectedDate,
         }"
-        @click="emit('selectDate', cell.date)"
-        @dblclick="emit('addSchedule', cell.date)"
-        @dragover="onDragOver"
-        @drop="onDrop(cell.date, $event)"
+        @click="emit('openDay', cell.date)"
       >
         <span class="follow-up-calendar__day">{{ cell.date.slice(-2) }}</span>
         <div class="follow-up-calendar__chips">
@@ -112,7 +89,7 @@ function onDragOver(event: DragEvent) {
             v-for="item in (schedulesByDate.get(cell.date) ?? []).slice(0, 2)"
             :key="item.id"
             class="follow-up-calendar__chip"
-            :data-type="item.itemType"
+            :data-status="resolveInterviewScheduleVisualStatus(item, cell.date, todayYmd)"
           >
             {{ item.patientName ?? item.title }}
           </span>
@@ -124,6 +101,12 @@ function onDragOver(event: DragEvent) {
           </span>
         </div>
       </button>
+    </div>
+    <div class="follow-up-calendar__legend">
+      <span><i data-status="planned" />待进行</span>
+      <span><i data-status="completed" />已完成</span>
+      <span><i data-status="overdue" />逾期未访</span>
+      <span><i data-status="custom" />自定义</span>
     </div>
   </GlassCard>
 </template>
@@ -196,10 +179,6 @@ function onDragOver(event: DragEvent) {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-primary) 55%, transparent);
 }
 
-.follow-up-calendar__cell--selected {
-  background: var(--color-primary-soft);
-}
-
 .follow-up-calendar__day {
   display: block;
   font-size: 13px;
@@ -217,20 +196,74 @@ function onDragOver(event: DragEvent) {
   overflow: hidden;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(31, 140, 255, 0.12);
-  color: var(--color-primary-strong);
   font-size: 10px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.follow-up-calendar__chip[data-type='custom'] {
+.follow-up-calendar__chip[data-status='planned'] {
+  background: rgba(31, 140, 255, 0.12);
+  color: var(--color-primary-strong);
+}
+
+.follow-up-calendar__chip[data-status='custom'] {
   background: rgba(124, 92, 255, 0.12);
   color: #7c5cff;
+}
+
+.follow-up-calendar__chip[data-status='completed'] {
+  background: rgba(34, 197, 94, 0.16);
+  color: #15803d;
+}
+
+.follow-up-calendar__chip[data-status='overdue'] {
+  background: rgba(239, 77, 90, 0.16);
+  color: #c81e2d;
 }
 
 .follow-up-calendar__more {
   font-size: 10px;
   color: var(--color-text-soft);
+}
+
+.follow-up-calendar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.follow-up-calendar__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.follow-up-calendar__legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  font-style: normal;
+}
+
+.follow-up-calendar__legend i[data-status='planned'] {
+  background: var(--color-primary-strong);
+}
+
+.follow-up-calendar__legend i[data-status='completed'] {
+  background: #22c55e;
+}
+
+.follow-up-calendar__legend i[data-status='overdue'] {
+  background: #ef4d5a;
+}
+
+.follow-up-calendar__legend i[data-status='custom'] {
+  background: #7c5cff;
 }
 </style>

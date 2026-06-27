@@ -26,6 +26,14 @@ export function resolveOutcomeRange(preset: OutcomeRangePreset) {
   return { from, to, preset }
 }
 
+/** 展示用：YYYY年M月D日 星期X */
+export function formatYmdWeekday(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const date = new Date(Date.UTC(y!, m! - 1, d!))
+  const weekday = new Intl.DateTimeFormat('zh-CN', { weekday: 'long', timeZone: 'UTC' }).format(date)
+  return `${y}年${m}月${d}日 ${weekday}`
+}
+
 /** 展示用：YYYY-MM-DD HH:mm（北京时间） */
 export function formatBeijingDateTime(value?: string | null): string {
   if (!value) return '—'

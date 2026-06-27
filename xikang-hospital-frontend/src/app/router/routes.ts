@@ -44,6 +44,7 @@ import MedtechInspectionStartPage from '@/modules/medtech/pages/MedtechInspectio
 import MedtechDisposalStartPage from '@/modules/medtech/pages/MedtechDisposalStartPage.vue'
 import OutcomeAssessmentPage from '@/modules/medtech/follow-up/pages/OutcomeAssessmentPage.vue'
 import FollowUpDashboardPage from '@/modules/medtech/follow-up/pages/FollowUpDashboardPage.vue'
+import FollowUpCommunicationPage from '@/modules/medtech/follow-up/pages/FollowUpCommunicationPage.vue'
 import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
@@ -270,7 +271,7 @@ export const routes: RouteRecordRaw[] = [
           {
             path: 'communication',
             name: 'FollowUpCommunication',
-            component: RoutePlaceholder,
+            component: FollowUpCommunicationPage,
             meta: { title: '医患沟通', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 3 },
           },
           {

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import PatientCommunicationPanel from '@/modules/patient/components/PatientCommunicationPanel.vue'
 
 const activeTab = ref('plans')
 
@@ -81,6 +82,12 @@ function markComplete(planId: number) {
           @click="activeTab = 'feedback'"
         >
           健康反馈
+        </button>
+        <button
+          :class="['tab-btn', { active: activeTab === 'communication' }]"
+          @click="activeTab = 'communication'"
+        >
+          医患沟通
         </button>
       </div>
     </GlassCard>
@@ -222,6 +229,9 @@ function markComplete(planId: number) {
         </div>
       </div>
     </GlassCard>
+
+    <!-- 医患沟通 -->
+    <PatientCommunicationPanel v-if="activeTab === 'communication'" />
   </div>
 </template>
 

@@ -1,4 +1,19 @@
-import type { FollowUpPriorityLevel } from '@/shared/types/medtechFollowUp'
+import type { FollowUpDayScheduleItem, FollowUpPriorityLevel } from '@/shared/types/medtechFollowUp'
+
+export type FollowUpScheduleVisualStatus = 'planned' | 'completed' | 'overdue' | 'custom'
+
+/** 日历/日程列表中的访谈状态着色：过去未完成=红，已完成=绿 */
+export function resolveInterviewScheduleVisualStatus(
+  item: FollowUpDayScheduleItem,
+  dateYmd: string,
+  todayYmd: string,
+): FollowUpScheduleVisualStatus {
+  if (item.itemType === 'custom') return 'custom'
+  if (item.itemType !== 'interview') return 'planned'
+  if (item.status === 'completed') return 'completed'
+  if (dateYmd < todayYmd && item.status === 'planned') return 'overdue'
+  return 'planned'
+}
 
 export const FOLLOW_UP_PRIORITY_LABELS: Record<FollowUpPriorityLevel, string> = {
   normal: '常规',
