@@ -1,19 +1,27 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import PatientCommunicationPanel from '@/modules/patient/components/PatientCommunicationPanel.vue'
+import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
+import { useAuthStore } from '@/app/stores/auth'
+import type {
+  PatientFollowUpPlanItem,
+  PatientFollowUpRecordItem,
+  PatientMedicationItem,
+} from '@/shared/types/medtechFollowUp'
 
+const authStore = useAuthStore()
 const activeTab = ref('plans')
+const loading = ref(false)
 
-// 随访计划（待后端实现后通过 API 获取）
-const followupPlans = ref<any[]>([])
+const followupPlans = ref<PatientFollowUpPlanItem[]>([])
+const medications = ref<PatientMedicationItem[]>([])
+const feedbackRecords = ref<PatientFollowUpRecordItem[]>([])
 
-// 用药提醒（待后端实现后通过 API 获取）
-const medications = ref<any[]>([])
+const patientId = computed(() => authStore.currentPatientId || authStore.currentPatient?.patientId)
 
-// 反馈表单
 const feedbackForm = ref({
   symptom: '',
   feedback: '',
@@ -21,16 +29,48 @@ const feedbackForm = ref({
 })
 const feedbackLoading = ref(false)
 
-function statusTone(status: string) {
+function statusTone(status?: string) {
   if (status === 'completed') return 'success'
-  if (status === 'pending') return 'warning'
+  if (status === 'pending' || status === 'overdue') return 'warning'
   return 'neutral'
 }
 
-function statusText(status: string) {
+function statusText(status?: string) {
   if (status === 'completed') return '已完成'
   if (status === 'pending') return '待完成'
+  if (status === 'overdue') return '已逾期'
+  if (status === 'cancelled') return '已取消'
   return '进行中'
+}
+
+function planTitle(plan: PatientFollowUpPlanItem) {
+  const typeMap: Record<string, string> = {
+    medication: '用药随访',
+    side_effect: '副作用随访',
+    recovery: '康复随访',
+    revisit: '复诊提醒',
+  }
+  return typeMap[plan.followUpType ?? ''] ?? '随访计划'
+}
+
+async function loadPortalData() {
+  if (!patientId.value) return
+  loading.value = true
+  try {
+    const params = { patientId: patientId.value }
+    const [plans, meds, records] = await Promise.all([
+      medtechFollowUpApi.listPatientPlans(params),
+      medtechFollowUpApi.listPatientMedications(params),
+      medtechFollowUpApi.listPatientRecords(params),
+    ])
+    followupPlans.value = plans
+    medications.value = meds
+    feedbackRecords.value = records
+  } catch {
+    ElMessage.error('加载随访数据失败')
+  } finally {
+    loading.value = false
+  }
 }
 
 async function submitFeedback() {
@@ -38,23 +78,49 @@ async function submitFeedback() {
     ElMessage.warning('请填写症状描述')
     return
   }
+  const registerId = followupPlans.value[0]?.registerId
+  if (!registerId) {
+    ElMessage.warning('暂无关联就诊记录，无法提交反馈')
+    return
+  }
   feedbackLoading.value = true
   try {
-    await new Promise(resolve => setTimeout(resolve, 800))
+    await medtechFollowUpApi.submitPatientFeedback({
+      registerId,
+      followUpPlanId: followupPlans.value.find((p) => p.planStatus !== 'completed')?.id,
+      symptom: feedbackForm.value.symptom,
+      feedback: feedbackForm.value.feedback,
+      rating: feedbackForm.value.rating,
+    })
     ElMessage.success('反馈提交成功')
     feedbackForm.value = { symptom: '', feedback: '', rating: 5 }
+    await loadPortalData()
+  } catch {
+    ElMessage.error('反馈提交失败')
   } finally {
     feedbackLoading.value = false
   }
 }
 
-function markComplete(planId: number) {
-  const plan = followupPlans.value.find(p => p.id === planId)
-  if (plan) {
-    plan.status = 'completed'
+async function markComplete(planId: number) {
+  try {
+    await medtechFollowUpApi.completePatientPlan(planId)
     ElMessage.success('已标记为完成')
+    await loadPortalData()
+  } catch {
+    ElMessage.error('操作失败')
   }
 }
+
+watch(activeTab, (tab) => {
+  if (tab !== 'communication') {
+    void loadPortalData()
+  }
+})
+
+onMounted(() => {
+  void loadPortalData()
+})
 </script>
 
 <template>
@@ -92,8 +158,7 @@ function markComplete(planId: number) {
       </div>
     </GlassCard>
 
-    <!-- 随访计划 -->
-    <GlassCard v-if="activeTab === 'plans'" class="plans-card">
+    <GlassCard v-if="activeTab === 'plans'" class="plans-card" v-loading="loading">
       <div class="section-header">
         <h3>随访计划</h3>
         <StatusTag tone="neutral">{{ followupPlans.length }} 项计划</StatusTag>
@@ -101,29 +166,28 @@ function markComplete(planId: number) {
       <div class="plans-list">
         <div v-for="plan in followupPlans" :key="plan.id" class="plan-item">
           <div class="plan-status">
-            <StatusTag :tone="statusTone(plan.status)">
-              {{ statusText(plan.status) }}
+            <StatusTag :tone="statusTone(plan.planStatus)">
+              {{ statusText(plan.planStatus) }}
             </StatusTag>
           </div>
           <div class="plan-info">
             <div class="plan-main">
-              <strong class="plan-title">{{ plan.title }}</strong>
-              <span class="plan-doctor">{{ plan.doctor }}</span>
+              <strong class="plan-title">{{ planTitle(plan) }}</strong>
+              <span class="plan-doctor">{{ plan.doctorName ?? '随访医生' }}</span>
             </div>
             <div class="plan-meta">
-              <span>📅 {{ plan.dueDate }}</span>
-              <span v-if="plan.notes">📝 {{ plan.notes }}</span>
+              <span v-if="plan.plannedDate">📅 {{ plan.plannedDate }}</span>
+              <span v-if="plan.contentTemplate">📝 含用药/康复指导</span>
             </div>
           </div>
           <div class="plan-actions">
             <button
-              v-if="plan.status === 'pending'"
+              v-if="plan.planStatus === 'pending' || plan.planStatus === 'overdue'"
               class="btn-outline"
               @click="markComplete(plan.id)"
             >
               标记完成
             </button>
-            <button class="btn-outline">详情</button>
           </div>
         </div>
         <div v-if="!followupPlans.length" class="empty-state">
@@ -132,8 +196,7 @@ function markComplete(planId: number) {
       </div>
     </GlassCard>
 
-    <!-- 用药提醒 -->
-    <GlassCard v-if="activeTab === 'medications'" class="medications-card">
+    <GlassCard v-if="activeTab === 'medications'" class="medications-card" v-loading="loading">
       <div class="section-header">
         <h3>当前用药</h3>
         <StatusTag tone="warning">{{ medications.length }} 种药物</StatusTag>
@@ -141,37 +204,14 @@ function markComplete(planId: number) {
       <div class="medications-list">
         <div v-for="med in medications" :key="med.id" class="medication-item">
           <div class="med-header">
-            <strong class="med-name">{{ med.name }}</strong>
-            <span class="med-dosage">{{ med.dosage }}</span>
+            <strong class="med-name">{{ med.drugName ?? '药品' }}</strong>
+            <span class="med-dosage">{{ med.drugNumber ?? '—' }}</span>
           </div>
           <div class="med-details">
             <div class="med-row">
               <span class="med-label">用法：</span>
-              <span>{{ med.frequency }}</span>
+              <span>{{ med.drugUsage ?? '遵医嘱' }}</span>
             </div>
-            <div class="med-row">
-              <span class="med-label">疗程：</span>
-              <span>{{ med.duration }}</span>
-            </div>
-            <div class="med-row">
-              <span class="med-label">开始日期：</span>
-              <span>{{ med.startDate }}</span>
-            </div>
-            <div class="med-row">
-              <span class="med-label">提醒时间：</span>
-              <div class="reminder-times">
-                <StatusTag
-                  v-for="time in med.reminderTimes"
-                  :key="time"
-                  tone="primary"
-                >
-                  {{ time }}
-                </StatusTag>
-              </div>
-            </div>
-          </div>
-          <div class="med-actions">
-            <button class="btn-primary">查看用药指导</button>
           </div>
         </div>
         <div v-if="!medications.length" class="empty-state">
@@ -180,11 +220,17 @@ function markComplete(planId: number) {
       </div>
     </GlassCard>
 
-    <!-- 健康反馈 -->
     <GlassCard v-if="activeTab === 'feedback'" class="feedback-card">
       <div class="section-header">
         <h3>提交健康反馈</h3>
         <p class="feedback-tip">定期反馈有助于医生了解您的康复情况</p>
+      </div>
+      <div v-if="feedbackRecords.length" class="feedback-history">
+        <h4>历史反馈</h4>
+        <div v-for="record in feedbackRecords.slice(0, 5)" :key="record.id" class="feedback-history-item">
+          <span>{{ record.followUpTime?.slice(0, 10) ?? '—' }}</span>
+          <p>{{ record.patientFeedback }}</p>
+        </div>
       </div>
       <div class="feedback-form">
         <div class="form-group">
@@ -230,7 +276,6 @@ function markComplete(planId: number) {
       </div>
     </GlassCard>
 
-    <!-- 医患沟通 -->
     <PatientCommunicationPanel v-if="activeTab === 'communication'" />
   </div>
 </template>
@@ -317,7 +362,28 @@ function markComplete(planId: number) {
   margin: var(--space-2) 0 0;
 }
 
-/* 计划列表 */
+.feedback-history {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.feedback-history h4 {
+  margin: 0 0 var(--space-3);
+  font-size: 14px;
+}
+
+.feedback-history-item {
+  padding: var(--space-2) 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.feedback-history-item p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text);
+}
+
 .plans-list {
   display: grid;
   gap: var(--space-4);
@@ -367,12 +433,6 @@ function markComplete(planId: number) {
   color: var(--color-text-muted);
 }
 
-.plan-actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-/* 药物列表 */
 .medications-list {
   display: grid;
   gap: var(--space-4);
@@ -390,8 +450,6 @@ function markComplete(planId: number) {
   align-items: baseline;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .med-name {
@@ -404,33 +462,16 @@ function markComplete(planId: number) {
   font-weight: 600;
 }
 
-.med-details {
-  display: grid;
-  gap: var(--space-3);
-}
-
 .med-row {
   display: flex;
-  align-items: flex-start;
   gap: var(--space-2);
 }
 
 .med-label {
   color: var(--color-text-muted);
-  font-size: 13px;
-  min-width: 70px;
+  min-width: 48px;
 }
 
-.reminder-times {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.med-actions {
-  margin-top: var(--space-4);
-}
-
-/* 反馈表单 */
 .feedback-form {
   display: grid;
   gap: var(--space-5);
@@ -457,11 +498,6 @@ function markComplete(planId: number) {
   font-family: inherit;
 }
 
-.form-textarea:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
-
 .rating-stars {
   display: flex;
   gap: var(--space-2);
@@ -473,42 +509,19 @@ function markComplete(planId: number) {
   border: none;
   cursor: pointer;
   color: var(--color-border);
-  transition: color var(--duration-fast);
 }
 
 .star-btn.active {
   color: #f59e0b;
 }
 
-.star-btn:hover {
-  color: #f59e0b;
-}
-
-.form-actions {
-  display: flex;
-  gap: var(--space-3);
-}
-
-/* 共享样式 */
 .btn-primary {
   padding: var(--space-3) var(--space-5);
   background: var(--color-primary);
   color: white;
   border: none;
   border-radius: var(--radius-md);
-  font-size: 14px;
-  font-weight: 600;
   cursor: pointer;
-  transition: all var(--duration-base) var(--ease-standard);
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .btn-outline {
@@ -517,12 +530,6 @@ function markComplete(planId: number) {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all var(--duration-base) var(--ease-standard);
-}
-
-.btn-outline:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
 }
 
 .empty-state {

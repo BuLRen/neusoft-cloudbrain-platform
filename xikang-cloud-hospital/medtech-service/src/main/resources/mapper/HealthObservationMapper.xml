@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.HealthObservationMapper">
+
+    <select id="selectObservations" resultType="map">
+        SELECT
+            pho.id AS "id",
+            pho.register_id AS "registerId",
+            pho.observed_at::date AS "recordDate",
+            pho.observed_at AS "recordedAt",
+            pho.metric_code AS "metricKey",
+            pho.metric_value AS "metricValue",
+            pho.unit AS "unit",
+            pho.source_type AS "source",
+            pho.note AS "note"
+        FROM patient_health_observation pho
+        WHERE pho.register_id = #{registerId}
+        <if test="from != null">
+            AND pho.observed_at::date &gt;= #{from}
+        </if>
+        <if test="to != null">
+            AND pho.observed_at::date &lt;= #{to}
+        </if>
+        <if test="metricKeys != null and metricKeys.size() &gt; 0">
+            AND pho.metric_code IN
+            <foreach collection="metricKeys" item="key" open="(" separator="," close=")">
+                #{key}
+            </foreach>
+        </if>
+        ORDER BY pho.observed_at ASC, pho.metric_code ASC
+    </select>
+
+    <select id="selectLabMetricMappings" resultType="map">
+        SELECT source_type AS "sourceType", source_key AS "sourceKey",
+               metric_code AS "metricCode", unit AS "unit"
+        FROM lab_metric_mapping
+    </select>
+
+    <select id="selectInspectionResults" resultType="map">
+        SELECT
+            ir.id AS "id",
+            ir.inspection_time AS "observedAt",
+            ir.inspection_result AS "resultJson",
+            mt.tech_code AS "techCode",
+            mt.tech_name AS "techName"
+        FROM inspection_request ir
+        LEFT JOIN medical_technology mt ON mt.id = ir.medical_technology_id
+        WHERE ir.register_id = #{registerId}
+          AND ir.inspection_result IS NOT NULL
+          AND TRIM(ir.inspection_result) &lt;&gt; ''
+        ORDER BY ir.inspection_time DESC NULLS LAST
+    </select>
+
+    <select id="selectCheckResults" resultType="map">
+        SELECT
+            cr.id AS "id",
+            cr.check_time AS "observedAt",
+            cr.check_result AS "resultJson",
+            mt.tech_code AS "techCode",
+            mt.tech_name AS "techName"
+        FROM check_request cr
+        LEFT JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+        WHERE cr.register_id = #{registerId}
+          AND cr.check_result IS NOT NULL
+          AND TRIM(cr.check_result) &lt;&gt; ''
+        ORDER BY cr.check_time DESC NULLS LAST
+    </select>
+
+    <insert id="insertObservation">
+        INSERT INTO patient_health_observation (
+            register_id, observed_at, metric_code, metric_value, unit, source_type, source_ref_id, note
+        ) VALUES (
+            #{registerId}, #{observedAt}, #{metricCode}, #{metricValue}, #{unit},
+            #{sourceType}, #{sourceRefId}, #{note}
+        )
+        ON CONFLICT (register_id, metric_code, observed_at) DO NOTHING
+    </insert>
+
+</mapper>

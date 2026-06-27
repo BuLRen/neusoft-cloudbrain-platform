@@ -15,7 +15,7 @@ public interface AiFollowUpRecordMapper {
 
     List<AiFollowUpRecord> selectByPlanId(Long planId);
 
-    List<AiFollowUpRecord> selectByPatientId(Long patientId);
+    List<AiFollowUpRecord> selectByRegisterId(Long registerId);
 
     int insert(AiFollowUpRecord record);
 }

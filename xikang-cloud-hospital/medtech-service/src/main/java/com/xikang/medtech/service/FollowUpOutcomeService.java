@@ -19,10 +19,10 @@ import java.util.Map;
 public class FollowUpOutcomeService {
 
     private final FollowUpOutcomeMapper followUpOutcomeMapper;
+    private final HealthObservationService healthObservationService;
 
     public List<Map<String, Object>> listPatients(Integer visitState) {
-        Integer state = visitState != null ? visitState : 3;
-        List<Map<String, Object>> patients = followUpOutcomeMapper.selectFollowUpPatients(state);
+        List<Map<String, Object>> patients = followUpOutcomeMapper.selectFollowUpPatients(visitState);
         for (Map<String, Object> patient : patients) {
             Long registerId = toLong(patient.get("registerId"));
             if (registerId != null) {
@@ -58,7 +58,7 @@ public class FollowUpOutcomeService {
     }
 
     public List<Map<String, Object>> getMetrics(Long registerId, LocalDate from, LocalDate to, List<String> metricKeys) {
-        return followUpOutcomeMapper.selectHealthMetrics(registerId, from, to, metricKeys);
+        return healthObservationService.getMetrics(registerId, from, to, metricKeys);
     }
 
     public List<Map<String, Object>> getRecords(Long registerId) {

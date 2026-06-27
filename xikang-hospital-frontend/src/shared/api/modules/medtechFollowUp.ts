@@ -9,6 +9,8 @@ import type {
   FollowUpDashboardPatient,
   FollowUpDayScheduleItem,
   FollowUpHealthMetric,
+  FollowUpEnrollPayload,
+  FollowUpEnrollResult,
   FollowUpObservationConfirmPayload,
   FollowUpObservationStatus,
   FollowUpOutcomeRecord,
@@ -19,18 +21,23 @@ import type {
   InterviewScheduleItem,
   InterviewSchedulePayload,
   InterviewScheduleStatus,
+  PatientFollowUpFeedbackPayload,
+  PatientFollowUpPlanItem,
+  PatientFollowUpRecordItem,
+  PatientMedicationItem,
 } from '@/shared/types/medtechFollowUp'
 
 const outcomeBase = '/medtech/follow-up/outcome'
 const dashboardBase = '/medtech/follow-up/dashboard'
 const communicationBase = '/medtech/follow-up/communication'
+const patientPortalBase = '/medtech/follow-up/patient'
 
 export const medtechFollowUpApi = {
-  listPatients(visitState = 3) {
+  listPatients(visitState?: number) {
     return http<FollowUpPatientOption[]>({
       url: `${outcomeBase}/patients`,
       method: 'GET',
-      params: { visitState },
+      params: visitState != null ? { visitState } : undefined,
     })
   },
 
@@ -139,6 +146,14 @@ export const medtechFollowUpApi = {
       url: `${dashboardBase}/observation/status/${registerId}`,
       method: 'GET',
       params: date ? { date } : undefined,
+    })
+  },
+
+  enrollPatient(payload: FollowUpEnrollPayload) {
+    return http<FollowUpEnrollResult>({
+      url: `${dashboardBase}/enroll`,
+      method: 'POST',
+      data: payload,
     })
   },
 
@@ -260,6 +275,45 @@ export const medtechFollowUpApi = {
     return http<FollowUpCommunicationSession>({
       url: `${communicationBase}/patient/session/${registerId}`,
       method: 'GET',
+    })
+  },
+
+  listPatientPlans(params: { patientId?: number; registerIds?: number[] }) {
+    return http<PatientFollowUpPlanItem[]>({
+      url: `${patientPortalBase}/plans`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  listPatientRecords(params: { patientId?: number; registerIds?: number[] }) {
+    return http<PatientFollowUpRecordItem[]>({
+      url: `${patientPortalBase}/records`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  listPatientMedications(params: { patientId?: number; registerIds?: number[] }) {
+    return http<PatientMedicationItem[]>({
+      url: `${patientPortalBase}/medications`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  completePatientPlan(planId: number) {
+    return http<void>({
+      url: `${patientPortalBase}/plans/${planId}/complete`,
+      method: 'PATCH',
+    })
+  },
+
+  submitPatientFeedback(payload: PatientFollowUpFeedbackPayload) {
+    return http<{ id?: number }>({
+      url: `${patientPortalBase}/feedback`,
+      method: 'POST',
+      data: payload,
     })
   },
 }

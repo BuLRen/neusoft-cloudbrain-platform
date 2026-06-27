@@ -5,6 +5,8 @@ export interface FollowUpPatientOption {
   gender?: string
   age?: number
   visitState?: number
+  enrolled?: boolean
+  enrollmentPriority?: string
   diseases?: FollowUpDisease[]
 }
 
@@ -136,6 +138,7 @@ export interface FollowUpDashboardPatient {
   gender?: string
   age?: number
   departmentId?: number
+  enrolled?: boolean
   priorityLevel?: FollowUpPriorityLevel
   interviewIntervalDays?: number
   observationIntervalDays?: number
@@ -203,6 +206,57 @@ export interface FollowUpObservationConfirmPayload {
   registerId: number
   observationDate?: string
   note?: string
+}
+
+export interface FollowUpEnrollPayload {
+  registerId: number
+  departmentId?: number
+  priorityLevel?: FollowUpPriorityLevel
+  interviewIntervalDays?: number
+  observationIntervalDays?: number
+}
+
+export interface FollowUpEnrollResult {
+  registerId: number
+  departmentId?: number
+  priorityLevel?: FollowUpPriorityLevel
+  enrolled?: boolean
+  realName?: string
+  caseNumber?: string
+}
+
+export interface PatientFollowUpPlanItem {
+  id: number
+  registerId?: number
+  followUpType?: string
+  planStatus?: string
+  plannedDate?: string
+  contentTemplate?: string
+  doctorName?: string
+}
+
+export interface PatientFollowUpRecordItem {
+  id: number
+  registerId?: number
+  symptomRelief?: string
+  patientFeedback?: string
+  followUpTime?: string
+}
+
+export interface PatientMedicationItem {
+  id: number
+  registerId?: number
+  drugName?: string
+  drugUsage?: string
+  drugNumber?: string
+}
+
+export interface PatientFollowUpFeedbackPayload {
+  registerId: number
+  followUpPlanId?: number
+  symptom: string
+  feedback?: string
+  rating?: number
 }
 
 export type CommunicationSenderType = 'doctor' | 'patient' | 'ai' | 'system'

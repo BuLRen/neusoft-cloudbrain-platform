@@ -77,3 +77,9 @@ xikang:
       workflow-follow-up-medical-chat: ${DIFY_WORKFLOW_FOLLOW_UP_MEDICAL_CHAT:true}
       api-key-follow-up-medical-chat: ${DIFY_API_KEY_FOLLOW_UP_MEDICAL_CHAT:}
 
+# =============================================================================
+# 随访数据源：demo=仅模拟表 | production=仅 A/C 类生产数据 | hybrid=真实患者+模拟指标回退
+# =============================================================================
+follow-up:
+  data-source: ${FOLLOW_UP_DATA_SOURCE:production}
+

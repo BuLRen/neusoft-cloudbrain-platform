@@ -4,22 +4,24 @@
 
     <resultMap id="BaseResultMap" type="com.xikang.ai.pharmacy.entity.AiFollowUpRecord">
         <id column="id" property="id"/>
-        <result column="plan_id" property="planId"/>
-        <result column="patient_id" property="patientId"/>
-        <result column="medication_compliance" property="medicationCompliance"/>
-        <result column="symptom_feedback" property="symptomFeedback"/>
-        <result column="side_effects" property="sideEffects"/>
-        <result column="recovery_status" property="recoveryStatus"/>
+        <result column="follow_up_plan_id" property="followUpPlanId"/>
+        <result column="register_id" property="registerId"/>
+        <result column="is_on_time" property="isOnTime"/>
+        <result column="side_effect" property="sideEffect"/>
+        <result column="has_side_effect" property="hasSideEffect"/>
+        <result column="symptom_relief" property="symptomRelief"/>
+        <result column="need_revisit" property="needRevisit"/>
+        <result column="patient_feedback" property="patientFeedback"/>
         <result column="ai_assessment" property="aiAssessment"/>
-        <result column="next_follow_up_date" property="nextFollowUpDate"/>
-        <result column="remark" property="remark"/>
-        <result column="record_time" property="recordTime"/>
-        <result column="create_time" property="createTime"/>
+        <result column="ai_advice" property="aiAdvice"/>
+        <result column="follow_up_time" property="followUpTime"/>
+        <result column="model_id" property="modelId"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, plan_id, patient_id, medication_compliance, symptom_feedback, side_effects,
-        recovery_status, ai_assessment, next_follow_up_date, remark, record_time, create_time
+        id, follow_up_plan_id, register_id, is_on_time, side_effect, has_side_effect,
+        symptom_relief, need_revisit, patient_feedback, ai_assessment, ai_advice,
+        follow_up_time, model_id
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
@@ -31,24 +33,26 @@
     <select id="selectByPlanId" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM ai_follow_up_record
-        WHERE plan_id = #{planId}
-        ORDER BY record_time DESC, create_time DESC
+        WHERE follow_up_plan_id = #{planId}
+        ORDER BY follow_up_time DESC NULLS LAST, id DESC
     </select>
 
-    <select id="selectByPatientId" resultMap="BaseResultMap">
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM ai_follow_up_record
-        WHERE patient_id = #{patientId}
-        ORDER BY record_time DESC, create_time DESC
+        WHERE register_id = #{registerId}
+        ORDER BY follow_up_time DESC NULLS LAST, id DESC
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO ai_follow_up_record (
-            plan_id, patient_id, medication_compliance, symptom_feedback, side_effects,
-            recovery_status, ai_assessment, next_follow_up_date, remark, record_time, create_time
+            follow_up_plan_id, register_id, is_on_time, side_effect, has_side_effect,
+            symptom_relief, need_revisit, patient_feedback, ai_assessment, ai_advice,
+            follow_up_time, model_id
         ) VALUES (
-            #{planId}, #{patientId}, #{medicationCompliance}, #{symptomFeedback}, #{sideEffects},
-            #{recoveryStatus}, #{aiAssessment}, #{nextFollowUpDate}, #{remark}, #{recordTime}, #{createTime}
+            #{followUpPlanId}, #{registerId}, #{isOnTime}, #{sideEffect}, #{hasSideEffect},
+            #{symptomRelief}, #{needRevisit}, #{patientFeedback}, #{aiAssessment}, #{aiAdvice},
+            #{followUpTime}, #{modelId}
         )
     </insert>
 

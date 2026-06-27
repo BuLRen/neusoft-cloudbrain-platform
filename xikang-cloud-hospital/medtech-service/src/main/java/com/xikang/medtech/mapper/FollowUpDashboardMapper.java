@@ -12,7 +12,9 @@ public interface FollowUpDashboardMapper {
 
     List<Map<String, Object>> selectDashboardPatients(
         @Param("departmentId") Long departmentId,
-        @Param("targetDate") LocalDate targetDate
+        @Param("targetDate") LocalDate targetDate,
+        @Param("includeUnenrolledEligible") boolean includeUnenrolledEligible,
+        @Param("demoOnlyProfile") boolean demoOnlyProfile
     );
 
     List<Map<String, Object>> selectTrackedDates(
@@ -50,10 +52,20 @@ public interface FollowUpDashboardMapper {
 
     Map<String, Object> selectDashboardStats(
         @Param("departmentId") Long departmentId,
-        @Param("targetDate") LocalDate targetDate
+        @Param("targetDate") LocalDate targetDate,
+        @Param("includeUnenrolledEligible") boolean includeUnenrolledEligible,
+        @Param("demoOnlyProfile") boolean demoOnlyProfile
     );
 
     Map<String, Object> selectEmployeeBrief(@Param("employeeId") Long employeeId);
 
     Long selectRegisterDepartmentId(@Param("registerId") Long registerId);
+
+    boolean isEligiblePatient(@Param("registerId") Long registerId);
+
+    int upsertPatientProfile(Map<String, Object> payload);
+
+    int upsertEnrollment(Map<String, Object> payload);
+
+    Map<String, Object> selectEnrollmentByRegisterId(@Param("registerId") Long registerId);
 }
