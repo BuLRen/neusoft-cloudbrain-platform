@@ -13,12 +13,67 @@ spring:
       - optional:file:./config/database-secrets.yml
       - optional:file:../.env
   ai:
+    # =========================================================================
+    # RAG 知识库总开关
+    #   false（默认）：不启用 RAG，沿用 DeepSeek + 原 prompt 流程，无需 pgvector
+    #   true：启用 RAG，使用通义 Embedding + Chat + PgVector 检索增强
+    #         需要服务器已装 pgvector 扩展（详见 docs/server-install-pgvector.md）
+    # =========================================================================
+    rag:
+      enabled: ${TRIAGE_RAG_ENABLED:false}
+
+    # =========================================================================
+    # 模型配置
+    #   - RAG 关闭：用 DeepSeek（chat）
+    #   - RAG 启用：用通义千问（chat + embedding，OpenAI 兼容协议）
+    # Spring AI 的 OpenAI starter 只支持单一 provider，因此通过 RAG 开关在
+    # AiConfig 里选择装配哪一套。两套 provider 的配置都保留在此处。
+    # =========================================================================
     openai:
       api-key: ${DEEPSEEK_API_KEY:your-api-key}
       base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       chat:
         options:
           model: ${DEEPSEEK_MODEL:deepseek-chat}
+
+    # =========================================================================
+    # 通义千问（阿里云百炼）配置 —— 仅 RAG 启用时生效
+    #
+    # 申请 API Key：https://bailian.console.aliyun.com/ (ApiKey 页面)
+    #
+    # ★ Chat base-url 路径要点（坑过一次）：
+    #   Spring AI 的 OpenAiApi 默认 completionsPath = "/v1/chat/completions"，
+    #   会自动在 base-url 后面追加这个路径。
+    #   所以 base-url 只能写到 /compatible-mode，**不能带 /v1**，
+    #   否则路径会变成 /compatible-mode/v1/v1/chat/completions → 404。
+    #
+    #   ✅ 正确：chat-base-url = {DASHSCOPE_HOST}/compatible-mode
+    #   ❌ 错误：chat-base-url = {DASHSCOPE_HOST}/compatible-mode/v1
+    #
+    # Embedding 走 DashScope 原生路径（在 DashScopeEmbeddingModel 里硬编码，不走 OpenAiApi），
+    # 所以 embedding-base-url 是裸 host。
+    # =========================================================================
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+      chat-base-url: ${DASHSCOPE_HOST:https://dashscope.aliyuncs.com}/compatible-mode
+      embedding-base-url: ${DASHSCOPE_HOST:https://dashscope.aliyuncs.com}
+      chat-model: ${DASHSCOPE_CHAT_MODEL:qwen-max}
+      embedding-model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}
+
+    # =========================================================================
+    # PgVector 向量库配置（仅 RAG 启用时生效）
+    # 注意：initialize-schema=false —— 由 RagConfig.ensureSchema() 手动建表
+    # 原因：Spring AI 1.0.0 硬编码 CREATE EXTENSION "uuid-ossp"，宝塔 PG 没装该扩展
+    # 手动建表用 PG 13+ 内置的 gen_random_uuid()，等价且无需额外扩展
+    # =========================================================================
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
+        schema-name: public
+        table-name: ai_triage_knowledge
+        initialize-schema: false
 
 baidu:
   asr:

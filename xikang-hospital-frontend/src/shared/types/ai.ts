@@ -47,6 +47,10 @@ export interface TriageAnalysisResult {
   // AI分析详情
   aiAnalysis?: TriageAnalysisDetail | null
   sessionId?: string
+  // 领域护栏：用户输入与医疗无关时为 true，前端应展示友好引导而非导诊结果
+  isOutOfScope?: boolean
+  // 话题外时给用户的引导语
+  outOfScopeMessage?: string | null
 }
 
 export interface TriageChatPayload {

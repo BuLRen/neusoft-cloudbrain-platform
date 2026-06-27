@@ -28,6 +28,12 @@
         SELECT * FROM ai_triage_record WHERE symptom_description = #{sessionId}
     </select>
 
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT * FROM ai_triage_record WHERE register_id = #{registerId}
+        ORDER BY triage_time DESC
+        LIMIT 1
+    </select>
+
     <select id="selectByPatientId" resultMap="BaseResultMap">
         SELECT * FROM ai_triage_record WHERE patient_name = #{patientName} OR register_id = #{patientId}
         ORDER BY triage_time DESC
@@ -47,7 +53,12 @@
         ) VALUES (
             #{patientName}, #{patientAge}, #{patientGender}, #{symptomDescription},
             #{recommendDeptId}, #{recommendDeptName}, #{recommendDoctorId}, #{recommendDoctorName},
-            #{riskLevel}, #{isPriority}, #{aiAnalysis}, #{registerId}, #{triageTime}, #{modelId}
+            #{riskLevel}, #{isPriority}, #{aiAnalysis},
+            <choose>
+                <when test="registerId != null">#{registerId}</when>
+                <otherwise>NULL</otherwise>
+            </choose>,
+            #{triageTime}, #{modelId}
         )
     </insert>
 

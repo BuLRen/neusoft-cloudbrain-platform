@@ -1,5 +1,7 @@
 package com.xikang.ai.triage.controller;
 
+import com.xikang.ai.triage.dto.TriageRequest;
+import com.xikang.ai.triage.dto.TriageSummary;
 import com.xikang.ai.triage.entity.AiTriageRecord;
 import com.xikang.ai.triage.service.AiTriageService;
 import com.xikang.common.result.Result;
@@ -23,8 +25,8 @@ public class AiTriageController {
      * 症状分析并推荐科室
      */
     @PostMapping("/analyze")
-    public Result<Map<String, Object>> analyze(@RequestBody Map<String, Object> symptoms) {
-        Map<String, Object> result = aiTriageService.analyzeSymptoms(symptoms);
+    public Result<Map<String, Object>> analyze(@RequestBody TriageRequest request) {
+        Map<String, Object> result = aiTriageService.analyzeSymptoms(request);
         return Result.success(result);
     }
 
@@ -62,5 +64,13 @@ public class AiTriageController {
     public Result<List<AiTriageRecord>> getPatientTriageRecords(@PathVariable Long patientId) {
         List<AiTriageRecord> records = aiTriageService.getPatientTriageRecords(patientId);
         return Result.success(records);
+    }
+
+    /**
+     * 按 registerId 反查导诊小结（供预问诊等下游服务调用，实现"导诊→预问诊"上下文串联）
+     */
+    @GetMapping("/summary/register/{registerId}")
+    public Result<TriageSummary> getTriageSummaryByRegisterId(@PathVariable Integer registerId) {
+        return Result.success(aiTriageService.getTriageSummary(registerId));
     }
 }

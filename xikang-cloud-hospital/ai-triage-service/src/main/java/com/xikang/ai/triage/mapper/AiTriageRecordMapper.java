@@ -15,6 +15,8 @@ public interface AiTriageRecordMapper {
 
     AiTriageRecord selectBySessionId(String sessionId);
 
+    AiTriageRecord selectByRegisterId(Integer registerId);
+
     List<AiTriageRecord> selectByPatientId(Long patientId);
 
     List<AiTriageRecord> selectPending();
