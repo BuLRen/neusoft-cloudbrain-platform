@@ -64,8 +64,9 @@ function onRemoteSearch(keyword: string) {
 
 function onChange(value: number | number[]) {
   const ids = Array.isArray(value) ? value : value ? [value] : []
-  emit('update:modelValue', ids)
-  const selected = options.value.filter((item) => ids.includes(item.id))
+  const normalized = props.multiple ? ids : ids.slice(-1)
+  emit('update:modelValue', normalized)
+  const selected = options.value.filter((item) => normalized.includes(item.id))
   emit('select', selected)
 }
 
@@ -80,7 +81,7 @@ watch(
 
 <template>
   <ElSelect
-    :model-value="modelValue"
+    :model-value="multiple ? modelValue : modelValue[0]"
     :multiple="multiple"
     filterable
     remote

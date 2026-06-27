@@ -55,6 +55,32 @@ export function firstW4Suggestion(output?: W4Output | null): W4Suggestion | unde
   return sortSuggestions(output?.suggestions)[0]
 }
 
+export function splitW4BulletText(text?: string): string[] {
+  if (!text?.trim()) return []
+  return text
+    .split(/\n|；|;/)
+    .map((line) => line.replace(/^[-•·*\d.)]+\s*/, '').trim())
+    .filter(Boolean)
+}
+
+export function isSimilarToPrimary(primary?: W4Suggestion, candidate?: W4Suggestion): boolean {
+  if (!primary || !candidate) return false
+  const primaryIcd = (primary.recommendIcd || '').trim().toUpperCase()
+  const candidateIcd = (candidate.recommendIcd || '').trim().toUpperCase()
+  if (primaryIcd && candidateIcd) {
+    const primaryPrefix = primaryIcd.slice(0, 3)
+    if (primaryPrefix.length >= 3 && candidateIcd.startsWith(primaryPrefix)) return true
+  }
+  const primaryName = suggestionDisplayName(primary)
+  const candidateName = suggestionDisplayName(candidate)
+  if (primaryName && candidateName && primaryName !== candidateName) {
+    const shorter = primaryName.length <= candidateName.length ? primaryName : candidateName
+    const longer = primaryName.length > candidateName.length ? primaryName : candidateName
+    if (longer.includes(shorter.slice(0, Math.max(4, shorter.length - 2)))) return true
+  }
+  return false
+}
+
 export function hasW4PanelContent(liveOutput?: W4Output | null, savedSuggestions?: W4Suggestion[]): boolean {
   if (liveOutput) {
     return Boolean(
