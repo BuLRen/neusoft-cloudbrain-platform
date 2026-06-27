@@ -37,6 +37,8 @@ public class PhysicianAiPipelineService {
     private final W3AnalyzeNormalizer w3AnalyzeNormalizer;
     private final W3DifyInputBuilder w3DifyInputBuilder;
     private final DifyW3OutputMapper w3OutputMapper;
+    private final W4DifyInputBuilder w4DifyInputBuilder;
+    private final DifyW4OutputMapper w4OutputMapper;
     private final FallbackWorkflowEngine fallbackEngine;
     private final CtInferenceService ctInferenceService;
 
@@ -52,6 +54,8 @@ public class PhysicianAiPipelineService {
         W3AnalyzeNormalizer w3AnalyzeNormalizer,
         W3DifyInputBuilder w3DifyInputBuilder,
         DifyW3OutputMapper w3OutputMapper,
+        W4DifyInputBuilder w4DifyInputBuilder,
+        DifyW4OutputMapper w4OutputMapper,
         FallbackWorkflowEngine fallbackEngine,
         CtInferenceService ctInferenceService
     ) {
@@ -66,6 +70,8 @@ public class PhysicianAiPipelineService {
         this.w3AnalyzeNormalizer = w3AnalyzeNormalizer;
         this.w3DifyInputBuilder = w3DifyInputBuilder;
         this.w3OutputMapper = w3OutputMapper;
+        this.w4DifyInputBuilder = w4DifyInputBuilder;
+        this.w4OutputMapper = w4OutputMapper;
         this.fallbackEngine = fallbackEngine;
         this.ctInferenceService = ctInferenceService;
     }
@@ -347,19 +353,102 @@ public class PhysicianAiPipelineService {
 
     @Transactional
     public Map<String, Object> runW4(Long registerId) {
+        Map<String, Object> rawOutput;
+        if (difyClient.isW4Enabled()) {
+            log.info("W4 registerId={} using Dify workflow (api-key-w4)", registerId);
+            rawOutput = runW4ViaDify(registerId);
+        } else {
+            log.warn(
+                "W4 registerId={} using fallback (difyEnabled={}, w4Switch={}, w4ApiKeyConfigured={})",
+                registerId,
+                difyProperties.isDifyBaseConfigured(),
+                difyProperties.isW4WorkflowSwitchOn(),
+                !difyProperties.resolveW4ApiKey().isBlank()
+            );
+            rawOutput = adaptFallbackW4(fallbackEngine.runW4(buildW4FallbackInput(registerId)));
+            rawOutput.put("modelId", "fallback-w4");
+        }
+        persistW4(rawOutput, registerId);
+        return rawOutput;
+    }
+
+    private Map<String, Object> runW4ViaDify(Long registerId) {
+        try {
+            Map<String, Object> difyInputs = w4DifyInputBuilder.build(registerId);
+            String user = "physician-reg-" + registerId;
+            String traceId = "w4-" + registerId + "-" + System.currentTimeMillis();
+            DifyWorkflowRunResult run = difyClient.runWorkflowBlockingWithApiKey(
+                difyProperties.resolveW4ApiKey(),
+                difyInputs,
+                user,
+                traceId
+            );
+
+            Map<String, Object> mapped = w4OutputMapper.toW4Result(run.getOutputs());
+            if (mapped.get("registerId") == null) {
+                mapped.put("registerId", registerId);
+            }
+            mapped.put("modelId", "dify-w4");
+            mapped.put("workflowRunId", run.getWorkflowRunId());
+            log.info(
+                "W4 registerId={} Dify completed runId={} status={} suggestions={}",
+                registerId,
+                run.getWorkflowRunId(),
+                mapped.get("status"),
+                listOfMaps(mapped.get("suggestions")).size()
+            );
+            return mapped;
+        } catch (DifyWorkflowException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.warn("W4 registerId={} Dify call failed: {}", registerId, ex.toString());
+            throw new DifyWorkflowException("W4 诊断推理工作流调用失败，请稍后重试");
+        }
+    }
+
+    private Map<String, Object> buildW4FallbackInput(Long registerId) {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("registerId", registerId);
         input.put("structuredRecord", loadStructuredRecord(registerId));
         input.put("w3Output", loadW3Output(registerId));
         input.put("diseaseCatalog", physicianMapper.selectDiseases(null));
+        return input;
+    }
 
-        Map<String, Object> output = invokeWorkflow(
-            difyProperties.getWorkflowW4(),
-            input,
-            () -> fallbackEngine.runW4(input)
-        );
-        persistW4(output, registerId);
-        return output;
+    private Map<String, Object> adaptFallbackW4(Map<String, Object> fallbackOutput) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", "success");
+        out.put("registerId", fallbackOutput.get("registerId"));
+
+        List<Map<String, Object>> suggestions = new ArrayList<>();
+        Map<String, Object> primary = JsonMapUtils.asMap(fallbackOutput.get("primaryDiagnosis"));
+        if (!primary.isEmpty()) {
+            Map<String, Object> primarySuggestion = new LinkedHashMap<>(primary);
+            primarySuggestion.put("diagnosisName", primary.getOrDefault("diseaseName", primary.get("diagnosisName")));
+            primarySuggestion.put("treatmentDirection", fallbackOutput.get("clinicalAdvice"));
+            primarySuggestion.put("sortOrder", 1);
+            suggestions.add(primarySuggestion);
+        }
+        int order = 2;
+        for (Map<String, Object> diff : listOfMaps(fallbackOutput.get("differentialDiagnoses"))) {
+            Map<String, Object> item = new LinkedHashMap<>(diff);
+            item.put("diagnosisName", diff.getOrDefault("diseaseName", diff.get("diagnosisName")));
+            item.put("sortOrder", order++);
+            suggestions.add(item);
+        }
+
+        out.put("suggestions", suggestions);
+        out.put("fallbackSuggestions", List.of());
+        out.put("clinicalSummaryForDoctor", fallbackOutput.get("clinicalAdvice"));
+        out.put("differentialDiagnosis", listOfMaps(fallbackOutput.get("differentialDiagnoses")).stream()
+            .map(diff -> Map.<String, Object>of(
+                "diagnosisName", diff.getOrDefault("diseaseName", diff.get("diagnosisName")),
+                "reason", diff.getOrDefault("diagnosisBasis", "")
+            ))
+            .toList());
+        out.put("warningSigns", List.of());
+        out.put("searchAdvice", "");
+        return out;
     }
 
     @Transactional
@@ -633,39 +722,44 @@ public class PhysicianAiPipelineService {
     }
 
     private void persistW4(Map<String, Object> output, Long registerId) {
-        physicianMapper.deleteDiagnosisSuggestionsByRegisterId(registerId);
-        Map<String, Object> primary = JsonMapUtils.asMap(output.get("primaryDiagnosis"));
-        primary.put("treatmentDirection", output.get("clinicalAdvice"));
-        insertDiagnosisSuggestion(registerId, primary, 1);
-
-        int order = 2;
-        for (Map<String, Object> diff : listOfMaps(output.get("differentialDiagnoses"))) {
-            insertDiagnosisSuggestion(registerId, diff, order++);
+        String status = String.valueOf(output.getOrDefault("status", "success")).trim().toLowerCase();
+        if ("fallback".equals(status)) {
+            log.info("W4 registerId={} status=fallback, skip ai_diagnosis_suggestion persist", registerId);
+            return;
         }
 
-        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
-        if (record != null) {
-            Map<String, Object> dx = new HashMap<>();
-            dx.put("medicalRecordId", toLong(record.get("id")));
-            dx.put("diagnosis", primary.get("diseaseName"));
-            dx.put("cure", output.get("clinicalAdvice"));
-            dx.put("careful", "AI辅助诊断，请医生确认。");
-            physicianMapper.updateDiagnosis(dx);
+        List<Map<String, Object>> suggestions = listOfMaps(output.get("suggestions"));
+        if (suggestions.isEmpty() && "empty".equals(status)) {
+            physicianMapper.deleteDiagnosisSuggestionsByRegisterId(registerId);
+            return;
+        }
+        if (suggestions.isEmpty()) {
+            return;
+        }
+
+        physicianMapper.deleteDiagnosisSuggestionsByRegisterId(registerId);
+        String modelId = String.valueOf(output.getOrDefault("modelId", difyClient.isW4Enabled() ? "dify-w4" : "fallback-w4"));
+        int order = 1;
+        for (Map<String, Object> item : suggestions) {
+            insertDiagnosisSuggestion(registerId, item, order++, modelId);
         }
     }
 
-    private void insertDiagnosisSuggestion(Long registerId, Map<String, Object> item, int sortOrder) {
+    private void insertDiagnosisSuggestion(Long registerId, Map<String, Object> item, int sortOrder, String modelId) {
         Map<String, Object> row = new HashMap<>();
         row.put("registerId", registerId);
         row.put("diseaseId", item.get("diseaseId"));
-        row.put("diseaseName", item.get("diseaseName"));
-        row.put("recommendIcd", item.get("recommendIcd"));
+        String diseaseName = String.valueOf(item.getOrDefault("diagnosisName", item.getOrDefault("diseaseName", ""))).trim();
+        row.put("diseaseName", diseaseName);
+        row.put("recommendIcd", item.getOrDefault("recommendIcd", item.get("recommend_icd")));
         row.put("probability", item.get("probability"));
-        row.put("riskLevel", "low");
-        row.put("treatmentDirection", item.getOrDefault("treatmentDirection", item.get("clinicalAdvice")));
-        row.put("diagnosisBasis", item.get("diagnosisBasis"));
-        row.put("sortOrder", sortOrder);
-        row.put("modelId", difyClient.isReady() ? "dify-w4" : "fallback-w4");
+        String riskLevel = String.valueOf(item.getOrDefault("riskLevel", item.getOrDefault("risk_level", "low"))).trim();
+        row.put("riskLevel", riskLevel.isEmpty() ? "low" : riskLevel);
+        row.put("treatmentDirection", item.getOrDefault("treatmentDirection", item.get("treatment_direction")));
+        row.put("diagnosisBasis", item.getOrDefault("diagnosisBasis", item.get("diagnosis_basis")));
+        Object itemSort = item.get("sortOrder");
+        row.put("sortOrder", itemSort == null ? sortOrder : itemSort);
+        row.put("modelId", modelId);
         physicianMapper.insertDiagnosisSuggestion(row);
     }
 

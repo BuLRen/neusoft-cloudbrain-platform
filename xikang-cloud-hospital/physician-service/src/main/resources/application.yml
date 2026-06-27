@@ -28,6 +28,17 @@ spring:
       - optional:file:./config/database.yml
       - optional:file:../config/database-secrets.yml
       - optional:file:./config/database-secrets.yml
+  cloud:
+    # 单机部署 physician-service（无 Nacos）时保持 false；本地全栈 + Gateway 时在 .env 设 NACOS_DISCOVERY_ENABLED=true
+    nacos:
+      discovery:
+        enabled: ${NACOS_DISCOVERY_ENABLED:false}
+        register-enabled: ${NACOS_DISCOVERY_ENABLED:false}
+      config:
+        enabled: false
+    service-registry:
+      auto-registration:
+        enabled: ${NACOS_DISCOVERY_ENABLED:false}
 
 # -----------------------------------------------------------------------------
 # MyBatis（SQL 映射）
@@ -123,7 +134,14 @@ xikang:
       workflow-w3: ${DIFY_WORKFLOW_W3:}
       api-key-w3: ${DIFY_API_KEY_W3:}
       # W4  门诊确诊与概率
-      workflow-w4: ${DIFY_WORKFLOW_W4:}
+      workflow-w4: ${DIFY_WORKFLOW_W4:true}
+      api-key-w4: ${DIFY_API_KEY_W4:}
 
       # ----- 外部 CT 推理服务（W2b 用，未配置则用内置模拟）-----
       ct-inference-url: ${CT_INFERENCE_URL:}
+
+  # ----- 内部 AI 回调（Dify HTTP 节点 → 本服务，如 W4 疾病库检索）-----
+  # Header: Authorization: Bearer ${INTERNAL_AI_TOKEN}
+  internal:
+    ai:
+      token: ${INTERNAL_AI_TOKEN:}

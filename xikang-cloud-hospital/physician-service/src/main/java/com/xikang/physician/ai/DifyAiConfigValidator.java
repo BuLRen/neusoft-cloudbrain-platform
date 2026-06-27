@@ -83,5 +83,22 @@ public class DifyAiConfigValidator {
                 properties.getWorkflowW3()
             );
         }
+        String w4Switch = properties.getWorkflowW4();
+        if (w4Switch != null && w4Switch.startsWith("app-")) {
+            log.error(
+                "配置错误：workflow-w4 填了 API Key (app-xxx)。请设置 DIFY_WORKFLOW_W4=true，"
+                    + "并将 Key 放到 DIFY_API_KEY_W4。"
+            );
+        }
+        if (properties.isW4WorkflowSwitchOn() && properties.resolveW4ApiKey().isBlank()) {
+            log.warn("workflow-w4 已启用但 api-key-w4 / DIFY_API_KEY_W4 为空，W4 将走内置 Fallback。");
+        } else if (difyClient.isW4Enabled()) {
+            log.info("W4 门诊确诊：已启用 Dify Workflow（使用 api-key-w4）");
+        } else if (properties.isDifyBaseConfigured()) {
+            log.info(
+                "W4 门诊确诊：未启用 Dify（workflow-w4={}，需为 true/1/yes 且配置 DIFY_API_KEY_W4）",
+                properties.getWorkflowW4()
+            );
+        }
     }
 }

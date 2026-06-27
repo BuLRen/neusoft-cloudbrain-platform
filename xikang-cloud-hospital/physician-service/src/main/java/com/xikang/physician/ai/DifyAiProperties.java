@@ -25,6 +25,8 @@ public class DifyAiProperties {
     private String apiKeyW2 = "";
     /** W3 结果解读 Workflow App 的 API Key（app-xxx）；为空时不启用 W3 Dify */
     private String apiKeyW3 = "";
+    /** W4 门诊确诊 Workflow App 的 API Key（app-xxx）；为空时不启用 W4 Dify */
+    private String apiKeyW4 = "";
     private String ctInferenceUrl = "";
     /** Dify blocking 工作流读取超时（毫秒），慢模型建议 300000（5 分钟） */
     private int readTimeoutMs = 300_000;
@@ -137,6 +139,14 @@ public class DifyAiProperties {
         this.apiKeyW3 = apiKeyW3;
     }
 
+    public String getApiKeyW4() {
+        return apiKeyW4;
+    }
+
+    public void setApiKeyW4(String apiKeyW4) {
+        this.apiKeyW4 = apiKeyW4;
+    }
+
     public W2OutputKeys getW2OutputKeys() {
         return w2OutputKeys;
     }
@@ -164,6 +174,13 @@ public class DifyAiProperties {
      */
     public boolean isW3WorkflowSwitchOn() {
         return isWorkflowSwitchOn(workflowW3);
+    }
+
+    /**
+     * W4 开关：仅 {@code true}/{@code 1}/{@code yes}/{@code on} 视为启用（勿将 app-xxx 写在此项）。
+     */
+    public boolean isW4WorkflowSwitchOn() {
+        return isWorkflowSwitchOn(workflowW4);
     }
 
     private static boolean isWorkflowSwitchOn(String flag) {
@@ -208,6 +225,11 @@ public class DifyAiProperties {
     /** W3 专用 Key，不回退通用 api-key，避免误调其它 Workflow App。 */
     public String resolveW3ApiKey() {
         return apiKeyW3 == null ? "" : apiKeyW3.trim();
+    }
+
+    /** W4 专用 Key，不回退通用 api-key，避免误调其它 Workflow App。 */
+    public String resolveW4ApiKey() {
+        return apiKeyW4 == null ? "" : apiKeyW4.trim();
     }
 
     public String getCtInferenceUrl() {
