@@ -24,6 +24,7 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import DiseaseSearchSelect from './components/DiseaseSearchSelect.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import {
   physicianApi,
@@ -101,6 +102,7 @@ const requestDraft = reactive<RequestDraft>({ info: '', position: '', remark: ''
 const requestBasket = ref<BasketItem[]>([])
 
 const diseases = ref<Disease[]>([])
+const diagnosisSelectedDiseases = ref<Disease[]>([])
 const checkResults = ref<Awaited<ReturnType<typeof physicianApi.checkResults>>>([])
 const inspectionResults = ref<Awaited<ReturnType<typeof physicianApi.inspectionResults>>>([])
 const examSuggestions = ref<Record<string, unknown>[]>([])
@@ -151,7 +153,6 @@ async function selectPatient(patient: PhysicianPatient) {
     /* ignore */
   }
 }
-const selectedDiseaseNames = computed(() => diseases.value.filter((item) => diagnosisForm.diseaseIds.includes(item.id)).map((item) => item.diseaseName).join('、'))
 
 async function loadPatients() {
   loading.value = true
@@ -208,7 +209,15 @@ function applyMedicalRecord(record: MedicalRecord | null) {
   diagnosisForm.cure = record?.cure || ''
   diagnosisForm.careful = record?.careful || ''
   diagnosisForm.diseaseIds = record?.diseases?.map((item) => item.id) || []
+  diagnosisSelectedDiseases.value = record?.diseases ?? []
   confirmedDiagnosisForRx.value = record?.diagnosis || diagnosisForm.diagnosis
+}
+
+function onDiagnosisDiseaseSelect(selected: Disease[]) {
+  diagnosisSelectedDiseases.value = selected
+  if (selected.length && !diagnosisForm.diagnosis.trim()) {
+    diagnosisForm.diagnosis = selected.map((item) => item.diseaseName).join('、')
+  }
 }
 
 async function runW1() {
@@ -487,6 +496,16 @@ function adoptDiagnosisSuggestion(item: W4Suggestion) {
   const diseaseId = Number(item.diseaseId)
   if (diseaseId && !diagnosisForm.diseaseIds.includes(diseaseId)) {
     diagnosisForm.diseaseIds.push(diseaseId)
+    if (!diagnosisSelectedDiseases.value.some((d) => d.id === diseaseId)) {
+      diagnosisSelectedDiseases.value = [
+        ...diagnosisSelectedDiseases.value,
+        {
+          id: diseaseId,
+          diseaseName: suggestionDisplayName(item),
+          diseaseIcd: item.recommendIcd,
+        },
+      ]
+    }
   }
 }
 
@@ -807,12 +826,14 @@ onMounted(async () => {
               <div class="split-grid">
                 <ElForm label-position="top">
                   <ElFormItem label="确诊疾病">
-                    <ElSelect v-model="diagnosisForm.diseaseIds" multiple filterable placeholder="选择确诊疾病">
-                      <ElOption v-for="item in diseases" :key="item.id" :label="`${item.diseaseName} ${item.diseaseIcd || ''}`" :value="item.id" />
-                    </ElSelect>
+                    <DiseaseSearchSelect
+                      v-model="diagnosisForm.diseaseIds"
+                      :initial-diseases="diagnosisSelectedDiseases"
+                      @select="onDiagnosisDiseaseSelect"
+                    />
                   </ElFormItem>
                   <ElFormItem label="诊断结果">
-                    <ElInput v-model="diagnosisForm.diagnosis" :placeholder="selectedDiseaseNames || '填写诊断结果'" />
+                    <ElInput v-model="diagnosisForm.diagnosis" placeholder="可从疾病库选择后自动填入，也可手动修改" />
                   </ElFormItem>
                   <ElFormItem label="处理意见">
                     <ElInput v-model="diagnosisForm.cure" type="textarea" :rows="3" />

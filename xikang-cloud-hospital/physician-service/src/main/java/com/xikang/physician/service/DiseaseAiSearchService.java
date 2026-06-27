@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -17,6 +18,15 @@ import java.util.regex.Pattern;
 public class DiseaseAiSearchService {
 
     private static final Pattern ICD_PREFIX = Pattern.compile("^[A-Z][0-9]{2}");
+
+    /** Short/generic symptoms that must not match disease names (e.g. 头痛 → 偏头痛). */
+    private static final Set<String> AMBIGUOUS_SYMPTOM_KEYWORDS = Set.of(
+        "头痛", "发热", "咳嗽", "乏力", "疼痛", "恶心", "呕吐", "晕", "痒", "红", "肿"
+    );
+
+    private static final int PER_DISEASE_KEYWORD_LIMIT = 40;
+    private static final int PER_ICD_PREFIX_LIMIT = 50;
+    private static final int PER_CATEGORY_KEYWORD_LIMIT = 30;
 
     private final PhysicianMapper physicianMapper;
 
@@ -26,26 +36,40 @@ public class DiseaseAiSearchService {
 
     public List<Map<String, Object>> search(DiseaseAiSearchRequest request) {
         int limit = normalizeLimit(request.getLimit());
-        List<String> diseaseKeywords = mergeKeywords(request.getDiseaseKeywords(), request.getSymptomKeywords());
+        List<String> primaryKeywords = cleanKeywords(request.getDiseaseKeywords());
+        List<String> symptomKeywords = cleanKeywords(request.getSymptomKeywords());
         List<String> icdPrefixes = normalizeIcdPrefixes(request.getIcdPrefixes());
         List<String> categoryKeywords = cleanKeywords(request.getCategoryKeywords());
         List<String> negativeKeywords = cleanKeywords(request.getNegativeKeywords());
 
-        if (diseaseKeywords.isEmpty() && icdPrefixes.isEmpty() && categoryKeywords.isEmpty()) {
+        if (primaryKeywords.isEmpty() && icdPrefixes.isEmpty() && categoryKeywords.isEmpty()
+            && symptomKeywords.isEmpty()) {
             return List.of();
         }
 
-        int fetchLimit = Math.min(Math.max(limit * 3, limit), 200);
-        List<Map<String, Object>> rawRows = physicianMapper.searchDiseasesForAi(
-            diseaseKeywords,
-            icdPrefixes,
-            categoryKeywords,
-            fetchLimit
-        );
+        Map<Long, Map<String, Object>> rawById = new LinkedHashMap<>();
+        collectRows(rawById, fetchByBuckets(primaryKeywords, icdPrefixes, categoryKeywords, symptomKeywords));
+
+        if (rawById.size() < Math.min(limit, 20)) {
+            int fetchLimit = Math.min(Math.max(limit * 3, limit), 500);
+            collectRows(rawById, physicianMapper.searchDiseasesForAi(
+                primaryKeywords,
+                icdPrefixes,
+                categoryKeywords,
+                fetchLimit
+            ));
+        }
 
         List<ScoredDisease> scored = new ArrayList<>();
-        for (Map<String, Object> row : rawRows) {
-            ScoredDisease item = scoreRow(row, diseaseKeywords, icdPrefixes, categoryKeywords, negativeKeywords);
+        for (Map<String, Object> row : rawById.values()) {
+            ScoredDisease item = scoreRow(
+                row,
+                primaryKeywords,
+                symptomKeywords,
+                icdPrefixes,
+                categoryKeywords,
+                negativeKeywords
+            );
             if (item != null) {
                 scored.add(item);
             }
@@ -68,9 +92,52 @@ public class DiseaseAiSearchService {
         return result;
     }
 
+    private List<Map<String, Object>> fetchByBuckets(
+        List<String> primaryKeywords,
+        List<String> icdPrefixes,
+        List<String> categoryKeywords,
+        List<String> symptomKeywords
+    ) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (String keyword : primaryKeywords) {
+            rows.addAll(physicianMapper.searchDiseasesByNameKeyword(keyword, PER_DISEASE_KEYWORD_LIMIT));
+        }
+
+        for (String prefix : icdPrefixes) {
+            rows.addAll(physicianMapper.searchDiseasesByIcdPrefix(prefix, PER_ICD_PREFIX_LIMIT));
+        }
+
+        for (String category : categoryKeywords) {
+            rows.addAll(physicianMapper.searchDiseasesByCategoryKeyword(category, PER_CATEGORY_KEYWORD_LIMIT));
+        }
+
+        for (String symptom : symptomKeywords) {
+            if (isAmbiguousSymptom(symptom)) {
+                continue;
+            }
+            if (symptom.length() >= 4) {
+                rows.addAll(physicianMapper.searchDiseasesByNameKeyword(symptom, 15));
+            }
+            rows.addAll(physicianMapper.searchDiseasesByCategoryKeyword(symptom, 10));
+        }
+
+        return rows;
+    }
+
+    private static void collectRows(Map<Long, Map<String, Object>> target, List<Map<String, Object>> rows) {
+        for (Map<String, Object> row : rows) {
+            Long id = toLong(row.get("id"));
+            if (id != null) {
+                target.putIfAbsent(id, row);
+            }
+        }
+    }
+
     private ScoredDisease scoreRow(
         Map<String, Object> row,
-        List<String> diseaseKeywords,
+        List<String> primaryKeywords,
+        List<String> symptomKeywords,
         List<String> icdPrefixes,
         List<String> categoryKeywords,
         List<String> negativeKeywords
@@ -86,7 +153,10 @@ public class DiseaseAiSearchService {
         String diseaseCategory = str(row.get("diseaseCategory"));
 
         String diagnosisCode = !diseaseIcd.isBlank() ? diseaseIcd : diseaseCode;
-        String searchable = (diseaseName + " " + diseaseCode + " " + diseaseIcd + " " + diseaseCategory).toLowerCase(Locale.ROOT);
+        String searchable = (diseaseName + " " + diseaseCode + " " + diseaseIcd + " " + diseaseCategory)
+            .toLowerCase(Locale.ROOT);
+        String nameLower = diseaseName.toLowerCase(Locale.ROOT);
+        String categoryLower = diseaseCategory.toLowerCase(Locale.ROOT);
 
         for (String negative : negativeKeywords) {
             if (!negative.isBlank() && searchable.contains(negative.toLowerCase(Locale.ROOT))) {
@@ -103,22 +173,32 @@ public class DiseaseAiSearchService {
             }
         }
 
-        for (String keyword : diseaseKeywords) {
+        for (int i = 0; i < primaryKeywords.size(); i++) {
+            String keyword = primaryKeywords.get(i);
             if (keyword.isBlank()) {
                 continue;
             }
+            int keywordScore = scorePrimaryKeyword(keyword, nameLower, categoryLower, searchable);
+            if (keywordScore > 0 && i == 0) {
+                keywordScore += 15;
+            }
+            score += keywordScore;
+        }
+
+        for (String keyword : symptomKeywords) {
+            if (keyword.isBlank() || isAmbiguousSymptom(keyword)) {
+                continue;
+            }
             String lower = keyword.toLowerCase(Locale.ROOT);
-            if (diseaseName.toLowerCase(Locale.ROOT).contains(lower)) {
-                score += 35;
-            } else if (diseaseCategory.toLowerCase(Locale.ROOT).contains(lower)) {
-                score += 15;
-            } else if (searchable.contains(lower)) {
+            if (categoryLower.contains(lower)) {
                 score += 10;
+            } else if (keyword.length() >= 4 && nameLower.contains(lower)) {
+                score += 8;
             }
         }
 
         for (String category : categoryKeywords) {
-            if (!category.isBlank() && diseaseCategory.toLowerCase(Locale.ROOT).contains(category.toLowerCase(Locale.ROOT))) {
+            if (!category.isBlank() && categoryLower.contains(category.toLowerCase(Locale.ROOT))) {
                 score += 20;
             }
         }
@@ -130,22 +210,47 @@ public class DiseaseAiSearchService {
         return new ScoredDisease(id, diagnosisCode, diseaseName, diseaseIcd, diseaseCategory, score);
     }
 
+    private static int scorePrimaryKeyword(
+        String keyword,
+        String nameLower,
+        String categoryLower,
+        String searchable
+    ) {
+        String lower = keyword.toLowerCase(Locale.ROOT);
+        if (nameLower.equals(lower)) {
+            return 50;
+        }
+        if (nameLower.contains(lower)) {
+            return 40;
+        }
+        if (lower.contains(nameLower) && nameLower.length() >= 4) {
+            return 30;
+        }
+        if (categoryLower.contains(lower)) {
+            return 15;
+        }
+        if (searchable.contains(lower)) {
+            return 10;
+        }
+        return 0;
+    }
+
+    private static boolean isAmbiguousSymptom(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return true;
+        }
+        String trimmed = keyword.trim();
+        if (AMBIGUOUS_SYMPTOM_KEYWORDS.contains(trimmed)) {
+            return true;
+        }
+        return trimmed.length() < 3;
+    }
+
     private int normalizeLimit(Integer limit) {
         if (limit == null || limit <= 0) {
             return 80;
         }
         return Math.min(limit, 80);
-    }
-
-    private List<String> mergeKeywords(List<String> diseaseKeywords, List<String> symptomKeywords) {
-        List<String> merged = new ArrayList<>();
-        merged.addAll(cleanKeywords(diseaseKeywords));
-        for (String keyword : cleanKeywords(symptomKeywords)) {
-            if (!merged.contains(keyword)) {
-                merged.add(keyword);
-            }
-        }
-        return merged;
     }
 
     private List<String> cleanKeywords(List<String> keywords) {
@@ -185,7 +290,7 @@ public class DiseaseAiSearchService {
         return normalized;
     }
 
-    private Long toLong(Object value) {
+    private static Long toLong(Object value) {
         if (value == null) {
             return null;
         }
@@ -199,7 +304,7 @@ public class DiseaseAiSearchService {
         }
     }
 
-    private String str(Object value) {
+    private static String str(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
     }
 

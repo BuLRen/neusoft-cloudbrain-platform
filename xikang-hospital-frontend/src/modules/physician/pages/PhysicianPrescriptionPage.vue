@@ -52,6 +52,19 @@ async function loadPrescriptions() {
   prescriptions.value = await physicianApi.prescriptions(registerId.value)
 }
 
+async function loadConfirmedDiagnosis() {
+  if (!registerId.value) {
+    confirmedDiagnosis.value = ''
+    return
+  }
+  try {
+    const record = await physicianApi.medicalRecord(registerId.value)
+    confirmedDiagnosis.value = record?.diagnosis || ''
+  } catch {
+    confirmedDiagnosis.value = ''
+  }
+}
+
 async function maybeArchiveVisit(id: number) {
   if (!archiveOnFinish.value) return
   try {
@@ -126,10 +139,11 @@ async function removePrescriptionItem(id: number) {
 
 watch(registerId, () => {
   void loadPrescriptions()
+  void loadConfirmedDiagnosis()
 })
 
 onMounted(() => {
-  void Promise.all([searchDrugs(), loadPrescriptions()])
+  void Promise.all([searchDrugs(), loadPrescriptions(), loadConfirmedDiagnosis()])
 })
 </script>
 

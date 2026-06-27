@@ -59,6 +59,21 @@ public interface PhysicianMapper {
         @Param("fetchLimit") int fetchLimit
     );
 
+    List<Map<String, Object>> searchDiseasesByNameKeyword(
+        @Param("keyword") String keyword,
+        @Param("limit") int limit
+    );
+
+    List<Map<String, Object>> searchDiseasesByIcdPrefix(
+        @Param("prefix") String prefix,
+        @Param("limit") int limit
+    );
+
+    List<Map<String, Object>> searchDiseasesByCategoryKeyword(
+        @Param("keyword") String keyword,
+        @Param("limit") int limit
+    );
+
     List<Map<String, Object>> selectDrugs(@Param("keyword") String keyword);
 
     Map<String, Object> selectDrugById(@Param("id") Long id);

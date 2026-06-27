@@ -388,8 +388,57 @@
                 </if>
             </trim>
         </where>
-        ORDER BY disease_name
         LIMIT #{fetchLimit}
+    </select>
+
+    <select id="searchDiseasesByNameKeyword" resultType="map">
+        SELECT
+            id AS "id",
+            disease_code AS "diseaseCode",
+            disease_name AS "diseaseName",
+            diseaseicd AS "diseaseIcd",
+            disease_category AS "diseaseCategory"
+        FROM disease
+        WHERE disease_name ILIKE CONCAT('%', #{keyword}, '%')
+           OR disease_code ILIKE CONCAT('%', #{keyword}, '%')
+           OR diseaseicd ILIKE CONCAT('%', #{keyword}, '%')
+        ORDER BY
+            CASE
+                WHEN disease_name ILIKE #{keyword} THEN 0
+                WHEN disease_name ILIKE CONCAT(#{keyword}, '%') THEN 1
+                WHEN disease_name ILIKE CONCAT('%', #{keyword}, '%') THEN 2
+                ELSE 3
+            END,
+            LENGTH(disease_name),
+            disease_name
+        LIMIT #{limit}
+    </select>
+
+    <select id="searchDiseasesByIcdPrefix" resultType="map">
+        SELECT
+            id AS "id",
+            disease_code AS "diseaseCode",
+            disease_name AS "diseaseName",
+            diseaseicd AS "diseaseIcd",
+            disease_category AS "diseaseCategory"
+        FROM disease
+        WHERE diseaseicd ILIKE CONCAT(#{prefix}, '%')
+           OR disease_code ILIKE CONCAT(#{prefix}, '%')
+        ORDER BY LENGTH(disease_name), disease_name
+        LIMIT #{limit}
+    </select>
+
+    <select id="searchDiseasesByCategoryKeyword" resultType="map">
+        SELECT
+            id AS "id",
+            disease_code AS "diseaseCode",
+            disease_name AS "diseaseName",
+            diseaseicd AS "diseaseIcd",
+            disease_category AS "diseaseCategory"
+        FROM disease
+        WHERE disease_category ILIKE CONCAT('%', #{keyword}, '%')
+        ORDER BY LENGTH(disease_name), disease_name
+        LIMIT #{limit}
     </select>
 
     <select id="selectDrugs" resultType="map">

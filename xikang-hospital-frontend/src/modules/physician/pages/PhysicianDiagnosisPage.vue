@@ -1,15 +1,26 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElAlert, ElButton, ElCard, ElCollapse, ElCollapseItem, ElForm, ElFormItem, ElInput, ElMessage, ElOption, ElSelect, ElTag } from 'element-plus'
-import { physicianApi, type Disease, type W3Status, type W4FallbackSuggestion, type W4Output, type W4Suggestion } from '@/shared/api/modules/physician'
+import { ElAlert, ElButton, ElCard, ElCollapse, ElCollapseItem, ElForm, ElFormItem, ElInput, ElMessage } from 'element-plus'
+import {
+  physicianApi,
+  type Disease,
+  type W3Status,
+  type W4FallbackSuggestion,
+  type W4Output,
+  type W4Suggestion,
+} from '@/shared/api/modules/physician'
+import { suggestionDisplayName } from '@/shared/types/w4Result'
 import { useEncounterStore } from '@/app/stores/encounter'
+import DiseaseSearchSelect from '../components/DiseaseSearchSelect.vue'
+import W4DiagnosisPanel from '../components/W4DiagnosisPanel.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
 
 const loading = ref(false)
-const diseases = ref<Disease[]>([])
+const medicalRecordId = ref<number | undefined>()
+const selectedDiseases = ref<Disease[]>([])
 const w3Status = ref<W3Status | null>(null)
 const w4Output = ref<W4Output | null>(null)
 const historySuggestions = ref<W4Suggestion[]>([])
@@ -29,31 +40,37 @@ const w3OverallAnalysis = computed(
   () => w3Status.value?.overallAnalysis || w3Status.value?.w3Output?.overallAnalysis || '',
 )
 const hasW3Summary = computed(() => Boolean(w3ClinicalImpression.value || w3OverallAnalysis.value))
-const isFallbackStatus = computed(() => w4Output.value?.status === 'fallback')
-const displaySuggestions = computed(() => {
-  if (w4Output.value?.suggestions?.length) {
-    return w4Output.value.suggestions
+
+function resetDiagnosisForm() {
+  diagnosisForm.diagnosis = ''
+  diagnosisForm.cure = ''
+  diagnosisForm.careful = ''
+  diagnosisForm.diseaseIds = []
+  selectedDiseases.value = []
+}
+
+async function loadMedicalRecord() {
+  if (!registerId.value) {
+    medicalRecordId.value = undefined
+    resetDiagnosisForm()
+    return
   }
-  return historySuggestions.value
-})
-const hasW4Content = computed(() => Boolean(
-  w4Output.value
-  || displaySuggestions.value.length
-  || historySuggestions.value.length,
-))
-
-function suggestionName(item: W4Suggestion | W4FallbackSuggestion) {
-  return item.diagnosisName || (item as W4Suggestion).diseaseName || '-'
-}
-
-function formatProbability(value?: number) {
-  if (value == null || Number.isNaN(value)) return '-'
-  const num = value <= 1 ? value * 100 : value
-  return `${Math.round(num * 10) / 10}%`
-}
-
-async function loadDiseases() {
-  diseases.value = await physicianApi.diseases()
+  try {
+    const record = await physicianApi.medicalRecord(registerId.value)
+    if (!record) {
+      medicalRecordId.value = undefined
+      resetDiagnosisForm()
+      return
+    }
+    medicalRecordId.value = record.id
+    diagnosisForm.diagnosis = record.diagnosis || ''
+    diagnosisForm.cure = record.cure || ''
+    diagnosisForm.careful = record.careful || ''
+    selectedDiseases.value = record.diseases ?? []
+    diagnosisForm.diseaseIds = selectedDiseases.value.map((item) => item.id)
+  } catch {
+    medicalRecordId.value = undefined
+  }
 }
 
 async function loadW3Status() {
@@ -80,16 +97,35 @@ async function loadHistorySuggestions() {
   }
 }
 
+function onDiseaseSelect(diseases: Disease[]) {
+  selectedDiseases.value = diseases
+  if (diseases.length && !diagnosisForm.diagnosis.trim()) {
+    diagnosisForm.diagnosis = diseases.map((item) => item.diseaseName).join('、')
+  }
+}
+
 function adoptSuggestion(item: W4Suggestion | W4FallbackSuggestion) {
-  diagnosisForm.diagnosis = suggestionName(item)
+  diagnosisForm.diagnosis = suggestionDisplayName(item)
   const treatment = (item as W4Suggestion).treatmentDirection
   if (treatment) {
     diagnosisForm.cure = treatment
   }
   const diseaseId = Number((item as W4Suggestion).diseaseId)
   if (diseaseId && !diagnosisForm.diseaseIds.includes(diseaseId)) {
-    diagnosisForm.diseaseIds.push(diseaseId)
+    diagnosisForm.diseaseIds = [...diagnosisForm.diseaseIds, diseaseId]
+    const suggestion = item as W4Suggestion
+    if (!selectedDiseases.value.some((d) => d.id === diseaseId)) {
+      selectedDiseases.value = [
+        ...selectedDiseases.value,
+        {
+          id: diseaseId,
+          diseaseName: suggestionDisplayName(suggestion),
+          diseaseIcd: suggestion.recommendIcd,
+        },
+      ]
+    }
   }
+  ElMessage.success('已填入确诊表单，请核对后保存')
 }
 
 async function runW4() {
@@ -100,14 +136,10 @@ async function runW4() {
   loading.value = true
   try {
     w4Output.value = await physicianApi.aiW4(registerId.value)
-    const first = w4Output.value?.suggestions?.[0]
-    if (first && w4Output.value?.status !== 'fallback') {
-      adoptSuggestion(first)
-    }
     if (w4Output.value?.status !== 'fallback') {
       await loadHistorySuggestions()
     }
-    ElMessage.success('W4 诊断建议已生成')
+    ElMessage.success('W4 诊断建议已生成，请点击「采纳到确诊表单」确认')
   } finally {
     loading.value = false
   }
@@ -115,25 +147,43 @@ async function runW4() {
 
 async function submitDiagnosis() {
   if (!registerId.value) return
-  const payload = {
-    registerId: registerId.value,
-    diagnosis: diagnosisForm.diagnosis,
-    cure: diagnosisForm.cure,
-    careful: diagnosisForm.careful,
-    diseaseIds: diagnosisForm.diseaseIds,
+  if (!medicalRecordId.value) {
+    ElMessage.warning('请先完成病历书写后再保存确诊')
+    return
   }
-  await physicianApi.submitDiagnosis(payload)
-  ElMessage.success('确诊已保存')
+  if (!diagnosisForm.diagnosis.trim()) {
+    ElMessage.warning('请填写确诊病名')
+    return
+  }
+  if (!diagnosisForm.diseaseIds.length) {
+    ElMessage.warning('建议从疾病库搜索并选择对应疾病，以便规范编码')
+  }
+  loading.value = true
+  try {
+    await physicianApi.submitDiagnosis({
+      registerId: registerId.value,
+      medicalRecordId: medicalRecordId.value,
+      diagnosis: diagnosisForm.diagnosis,
+      cure: diagnosisForm.cure,
+      careful: diagnosisForm.careful,
+      diseaseIds: diagnosisForm.diseaseIds,
+    })
+    ElMessage.success('确诊已保存')
+    await loadMedicalRecord()
+  } finally {
+    loading.value = false
+  }
 }
 
 watch(registerId, () => {
   w4Output.value = null
+  void loadMedicalRecord()
   void loadW3Status()
   void loadHistorySuggestions()
 })
 
 onMounted(() => {
-  void loadDiseases()
+  void loadMedicalRecord()
   void loadW3Status()
   void loadHistorySuggestions()
 })
@@ -143,7 +193,7 @@ onMounted(() => {
   <PhysicianStepLayout
     group-label="门诊诊疗"
     title="门诊确诊"
-    description="录入确诊信息并运行 W4 获取疾病诊断建议。W4 会综合病历与 W3 结果解读，最终诊断仍由医生确认。"
+    description="先查看 W4 AI 诊断参考，再从疾病库搜索并确认最终确诊。"
     prev-path="/physician/results"
     next-path="/physician/prescription"
   >
@@ -153,6 +203,8 @@ onMounted(() => {
       type="warning"
       :closable="false"
       show-icon
+      title="建议先完成 W3 结果解读"
+      description="W4 会综合 W3 解读与检查检验结果给出诊断建议。"
     />
 
     <ElCard v-else-if="hasW3Summary" class="w3-summary-card" shadow="never">
@@ -172,86 +224,36 @@ onMounted(() => {
       <ElButton type="primary" :loading="loading" @click="submitDiagnosis">保存确诊</ElButton>
     </div>
 
-    <ElForm label-position="top" class="diagnosis-form">
-      <ElFormItem label="确诊病名">
-        <ElInput v-model="diagnosisForm.diagnosis" placeholder="例如：急性上呼吸道感染" />
-      </ElFormItem>
-      <ElFormItem label="治疗方向">
-        <ElInput v-model="diagnosisForm.cure" type="textarea" :rows="2" />
-      </ElFormItem>
-      <ElFormItem label="注意事项">
-        <ElInput v-model="diagnosisForm.careful" type="textarea" :rows="2" />
-      </ElFormItem>
-      <ElFormItem label="疾病编码">
-        <ElSelect v-model="diagnosisForm.diseaseIds" multiple filterable placeholder="选择疾病">
-          <ElOption v-for="item in diseases" :key="item.id" :label="`${item.diseaseName} ${item.diseaseIcd || ''}`" :value="item.id" />
-        </ElSelect>
-      </ElFormItem>
-    </ElForm>
-
-    <h3 class="w4-section-title">W4 诊断建议</h3>
-
-    <ElAlert
-      v-if="isFallbackStatus"
-      class="w4-fallback-alert"
-      type="warning"
-      :closable="false"
-      show-icon
-      title="疾病库未匹配到候选，以下为 AI 兜底建议"
-      :description="w4Output?.searchAdvice || '请手动搜索疾病库并确认诊断。'"
+    <W4DiagnosisPanel
+      :live-output="w4Output"
+      :saved-suggestions="historySuggestions"
+      @adopt="adoptSuggestion"
     />
 
-    <div v-if="w4Output?.clinicalSummaryForDoctor" class="w4-summary-block">
-      <strong>临床摘要</strong>
-      <p>{{ w4Output.clinicalSummaryForDoctor }}</p>
-    </div>
-
-    <div v-if="w4Output?.warningSigns?.length" class="w4-summary-block">
-      <strong>警示征象</strong>
-      <ul class="w4-list">
-        <li v-for="(sign, idx) in w4Output.warningSigns" :key="`warn-${idx}`">{{ sign }}</li>
-      </ul>
-    </div>
-
-    <div v-if="w4Output?.differentialDiagnosis?.length" class="w4-grid">
-      <ElCard v-for="(item, idx) in w4Output.differentialDiagnosis" :key="`ddx-${idx}`" class="mini-card">
-        <strong>鉴别诊断</strong>
-        <p>{{ item.diagnosisName || '-' }}</p>
-        <p v-if="item.reason">理由：{{ item.reason }}</p>
-      </ElCard>
-    </div>
-
-    <div v-if="isFallbackStatus && w4Output?.fallbackSuggestions?.length" class="w4-grid">
-      <ElCard v-for="(item, idx) in w4Output.fallbackSuggestions" :key="`fb-${idx}`" class="mini-card mini-card--fallback">
-        <div class="mini-card__header">
-          <strong>{{ suggestionName(item) }}</strong>
-          <ElTag size="small" type="warning">兜底</ElTag>
-        </div>
-        <p v-if="item.estimatedIcdPrefix">ICD 前缀：{{ item.estimatedIcdPrefix }}</p>
-        <p>概率：{{ formatProbability(item.probability) }}</p>
-        <p v-if="item.diagnosisBasis">依据：{{ item.diagnosisBasis }}</p>
-        <p v-if="item.note">{{ item.note }}</p>
-        <ElButton size="small" @click="adoptSuggestion(item)">采纳</ElButton>
-      </ElCard>
-    </div>
-
-    <div v-else-if="displaySuggestions.length" class="w4-grid">
-      <ElCard v-for="(item, idx) in displaySuggestions" :key="`sug-${item.id ?? idx}`" class="mini-card">
-        <div class="mini-card__header">
-          <strong>{{ suggestionName(item) }}</strong>
-          <ElTag v-if="item.riskLevel" size="small">{{ item.riskLevel }}</ElTag>
-        </div>
-        <p v-if="item.recommendIcd">ICD：{{ item.recommendIcd }}</p>
-        <p>概率：{{ formatProbability(item.probability) }}</p>
-        <p v-if="item.diagnosisBasis">依据：{{ item.diagnosisBasis }}</p>
-        <p v-if="item.treatmentDirection">治疗方向：{{ item.treatmentDirection }}</p>
-        <ElButton size="small" @click="adoptSuggestion(item)">采纳</ElButton>
-      </ElCard>
-    </div>
-
-    <div v-else-if="!hasW4Content">
-      <p class="w4-empty">暂无 W4 输出，可运行 W4 获取疾病诊断建议。</p>
-    </div>
+    <section class="doctor-confirm">
+      <h3 class="doctor-confirm__title">医生确认</h3>
+      <ElForm label-position="top" class="diagnosis-form">
+        <ElFormItem label="确诊疾病（库内搜索）">
+          <DiseaseSearchSelect
+            v-model="diagnosisForm.diseaseIds"
+            :initial-diseases="selectedDiseases"
+            @select="onDiseaseSelect"
+          />
+        </ElFormItem>
+        <ElFormItem label="确诊病名">
+          <ElInput
+            v-model="diagnosisForm.diagnosis"
+            placeholder="可从上方疾病库选择后自动填入，也可手动修改"
+          />
+        </ElFormItem>
+        <ElFormItem label="治疗方向">
+          <ElInput v-model="diagnosisForm.cure" type="textarea" :rows="2" />
+        </ElFormItem>
+        <ElFormItem label="注意事项">
+          <ElInput v-model="diagnosisForm.careful" type="textarea" :rows="2" />
+        </ElFormItem>
+      </ElForm>
+    </section>
   </PhysicianStepLayout>
 </template>
 
@@ -318,59 +320,25 @@ onMounted(() => {
   margin-block-end: var(--space-4);
 }
 
+.doctor-confirm {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.doctor-confirm__title {
+  margin: 0 0 var(--space-3);
+  font-size: 16px;
+}
+
 .diagnosis-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
 }
 
-.w4-section-title {
-  margin-top: var(--space-4);
-}
-
-.w4-fallback-alert {
-  margin-block-end: var(--space-4);
-}
-
-.w4-summary-block {
-  margin-block-end: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: rgba(247, 251, 255, 0.6);
-}
-
-.w4-summary-block p,
-.w4-list {
-  margin: var(--space-2) 0 0;
-  color: var(--color-text-muted);
-  line-height: 1.8;
-}
-
-.w4-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.w4-empty {
-  color: var(--color-text-muted);
-}
-
-.mini-card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.mini-card p {
-  margin-block-start: var(--space-2);
-  color: var(--color-text-muted);
-  line-height: 1.8;
-}
-
-.mini-card--fallback {
-  border-color: rgba(230, 162, 60, 0.35);
+.diagnosis-form :first-child {
+  grid-column: 1 / -1;
 }
 </style>
