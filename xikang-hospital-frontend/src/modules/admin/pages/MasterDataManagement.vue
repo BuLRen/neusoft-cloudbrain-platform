@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import {
   ElButton,
   ElDescriptions,
@@ -12,6 +12,7 @@ import {
   ElMessage,
   ElMessageBox,
   ElOption,
+  ElPagination,
   ElSelect,
   ElTable,
   ElTableColumn,
@@ -21,20 +22,57 @@ import {
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import { useClientPagination } from '@/modules/admin/composables/useClientPagination'
 import { registrationApi } from '@/shared/api/modules/registration'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
+import { DOSAGE_FORMS } from '@/shared/constants/pharmacy'
 import type { DepartmentOption, RegistLevelOption, SettleCategoryOption } from '@/shared/types/registration'
 import type { DrugOption } from '@/shared/types/pharmacy'
 
 type TabKey = 'departments' | 'registLevels' | 'settleCategories' | 'drugs'
 
+const DEPT_TYPE_OPTIONS = [
+  { label: '全部类型', value: '' },
+  { label: '临床科室', value: '临床科室' },
+  { label: '医技科室', value: '医技科室' },
+] as const
+
 const activeTab = ref<TabKey>('departments')
 
 const loading = ref(false)
+const drugsLoading = ref(false)
 const departments = ref<DepartmentOption[]>([])
 const registLevels = ref<RegistLevelOption[]>([])
 const settleCategories = ref<SettleCategoryOption[]>([])
 const drugs = ref<DrugOption[]>([])
+
+const deptTypeFilter = ref('')
+const drugKeyword = ref('')
+const drugDosageForm = ref('')
+const drugCategory = ref('')
+const drugCategoryOptions = ref<string[]>([])
+
+const {
+  page: deptPage,
+  size: deptPageSize,
+  total: deptTotal,
+  totalPages: deptTotalPages,
+  pagedRecords: deptPagedRecords,
+  onPageChange: onDeptPageChange,
+  onPageSizeChange: onDeptPageSizeChange,
+  resetPage: resetDeptPage,
+} = useClientPagination(departments)
+
+const {
+  page: drugPage,
+  size: drugPageSize,
+  total: drugTotal,
+  totalPages: drugTotalPages,
+  pagedRecords: drugPagedRecords,
+  onPageChange: onDrugPageChange,
+  onPageSizeChange: onDrugPageSizeChange,
+  resetPage: resetDrugPage,
+} = useClientPagination(drugs)
 
 // 科室编辑/新增
 const deptDialogVisible = ref(false)
@@ -60,23 +98,64 @@ const levelForm = reactive({
 const drugDialogVisible = ref(false)
 const selectedDrug = ref<DrugOption | null>(null)
 
-async function loadAll() {
+async function loadDepartments() {
+  departments.value = deptTypeFilter.value
+    ? await registrationApi.departments(deptTypeFilter.value)
+    : await registrationApi.departments()
+  resetDeptPage()
+}
+
+async function loadBaseData() {
   loading.value = true
   try {
-    const [dept, level, settle, drug] = await Promise.all([
-      registrationApi.departments(),
+    const [level, settle] = await Promise.all([
       registrationApi.registLevels(),
       registrationApi.settleCategories(),
-      pharmacyApi.drugs(),
     ])
-    departments.value = dept
     registLevels.value = level
     settleCategories.value = settle
-    drugs.value = drug
+    await loadDepartments()
   } finally {
     loading.value = false
   }
 }
+
+async function loadDrugCategories() {
+  drugCategoryOptions.value = await pharmacyApi.categories()
+}
+
+async function loadDrugs() {
+  drugsLoading.value = true
+  try {
+    const params: Record<string, string | undefined> = {
+      keyword: drugKeyword.value || undefined,
+      dosageForm: drugDosageForm.value || undefined,
+      category: drugCategory.value || undefined,
+    }
+    const hasFilter = Object.values(params).some((v) => v)
+    drugs.value = await pharmacyApi.drugs(hasFilter ? params : undefined)
+    resetDrugPage()
+  } finally {
+    drugsLoading.value = false
+  }
+}
+
+async function loadAll() {
+  await loadBaseData()
+  if (activeTab.value === 'drugs') {
+    await loadDrugs()
+  }
+}
+
+function onDeptTypeChange() {
+  void loadDepartments()
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'drugs' && drugs.value.length === 0 && !drugsLoading.value) {
+    void Promise.all([loadDrugCategories(), loadDrugs()])
+  }
+})
 
 // ==================== 科室 CRUD ====================
 function openCreateDept() {
@@ -116,14 +195,14 @@ async function saveDept() {
     ElMessage.success('科室已更新')
   }
   deptDialogVisible.value = false
-  await loadAll()
+  await loadDepartments()
 }
 
 async function removeDept(row: DepartmentOption) {
   await ElMessageBox.confirm(`确认删除科室「${row.name}」？`, '删除确认', { type: 'warning' })
   await registrationApi.delete(`/registration/departments/${row.id}`)
   ElMessage.success('已删除')
-  await loadAll()
+  await loadDepartments()
 }
 
 // ==================== 挂号级别 CRUD ====================
@@ -164,14 +243,14 @@ async function saveLevel() {
     ElMessage.success('挂号级别已更新')
   }
   levelDialogVisible.value = false
-  await loadAll()
+  await loadBaseData()
 }
 
 async function removeLevel(row: RegistLevelOption) {
   await ElMessageBox.confirm(`确认删除挂号级别「${row.name}」？`, '删除确认', { type: 'warning' })
   await registrationApi.delete(`/registration/regist-levels/${row.id}`)
   ElMessage.success('已删除')
-  await loadAll()
+  await loadBaseData()
 }
 
 function openDrugDetail(row: DrugOption) {
@@ -179,7 +258,17 @@ function openDrugDetail(row: DrugOption) {
   drugDialogVisible.value = true
 }
 
-onMounted(loadAll)
+function castDept(row: unknown): DepartmentOption {
+  return row as DepartmentOption
+}
+
+function castLevel(row: unknown): RegistLevelOption {
+  return row as RegistLevelOption
+}
+
+onMounted(async () => {
+  await loadBaseData()
+})
 </script>
 
 <template>
@@ -214,20 +303,52 @@ onMounted(loadAll)
                 <h3>科室资料</h3>
                 <p>来源于 registration-service · department 表，支持新增、编辑、删除。</p>
               </div>
-              <StatusTag tone="primary">{{ departments.length }} 条</StatusTag>
+              <StatusTag tone="primary">{{ deptTotal }} 条</StatusTag>
             </div>
-            <ElTable :data="departments" class="admin-data-table" border>
+            <div class="filter-bar">
+              <ElSelect
+                v-model="deptTypeFilter"
+                placeholder="科室类型"
+                clearable
+                class="filter-bar__type"
+                @change="onDeptTypeChange"
+              >
+                <ElOption
+                  v-for="opt in DEPT_TYPE_OPTIONS"
+                  :key="opt.value || 'all'"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </ElSelect>
+            </div>
+            <ElTable :data="deptPagedRecords" class="admin-data-table" border>
             <ElTableColumn prop="code" label="科室编码" min-width="120" />
             <ElTableColumn prop="name" label="科室名称" min-width="140" />
             <ElTableColumn prop="type" label="类型" min-width="110" />
             <ElTableColumn prop="description" label="简介" min-width="280" show-overflow-tooltip />
             <ElTableColumn label="操作" min-width="160" align="center">
               <template #default="{ row }">
-                <ElButton link type="primary" @click="openEditDept(row)">编辑</ElButton>
-                <ElButton link type="danger" @click="removeDept(row)">删除</ElButton>
+                <ElButton link type="primary" @click="openEditDept(castDept(row))">编辑</ElButton>
+                <ElButton link type="danger" @click="removeDept(castDept(row))">删除</ElButton>
               </template>
             </ElTableColumn>
           </ElTable>
+            <div v-if="deptTotal > 0" class="admin-pagination-bar">
+              <p class="table-footer">
+                共 {{ deptTotal }} 个科室
+                <template v-if="deptTotalPages > 0">，第 {{ deptPage }} / {{ deptTotalPages }} 页</template>
+              </p>
+              <ElPagination
+                v-model:current-page="deptPage"
+                v-model:page-size="deptPageSize"
+                :total="deptTotal"
+                :page-sizes="[10, 20, 50]"
+                layout="total, sizes, prev, pager, next, jumper"
+                background
+                @current-change="onDeptPageChange"
+                @size-change="onDeptPageSizeChange"
+              />
+            </div>
           </div>
         </ElTabPane>
 
@@ -251,8 +372,8 @@ onMounted(loadAll)
             </ElTableColumn>
             <ElTableColumn label="操作" min-width="160" align="center">
               <template #default="{ row }">
-                <ElButton link type="primary" @click="openEditLevel(row)">编辑</ElButton>
-                <ElButton link type="danger" @click="removeLevel(row)">删除</ElButton>
+                <ElButton link type="primary" @click="openEditLevel(castLevel(row))">编辑</ElButton>
+                <ElButton link type="danger" @click="removeLevel(castLevel(row))">删除</ElButton>
               </template>
             </ElTableColumn>
           </ElTable>
@@ -285,9 +406,27 @@ onMounted(loadAll)
                 <h3>药品目录</h3>
                 <p>来源于 pharmacy-service · drug_info 表，当前版本只读展示（点击行查看详情）。</p>
               </div>
-              <StatusTag tone="primary">{{ drugs.length }} 条</StatusTag>
+              <StatusTag tone="primary">{{ drugTotal }} 条</StatusTag>
             </div>
-            <ElTable :data="drugs" class="admin-data-table admin-data-table--clickable" border @row-click="openDrugDetail">
+            <div class="filter-bar">
+              <div class="filter-bar__inputs">
+                <ElInput v-model="drugKeyword" placeholder="药品名称 / 通用名" clearable class="filter-bar__keyword" />
+                <ElSelect v-model="drugDosageForm" placeholder="剂型" clearable class="filter-bar__select">
+                  <ElOption v-for="form in DOSAGE_FORMS" :key="form" :label="form" :value="form" />
+                </ElSelect>
+                <ElSelect v-model="drugCategory" placeholder="分类" clearable class="filter-bar__select">
+                  <ElOption v-for="c in drugCategoryOptions" :key="c" :label="c" :value="c" />
+                </ElSelect>
+              </div>
+              <ElButton type="primary" @click="loadDrugs">查询</ElButton>
+            </div>
+            <ElTable
+              v-loading="drugsLoading"
+              :data="drugPagedRecords"
+              class="admin-data-table admin-data-table--clickable"
+              border
+              @row-click="(row) => openDrugDetail(row as DrugOption)"
+            >
             <ElTableColumn prop="name" label="药品名称" min-width="160" />
             <ElTableColumn prop="specification" label="规格" min-width="140" />
             <ElTableColumn prop="dosageForm" label="剂型" min-width="100" />
@@ -307,6 +446,22 @@ onMounted(loadAll)
               </template>
             </ElTableColumn>
           </ElTable>
+            <div v-if="drugTotal > 0" class="admin-pagination-bar">
+              <p class="table-footer">
+                共 {{ drugTotal }} 种药品
+                <template v-if="drugTotalPages > 0">，第 {{ drugPage }} / {{ drugTotalPages }} 页</template>
+              </p>
+              <ElPagination
+                v-model:current-page="drugPage"
+                v-model:page-size="drugPageSize"
+                :total="drugTotal"
+                :page-sizes="[10, 20, 50, 100]"
+                layout="total, sizes, prev, pager, next, jumper"
+                background
+                @current-change="onDrugPageChange"
+                @size-change="onDrugPageSizeChange"
+              />
+            </div>
           </div>
         </ElTabPane>
       </ElTabs>
@@ -406,5 +561,34 @@ onMounted(loadAll)
   font-weight: 600;
   color: var(--color-primary);
   font-variant-numeric: tabular-nums;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.filter-bar__inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.filter-bar__type {
+  width: 180px;
+}
+
+.filter-bar__keyword {
+  width: min(280px, 100%);
+}
+
+.filter-bar__select {
+  width: 140px;
 }
 </style>

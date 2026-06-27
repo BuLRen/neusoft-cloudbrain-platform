@@ -14,6 +14,7 @@ import {
   ElInputNumber,
   ElMessage,
   ElOption,
+  ElPagination,
   ElSelect,
   ElTable,
   ElTableColumn,
@@ -34,6 +35,7 @@ import { registrationApi } from '@/shared/api/modules/registration'
 import type { DepartmentOption } from '@/shared/types/registration'
 import { useAuthStore } from '@/app/stores/auth'
 import type { DoctorInfo } from '@/shared/api/modules/registration'
+import { useClientPagination } from '@/modules/admin/composables/useClientPagination'
 
 function pad2(value: number) {
   return String(value).padStart(2, '0')
@@ -136,11 +138,23 @@ const filteredPlanSchedules = computed(() => {
   })
 })
 
+const {
+  page: scheduleDetailPage,
+  size: scheduleDetailPageSize,
+  total: scheduleDetailTotal,
+  totalPages: scheduleDetailTotalPages,
+  pagedRecords: scheduleDetailPagedRecords,
+  onPageChange: onScheduleDetailPageChange,
+  onPageSizeChange: onScheduleDetailPageSizeChange,
+  resetPage: resetScheduleDetailPage,
+} = useClientPagination(filteredPlanSchedules)
+
 function resetDetailFilter() {
   detailFilter.keyword = ''
   detailFilter.workDate = ''
   detailFilter.timeSlot = ''
   detailFilter.status = ''
+  resetScheduleDetailPage()
 }
 
 // 生成日历日期
@@ -184,6 +198,7 @@ async function loadScheduleDoctors(departmentId?: number) {
 
 // 加载排班计划
 async function loadPlan() {
+  resetScheduleDetailPage()
   if (!filter.departmentId || !filter.month) {
     currentPlan.value = null
     planSchedules.value = []
@@ -745,7 +760,7 @@ onMounted(async () => {
           <ElButton @click="resetDetailFilter">重置</ElButton>
         </div>
 
-        <ElTable :data="filteredPlanSchedules" v-if="planSchedules.length > 0 && filteredPlanSchedules.length > 0">
+        <ElTable :data="scheduleDetailPagedRecords" v-if="planSchedules.length > 0 && filteredPlanSchedules.length > 0">
           <ElTableColumn prop="physicianName" label="医生" min-width="120">
             <template #default="{ row }">
               <div>
@@ -780,7 +795,7 @@ onMounted(async () => {
           </ElTableColumn>
           <ElTableColumn label="操作" min-width="150" fixed="right">
             <template #default="{ row }">
-              <ElButton link type="primary" @click="openEditSchedule(row)">编辑</ElButton>
+              <ElButton link type="primary" @click="openEditSchedule(row as DoctorSchedule)">编辑</ElButton>
               <ElButton
                 v-if="row.status === '正常'"
                 link
@@ -800,6 +815,26 @@ onMounted(async () => {
             </template>
           </ElTableColumn>
         </ElTable>
+
+        <div
+          v-if="planSchedules.length > 0 && filteredPlanSchedules.length > 0"
+          class="admin-pagination-bar"
+        >
+          <p class="table-footer">
+            共 {{ scheduleDetailTotal }} 条排班
+            <template v-if="scheduleDetailTotalPages > 0">，第 {{ scheduleDetailPage }} / {{ scheduleDetailTotalPages }} 页</template>
+          </p>
+          <ElPagination
+            v-model:current-page="scheduleDetailPage"
+            v-model:page-size="scheduleDetailPageSize"
+            :total="scheduleDetailTotal"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            background
+            @current-change="onScheduleDetailPageChange"
+            @size-change="onScheduleDetailPageSizeChange"
+          />
+        </div>
 
         <ElEmpty v-else-if="planSchedules.length > 0" description="暂无符合条件的排班" />
         <ElEmpty v-else description="暂无排班数据" />
