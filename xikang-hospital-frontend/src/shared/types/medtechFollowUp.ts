@@ -204,3 +204,79 @@ export interface FollowUpObservationConfirmPayload {
   observationDate?: string
   note?: string
 }
+
+export type CommunicationSenderType = 'doctor' | 'patient' | 'ai' | 'system'
+export type CommunicationMessageType = 'text' | 'case_summary' | 'notice'
+export type CaseSummaryStatus = 'draft' | 'approved' | 'shared' | 'revoked'
+
+export interface FollowUpCommunicationSession {
+  id: number
+  registerId: number
+  departmentId?: number
+  status?: 'active' | 'closed'
+  aiEscalationEnabled?: boolean
+  doctorLastActiveAt?: string
+  creationTime?: string
+  realName?: string
+  caseNumber?: string
+  gender?: string
+  age?: number
+  priorityLevel?: FollowUpPriorityLevel
+  patientMessageCount?: number
+  lastMessagePreview?: string
+  lastMessageTime?: string
+}
+
+export interface FollowUpCommunicationMessage {
+  id: number
+  sessionId: number
+  senderType: CommunicationSenderType
+  messageType?: CommunicationMessageType
+  content: string
+  summaryId?: number
+  workflowRunId?: string
+  creationTime?: string
+}
+
+export interface FollowUpCommunicationMessagesPage {
+  items: FollowUpCommunicationMessage[]
+  total: number
+}
+
+export interface FollowUpCaseSummary {
+  id?: number
+  registerId: number
+  sessionId?: number
+  aiDraftContent?: string
+  aiMedicalAdvice?: string
+  aiRiskAlerts?: string
+  doctorContent?: string
+  status?: CaseSummaryStatus
+  sharedToPatient?: boolean
+  workflowRunId?: string
+  modelId?: string
+  approvedBy?: number
+  approvedAt?: string
+  creationTime?: string
+  exists?: boolean
+  content?: string
+  followUpFocus?: string[]
+  confidence?: number
+  source?: string
+}
+
+export interface FollowUpCommunicationPatientBrief {
+  registerId: number
+  caseNumber?: string
+  realName?: string
+  gender?: string
+  age?: number
+  diagnosis?: string
+  chiefComplaint?: string
+  allergy?: string
+  diseases?: FollowUpDisease[]
+  recentMetrics?: FollowUpHealthMetric[]
+  observedToday?: boolean
+  interviewScheduledToday?: boolean
+  latestSummary?: FollowUpCaseSummary
+}

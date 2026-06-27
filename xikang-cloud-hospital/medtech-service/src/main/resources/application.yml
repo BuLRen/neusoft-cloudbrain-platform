@@ -71,4 +71,9 @@ xikang:
         values-root: ${DIFY_CHECK_SIM_OUTPUT_VALUES:simulatedValues}
         result-text: ${DIFY_CHECK_SIM_OUTPUT_TEXT:resultText}
         structured-output: ${DIFY_CHECK_SIM_OUTPUT_STRUCTURED:structured_output}
+      # ----- 随访 · 病例总结 / 医疗 AI 对话 -----
+      workflow-follow-up-case-summary: ${DIFY_WORKFLOW_FOLLOW_UP_CASE_SUMMARY:true}
+      api-key-follow-up-case-summary: ${DIFY_API_KEY_FOLLOW_UP_CASE_SUMMARY:}
+      workflow-follow-up-medical-chat: ${DIFY_WORKFLOW_FOLLOW_UP_MEDICAL_CHAT:true}
+      api-key-follow-up-medical-chat: ${DIFY_API_KEY_FOLLOW_UP_MEDICAL_CHAT:}
 

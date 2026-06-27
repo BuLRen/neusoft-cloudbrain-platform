@@ -7,10 +7,14 @@ const props = withDefaults(
   defineProps<{
     patient: FollowUpDashboardPatient
     observed?: boolean
+    /** 已观察时是否变灰（待访谈池应关闭） */
+    dimObserved?: boolean
     draggable?: boolean
     compact?: boolean
+    /** 展示今日访谈 / 观察状态行 */
+    showStatusRow?: boolean
   }>(),
-  { observed: false, draggable: true, compact: false },
+  { observed: false, dimObserved: true, draggable: true, compact: false, showStatusRow: false },
 )
 
 const emit = defineEmits<{
@@ -39,7 +43,10 @@ function onDragStart(event: DragEvent) {
     class="follow-up-patient-card"
     :class="[
       `follow-up-patient-card--${patient.priorityLevel ?? 'normal'}`,
-      { 'follow-up-patient-card--observed': observed, 'follow-up-patient-card--compact': compact },
+      {
+        'follow-up-patient-card--observed': observed && dimObserved,
+        'follow-up-patient-card--compact': compact,
+      },
     ]"
     :draggable="draggable && !observed"
     @click="emit('click', patient)"
@@ -54,10 +61,30 @@ function onDragStart(event: DragEvent) {
     <span class="follow-up-patient-card__meta">
       {{ patient.caseNumber ?? patient.registerId }} · {{ patient.gender ?? '—' }} · {{ patient.age ?? '—' }}岁
     </span>
-    <span v-if="patient.lastTrackedDate" class="follow-up-patient-card__track">
+    <span v-if="patient.lastTrackedDate && !showStatusRow" class="follow-up-patient-card__track">
       最近跟踪：{{ patient.lastTrackedDate }}
     </span>
-    <span v-if="observed" class="follow-up-patient-card__badge">今日已观察</span>
+    <div v-if="showStatusRow" class="follow-up-patient-card__status-row">
+      <span v-if="patient.interviewScheduledToday" class="follow-up-patient-card__chip follow-up-patient-card__chip--interview">
+        今日访谈
+      </span>
+      <span
+        v-if="patient.observedToday"
+        class="follow-up-patient-card__chip follow-up-patient-card__chip--observed"
+      >
+        已观察
+      </span>
+      <span
+        v-else-if="patient.observationDueToday"
+        class="follow-up-patient-card__chip follow-up-patient-card__chip--pending"
+      >
+        待观察
+      </span>
+      <span v-if="patient.lastTrackedDate" class="follow-up-patient-card__track follow-up-patient-card__track--inline">
+        最近：{{ patient.lastTrackedDate }}
+      </span>
+    </div>
+    <span v-if="observed && !showStatusRow" class="follow-up-patient-card__badge">今日已观察</span>
   </button>
 </template>
 
@@ -122,6 +149,42 @@ function onDragStart(event: DragEvent) {
 
 .follow-up-patient-card__track {
   margin-block-start: var(--space-1);
+}
+
+.follow-up-patient-card__status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-block-start: var(--space-2);
+}
+
+.follow-up-patient-card__chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.follow-up-patient-card__chip--interview {
+  background: rgba(31, 140, 255, 0.14);
+  color: var(--color-primary-strong);
+}
+
+.follow-up-patient-card__chip--observed {
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803d;
+}
+
+.follow-up-patient-card__chip--pending {
+  background: rgba(245, 159, 0, 0.14);
+  color: #b45309;
+}
+
+.follow-up-patient-card__track--inline {
+  margin: 0;
+  font-size: 10px;
 }
 
 .follow-up-patient-card__badge {

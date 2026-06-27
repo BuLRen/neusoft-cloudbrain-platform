@@ -36,7 +36,7 @@ import {
   resolveOutcomeRange,
   type OutcomeRangePreset,
 } from '@/shared/utils/beijingDate'
-import { addToWeeklySchedule, getWeeklyScheduleStatus } from '@/modules/medtech/follow-up/services/interviewSchedule'
+import { addToTodayInterview, getTodayInterviewScheduled } from '@/modules/medtech/follow-up/services/interviewSchedule'
 import type {
   FollowUpHealthMetric,
   FollowUpOutcomeRecord,
@@ -336,7 +336,7 @@ async function loadPatientData() {
       medtechFollowUpApi.getProfile(selectedRegisterId.value),
       medtechFollowUpApi.getMetrics(selectedRegisterId.value, { from, to }),
       medtechFollowUpApi.getRecords(selectedRegisterId.value),
-      getWeeklyScheduleStatus(selectedRegisterId.value),
+      getTodayInterviewScheduled(selectedRegisterId.value),
       medtechFollowUpApi.getObservationStatus(selectedRegisterId.value, beijingTodayYmd()).catch(() => ({
         registerId: selectedRegisterId.value!,
         observationDate: beijingTodayYmd(),
@@ -346,7 +346,7 @@ async function loadPatientData() {
     profile.value = profileRes
     metrics.value = metricsRes
     records.value = recordsRes
-    scheduleScheduled.value = Boolean(scheduleRes.scheduled)
+    scheduleScheduled.value = scheduleRes
     observedToday.value = Boolean(observationRes.observed)
     await renderCharts()
   } catch {
@@ -381,12 +381,12 @@ async function handleScheduleInterview() {
   if (!selectedRegisterId.value) return
   scheduling.value = true
   try {
-    await addToWeeklySchedule({
+    await addToTodayInterview({
       registerId: selectedRegisterId.value,
-      triggerReason: '疗效评估发现指标变化，建议安排每周访谈跟进',
+      triggerReason: '疗效评估发现指标变化，建议安排今日访谈跟进',
       triggerMetricKey: primaryChartDefs.value[0]?.key,
     })
-    ElMessage.success('已加入本周访谈日程')
+    ElMessage.success('已加入今日访谈日程')
     scheduleScheduled.value = true
   } catch {
     // 统一错误提示
@@ -494,7 +494,7 @@ void loadPatients().then(() => loadPatientData())
             :loading="scheduling"
             @click="handleScheduleInterview"
           >
-            {{ scheduleScheduled ? '本周已排访谈' : '加入每周访谈' }}
+            {{ scheduleScheduled ? '今日已排访谈' : '加入今日访谈' }}
           </ElButton>
         </div>
       </div>
@@ -542,7 +542,7 @@ void loadPatients().then(() => loadPatientData())
           </ElCol>
           <ElCol :xs="12" :sm="8" :md="6" :lg="4">
             <div class="kpi-card kpi-card--static">
-              <span class="kpi-card__label">本周访谈</span>
+              <span class="kpi-card__label">今日访谈</span>
               <strong class="kpi-card__value">{{ scheduleScheduled ? '已安排' : '未安排' }}</strong>
               <span class="kpi-card__date">用于医患沟通页联调</span>
             </div>

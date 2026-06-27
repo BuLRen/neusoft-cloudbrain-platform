@@ -9,6 +9,10 @@ public class DifyAiProperties {
     private String baseUrl = "";
     private String apiKeyCheckSimulate = "";
     private String workflowCheckSimulate = "";
+    private String apiKeyFollowUpCaseSummary = "";
+    private String workflowFollowUpCaseSummary = "";
+    private String apiKeyFollowUpMedicalChat = "";
+    private String workflowFollowUpMedicalChat = "";
     private String ctInferenceUrl = "";
     private int readTimeoutMs = 300_000;
     private int connectTimeoutMs = 30_000;
@@ -44,6 +48,38 @@ public class DifyAiProperties {
 
     public void setWorkflowCheckSimulate(String workflowCheckSimulate) {
         this.workflowCheckSimulate = workflowCheckSimulate;
+    }
+
+    public String getApiKeyFollowUpCaseSummary() {
+        return apiKeyFollowUpCaseSummary;
+    }
+
+    public void setApiKeyFollowUpCaseSummary(String apiKeyFollowUpCaseSummary) {
+        this.apiKeyFollowUpCaseSummary = apiKeyFollowUpCaseSummary;
+    }
+
+    public String getWorkflowFollowUpCaseSummary() {
+        return workflowFollowUpCaseSummary;
+    }
+
+    public void setWorkflowFollowUpCaseSummary(String workflowFollowUpCaseSummary) {
+        this.workflowFollowUpCaseSummary = workflowFollowUpCaseSummary;
+    }
+
+    public String getApiKeyFollowUpMedicalChat() {
+        return apiKeyFollowUpMedicalChat;
+    }
+
+    public void setApiKeyFollowUpMedicalChat(String apiKeyFollowUpMedicalChat) {
+        this.apiKeyFollowUpMedicalChat = apiKeyFollowUpMedicalChat;
+    }
+
+    public String getWorkflowFollowUpMedicalChat() {
+        return workflowFollowUpMedicalChat;
+    }
+
+    public void setWorkflowFollowUpMedicalChat(String workflowFollowUpMedicalChat) {
+        this.workflowFollowUpMedicalChat = workflowFollowUpMedicalChat;
     }
 
     public String getCtInferenceUrl() {
@@ -94,6 +130,34 @@ public class DifyAiProperties {
 
     public String resolveCheckSimulateApiKey() {
         return apiKeyCheckSimulate == null ? "" : apiKeyCheckSimulate.trim();
+    }
+
+    public boolean isFollowUpCaseSummaryEnabled() {
+        return isDifyBaseConfigured()
+            && isWorkflowSwitchOn(workflowFollowUpCaseSummary)
+            && !resolveFollowUpCaseSummaryApiKey().isBlank();
+    }
+
+    public boolean isFollowUpMedicalChatEnabled() {
+        return isDifyBaseConfigured()
+            && isWorkflowSwitchOn(workflowFollowUpMedicalChat)
+            && !resolveFollowUpMedicalChatApiKey().isBlank();
+    }
+
+    public String resolveFollowUpCaseSummaryApiKey() {
+        return apiKeyFollowUpCaseSummary == null ? "" : apiKeyFollowUpCaseSummary.trim();
+    }
+
+    public String resolveFollowUpMedicalChatApiKey() {
+        return apiKeyFollowUpMedicalChat == null ? "" : apiKeyFollowUpMedicalChat.trim();
+    }
+
+    private boolean isWorkflowSwitchOn(String switchValue) {
+        if (switchValue == null || switchValue.isBlank()) {
+            return false;
+        }
+        String value = switchValue.trim().toLowerCase();
+        return "true".equals(value) || "1".equals(value) || "yes".equals(value) || "on".equals(value);
     }
 
     public static class CheckSimulateOutputKeys {

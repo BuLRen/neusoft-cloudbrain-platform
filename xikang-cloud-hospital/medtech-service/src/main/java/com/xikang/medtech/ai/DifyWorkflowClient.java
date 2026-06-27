@@ -54,6 +54,30 @@ public class DifyWorkflowClient {
         return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
     }
 
+    public boolean isFollowUpCaseSummaryEnabled() {
+        return properties.isFollowUpCaseSummaryEnabled();
+    }
+
+    public boolean isFollowUpMedicalChatEnabled() {
+        return properties.isFollowUpMedicalChatEnabled();
+    }
+
+    public DifyWorkflowRunResult runFollowUpCaseSummaryBlocking(Map<String, Object> inputs, String user, String traceId) {
+        String apiKey = properties.resolveFollowUpCaseSummaryApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("随访病例总结 API Key 未配置");
+        }
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
+    public DifyWorkflowRunResult runFollowUpMedicalChatBlocking(Map<String, Object> inputs, String user, String traceId) {
+        String apiKey = properties.resolveFollowUpMedicalChatApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("随访医疗对话 API Key 未配置");
+        }
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
     private DifyWorkflowRunResult runWorkflowBlockingInternal(
         String baseUrl,
         String apiKey,
