@@ -63,6 +63,12 @@ public class DifyWorkflowClient {
             && !properties.resolveW3ApiKey().isBlank();
     }
 
+    public boolean isW4Enabled() {
+        return properties.isDifyBaseConfigured()
+            && properties.isW4WorkflowSwitchOn()
+            && !properties.resolveW4ApiKey().isBlank();
+    }
+
     /**
      * Blocking workflow run for preliminary diagnosis (uses {@code base-url-preliminary}).
      */

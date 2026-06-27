@@ -344,8 +344,32 @@ public class PhysicianService {
                 )
             ),
             "w4Diagnose", Map.of(
-                "inputs", List.of("registerId", "structuredRecord", "w3Output", "diseaseCatalog"),
-                "outputs", List.of("primaryDiagnosis", "differentialDiagnoses", "clinicalAdvice", "confidenceScore")
+                "inputs", List.of(
+                    "register_id",
+                    "patient_info_text",
+                    "chief_complaint",
+                    "present_illness",
+                    "past_history",
+                    "allergy_history",
+                    "preliminary_diagnosis_text",
+                    "preliminary_diseases_text",
+                    "check_results_text",
+                    "inspection_results_text",
+                    "w3_analysis_text",
+                    "abnormal_indicators_text",
+                    "ai_previsit_summary",
+                    "doctor_notes"
+                ),
+                "outputs", List.of(
+                    "status",
+                    "registerId",
+                    "suggestions",
+                    "fallbackSuggestions",
+                    "clinicalSummaryForDoctor",
+                    "differentialDiagnosis",
+                    "warningSigns",
+                    "searchAdvice"
+                )
             ),
             "preliminaryDiagnosis", Map.of(
                 "inputs", List.of("registerId", "text", "preHandle", "model"),

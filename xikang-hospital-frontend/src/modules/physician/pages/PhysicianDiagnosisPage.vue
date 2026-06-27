@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElAlert, ElButton, ElCard, ElCollapse, ElCollapseItem, ElForm, ElFormItem, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
-import { physicianApi, type Disease, type W3Status, type W4Output } from '@/shared/api/modules/physician'
+import { ElAlert, ElButton, ElCard, ElCollapse, ElCollapseItem, ElForm, ElFormItem, ElInput, ElMessage, ElOption, ElSelect, ElTag } from 'element-plus'
+import { physicianApi, type Disease, type W3Status, type W4FallbackSuggestion, type W4Output, type W4Suggestion } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 
@@ -12,6 +12,7 @@ const loading = ref(false)
 const diseases = ref<Disease[]>([])
 const w3Status = ref<W3Status | null>(null)
 const w4Output = ref<W4Output | null>(null)
+const historySuggestions = ref<W4Suggestion[]>([])
 
 const diagnosisForm = reactive({
   diagnosis: '',
@@ -28,6 +29,28 @@ const w3OverallAnalysis = computed(
   () => w3Status.value?.overallAnalysis || w3Status.value?.w3Output?.overallAnalysis || '',
 )
 const hasW3Summary = computed(() => Boolean(w3ClinicalImpression.value || w3OverallAnalysis.value))
+const isFallbackStatus = computed(() => w4Output.value?.status === 'fallback')
+const displaySuggestions = computed(() => {
+  if (w4Output.value?.suggestions?.length) {
+    return w4Output.value.suggestions
+  }
+  return historySuggestions.value
+})
+const hasW4Content = computed(() => Boolean(
+  w4Output.value
+  || displaySuggestions.value.length
+  || historySuggestions.value.length,
+))
+
+function suggestionName(item: W4Suggestion | W4FallbackSuggestion) {
+  return item.diagnosisName || (item as W4Suggestion).diseaseName || '-'
+}
+
+function formatProbability(value?: number) {
+  if (value == null || Number.isNaN(value)) return '-'
+  const num = value <= 1 ? value * 100 : value
+  return `${Math.round(num * 10) / 10}%`
+}
 
 async function loadDiseases() {
   diseases.value = await physicianApi.diseases()
@@ -45,6 +68,30 @@ async function loadW3Status() {
   }
 }
 
+async function loadHistorySuggestions() {
+  if (!registerId.value) {
+    historySuggestions.value = []
+    return
+  }
+  try {
+    historySuggestions.value = await physicianApi.diagnosisSuggestions(registerId.value)
+  } catch {
+    historySuggestions.value = []
+  }
+}
+
+function adoptSuggestion(item: W4Suggestion | W4FallbackSuggestion) {
+  diagnosisForm.diagnosis = suggestionName(item)
+  const treatment = (item as W4Suggestion).treatmentDirection
+  if (treatment) {
+    diagnosisForm.cure = treatment
+  }
+  const diseaseId = Number((item as W4Suggestion).diseaseId)
+  if (diseaseId && !diagnosisForm.diseaseIds.includes(diseaseId)) {
+    diagnosisForm.diseaseIds.push(diseaseId)
+  }
+}
+
 async function runW4() {
   if (!registerId.value) return
   if (!w3Completed.value) {
@@ -53,8 +100,12 @@ async function runW4() {
   loading.value = true
   try {
     w4Output.value = await physicianApi.aiW4(registerId.value)
-    if (w4Output.value?.primaryDiagnosis?.diseaseName) {
-      diagnosisForm.diagnosis = w4Output.value.primaryDiagnosis.diseaseName || ''
+    const first = w4Output.value?.suggestions?.[0]
+    if (first && w4Output.value?.status !== 'fallback') {
+      adoptSuggestion(first)
+    }
+    if (w4Output.value?.status !== 'fallback') {
+      await loadHistorySuggestions()
     }
     ElMessage.success('W4 诊断建议已生成')
   } finally {
@@ -76,12 +127,15 @@ async function submitDiagnosis() {
 }
 
 watch(registerId, () => {
+  w4Output.value = null
   void loadW3Status()
+  void loadHistorySuggestions()
 })
 
 onMounted(() => {
   void loadDiseases()
   void loadW3Status()
+  void loadHistorySuggestions()
 })
 </script>
 
@@ -136,23 +190,66 @@ onMounted(() => {
     </ElForm>
 
     <h3 class="w4-section-title">W4 诊断建议</h3>
-    <div v-if="w4Output" class="w4-grid">
-      <ElCard class="mini-card">
-        <strong>主诊断</strong>
-        <p>{{ w4Output.primaryDiagnosis?.diseaseName || '-' }}</p>
-        <p v-if="w4Output.primaryDiagnosis?.diagnosisBasis">依据：{{ w4Output.primaryDiagnosis.diagnosisBasis }}</p>
-      </ElCard>
-      <ElCard v-for="(item, idx) in w4Output.differentialDiagnoses || []" :key="`ddx-${idx}`" class="mini-card">
+
+    <ElAlert
+      v-if="isFallbackStatus"
+      class="w4-fallback-alert"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="疾病库未匹配到候选，以下为 AI 兜底建议"
+      :description="w4Output?.searchAdvice || '请手动搜索疾病库并确认诊断。'"
+    />
+
+    <div v-if="w4Output?.clinicalSummaryForDoctor" class="w4-summary-block">
+      <strong>临床摘要</strong>
+      <p>{{ w4Output.clinicalSummaryForDoctor }}</p>
+    </div>
+
+    <div v-if="w4Output?.warningSigns?.length" class="w4-summary-block">
+      <strong>警示征象</strong>
+      <ul class="w4-list">
+        <li v-for="(sign, idx) in w4Output.warningSigns" :key="`warn-${idx}`">{{ sign }}</li>
+      </ul>
+    </div>
+
+    <div v-if="w4Output?.differentialDiagnosis?.length" class="w4-grid">
+      <ElCard v-for="(item, idx) in w4Output.differentialDiagnosis" :key="`ddx-${idx}`" class="mini-card">
         <strong>鉴别诊断</strong>
-        <p>{{ item.diseaseName || '-' }}</p>
-        <p v-if="item.diagnosisBasis">依据：{{ item.diagnosisBasis }}</p>
-      </ElCard>
-      <ElCard v-if="w4Output.clinicalAdvice" class="mini-card">
-        <strong>临床建议</strong>
-        <p>{{ w4Output.clinicalAdvice }}</p>
+        <p>{{ item.diagnosisName || '-' }}</p>
+        <p v-if="item.reason">理由：{{ item.reason }}</p>
       </ElCard>
     </div>
-    <div v-else>
+
+    <div v-if="isFallbackStatus && w4Output?.fallbackSuggestions?.length" class="w4-grid">
+      <ElCard v-for="(item, idx) in w4Output.fallbackSuggestions" :key="`fb-${idx}`" class="mini-card mini-card--fallback">
+        <div class="mini-card__header">
+          <strong>{{ suggestionName(item) }}</strong>
+          <ElTag size="small" type="warning">兜底</ElTag>
+        </div>
+        <p v-if="item.estimatedIcdPrefix">ICD 前缀：{{ item.estimatedIcdPrefix }}</p>
+        <p>概率：{{ formatProbability(item.probability) }}</p>
+        <p v-if="item.diagnosisBasis">依据：{{ item.diagnosisBasis }}</p>
+        <p v-if="item.note">{{ item.note }}</p>
+        <ElButton size="small" @click="adoptSuggestion(item)">采纳</ElButton>
+      </ElCard>
+    </div>
+
+    <div v-else-if="displaySuggestions.length" class="w4-grid">
+      <ElCard v-for="(item, idx) in displaySuggestions" :key="`sug-${item.id ?? idx}`" class="mini-card">
+        <div class="mini-card__header">
+          <strong>{{ suggestionName(item) }}</strong>
+          <ElTag v-if="item.riskLevel" size="small">{{ item.riskLevel }}</ElTag>
+        </div>
+        <p v-if="item.recommendIcd">ICD：{{ item.recommendIcd }}</p>
+        <p>概率：{{ formatProbability(item.probability) }}</p>
+        <p v-if="item.diagnosisBasis">依据：{{ item.diagnosisBasis }}</p>
+        <p v-if="item.treatmentDirection">治疗方向：{{ item.treatmentDirection }}</p>
+        <ElButton size="small" @click="adoptSuggestion(item)">采纳</ElButton>
+      </ElCard>
+    </div>
+
+    <div v-else-if="!hasW4Content">
       <p class="w4-empty">暂无 W4 输出，可运行 W4 获取疾病诊断建议。</p>
     </div>
   </PhysicianStepLayout>
@@ -231,6 +328,25 @@ onMounted(() => {
   margin-top: var(--space-4);
 }
 
+.w4-fallback-alert {
+  margin-block-end: var(--space-4);
+}
+
+.w4-summary-block {
+  margin-block-end: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(247, 251, 255, 0.6);
+}
+
+.w4-summary-block p,
+.w4-list {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  line-height: 1.8;
+}
+
 .w4-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -241,9 +357,20 @@ onMounted(() => {
   color: var(--color-text-muted);
 }
 
+.mini-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .mini-card p {
   margin-block-start: var(--space-2);
   color: var(--color-text-muted);
   line-height: 1.8;
+}
+
+.mini-card--fallback {
+  border-color: rgba(230, 162, 60, 0.35);
 }
 </style>

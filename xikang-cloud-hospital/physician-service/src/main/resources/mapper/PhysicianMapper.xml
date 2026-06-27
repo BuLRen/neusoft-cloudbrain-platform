@@ -363,21 +363,27 @@
             <trim prefix="(" suffix=")" prefixOverrides="OR">
                 <if test="diseaseKeywords != null and diseaseKeywords.size() &gt; 0">
                     <foreach collection="diseaseKeywords" item="keyword" separator=" OR ">
+                        (
                         disease_name ILIKE CONCAT('%', #{keyword}, '%')
                         OR disease_code ILIKE CONCAT('%', #{keyword}, '%')
                         OR diseaseicd ILIKE CONCAT('%', #{keyword}, '%')
                         OR disease_category ILIKE CONCAT('%', #{keyword}, '%')
+                        )
                     </foreach>
                 </if>
                 <if test="icdPrefixes != null and icdPrefixes.size() &gt; 0">
+                    OR
                     <foreach collection="icdPrefixes" item="prefix" separator=" OR ">
-                        OR diseaseicd ILIKE CONCAT(#{prefix}, '%')
+                        (
+                        diseaseicd ILIKE CONCAT(#{prefix}, '%')
                         OR disease_code ILIKE CONCAT(#{prefix}, '%')
+                        )
                     </foreach>
                 </if>
                 <if test="categoryKeywords != null and categoryKeywords.size() &gt; 0">
+                    OR
                     <foreach collection="categoryKeywords" item="category" separator=" OR ">
-                        OR disease_category ILIKE CONCAT('%', #{category}, '%')
+                        disease_category ILIKE CONCAT('%', #{category}, '%')
                     </foreach>
                 </if>
             </trim>
@@ -506,16 +512,18 @@
 
     <select id="selectRegisterById" resultType="map">
         SELECT
-            id AS "registerId",
-            case_number AS "caseNumber",
-            real_name AS "realName",
-            gender AS "gender",
-            age AS "age",
-            home_address AS "homeAddress",
-            visit_state AS "visitState",
-            employee_id AS "employeeId"
-        FROM register
-        WHERE id = #{registerId}
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.age AS "age",
+            r.home_address AS "homeAddress",
+            r.visit_state AS "visitState",
+            r.employee_id AS "employeeId",
+            d.dept_name AS "deptName"
+        FROM register r
+        LEFT JOIN department d ON d.id = r.deptment_id
+        WHERE r.id = #{registerId}
     </select>
 
     <select id="selectRegisterEmployeeId" resultType="long">

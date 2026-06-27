@@ -6,6 +6,7 @@ const PRELIMINARY_AI_TIMEOUT_MS = 5 * 60 * 1000
 const W2_AI_TIMEOUT_MS = 5 * 60 * 1000
 /** Dify W3 结果解读 blocking 调用超时 */
 const W3_AI_TIMEOUT_MS = 5 * 60 * 1000
+const W4_AI_TIMEOUT_MS = 5 * 60 * 1000
 import type { PageResult } from '../result'
 
 export interface AiConsultSummary {
@@ -262,20 +263,40 @@ export interface W3Status {
   w3Output?: W3Output
 }
 
+export interface W4Suggestion {
+  id?: number
+  diseaseId?: number
+  diagnosisName?: string
+  diseaseName?: string
+  recommendIcd?: string
+  probability?: number
+  riskLevel?: string
+  diagnosisBasis?: string
+  treatmentDirection?: string
+  sortOrder?: number
+  isAdopted?: boolean
+}
+
+export interface W4FallbackSuggestion {
+  diagnosisName?: string
+  estimatedIcdPrefix?: string
+  probability?: number
+  riskLevel?: string
+  diagnosisBasis?: string
+  note?: string
+}
+
 export interface W4Output {
-  primaryDiagnosis?: {
-    diseaseName?: string
-    recommendIcd?: string
-    probability?: number
-    diagnosisBasis?: string
-  }
-  differentialDiagnoses?: Array<{
-    diseaseName?: string
-    recommendIcd?: string
-    probability?: number
-    diagnosisBasis?: string
-  }>
-  clinicalAdvice?: string
+  status?: 'success' | 'empty' | 'fallback'
+  registerId?: number
+  suggestions?: W4Suggestion[]
+  fallbackSuggestions?: W4FallbackSuggestion[]
+  clinicalSummaryForDoctor?: string
+  differentialDiagnosis?: Array<{ diagnosisName?: string; reason?: string }>
+  warningSigns?: string[]
+  searchAdvice?: string
+  workflowRunId?: string
+  modelId?: string
 }
 
 export interface PhysicianHistoricalSummary {
@@ -396,7 +417,12 @@ export const physicianApi = {
     return http<W3Status>({ url: '/physician/ai/w3/status', method: 'GET', params: { registerId } })
   },
   aiW4(registerId: number) {
-    return http<W4Output>({ url: '/physician/ai/w4/diagnose', method: 'POST', data: { registerId } })
+    return http<W4Output>({
+      url: '/physician/ai/w4/diagnose',
+      method: 'POST',
+      data: { registerId },
+      timeout: W4_AI_TIMEOUT_MS,
+    })
   },
   aiPipelineRun(data: Record<string, unknown>) {
     return http<{
@@ -445,6 +471,6 @@ export const physicianApi = {
     return http<Record<string, unknown>[]>({ url: '/physician/ai/exam-suggestions', method: 'GET', params: { registerId }, skipErrorMessage: true })
   },
   diagnosisSuggestions(registerId: number) {
-    return http<Record<string, unknown>[]>({ url: '/physician/ai/diagnosis-suggestions', method: 'GET', params: { registerId }, skipErrorMessage: true })
+    return http<W4Suggestion[]>({ url: '/physician/ai/diagnosis-suggestions', method: 'GET', params: { registerId }, skipErrorMessage: true })
   },
 }

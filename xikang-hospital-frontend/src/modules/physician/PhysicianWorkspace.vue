@@ -36,6 +36,7 @@ import {
   type W2Output,
   type W3Output,
   type W4Output,
+  type W4Suggestion,
   type InspectionResult,
 } from '@/shared/api/modules/physician'
 import { useLabReportExport } from '@/shared/composables/useLabReportExport'
@@ -103,7 +104,7 @@ const diseases = ref<Disease[]>([])
 const checkResults = ref<Awaited<ReturnType<typeof physicianApi.checkResults>>>([])
 const inspectionResults = ref<Awaited<ReturnType<typeof physicianApi.inspectionResults>>>([])
 const examSuggestions = ref<Record<string, unknown>[]>([])
-const diagnosisSuggestions = ref<Record<string, unknown>[]>([])
+const diagnosisSuggestions = ref<W4Suggestion[]>([])
 const w1LongText = ref('')
 const w1InputMode = ref<'pre_consultation' | 'long_text' | 'doctor_form'>('pre_consultation')
 const structuredRecord = ref<StructuredRecord | null>(null)
@@ -282,14 +283,29 @@ async function runW3() {
   }
 }
 
+function firstW4Suggestion(output: W4Output | null | undefined) {
+  return output?.suggestions?.[0]
+}
+
+function suggestionDisplayName(item: W4Suggestion) {
+  return item.diagnosisName || item.diseaseName || '-'
+}
+
+function formatW4Probability(value?: number) {
+  if (value == null || Number.isNaN(value)) return '-'
+  const num = value <= 1 ? value * 100 : value
+  return `${Math.round(num * 10) / 10}%`
+}
+
 async function runW4() {
   if (!selectedRegisterId.value) return
   aiPipelineLoading.value = true
   try {
     w4Output.value = await physicianApi.aiW4(selectedRegisterId.value)
-    if (w4Output.value?.primaryDiagnosis?.diseaseName) {
-      diagnosisForm.diagnosis = w4Output.value.primaryDiagnosis.diseaseName
-      confirmedDiagnosisForRx.value = w4Output.value.primaryDiagnosis.diseaseName
+    const first = firstW4Suggestion(w4Output.value)
+    if (first && w4Output.value?.status !== 'fallback') {
+      adoptDiagnosisSuggestion(first)
+      confirmedDiagnosisForRx.value = suggestionDisplayName(first)
     }
     await loadPatientContext()
     ElMessage.success('W4 诊断建议已生成')
@@ -313,9 +329,10 @@ async function runFullPipeline() {
     w3Output.value = result.w3
     w4Output.value = result.w4
     applyStructuredToRecordForm(result.w1)
-    if (result.w4?.primaryDiagnosis?.diseaseName) {
-      diagnosisForm.diagnosis = result.w4.primaryDiagnosis.diseaseName
-      confirmedDiagnosisForRx.value = result.w4.primaryDiagnosis.diseaseName
+    const first = firstW4Suggestion(result.w4)
+    if (first && result.w4?.status !== 'fallback') {
+      adoptDiagnosisSuggestion(first)
+      confirmedDiagnosisForRx.value = suggestionDisplayName(first)
     }
     await loadPatientContext()
     ElMessage.success('无人医院 AI 流水线执行完成')
@@ -464,8 +481,8 @@ async function submitPrescription() {
   await loadPatientContext()
 }
 
-function adoptDiagnosisSuggestion(item: Record<string, unknown>) {
-  diagnosisForm.diagnosis = String(item.diseaseName || '')
+function adoptDiagnosisSuggestion(item: W4Suggestion) {
+  diagnosisForm.diagnosis = suggestionDisplayName(item)
   diagnosisForm.cure = String(item.treatmentDirection || '')
   const diseaseId = Number(item.diseaseId)
   if (diseaseId && !diagnosisForm.diseaseIds.includes(diseaseId)) {
@@ -807,17 +824,25 @@ onMounted(async () => {
                 </ElForm>
                 <section>
                   <ElAlert
-                    v-if="w4Output?.primaryDiagnosis"
+                    v-if="firstW4Suggestion(w4Output)"
                     type="warning"
                     :closable="false"
                     show-icon
-                    :title="`${w4Output.primaryDiagnosis.diseaseName}（${w4Output.primaryDiagnosis.probability ?? '-'}%）`"
-                    :description="w4Output.primaryDiagnosis.diagnosisBasis"
+                    :title="`${suggestionDisplayName(firstW4Suggestion(w4Output)!)}（${formatW4Probability(firstW4Suggestion(w4Output)?.probability)}）`"
+                    :description="firstW4Suggestion(w4Output)?.diagnosisBasis"
+                  />
+                  <ElAlert
+                    v-else-if="w4Output?.status === 'fallback'"
+                    type="warning"
+                    :closable="false"
+                    show-icon
+                    title="疾病库未匹配到候选"
+                    :description="w4Output.searchAdvice || '请手动搜索疾病库并确认诊断。'"
                   />
                   <h3>AI 诊断推荐</h3>
                   <ElEmpty v-if="diagnosisSuggestions.length === 0" description="暂无 AI 诊断推荐，可运行 W4" />
                   <ElCard v-for="item in diagnosisSuggestions" :key="String(item.id)" class="mini-card">
-                    <strong>{{ item.diseaseName }}（{{ item.probability || '-' }}%）</strong>
+                    <strong>{{ suggestionDisplayName(item) }}（{{ formatW4Probability(item.probability) }}）</strong>
                     <p>{{ item.diagnosisBasis }}</p>
                     <ElButton size="small" @click="adoptDiagnosisSuggestion(item)">采纳</ElButton>
                   </ElCard>

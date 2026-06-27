@@ -119,8 +119,24 @@ public class PhysicianAiController {
 
     @PostMapping("/w4/diagnose")
     public Result<Map<String, Object>> runW4(@RequestBody Map<String, Object> request) {
-        Long registerId = toLong(request.get("registerId"));
-        return Result.success("W4 诊断推理完成", pipelineService.runW4(registerId));
+        try {
+            Long registerId = toLong(request.get("registerId"));
+            if (registerId == null) {
+                return Result.error("registerId 不能为空");
+            }
+            return Result.success("W4 诊断推理完成", pipelineService.runW4(registerId));
+        } catch (IllegalArgumentException ex) {
+            return Result.error(ex.getMessage());
+        } catch (DifyWorkflowException ex) {
+            if (ex.isPaused()) {
+                return Result.error("AI 工作流需人工介入，当前系统暂不支持，请稍后重试");
+            }
+            String detail = ex.getMessage();
+            if (detail != null && !detail.isBlank() && !detail.contains("请稍后重试")) {
+                return Result.error("AI 诊断推理失败：" + detail);
+            }
+            return Result.error("AI 诊断推理失败，请稍后重试");
+        }
     }
 
     @PostMapping("/pipeline/run")
