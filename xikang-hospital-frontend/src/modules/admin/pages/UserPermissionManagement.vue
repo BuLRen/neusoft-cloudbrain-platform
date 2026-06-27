@@ -7,6 +7,7 @@ import {
   ElDialog,
   ElInput,
   ElOption,
+  ElPagination,
   ElSelect,
   ElTable,
   ElTableColumn,
@@ -15,6 +16,7 @@ import {
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import { useClientPagination } from '@/modules/admin/composables/useClientPagination'
 import { adminUsers, permissionScopes } from '@/shared/mock/admin'
 import { roleOptions } from '@/shared/types/role'
 import type { AdminUserRecord } from '@/shared/types/admin'
@@ -30,6 +32,16 @@ const filteredUsers = computed(() => users.value.filter((item) => {
   const matchesRole = !selectedRole.value || item.role === selectedRole.value
   return matchesKeyword && matchesRole
 }))
+
+const {
+  page: userPage,
+  size: userPageSize,
+  total: userTotal,
+  totalPages: userTotalPages,
+  pagedRecords: userPagedRecords,
+  onPageChange: onUserPageChange,
+  onPageSizeChange: onUserPageSizeChange,
+} = useClientPagination(filteredUsers)
 
 const currentPermissions = computed(() => {
   if (!selectedUser.value) return []
@@ -65,6 +77,10 @@ function unlockUser(user: AdminUserRecord) {
   user.status = 'enabled'
   ElMessage.success('账号已解锁')
 }
+
+function castUser(row: unknown): AdminUserRecord {
+  return row as AdminUserRecord
+}
 </script>
 
 <template>
@@ -81,10 +97,10 @@ function unlockUser(user: AdminUserRecord) {
         <ElSelect v-model="selectedRole" placeholder="全部角色" clearable class="field field--role">
           <ElOption v-for="role in roleOptions" :key="role.value" :label="role.label" :value="role.value" />
         </ElSelect>
-        <StatusTag tone="primary">{{ filteredUsers.length }} 个账号</StatusTag>
+        <StatusTag tone="primary">{{ userTotal }} 个账号</StatusTag>
       </div>
 
-      <ElTable :data="filteredUsers">
+      <ElTable :data="userPagedRecords">
         <ElTableColumn prop="username" label="用户名" min-width="140" />
         <ElTableColumn prop="realName" label="姓名" min-width="120" />
         <ElTableColumn prop="role" label="角色" min-width="120" />
@@ -97,14 +113,31 @@ function unlockUser(user: AdminUserRecord) {
         <ElTableColumn prop="lastLoginAt" label="最近登录" min-width="160" />
         <ElTableColumn label="操作" min-width="220" fixed="right">
           <template #default="{ row }">
-            <ElButton link type="primary" @click="openPermissions(row)">查看权限</ElButton>
-            <ElButton v-if="row.status === 'locked'" link type="success" @click="unlockUser(row)">解锁</ElButton>
-            <ElButton v-else link :type="row.status === 'enabled' ? 'danger' : 'success'" @click="toggleStatus(row)">
+            <ElButton link type="primary" @click="openPermissions(castUser(row))">查看权限</ElButton>
+            <ElButton v-if="row.status === 'locked'" link type="success" @click="unlockUser(castUser(row))">解锁</ElButton>
+            <ElButton v-else link :type="row.status === 'enabled' ? 'danger' : 'success'" @click="toggleStatus(castUser(row))">
               {{ row.status === 'enabled' ? '停用' : '启用' }}
             </ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
+
+      <div v-if="userTotal > 0" class="admin-pagination-bar">
+        <p class="table-footer">
+          共 {{ userTotal }} 个账号
+          <template v-if="userTotalPages > 0">，第 {{ userPage }} / {{ userTotalPages }} 页</template>
+        </p>
+        <ElPagination
+          v-model:current-page="userPage"
+          v-model:page-size="userPageSize"
+          :total="userTotal"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          @current-change="onUserPageChange"
+          @size-change="onUserPageSizeChange"
+        />
+      </div>
     </GlassCard>
 
     <ElDialog v-model="permissionDialogVisible" title="权限详情" width="680px">

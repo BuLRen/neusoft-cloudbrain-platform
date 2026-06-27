@@ -10,12 +10,14 @@ import {
   ElInput,
   ElMessage,
   ElOption,
+  ElPagination,
   ElSelect,
 } from 'element-plus'
 import { useAuthStore } from '@/app/stores/auth'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import { useClientPagination } from '@/modules/admin/composables/useClientPagination'
 import { registrationApi } from '@/shared/api/modules/registration'
 import type { DepartmentOption, TriageDeskRecord } from '@/shared/types/registration'
 import type { DoctorInfo } from '@/shared/api/modules/registration'
@@ -24,6 +26,16 @@ const authStore = useAuthStore()
 
 const departments = ref<DepartmentOption[]>([])
 const triagePending = ref<TriageDeskRecord[]>([])
+const {
+  page: triagePage,
+  size: triagePageSize,
+  total: triageTotal,
+  totalPages: triageTotalPages,
+  pagedRecords: triagePagedRecords,
+  onPageChange: onTriagePageChange,
+  onPageSizeChange: onTriagePageSizeChange,
+  clampPageIfEmpty: clampTriagePage,
+} = useClientPagination(triagePending, 10, { resetOnSourceChange: false })
 const selectedTriageId = ref<number | undefined>()
 const selectedTriage = ref<TriageDeskRecord | null>(null)
 const triageDoctors = ref<DoctorInfo[]>([])
@@ -85,6 +97,7 @@ watch(
 
 async function loadTriagePending() {
   triagePending.value = await registrationApi.triagePending()
+  clampTriagePage()
   if (triagePending.value.length > 0) {
     const currentId = selectedTriageId.value && triagePending.value.some((item) => item.id === selectedTriageId.value)
       ? selectedTriageId.value
@@ -158,11 +171,11 @@ onMounted(async () => {
       <GlassCard class="triage-panel">
         <div class="panel-header">
           <h3>待确认分诊记录</h3>
-          <StatusTag tone="warning">{{ triagePending.length }} 条</StatusTag>
+          <StatusTag tone="warning">{{ triageTotal }} 条</StatusTag>
         </div>
         <div class="triage-list">
           <button
-            v-for="item in triagePending"
+            v-for="item in triagePagedRecords"
             :key="item.id"
             class="triage-item"
             :class="{ 'is-active': item.id === selectedTriageId }"
@@ -178,7 +191,24 @@ onMounted(async () => {
               <span>{{ item.recommendedDepartment || '-' }}</span>
             </div>
           </button>
-          <ElEmpty v-if="triagePending.length === 0" description="暂无待处理分诊记录" />
+          <ElEmpty v-if="triageTotal === 0" description="暂无待处理分诊记录" />
+        </div>
+        <div v-if="triageTotal > 0" class="admin-pagination-bar triage-pagination-bar">
+          <p class="table-footer">
+            共 {{ triageTotal }} 条待确认
+            <template v-if="triageTotalPages > 0">，第 {{ triagePage }} / {{ triageTotalPages }} 页</template>
+          </p>
+          <ElPagination
+            v-model:current-page="triagePage"
+            v-model:page-size="triagePageSize"
+            :total="triageTotal"
+            :page-sizes="[5, 10, 20]"
+            layout="total, sizes, prev, pager, next"
+            small
+            background
+            @current-change="onTriagePageChange"
+            @size-change="onTriagePageSizeChange"
+          />
         </div>
       </GlassCard>
 
@@ -322,9 +352,13 @@ onMounted(async () => {
   gap: var(--space-3);
   flex: 1;
   min-height: 0;
-  max-block-size: none;
-  overflow-y: auto;
+  overflow-y: visible;
   padding-inline-end: 4px;
+}
+
+.triage-pagination-bar {
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--color-border);
 }
 
 .triage-item {
