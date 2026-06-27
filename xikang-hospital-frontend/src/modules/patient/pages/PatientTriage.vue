@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onUnmounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
@@ -71,27 +71,43 @@ async function runTriage() {
       symptoms: triageSymptoms.value,
     })
     triageResult.value = result
-    ElMessage.success('AI 导诊结果已生成')
-  } catch (err: any) {
-    // Fallback to mock
-    triageResult.value = {
-      recommendedDepartment: '消化内科',
-      recommendedDoctors: [
-        { id: 1, name: '李明华', title: '主任医师' },
-        { id: 2, name: '王建国', title: '副主任医师' },
-      ],
-      riskLevel: 'low',
-      aiAnalysis: {
-        selfCareAdvice: '建议清淡饮食，避免辛辣刺激性食物，多饮水，注意休息。',
-        possibleConditions: ['急性胃炎', '胃痉挛', '消化不良'],
-        suggestedExaminations: ['胃镜检查', '血常规', '幽门螺杆菌检测'],
-      },
+    if (result?.isOutOfScope) {
+      ElMessage.info('请描述您的症状，以获得分诊建议')
+    } else {
+      ElMessage.success('AI 导诊结果已生成')
     }
-    ElMessage.warning('AI 导诊结果已生成（模拟数据）')
+  } catch (err: any) {
+    // 网络/超时/服务端异常：弹窗提示用户，不要静默 fallback 误导
+    // 同时清掉 loading 让按钮恢复可点
+    triageLoading.value = false
+    triageResult.value = null
+    try {
+      await ElMessageBox.alert(
+        '上次导诊请求未能完成，请检查网络后重新输入症状再试一次。',
+        '导诊未完成',
+        {
+          type: 'warning',
+          confirmButtonText: '我知道了',
+          callback: () => {
+            // 用户确认后清掉输入框，引导重新输入
+            triageSymptoms.value = ''
+          },
+        },
+      )
+    } catch {
+      // 用户关闭弹窗
+    }
   } finally {
+    // 兜底：finally 一定会执行，确保 loading 不会被卡住
     triageLoading.value = false
   }
 }
+
+// 组件卸载兜底：如果用户在请求中途切走页面再回来，
+// 防止组件被销毁/重建时 loading 状态遗留为 true。
+onUnmounted(() => {
+  triageLoading.value = false
+})
 
 function goToRegistration() {
   window.location.href = '/patient/registration'
@@ -178,7 +194,25 @@ function getRegistLevelTone(levelId?: number) {
       </div>
     </GlassCard>
 
-    <GlassCard v-if="triageResult" class="result-card">
+    <!-- 领域护栏：用户输入与医疗无关时展示友好引导，而非导诊结果 -->
+    <GlassCard v-if="triageResult?.isOutOfScope" class="out-of-scope-card">
+      <div class="out-of-scope-icon">💬</div>
+      <h3 class="out-of-scope-title">请描述您的症状</h3>
+      <p class="out-of-scope-message">
+        {{ triageResult.outOfScopeMessage || '我是医疗分诊助手，请告诉我您的症状，我来帮您推荐合适的科室。' }}
+      </p>
+      <div class="out-of-scope-examples">
+        <span class="example-label">您可以这样描述：</span>
+        <div class="example-tags">
+          <span class="example-tag">头痛、发烧</span>
+          <span class="example-tag">咳嗽 3 天</span>
+          <span class="example-tag">胃痛、反酸</span>
+          <span class="example-tag">摔了一跤腿疼</span>
+        </div>
+      </div>
+    </GlassCard>
+
+    <GlassCard v-if="triageResult && !triageResult.isOutOfScope" class="result-card">
       <div class="result-header">
         <h3>导诊建议</h3>
       </div>
@@ -490,5 +524,54 @@ function getRegistLevelTone(levelId?: number) {
   display: flex;
   gap: var(--space-3);
   padding-top: var(--space-4);
+}
+
+/* 领域护栏：话题外引导卡片 */
+.out-of-scope-card {
+  padding: var(--space-5);
+  text-align: center;
+}
+.out-of-scope-icon {
+  font-size: 48px;
+  margin-bottom: var(--space-3);
+}
+.out-of-scope-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 var(--space-3);
+  color: var(--color-primary);
+}
+.out-of-scope-message {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--color-text);
+  margin: 0 auto var(--space-5);
+  max-width: 480px;
+}
+.out-of-scope-examples {
+  padding: var(--space-3) var(--space-4);
+  background: rgba(26, 119, 224, 0.05);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-primary);
+}
+.example-label {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+.example-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+.example-tag {
+  padding: 4px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--color-primary);
 }
 </style>

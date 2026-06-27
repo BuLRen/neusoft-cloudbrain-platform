@@ -6,7 +6,9 @@ import type { ApiResult, RequestOptions } from './result'
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 15000,
+  // 默认 15s 不够 AI 导诊（Chat + RAG 检索 + 解析常需 25-60s）
+  // 提到 90s 让绝大多数正常请求能跑完；网络异常时仍会触发 axios 超时抛错，走前端 fallback。
+  timeout: 90000,
   withCredentials: true,
 })
 

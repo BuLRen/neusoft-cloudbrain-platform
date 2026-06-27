@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElDatePicker, ElMessage, ElMessageBox, ElRadio, ElRadioGroup } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import StatusTag from '@/shared/components/StatusTag.vue'
@@ -297,6 +297,11 @@ const stepStatus = computed(() => {
 })
 
 async function nextStep() {
+  // 领域护栏：话题外输入禁止跳到下一步
+  if (triageResult.value?.isOutOfScope) {
+    ElMessage.warning('请先描述您的症状，再进行下一步')
+    return
+  }
   if (currentStep.value < steps.length - 1) {
     currentStep.value++
     if (currentStep.value === 1) {
@@ -696,6 +701,11 @@ async function startFromDepartmentQuery() {
 
 onMounted(startFromDepartmentQuery)
 
+// 组件卸载兜底：用户在请求中途切走页面，防止 loading 状态遗留为 true
+onUnmounted(() => {
+  triageLoading.value = false
+})
+
 // ========== Step 1: AI导诊 ==========
 async function runTriage() {
   if (!triageForm.value.symptoms.trim()) {
@@ -741,23 +751,43 @@ async function runTriage() {
       }
     }
 
+    // 领域护栏：用户输入与医疗无关时弹窗提示，关闭后用户直接在原输入框里改
+    // 注意：不要给 triageResult 赋值，否则按钮会从"开始导诊"切换掉
+    if (result?.isOutOfScope) {
+      const message = result.outOfScopeMessage
+        || '我是医疗分诊助手，请告诉我您的症状，我来帮您推荐合适的科室。'
+      triageLoading.value = false
+      triageResult.value = null
+      await ElMessageBox.alert(message, '请描述您的症状', {
+        type: 'info',
+        confirmButtonText: '我知道了',
+      }).catch(() => {
+        // 用户关闭弹窗，静默处理
+      })
+      return
+    }
     triageResult.value = result
     ElMessage.success('AI 导诊结果已生成')
   } catch (err: any) {
     console.error('[AI导诊] API 调用失败:', err?.message)
-    triageResult.value = {
-      recommendedDepartment: '消化内科',
-      recommendedDoctors: [
-        { id: 1, name: '李明华', title: '主任医师' },
-      ],
-      riskLevel: 'low',
-      aiAnalysis: {
-        selfCareAdvice: '建议清淡饮食，注意休息。',
-        possibleConditions: ['急性胃炎', '消化不良'],
-        suggestedExaminations: ['胃镜检查', '血常规'],
-      },
+    // 网络/超时/服务端异常：弹窗提示用户，并清掉 mock fallback（避免显示假数据误导）
+    triageLoading.value = false
+    triageResult.value = null
+    try {
+      await ElMessageBox.alert(
+        '上次导诊请求未能完成，请检查网络后重新输入症状再试一次。',
+        '导诊未完成',
+        {
+          type: 'warning',
+          confirmButtonText: '我知道了',
+          callback: () => {
+            triageForm.value.symptoms = ''
+          },
+        },
+      )
+    } catch {
+      // 用户关闭弹窗
     }
-    ElMessage.warning('AI 导诊结果已生成（模拟数据）')
   }
   triageLoading.value = false
 }
@@ -1108,7 +1138,9 @@ const showSuccessCard = computed(() => {
           </div>
         </div>
 
-        <div v-if="triageResult" class="triage-result">
+        <!-- 领域护栏：话题外时由 runTriage() 弹窗提示，此处无需展示卡片 -->
+
+        <div v-if="triageResult && !triageResult.isOutOfScope" class="triage-result">
           <!-- 紧迫性提示 -->
           <div class="urgency-bar" :class="{ 'is-urgent': triageResult.urgencyLevel === 'I' || triageResult.urgencyLevel === 'II' }">
             <StatusTag :tone="urgencyTone(triageResult.urgencyLevel)">
@@ -1196,23 +1228,23 @@ const showSuccessCard = computed(() => {
 
         <div class="step-actions">
           <button class="btn-outline" @click="backToList">返回我的挂号</button>
-          <!-- 导诊结果出来后按钮变成"下一步"，点击跳到下一页 -->
+          <!-- 未生成导诊结果 → "开始导诊" -->
           <button
-            v-if="triageResult"
-            class="btn-primary"
-            @click="nextStep"
-          >
-            下一步
-          </button>
-          <!-- 导诊结果未生成时显示"开始导诊" -->
-          <button
-            v-else
+            v-if="!triageResult"
             class="btn-primary"
             :disabled="!triageForm.symptoms.trim() || triageLoading"
             @click="runTriage"
           >
             <span v-if="triageLoading" class="loading-dots">分析中</span>
             <span v-else>开始导诊</span>
+          </button>
+          <!-- 正常导诊结果出来后 → "下一步" -->
+          <button
+            v-else
+            class="btn-primary"
+            @click="nextStep"
+          >
+            下一步
           </button>
         </div>
       </div>

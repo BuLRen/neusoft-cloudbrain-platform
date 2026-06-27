@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -11,6 +11,7 @@ import {
   ElFormItem,
   ElInput,
   ElMessage,
+  ElMessageBox,
   ElProgress,
   ElResult,
   ElTimeline,
@@ -282,26 +283,44 @@ async function runTriage() {
       }
     }
 
+    // 领域护栏：用户输入与医疗无关时弹窗提示，关闭后用户直接在原输入框里改
+    // 注意：不要给 triageResult 赋值，否则后续步骤状态会变
+    if (result?.isOutOfScope) {
+      const message = result.outOfScopeMessage
+        || '我是医疗分诊助手，请告诉我您的症状，我来帮您推荐合适的科室。'
+      triageLoading.value = false
+      triageResult.value = null
+      await ElMessageBox.alert(message, '请描述您的症状', {
+        type: 'info',
+        confirmButtonText: '我知道了',
+      }).catch(() => {
+        // 用户关闭弹窗，静默处理
+      })
+      return
+    }
     triageResult.value = result
     console.log('[AI导诊] API 成功返回:', result)
     ElMessage.success('AI 导诊结果已生成')
   } catch (err: any) {
     console.error('[AI导诊] API 调用失败:', err?.message, err)
-    // API 调用失败时 fallback 到 mock
-    triageResult.value = {
-      recommendedDepartment: '消化内科',
-      recommendedDoctors: [
-        { id: 101, name: '李明华', title: '主任医师' },
-        { id: 102, name: '王建国', title: '副主任医师' },
-      ],
-      riskLevel: 'low',
-      aiAnalysis: {
-        selfCareAdvice: '建议清淡饮食，避免辛辣刺激性食物，多饮水，注意休息。',
-        possibleConditions: ['急性胃炎', '胃痉挛', '消化不良'],
-        suggestedExaminations: ['胃镜检查', '血常规', '幽门螺杆菌检测'],
-      },
+    // 网络/超时/服务端异常：弹窗提示用户，并清掉 mock fallback（避免显示假数据误导）
+    triageLoading.value = false
+    triageResult.value = null
+    try {
+      await ElMessageBox.alert(
+        '上次导诊请求未能完成，请检查网络后重新输入症状再试一次。',
+        '导诊未完成',
+        {
+          type: 'warning',
+          confirmButtonText: '我知道了',
+          callback: () => {
+            triageSymptoms.value = ''
+          },
+        },
+      )
+    } catch {
+      // 用户关闭弹窗
     }
-    ElMessage.warning('AI 导诊结果已生成（模拟数据）')
   } finally {
     triageLoading.value = false
   }
@@ -362,6 +381,11 @@ function syncCurrentStep() {
 
 onMounted(() => {
   syncCurrentStep()
+})
+
+// 组件卸载兜底：如果用户在请求中途切走页面，防止 loading 状态遗留为 true
+onUnmounted(() => {
+  triageLoading.value = false
 })
 </script>
 
@@ -576,7 +600,9 @@ onMounted(() => {
             </div>
           </div>
 
-          <div v-if="triageResult" class="triage-result">
+          <!-- 领域护栏：话题外时由 runTriage() 弹窗提示，此处无需展示卡片 -->
+
+          <div v-if="triageResult && !triageResult.isOutOfScope" class="triage-result">
             <!-- 紧迫性提示 -->
             <ElAlert :type="triageResult.urgencyLevel === 'I' ? 'error' : triageResult.urgencyLevel === 'II' ? 'warning' : 'info'" :closable="false">
               <template #title>
