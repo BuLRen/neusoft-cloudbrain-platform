@@ -13,27 +13,23 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class FollowUpCommunicationController {
 
-    private final FollowUpCommunicationService followUpCommunicationService;
+    private final FollowUpCommunicationService communicationService;
 
     @GetMapping("/sessions")
-    public Result<List<Map<String, Object>>> listSessions(
-        @RequestParam(required = false) Long departmentId
-    ) {
-        return Result.success(followUpCommunicationService.listSessions(departmentId));
+    public Result<List<Map<String, Object>>> listSessions(@RequestParam(required = false) Long departmentId) {
+        return Result.success(communicationService.listSessions(departmentId));
     }
 
     @PostMapping("/sessions")
     public Result<Map<String, Object>> openSession(@RequestBody Map<String, Object> request) {
-        Long registerId = toLong(request.get("registerId"));
-        if (registerId == null) {
-            return Result.error("registerId 不能为空");
-        }
-        return Result.success(followUpCommunicationService.openSession(registerId));
+        Long registerId = request.get("registerId") != null ? Long.valueOf(String.valueOf(request.get("registerId"))) : null;
+        Long departmentId = request.get("departmentId") != null ? Long.valueOf(String.valueOf(request.get("departmentId"))) : null;
+        return Result.success(communicationService.openSession(registerId, departmentId));
     }
 
     @GetMapping("/sessions/{id}")
     public Result<Map<String, Object>> getSession(@PathVariable Long id) {
-        return Result.success(followUpCommunicationService.getSession(id));
+        return Result.success(communicationService.getSession(id));
     }
 
     @GetMapping("/sessions/{id}/messages")
@@ -42,7 +38,7 @@ public class FollowUpCommunicationController {
         @RequestParam(required = false) Integer limit,
         @RequestParam(required = false) Integer offset
     ) {
-        return Result.success(followUpCommunicationService.listMessages(id, limit, offset));
+        return Result.success(communicationService.listMessages(id, limit, offset));
     }
 
     @PostMapping("/sessions/{id}/messages")
@@ -50,8 +46,8 @@ public class FollowUpCommunicationController {
         @PathVariable Long id,
         @RequestBody Map<String, Object> request
     ) {
-        String content = request.get("content") != null ? String.valueOf(request.get("content")) : "";
-        return Result.success(followUpCommunicationService.sendDoctorMessage(id, content));
+        String content = request.get("content") != null ? String.valueOf(request.get("content")) : null;
+        return Result.success(communicationService.sendDoctorMessage(id, content));
     }
 
     @PostMapping("/sessions/{id}/patient-messages")
@@ -59,43 +55,37 @@ public class FollowUpCommunicationController {
         @PathVariable Long id,
         @RequestBody Map<String, Object> request
     ) {
-        String content = request.get("content") != null ? String.valueOf(request.get("content")) : "";
-        boolean autoAiReply = !Boolean.FALSE.equals(request.get("autoAiReply"));
-        return Result.success(followUpCommunicationService.sendPatientMessage(id, content, autoAiReply));
+        String content = request.get("content") != null ? String.valueOf(request.get("content")) : null;
+        boolean autoAiReply = request.get("autoAiReply") == null || Boolean.parseBoolean(String.valueOf(request.get("autoAiReply")));
+        return Result.success(communicationService.sendPatientMessage(id, content, autoAiReply));
     }
 
     @PostMapping("/sessions/{id}/ai-reply")
     public Result<Map<String, Object>> triggerAiReply(@PathVariable Long id) {
-        return Result.success(followUpCommunicationService.triggerAiReply(id));
+        return Result.success(communicationService.triggerAiReply(id));
     }
 
     @PatchMapping("/sessions/{id}/ai-escalation")
-    public Result<Void> setAiEscalation(
-        @PathVariable Long id,
-        @RequestBody Map<String, Object> request
-    ) {
-        boolean enabled = !Boolean.FALSE.equals(request.get("enabled"));
-        followUpCommunicationService.setAiEscalation(id, enabled);
-        return Result.success();
+    public Result<Void> setAiEscalation(@PathVariable Long id, @RequestBody Map<String, Object> request) {
+        boolean enabled = request.get("enabled") != null && Boolean.parseBoolean(String.valueOf(request.get("enabled")));
+        communicationService.setAiEscalation(id, enabled);
+        return Result.success(null);
     }
 
     @PostMapping("/case-summary/generate")
     public Result<Map<String, Object>> generateCaseSummary(@RequestBody Map<String, Object> request) {
-        Long registerId = toLong(request.get("registerId"));
-        if (registerId == null) {
-            return Result.error("registerId 不能为空");
-        }
-        return Result.success(followUpCommunicationService.generateCaseSummary(registerId));
+        Long registerId = Long.valueOf(String.valueOf(request.get("registerId")));
+        return Result.success(communicationService.generateCaseSummary(registerId));
     }
 
     @GetMapping("/case-summary/{registerId}")
     public Result<Map<String, Object>> getLatestCaseSummary(@PathVariable Long registerId) {
-        return Result.success(followUpCommunicationService.getLatestCaseSummary(registerId));
+        return Result.success(communicationService.getLatestCaseSummary(registerId));
     }
 
     @GetMapping("/case-summary/{registerId}/shared")
     public Result<Map<String, Object>> getSharedCaseSummary(@PathVariable Long registerId) {
-        return Result.success(followUpCommunicationService.getSharedCaseSummaryForPatient(registerId));
+        return Result.success(communicationService.getSharedCaseSummary(registerId));
     }
 
     @PutMapping("/case-summary/{id}")
@@ -103,8 +93,8 @@ public class FollowUpCommunicationController {
         @PathVariable Long id,
         @RequestBody Map<String, Object> request
     ) {
-        String doctorContent = request.get("doctorContent") != null ? String.valueOf(request.get("doctorContent")) : "";
-        return Result.success(followUpCommunicationService.updateCaseSummary(id, doctorContent));
+        String doctorContent = request.get("doctorContent") != null ? String.valueOf(request.get("doctorContent")) : null;
+        return Result.success(communicationService.updateCaseSummary(id, doctorContent));
     }
 
     @PostMapping("/case-summary/{id}/approve")
@@ -113,32 +103,24 @@ public class FollowUpCommunicationController {
         @RequestBody Map<String, Object> request
     ) {
         String doctorContent = request.get("doctorContent") != null ? String.valueOf(request.get("doctorContent")) : null;
-        boolean sharedToPatient = Boolean.TRUE.equals(request.get("sharedToPatient"));
-        return Result.success(followUpCommunicationService.approveCaseSummary(id, doctorContent, sharedToPatient));
+        Boolean shared = request.get("sharedToPatient") != null
+            ? Boolean.valueOf(String.valueOf(request.get("sharedToPatient")))
+            : null;
+        return Result.success(communicationService.approveCaseSummary(id, doctorContent, shared));
     }
 
     @PostMapping("/case-summary/{id}/revoke")
     public Result<Map<String, Object>> revokeCaseSummary(@PathVariable Long id) {
-        return Result.success(followUpCommunicationService.revokeCaseSummary(id));
+        return Result.success(communicationService.revokeCaseSummary(id));
     }
 
     @GetMapping("/patient-brief/{registerId}")
     public Result<Map<String, Object>> getPatientBrief(@PathVariable Long registerId) {
-        return Result.success(followUpCommunicationService.getPatientBrief(registerId));
+        return Result.success(communicationService.getPatientBrief(registerId));
     }
 
     @GetMapping("/patient/session/{registerId}")
     public Result<Map<String, Object>> getPatientSession(@PathVariable Long registerId) {
-        return Result.success(followUpCommunicationService.getOrCreatePatientSession(registerId));
-    }
-
-    private Long toLong(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        return Long.parseLong(String.valueOf(value));
+        return Result.success(communicationService.getPatientSession(registerId));
     }
 }

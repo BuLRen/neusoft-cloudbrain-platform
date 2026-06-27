@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpPatientMapper">
+
+    <select id="selectPlansByRegisterIds" resultType="map">
+        SELECT
+            p.id AS "id",
+            p.register_id AS "registerId",
+            p.prescription_id AS "prescriptionId",
+            p.follow_up_day AS "followUpDay",
+            p.planned_date AS "plannedDate",
+            p.follow_up_type AS "followUpType",
+            p.content_template AS "contentTemplate",
+            p.plan_status AS "planStatus",
+            p.creation_time AS "creationTime",
+            e.realname AS "doctorName"
+        FROM ai_follow_up_plan p
+        LEFT JOIN register r ON r.id = p.register_id
+        LEFT JOIN employee e ON e.id = r.employee_id
+        WHERE p.register_id IN
+        <foreach collection="registerIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        ORDER BY p.planned_date DESC NULLS LAST, p.creation_time DESC
+    </select>
+
+    <select id="selectRecordsByRegisterIds" resultType="map">
+        SELECT
+            fr.id AS "id",
+            fr.follow_up_plan_id AS "followUpPlanId",
+            fr.register_id AS "registerId",
+            fr.symptom_relief AS "symptomRelief",
+            fr.has_side_effect AS "hasSideEffect",
+            fr.patient_feedback AS "patientFeedback",
+            fr.ai_assessment AS "aiAssessment",
+            fr.ai_advice AS "aiAdvice",
+            fr.follow_up_time AS "followUpTime"
+        FROM ai_follow_up_record fr
+        WHERE fr.register_id IN
+        <foreach collection="registerIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        ORDER BY fr.follow_up_time DESC NULLS LAST, fr.id DESC
+    </select>
+
+    <select id="selectPrescriptionsByRegisterIds" resultType="map">
+        SELECT
+            pr.id AS "id",
+            pr.register_id AS "registerId",
+            pr.drug_id AS "drugId",
+            d.drug_name AS "drugName",
+            pr.drug_usage AS "drugUsage",
+            pr.drug_number AS "drugNumber",
+            pr.creation_time AS "creationTime"
+        FROM prescription pr
+        LEFT JOIN drug_info d ON d.id = pr.drug_id
+        WHERE pr.register_id IN
+        <foreach collection="registerIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        ORDER BY pr.creation_time DESC
+    </select>
+
+    <update id="updatePlanStatus">
+        UPDATE ai_follow_up_plan
+        SET plan_status = #{planStatus}
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertFollowUpRecord" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_follow_up_record (
+            follow_up_plan_id, register_id, symptom_relief, has_side_effect,
+            patient_feedback, ai_assessment, follow_up_time
+        ) VALUES (
+            #{followUpPlanId}, #{registerId}, #{symptomRelief}, #{hasSideEffect},
+            #{patientFeedback}, #{aiAssessment}, COALESCE(#{followUpTime}, CURRENT_TIMESTAMP)
+        )
+    </insert>
+
+    <select id="selectRegisterIdsByPatientMatch" resultType="long">
+        SELECT r.id
+        FROM register r
+        WHERE r.real_name = #{realName}
+          AND r.birthdate::text = #{birthdate}
+        ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
+    </select>
+
+    <select id="selectRegisterIdsByPatientId" resultType="long">
+        SELECT r.id
+        FROM register r
+        INNER JOIN patient p ON p.real_name = r.real_name AND p.birthdate = r.birthdate
+        WHERE p.id = #{patientId}
+          AND p.delmark = 1
+        ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
+    </select>
+
+</mapper>

@@ -320,32 +320,33 @@ public class AiPharmacyService {
     public void recordFollowUpFeedback(Long planId, Map<String, Object> feedback) {
         log.info("记录随访反馈: planId={}, feedback={}", planId, feedback);
 
-        String medicationCompliance = (String) feedback.getOrDefault("medicationCompliance", "good");
-        String symptomFeedback = (String) feedback.get("symptomFeedback");
-        String sideEffects = (String) feedback.get("sideEffects");
-        String recoveryStatus = (String) feedback.get("recoveryStatus");
+        AiFollowUpPlan plan = aiFollowUpPlanMapper.selectById(planId);
+        if (plan == null) {
+            throw new IllegalArgumentException("随访计划不存在: " + planId);
+        }
+
+        String symptomFeedback = feedback.get("symptomFeedback") != null
+            ? String.valueOf(feedback.get("symptomFeedback")) : null;
+        String sideEffects = feedback.get("sideEffects") != null
+            ? String.valueOf(feedback.get("sideEffects")) : null;
+        String symptomRelief = feedback.get("symptomRelief") != null
+            ? String.valueOf(feedback.get("symptomRelief")) : "partial";
 
         LocalDateTime now = LocalDateTime.now();
 
         AiFollowUpRecord record = new AiFollowUpRecord();
-        record.setPlanId(planId);
-        record.setPatientId(((Number) feedback.get("patientId")).longValue());
-        record.setMedicationCompliance(medicationCompliance);
-        record.setSymptomFeedback(symptomFeedback);
-        record.setSideEffects(sideEffects);
-        record.setRecoveryStatus(recoveryStatus);
-        record.setRecordTime(now);
-        record.setCreateTime(now);
+        record.setFollowUpPlanId(planId);
+        record.setRegisterId(plan.getRegisterId());
+        record.setSymptomRelief(symptomRelief);
+        record.setHasSideEffect(sideEffects != null && !sideEffects.isBlank() ? 1 : 0);
+        record.setSideEffect(sideEffects);
+        record.setPatientFeedback(symptomFeedback);
+        record.setFollowUpTime(now);
 
         aiFollowUpRecordMapper.insert(record);
 
-        // 更新计划状态
-        AiFollowUpPlan plan = aiFollowUpPlanMapper.selectById(planId);
-        if (plan != null) {
-            plan.setStatus(1); // 进行中
-            plan.setUpdateTime(now);
-            aiFollowUpPlanMapper.update(plan);
-        }
+        plan.setPlanStatus("completed");
+        aiFollowUpPlanMapper.update(plan);
     }
 
     /**
@@ -356,18 +357,16 @@ public class AiPharmacyService {
             LocalDateTime now = LocalDateTime.now();
 
             AiFollowUpPlan followUpPlan = new AiFollowUpPlan();
-            followUpPlan.setPatientId(patientId);
             followUpPlan.setRegisterId(registerId);
             followUpPlan.setPrescriptionId(prescriptionId);
-            followUpPlan.setPlanType((String) plan.get("planType"));
-            followUpPlan.setStartDate(LocalDate.parse((CharSequence) plan.get("startDate")));
-            followUpPlan.setEndDate(LocalDate.parse((CharSequence) plan.get("endDate")));
-            followUpPlan.setFrequency((String) plan.get("frequency"));
-            followUpPlan.setFollowUpItems(objectMapper.writeValueAsString(plan.get("followUpItems")));
-            followUpPlan.setInstructions((String) plan.get("instructions"));
-            followUpPlan.setStatus(0); // 待执行
-            followUpPlan.setCreateTime(now);
-            followUpPlan.setUpdateTime(now);
+            followUpPlan.setFollowUpType(plan.get("planType") != null
+                ? String.valueOf(plan.get("planType")) : "medication");
+            if (plan.get("startDate") != null) {
+                followUpPlan.setPlannedDate(LocalDate.parse(String.valueOf(plan.get("startDate"))));
+            }
+            followUpPlan.setContentTemplate(objectMapper.writeValueAsString(plan));
+            followUpPlan.setPlanStatus("pending");
+            followUpPlan.setCreationTime(now);
 
             aiFollowUpPlanMapper.insert(followUpPlan);
             return followUpPlan.getId();

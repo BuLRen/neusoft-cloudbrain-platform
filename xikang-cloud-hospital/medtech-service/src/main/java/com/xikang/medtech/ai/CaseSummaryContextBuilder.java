@@ -2,13 +2,13 @@ package com.xikang.medtech.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.medtech.mapper.FollowUpCommunicationMapper;
+import com.xikang.medtech.service.HealthObservationService;
 import com.xikang.medtech.mapper.FollowUpOutcomeMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +22,7 @@ public class CaseSummaryContextBuilder {
 
     private final FollowUpOutcomeMapper followUpOutcomeMapper;
     private final FollowUpCommunicationMapper followUpCommunicationMapper;
+    private final HealthObservationService healthObservationService;
 
     public Map<String, Object> build(Long registerId) {
         LocalDate today = LocalDate.now();
@@ -30,7 +31,7 @@ public class CaseSummaryContextBuilder {
         Map<String, Object> profile = followUpOutcomeMapper.selectPatientProfile(registerId);
         Map<String, Object> detail = followUpOutcomeMapper.selectPatientDetail(registerId);
         List<Map<String, Object>> diseases = followUpOutcomeMapper.selectPatientDiseases(registerId);
-        List<Map<String, Object>> metrics = followUpCommunicationMapper.selectRecentMetrics(registerId, from, today);
+        List<Map<String, Object>> metrics = healthObservationService.getRecentMetrics(registerId, from, today, 60);
         List<Map<String, Object>> records = followUpCommunicationMapper.selectRecentFollowUpRecords(registerId, 5);
 
         Map<String, Object> inputs = new LinkedHashMap<>();
@@ -71,14 +72,14 @@ public class CaseSummaryContextBuilder {
         List<Map<String, Object>> summary = new ArrayList<>();
         for (Map.Entry<String, List<Map<String, Object>>> entry : grouped.entrySet()) {
             List<Map<String, Object>> list = entry.getValue();
-            Map<String, Object> latest = list.get(0);
+            Map<String, Object> latest = list.get(list.size() - 1);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("metricKey", entry.getKey());
             row.put("latestValue", latest.get("metricValue"));
             row.put("unit", latest.get("unit"));
             row.put("latestDate", latest.get("recordDate"));
             if (list.size() > 1) {
-                row.put("previousValue", list.get(list.size() - 1).get("metricValue"));
+                row.put("previousValue", list.get(0).get("metricValue"));
             }
             summary.add(row);
         }

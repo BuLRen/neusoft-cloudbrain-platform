@@ -1,10 +1,12 @@
 package com.xikang.medtech.service;
 
 import com.xikang.common.exception.BusinessException;
+import com.xikang.medtech.config.FollowUpProperties;
 import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.mapper.FollowUpDashboardMapper;
 import com.xikang.medtech.mapper.FollowUpOutcomeMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FollowUpDashboardService {
@@ -22,6 +25,8 @@ public class FollowUpDashboardService {
     private final FollowUpDashboardMapper followUpDashboardMapper;
     private final FollowUpOutcomeMapper followUpOutcomeMapper;
     private final MedtechService medtechService;
+    private final FollowUpProperties followUpProperties;
+    private final FollowUpEnrollmentSyncService followUpEnrollmentSyncService;
 
     public Map<String, Object> getContext(LocalDate targetDate, Long departmentIdOverride) {
         LocalDate date = targetDate != null ? targetDate : LocalDate.now();
@@ -30,6 +35,7 @@ public class FollowUpDashboardService {
         Map<String, Object> context = new LinkedHashMap<>(medtechService.getCurrentProfile());
         context.put("targetDate", date.toString());
         context.put("effectiveDepartmentId", departmentId);
+        context.put("dataSource", followUpProperties.getDataSource());
 
         Long employeeId = MedtechAuthContext.employeeIdOrNull();
         if (employeeId != null) {
@@ -39,7 +45,12 @@ public class FollowUpDashboardService {
             }
         }
 
-        Map<String, Object> stats = followUpDashboardMapper.selectDashboardStats(departmentId, date);
+        Map<String, Object> stats = followUpDashboardMapper.selectDashboardStats(
+            departmentId,
+            date,
+            followUpProperties.includeUnenrolledEligible(),
+            followUpProperties.isDemoMode()
+        );
         if (stats != null) {
             context.put("stats", stats);
         }
@@ -50,12 +61,59 @@ public class FollowUpDashboardService {
         LocalDate date = targetDate != null ? targetDate : LocalDate.now();
         Long departmentId = resolveDepartmentId(departmentIdOverride);
 
-        List<Map<String, Object>> patients = followUpDashboardMapper.selectDashboardPatients(departmentId, date);
+        List<Map<String, Object>> patients = followUpDashboardMapper.selectDashboardPatients(
+            departmentId,
+            date,
+            followUpProperties.includeUnenrolledEligible(),
+            followUpProperties.isDemoMode()
+        );
         List<Map<String, Object>> enriched = new ArrayList<>();
         for (Map<String, Object> patient : patients) {
             enriched.add(enrichPatient(patient, date));
         }
         return enriched;
+    }
+
+    @Transactional
+    public Map<String, Object> enrollPatient(Map<String, Object> request) {
+        Long registerId = toLong(request.get("registerId"));
+        if (registerId == null) {
+            throw new BusinessException("registerId 不能为空");
+        }
+
+        if (!followUpDashboardMapper.isEligiblePatient(registerId)) {
+            throw new BusinessException("该挂号记录不符合随访纳入条件（需看诊结束且有诊断或随访数据）");
+        }
+
+        Map<String, Object> profile = followUpOutcomeMapper.selectPatientProfile(registerId);
+        if (profile == null || profile.isEmpty()) {
+            throw new BusinessException("未找到该挂号患者");
+        }
+
+        Long departmentId = resolveDepartmentId(toLong(request.get("departmentId")));
+        if (departmentId == null) {
+            throw new BusinessException("无法确定在管科室");
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("registerId", registerId);
+        payload.put("departmentId", departmentId);
+        payload.put("priorityLevel", request.get("priorityLevel"));
+        payload.put("interviewIntervalDays", request.get("interviewIntervalDays"));
+        payload.put("observationIntervalDays", request.get("observationIntervalDays"));
+        payload.put("enrolledBy", MedtechAuthContext.employeeIdOrNull());
+
+        followUpDashboardMapper.upsertPatientProfile(payload);
+
+        if (followUpProperties.preferEnrollmentTable()) {
+            followUpEnrollmentSyncService.trySyncEnrollment(payload);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>(followUpDashboardMapper.selectEnrollmentByRegisterId(registerId));
+        result.put("realName", profile.get("realName"));
+        result.put("caseNumber", profile.get("caseNumber"));
+        result.put("enrolled", true);
+        return result;
     }
 
     public List<Map<String, Object>> listSchedules(LocalDate from, LocalDate to, Long departmentIdOverride) {
@@ -180,12 +238,12 @@ public class FollowUpDashboardService {
         if (!interviewDueToday && lastInterview != null) {
             interviewDueToday = !lastInterview.plusDays(intervalDays).isAfter(targetDate);
         } else if (!interviewDueToday && lastInterview == null) {
-            interviewDueToday = true;
+            interviewDueToday = toBoolean(patient.get("enrolled"));
         }
 
         row.put("observedToday", observedToday);
         row.put("interviewDueToday", interviewDueToday);
-        row.put("observationDueToday", !observedToday);
+        row.put("observationDueToday", toBoolean(patient.get("enrolled")) && !observedToday);
 
         Long registerId = toLong(patient.get("registerId"));
         if (registerId != null) {

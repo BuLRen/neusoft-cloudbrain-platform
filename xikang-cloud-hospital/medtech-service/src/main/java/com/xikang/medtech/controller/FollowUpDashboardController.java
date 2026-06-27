@@ -64,6 +64,12 @@ public class FollowUpDashboardController {
         return Result.success("已确认今日观察", result);
     }
 
+    @PostMapping("/enroll")
+    public Result<Map<String, Object>> enrollPatient(@RequestBody Map<String, Object> request) {
+        Map<String, Object> result = followUpDashboardService.enrollPatient(request);
+        return Result.success("已纳入随访管理", result);
+    }
+
     @GetMapping("/observation/status/{registerId}")
     public Result<Map<String, Object>> getObservationStatus(
         @PathVariable Long registerId,

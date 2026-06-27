@@ -95,6 +95,16 @@ async function scheduleTodayInterview(patient: FollowUpDashboardPatient) {
   }
 }
 
+async function enrollPatient(patient: FollowUpDashboardPatient) {
+  try {
+    await medtechFollowUpApi.enrollPatient({ registerId: patient.registerId })
+    ElMessage.success(`已将 ${patient.realName ?? '患者'} 纳入随访`)
+    await loadDashboard()
+  } catch {
+    ElMessage.error('纳入随访失败')
+  }
+}
+
 async function handleScheduleSubmit(payload: {
   registerId?: number
   scheduleDate: string
@@ -196,6 +206,7 @@ onActivated(() => {
             :scheduling-id="schedulingRegisterId"
             @open="openOutcome"
             @schedule-today="scheduleTodayInterview"
+            @enroll="enrollPatient"
           />
         </GlassCard>
 

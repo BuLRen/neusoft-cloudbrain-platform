@@ -9,16 +9,29 @@
             r.real_name AS "realName",
             r.gender AS "gender",
             r.age AS "age",
-            r.visit_state AS "visitState"
+            r.visit_state AS "visitState",
+            (
+                fe.register_id IS NOT NULL
+                OR EXISTS (
+                    SELECT 1 FROM follow_up_patient_profile fp0
+                    WHERE fp0.register_id = r.id
+                )
+            ) AS "enrolled",
+            COALESCE(
+                fe.priority_level,
+                (SELECT fp1.priority_level FROM follow_up_patient_profile fp1 WHERE fp1.register_id = r.id LIMIT 1)
+            ) AS "enrollmentPriority"
         FROM register r
+        LEFT JOIN follow_up_enrollment fe
+            ON fe.register_id = r.id AND fe.status = 'active'
         WHERE (
             EXISTS (
-                SELECT 1 FROM follow_up_health_metric m
-                WHERE m.register_id = r.id
-            )
-            OR EXISTS (
                 SELECT 1 FROM ai_follow_up_record fr
                 WHERE fr.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM ai_follow_up_plan ap
+                WHERE ap.register_id = r.id
             )
             OR EXISTS (
                 SELECT 1
@@ -26,10 +39,37 @@
                 INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
                 WHERE mr.register_id = r.id
             )
+            OR EXISTS (
+                SELECT 1 FROM medical_record mr
+                WHERE mr.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM patient_health_observation pho
+                WHERE pho.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM inspection_request ir
+                WHERE ir.register_id = r.id
+                  AND ir.inspection_result IS NOT NULL
+                  AND TRIM(ir.inspection_result) &lt;&gt; ''
+            )
+            OR EXISTS (
+                SELECT 1 FROM check_request cr
+                WHERE cr.register_id = r.id
+                  AND cr.check_result IS NOT NULL
+                  AND TRIM(cr.check_result) &lt;&gt; ''
+            )
         )
-        <if test="visitState != null">
-            AND r.visit_state = #{visitState}
-        </if>
+        <choose>
+            <when test="visitState != null">
+                AND r.visit_state = #{visitState}
+                AND r.id NOT BETWEEN 1001 AND 1005
+            </when>
+            <otherwise>
+                AND r.visit_state IN (3, 5, 6)
+                AND r.id NOT BETWEEN 1001 AND 1005
+            </otherwise>
+        </choose>
         ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
     </select>
 

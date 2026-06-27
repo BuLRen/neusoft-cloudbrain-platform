@@ -2,6 +2,51 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.xikang.medtech.mapper.FollowUpDashboardMapper">
 
+    <sql id="eligibleVisitStateCondition">
+        r.visit_state IN (3, 5, 6)
+        AND r.id NOT BETWEEN 1001 AND 1005
+    </sql>
+
+    <sql id="eligibleRegisterCondition">
+        <include refid="eligibleVisitStateCondition"/>
+        AND (
+            EXISTS (
+                SELECT 1 FROM ai_follow_up_record fr
+                WHERE fr.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM ai_follow_up_plan ap
+                WHERE ap.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM medical_record mr
+                INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+                WHERE mr.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM medical_record mr
+                WHERE mr.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM patient_health_observation pho
+                WHERE pho.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM inspection_request ir
+                WHERE ir.register_id = r.id
+                  AND ir.inspection_result IS NOT NULL
+                  AND TRIM(ir.inspection_result) &lt;&gt; ''
+            )
+            OR EXISTS (
+                SELECT 1 FROM check_request cr
+                WHERE cr.register_id = r.id
+                  AND cr.check_result IS NOT NULL
+                  AND TRIM(cr.check_result) &lt;&gt; ''
+            )
+        )
+    </sql>
+
     <select id="selectDashboardPatients" resultType="map">
         SELECT
             r.id AS "registerId",
@@ -10,9 +55,10 @@
             r.gender AS "gender",
             r.age AS "age",
             r.deptment_id AS "departmentId",
-            fp.priority_level AS "priorityLevel",
-            fp.interview_interval_days AS "interviewIntervalDays",
-            fp.observation_interval_days AS "observationIntervalDays",
+            COALESCE(fp.priority_level, 'normal') AS "priorityLevel",
+            COALESCE(fp.interview_interval_days, 7) AS "interviewIntervalDays",
+            COALESCE(fp.observation_interval_days, 1) AS "observationIntervalDays",
+            (fp.register_id IS NOT NULL AND fp.department_id = #{departmentId}) AS "enrolled",
             (
                 SELECT MAX(s.schedule_date)
                 FROM follow_up_day_schedule s
@@ -39,15 +85,25 @@
                   AND s.item_type IN ('interview', 'observation')
                   AND s.status IN ('planned', 'completed')
             ) AS "lastTrackedDate"
-        FROM follow_up_patient_profile fp
-        INNER JOIN register r ON r.id = fp.register_id
-        <where>
-            <if test="departmentId != null">
-                fp.department_id = #{departmentId}
-            </if>
-        </where>
+        FROM register r
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE
+        <include refid="eligibleRegisterCondition"/>
+        <choose>
+            <when test="demoOnlyProfile">
+                AND fp.department_id = #{departmentId}
+            </when>
+            <otherwise>
+                AND (
+                    fp.department_id = #{departmentId}
+                    <if test="includeUnenrolledEligible">
+                        OR fp.register_id IS NULL
+                    </if>
+                )
+            </otherwise>
+        </choose>
         ORDER BY
-            CASE fp.priority_level
+            CASE COALESCE(fp.priority_level, 'normal')
                 WHEN 'critical' THEN 1
                 WHEN 'high' THEN 2
                 ELSE 3
@@ -69,10 +125,10 @@
             WHERE o.register_id = #{registerId}
               AND o.observation_date BETWEEN #{from} AND #{to}
             UNION
-            SELECT m.record_date AS tracked_date, 'metric' AS tracked_type
-            FROM follow_up_health_metric m
-            WHERE m.register_id = #{registerId}
-              AND m.record_date BETWEEN #{from} AND #{to}
+            SELECT pho.observed_at::date AS tracked_date, 'metric' AS tracked_type
+            FROM patient_health_observation pho
+            WHERE pho.register_id = #{registerId}
+              AND pho.observed_at::date BETWEEN #{from} AND #{to}
         ) t
         ORDER BY tracked_date DESC
     </select>
@@ -171,10 +227,23 @@
         SELECT
             (
                 SELECT COUNT(*)
-                FROM follow_up_patient_profile fp
-                <where>
-                    <if test="departmentId != null">fp.department_id = #{departmentId}</if>
-                </where>
+                FROM register r
+                LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+                WHERE
+                <include refid="eligibleRegisterCondition"/>
+                <choose>
+                    <when test="demoOnlyProfile">
+                        AND fp.department_id = #{departmentId}
+                    </when>
+                    <otherwise>
+                        AND (
+                            fp.department_id = #{departmentId}
+                            <if test="includeUnenrolledEligible">
+                                OR fp.register_id IS NULL
+                            </if>
+                        )
+                    </otherwise>
+                </choose>
             ) AS "totalPatients",
             (
                 SELECT COUNT(*)
@@ -186,16 +255,32 @@
             ) AS "todayInterviewsPlanned",
             (
                 SELECT COUNT(*)
-                FROM follow_up_patient_profile fp
-                <where>
-                    <if test="departmentId != null">fp.department_id = #{departmentId}</if>
-                </where>
+                FROM register r
+                LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+                WHERE
+                <include refid="eligibleRegisterCondition"/>
+                AND (
+                    fp.department_id = #{departmentId}
+                    <if test="includeUnenrolledEligible">
+                        OR fp.register_id IS NULL
+                    </if>
+                )
             ) - (
                 SELECT COUNT(*)
                 FROM follow_up_daily_observation o
-                INNER JOIN follow_up_patient_profile fp ON fp.register_id = o.register_id
                 WHERE o.observation_date = #{targetDate}
-                  <if test="departmentId != null">AND fp.department_id = #{departmentId}</if>
+                  AND o.register_id IN (
+                    SELECT r.id FROM register r
+                    LEFT JOIN follow_up_patient_profile fp2 ON fp2.register_id = r.id
+                    WHERE
+                    <include refid="eligibleRegisterCondition"/>
+                      AND (
+                          fp2.department_id = #{departmentId}
+                          <if test="includeUnenrolledEligible">
+                              OR fp2.register_id IS NULL
+                          </if>
+                      )
+                  )
             ) AS "todayObservationPending"
     </select>
 
@@ -213,6 +298,67 @@
 
     <select id="selectRegisterDepartmentId" resultType="long">
         SELECT deptment_id FROM register WHERE id = #{registerId} LIMIT 1
+    </select>
+
+    <select id="isEligiblePatient" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM register r
+            WHERE r.id = #{registerId}
+              AND
+            <include refid="eligibleRegisterCondition"/>
+        )
+    </select>
+
+    <insert id="upsertPatientProfile">
+        INSERT INTO follow_up_patient_profile (
+            register_id, department_id, priority_level,
+            interview_interval_days, observation_interval_days
+        ) VALUES (
+            #{registerId}, #{departmentId},
+            COALESCE(#{priorityLevel}, 'normal'),
+            COALESCE(#{interviewIntervalDays}, 7),
+            COALESCE(#{observationIntervalDays}, 1)
+        )
+        ON CONFLICT (register_id) DO UPDATE SET
+            department_id = EXCLUDED.department_id,
+            priority_level = COALESCE(EXCLUDED.priority_level, follow_up_patient_profile.priority_level),
+            interview_interval_days = COALESCE(EXCLUDED.interview_interval_days, follow_up_patient_profile.interview_interval_days),
+            observation_interval_days = COALESCE(EXCLUDED.observation_interval_days, follow_up_patient_profile.observation_interval_days)
+    </insert>
+
+    <insert id="upsertEnrollment">
+        INSERT INTO follow_up_enrollment (
+            register_id, managing_department_id, priority_level,
+            interview_interval_days, observation_interval_days,
+            enrolled_by, status
+        ) VALUES (
+            #{registerId}, #{departmentId},
+            COALESCE(#{priorityLevel}, 'normal'),
+            COALESCE(#{interviewIntervalDays}, 7),
+            COALESCE(#{observationIntervalDays}, 1),
+            #{enrolledBy}, 'active'
+        )
+        ON CONFLICT (register_id) DO UPDATE SET
+            managing_department_id = EXCLUDED.managing_department_id,
+            priority_level = COALESCE(EXCLUDED.priority_level, follow_up_enrollment.priority_level),
+            interview_interval_days = COALESCE(EXCLUDED.interview_interval_days, follow_up_enrollment.interview_interval_days),
+            observation_interval_days = COALESCE(EXCLUDED.observation_interval_days, follow_up_enrollment.observation_interval_days),
+            enrolled_by = COALESCE(EXCLUDED.enrolled_by, follow_up_enrollment.enrolled_by),
+            status = 'active'
+    </insert>
+
+    <select id="selectEnrollmentByRegisterId" resultType="map">
+        SELECT
+            fp.register_id AS "registerId",
+            fp.department_id AS "departmentId",
+            fp.priority_level AS "priorityLevel",
+            fp.interview_interval_days AS "interviewIntervalDays",
+            fp.observation_interval_days AS "observationIntervalDays",
+            fp.enrolled_at AS "enrolledAt",
+            true AS "enrolled"
+        FROM follow_up_patient_profile fp
+        WHERE fp.register_id = #{registerId}
+        LIMIT 1
     </select>
 
 </mapper>

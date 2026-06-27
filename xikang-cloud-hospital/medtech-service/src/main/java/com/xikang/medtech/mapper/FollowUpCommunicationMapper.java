@@ -4,7 +4,6 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -19,9 +18,9 @@ public interface FollowUpCommunicationMapper {
 
     int insertSession(Map<String, Object> payload);
 
-    int updateSessionDoctorActive(@Param("id") Long id, @Param("activeAt") LocalDateTime activeAt);
+    int updateSessionDoctorActive(@Param("id") Long id);
 
-    int updateSessionAiEscalation(@Param("id") Long id, @Param("enabled") int enabled);
+    int updateAiEscalation(@Param("id") Long id, @Param("enabled") int enabled);
 
     List<Map<String, Object>> selectMessages(
         @Param("sessionId") Long sessionId,
@@ -35,27 +34,35 @@ public interface FollowUpCommunicationMapper {
 
     Map<String, Object> selectLatestCaseSummary(@Param("registerId") Long registerId);
 
+    Map<String, Object> selectSharedCaseSummary(@Param("registerId") Long registerId);
+
     Map<String, Object> selectCaseSummaryById(@Param("id") Long id);
 
     int insertCaseSummary(Map<String, Object> payload);
 
-    int updateCaseSummaryDraft(Map<String, Object> payload);
+    int updateCaseSummaryDoctorContent(
+        @Param("id") Long id,
+        @Param("doctorContent") String doctorContent
+    );
 
-    int updateCaseSummaryApproved(Map<String, Object> payload);
+    int approveCaseSummary(Map<String, Object> payload);
 
     int revokeCaseSummary(@Param("id") Long id);
 
-    Map<String, Object> selectRegisterDepartmentId(@Param("registerId") Long registerId);
-
-    List<Map<String, Object>> selectRecentMetrics(
+    List<Map<String, Object>> selectRecentFollowUpRecords(
         @Param("registerId") Long registerId,
-        @Param("from") LocalDate from,
-        @Param("to") LocalDate to
+        @Param("limit") int limit
     );
 
-    List<Map<String, Object>> selectRecentFollowUpRecords(@Param("registerId") Long registerId, @Param("limit") int limit);
+    Map<String, Object> selectTodayObservation(
+        @Param("registerId") Long registerId,
+        @Param("observationDate") LocalDate observationDate
+    );
 
-    Map<String, Object> selectTodayObservation(@Param("registerId") Long registerId, @Param("date") LocalDate date);
+    Map<String, Object> selectTodayInterview(
+        @Param("registerId") Long registerId,
+        @Param("scheduleDate") LocalDate scheduleDate
+    );
 
-    Map<String, Object> selectTodayInterview(@Param("registerId") Long registerId, @Param("date") LocalDate date);
+    Map<String, Object> selectPatientBriefProfile(@Param("registerId") Long registerId);
 }
