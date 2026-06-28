@@ -6,6 +6,7 @@ import com.xikang.common.exception.BusinessException;
 import com.xikang.registration.entity.*;
 import com.xikang.registration.mapper.*;
 import com.xikang.registration.feign.AuthPatientFeignClient;
+import com.xikang.registration.feign.AiTriageFeignClient;
 import com.xikang.registration.feign.ScheduleFeignClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,7 @@ public class RegistrationService {
     private final ObjectMapper objectMapper;
     private final ScheduleFeignClient scheduleFeignClient;
     private final AuthPatientFeignClient authPatientFeignClient;
+    private final AiTriageFeignClient aiTriageFeignClient;
     private final RefundService refundService;
 
     // 用于生成病历号
@@ -224,6 +226,24 @@ public class RegistrationService {
         deductScheduleQuota(schedulingId, register.getId());
 
         log.info("挂号成功 | registerId={}, patient={}, department={}", register.getId(), realName, department.getName());
+
+        // 挂号成功后回填 register_id 到该患者最近的导诊记录（用于"导诊→预问诊"上下文串联）。
+        // 放在事务内、try-catch 包住：回填失败绝不能影响挂号主流程。
+        // 注意：若后续把回填失败导致的事务回滚视为不可接受，可改为 TransactionSynchronizationManager
+        //       在 afterCommit 阶段调用；当前 try-catch 已能保证 Feign 异常不抛出。
+        if (patientIdParam != null) {
+            try {
+                Map<String, Object> bindBody = new HashMap<>();
+                bindBody.put("patientId", patientIdParam.longValue());
+                bindBody.put("registerId", register.getId());
+                Map<String, Object> bindResp = aiTriageFeignClient.bindRegister(bindBody);
+                log.info("导诊记录回填完成 | patientId={}, registerId={}, resp={}",
+                        patientIdParam, register.getId(), bindResp);
+            } catch (Exception e) {
+                log.warn("导诊记录回填失败（不影响挂号） | patientId={}, registerId={}",
+                        patientIdParam, register.getId(), e);
+            }
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("id", register.getId());

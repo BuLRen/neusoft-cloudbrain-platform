@@ -4,7 +4,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
+import { useAuthStore } from '@/app/stores/auth'
 
+const authStore = useAuthStore()
 const triageLoading = ref(false)
 const triageSymptoms = ref('')
 const triageResult = ref<any>(null)
@@ -69,6 +71,7 @@ async function runTriage() {
   try {
     const result = await aiApi.triageAnalyze({
       symptoms: triageSymptoms.value,
+      patientId: authStore.currentPatientId || authStore.currentPatient?.patientId,
     })
     triageResult.value = result
     if (result?.isOutOfScope) {

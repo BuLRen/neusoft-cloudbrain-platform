@@ -2,9 +2,12 @@ package com.xikang.ai.consult.service;
 
 import com.xikang.ai.consult.ai.memory.PreVisitChatMemoryRepository;
 import com.xikang.ai.consult.ai.util.PromptUtils;
+import com.xikang.ai.consult.client.TriageClient;
+import com.xikang.ai.consult.client.dto.TriageSummary;
 import com.xikang.ai.consult.entity.AiPreVisitRecord;
 import com.xikang.ai.consult.entity.PreVisitSummary;
 import com.xikang.ai.consult.mapper.AiPreVisitRecordMapper;
+import com.xikang.common.result.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -42,6 +45,7 @@ public class PreConsultService {
     private final ChatClient chatClient;
     private final AiPreVisitRecordMapper mapper;
     private final PreVisitChatMemoryRepository chatMemoryRepository;
+    private final TriageClient triageClient;
 
     @Value("classpath:prompts/previsit-prompt.st")
     private Resource previsitPromptResource;
@@ -70,7 +74,9 @@ public class PreConsultService {
 
         // 第一次 AI 提问：空历史（repository 此时还没有这个 sessionUuid 的数据）
         String patientAllergy = safeQueryPatientAllergy(patientId);
-        List<Message> messages = buildPromptMessages(sessionUuid, "", patientAllergy);
+        // 拉取导诊上下文（失败降级为 null，预问诊退化为完整 5 步流程，不阻断）
+        String triageContext = safeFetchTriageContext(registerId, patientId);
+        List<Message> messages = buildPromptMessages(sessionUuid, "", patientAllergy, triageContext);
         String aiReply = callAi(messages, tokenConsumer);
         boolean finished = PromptUtils.isConsultationFinished(aiReply);
         // 入库前清理 DONE 标记，保证数据库 ai_question 字段干净，回看时不污染前端
@@ -110,7 +116,9 @@ public class PreConsultService {
         //    （先 buildMessages 再 insert，是为了让 prompt 结构与旧实现严格等价；
         //    insert 仍在 callAi 之前执行，保证 AI 调用失败时患者回答也不会丢失。）
         String patientAllergy = safeQueryPatientAllergy(patientId);
-        List<Message> messages = buildPromptMessages(sessionUuid, patientAnswer, patientAllergy);
+        // reply 阶段也注入导诊上下文：模型每轮都可见导诊背景，自行判断哪些维度已确认可跳过
+        String triageContext = safeFetchTriageContext(registerId, patientId);
+        List<Message> messages = buildPromptMessages(sessionUuid, patientAnswer, patientAllergy, triageContext);
 
         // 3. 把"患者回答"持久化到第 nextRound 行
         AiPreVisitRecord answerRow = new AiPreVisitRecord();
@@ -320,21 +328,25 @@ public class PreConsultService {
      * 当 newUserAnswer 非空时（reply 场景：本次回答尚未写入 DB，作为独立 UserMessage 追加），
      * 追加到末尾；为空（start 场景）时不追加。
      *
-     * @param sessionUuid    会话 ID（conversationId）
-     * @param newUserAnswer  当前轮用户回答，null/空表示不追加
-     * @param patientAllergy 患者档案里的过敏史（用于预问诊时确认），null/空表示档案无过敏史
+     * @param sessionUuid     会话 ID（conversationId）
+     * @param newUserAnswer   当前轮用户回答，null/空表示不追加
+     * @param patientAllergy  患者档案里的过敏史（用于预问诊时确认），null/空表示档案无过敏史
+     * @param triageContext   导诊上下文（症状原文+推荐科室+AI分析），null/空表示无导诊记录
      */
-    private List<Message> buildPromptMessages(String sessionUuid, String newUserAnswer, String patientAllergy) {
+    private List<Message> buildPromptMessages(String sessionUuid, String newUserAnswer,
+                                              String patientAllergy, String triageContext) {
         // 1. 通过 ChatMemoryRepository 读历史消息
         List<Message> historyMessages = chatMemoryRepository.findByConversationId(sessionUuid);
 
-        // 2. 渲染 SystemMessage：把已有消息序列作为"已采集信息"、档案过敏史嵌入 prompt
+        // 2. 渲染 SystemMessage：把已有消息序列作为"已采集信息"、档案过敏史、导诊上下文嵌入 prompt
         String collectedHint = messagesToText(historyMessages);
         String allergyHint = (patientAllergy == null || patientAllergy.isBlank()) ? "无" : patientAllergy;
+        String triageHint = (triageContext == null || triageContext.isBlank()) ? "无" : triageContext;
         PromptTemplate pt = new PromptTemplate(previsitPromptResource);
         String systemPrompt = pt.render(Map.of(
                 "collected", collectedHint,
-                "patientAllergy", allergyHint
+                "patientAllergy", allergyHint,
+                "triageContext", triageHint
         ));
 
         // 3. 组装：SystemMessage 在前，历史消息随后，最后追加新回答（如果有）
@@ -360,6 +372,79 @@ public class PreConsultService {
             log.warn("查询患者过敏史失败，patientId={}, 继续预问诊流程", patientId, e);
             return null;
         }
+    }
+
+    /**
+     * 安全拉取导诊上下文并格式化为 prompt 可用的字符串。
+     *
+     * <p>失败时（triage-service 不可用、无导诊记录、网络异常等）返回 null，
+     * 预问诊自动降级为完整 5 步流程，不阻断主流程。
+     *
+     * @param registerId 挂号 ID
+     * @return 格式化后的导诊上下文文本；无导诊记录或调用失败时返回 null
+     */
+    /**
+     * 安全拉取导诊上下文并格式化为 prompt 可用的字符串。
+     *
+     * <p>查询顺序：先按 registerId 精确查（挂号回填后命中）；
+     * 查不到则按 patientId 查最近一条导诊记录（兼容回填失败、或导诊后未走完挂号直接进预问诊的场景）。
+     *
+     * <p>失败时（triage-service 不可用、无导诊记录、网络异常等）返回 null，
+     * 预问诊自动降级为完整 5 步流程，不阻断主流程。
+     *
+     * @param registerId 挂号 ID（优先查询键）
+     * @param patientId  患者 ID（兜底查询键）
+     * @return 格式化后的导诊上下文文本；无导诊记录或调用失败时返回 null
+     */
+    private String safeFetchTriageContext(Integer registerId, Integer patientId) {
+        // 1. 先按 registerId 查
+        if (registerId != null) {
+            try {
+                Result<TriageSummary> resp = triageClient.getTriageSummary(registerId);
+                if (resp != null && resp.isSuccess() && resp.getData() != null) {
+                    return formatTriageContext(resp.getData());
+                }
+            } catch (Exception e) {
+                log.warn("按 registerId 拉取导诊摘要失败，registerId={}，尝试 patientId 兜底", registerId, e);
+            }
+        }
+        // 2. registerId 查不到，按 patientId 兜底
+        if (patientId != null) {
+            try {
+                Result<TriageSummary> resp = triageClient.getTriageSummaryByPatientId(patientId.longValue());
+                if (resp != null && resp.isSuccess() && resp.getData() != null) {
+                    log.info("导诊摘要通过 patientId 兜底命中，patientId={}", patientId);
+                    return formatTriageContext(resp.getData());
+                }
+            } catch (Exception e) {
+                log.warn("按 patientId 拉取导诊摘要失败，patientId={}，预问诊降级为完整流程", patientId, e);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 把 {@link TriageSummary} 格式化为注入 prompt 的文本块。
+     * 各字段为空则跳过；全为空时返回 null（让上层渲染为"无"）。
+     */
+    private String formatTriageContext(TriageSummary t) {
+        if (t == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        if (t.symptomDescription() != null && !t.symptomDescription().isBlank()) {
+            sb.append("· 患者主诉原文：").append(t.symptomDescription()).append("\n");
+        }
+        if (t.recommendDeptName() != null && !t.recommendDeptName().isBlank()) {
+            sb.append("· 建议就诊科室：").append(t.recommendDeptName()).append("\n");
+        }
+        if (t.riskLevel() != null && !t.riskLevel().isBlank()) {
+            sb.append("· 紧迫度等级：").append(t.riskLevel()).append("\n");
+        }
+        if (t.aiAnalysisJson() != null && !t.aiAnalysisJson().isBlank()) {
+            sb.append("· 导诊 AI 分析（仅供你参考，不对患者复述）：").append(t.aiAnalysisJson()).append("\n");
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     /**

@@ -359,6 +359,7 @@ public class AiTriageService {
     private void saveTriageRecord(TriageRequest request, TriageResult result) {
         try {
             AiTriageRecord record = new AiTriageRecord();
+            record.setPatientId(request.patientId());
             record.setPatientName(request.patientName() == null || request.patientName().isBlank()
                     ? "匿名患者" : request.patientName());
             record.setPatientAge(request.patientAge());
@@ -420,17 +421,33 @@ public class AiTriageService {
      * <p>这是"导诊 → 预问诊"记忆串联的对外契约：预问诊开始时调用本方法，
      * 把导诊阶段已采集到的症状、推荐科室、紧迫度等喂给预问诊模型，避免患者重复描述病情。
      *
+     * <p>查询顺序：先按 registerId 精确查（挂号回填后命中）；查不到则按 patientId 查最近一条
+     * （兼容挂号回填失败、或导诊后没走完挂号流程直接进预问诊的场景）。
+     *
      * @param registerId 挂号 ID
-     * @return 导诊小结；若该挂号未做过导诊，返回 null
+     * @return 导诊小结；若该挂号/患者未做过导诊，返回 null
      */
     public TriageSummary getTriageSummary(Integer registerId) {
         if (registerId == null) {
             return null;
         }
         AiTriageRecord r = aiTriageRecordMapper.selectByRegisterId(registerId);
-        if (r == null) {
+        return r == null ? null : toSummary(r);
+    }
+
+    /**
+     * 按 patientId 反查导诊小结（registerId 查不到时的兜底入口）。
+     * 预问诊只传了 patientId 时可调本方法。
+     */
+    public TriageSummary getTriageSummaryByPatientId(Long patientId) {
+        if (patientId == null) {
             return null;
         }
+        AiTriageRecord r = aiTriageRecordMapper.selectLatestByPatientId(patientId);
+        return r == null ? null : toSummary(r);
+    }
+
+    private TriageSummary toSummary(AiTriageRecord r) {
         return new TriageSummary(
                 r.getSymptomDescription(),
                 r.getRecommendDeptName(),
@@ -438,5 +455,26 @@ public class AiTriageService {
                 r.getRiskLevel(),
                 r.getAiAnalysis()
         );
+    }
+
+    /**
+     * 挂号成功后回填 register_id 到该患者最近的导诊记录。
+     *
+     * <p>业务背景：导诊发生在挂号之前，导诊记录保存时 register_id 为 NULL。
+     * 挂号成功后调用本方法，按 patientId 定位最近一条 register_id 为空的导诊记录并回填，
+     * 之后预问诊就能按 register_id 查到这条导诊记录。
+     *
+     * @param patientId  患者 ID
+     * @param registerId 挂号 ID
+     * @return true=回填成功；false=没找到匹配的导诊记录（患者未做导诊，正常情况）
+     */
+    public boolean bindRegisterId(Long patientId, Long registerId) {
+        if (patientId == null || registerId == null) {
+            return false;
+        }
+        int rows = aiTriageRecordMapper.updateRegisterIdByPatient(patientId, registerId);
+        log.info("[triage] 回填 register_id: patientId={}, registerId={}, 受影响行数={}",
+                patientId, registerId, rows);
+        return rows > 0;
     }
 }

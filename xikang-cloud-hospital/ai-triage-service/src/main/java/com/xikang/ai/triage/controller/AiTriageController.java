@@ -73,4 +73,32 @@ public class AiTriageController {
     public Result<TriageSummary> getTriageSummaryByRegisterId(@PathVariable Integer registerId) {
         return Result.success(aiTriageService.getTriageSummary(registerId));
     }
+
+    /**
+     * 按 patientId 反查导诊小结（registerId 查不到时的兜底入口，供预问诊调用）。
+     */
+    @GetMapping("/summary/patient/{patientId}")
+    public Result<TriageSummary> getTriageSummaryByPatientId(@PathVariable Long patientId) {
+        return Result.success(aiTriageService.getTriageSummaryByPatientId(patientId));
+    }
+
+    /**
+     * 挂号成功后回填 register_id 到该患者最近的导诊记录。
+     * 供 registration-service 在创建挂号成功后调用，实现"导诊→预问诊"上下文串联。
+     *
+     * <p>body: { "patientId": 1, "registerId": 100 }
+     */
+    @PostMapping("/bind-register")
+    public Result<Boolean> bindRegister(@RequestBody Map<String, Object> body) {
+        Long patientId = toLong(body.get("patientId"));
+        Long registerId = toLong(body.get("registerId"));
+        boolean ok = aiTriageService.bindRegisterId(patientId, registerId);
+        return Result.success(ok);
+    }
+
+    private static Long toLong(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number n) return n.longValue();
+        try { return Long.parseLong(o.toString()); } catch (NumberFormatException e) { return null; }
+    }
 }

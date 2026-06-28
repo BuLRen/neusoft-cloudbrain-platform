@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 
 /**
  * AiTriageRecord Entity - AI导诊记录表
- * ai_triage_record: id, patient_name, patient_age, patient_gender, symptom_description,
+ * ai_triage_record: id, patient_id, patient_name, patient_age, patient_gender, symptom_description,
  *                   recommend_dept_id, recommend_dept_name, recommend_doctor_id, recommend_doctor_name,
  *                   risk_level, is_priority, ai_analysis, register_id, triage_time, model_id
  */
@@ -18,6 +18,7 @@ public class AiTriageRecord implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Long id;
+    private Long patientId;            // patient_id（患者ID，用于挂号后回填 register_id 定位）
     private String patientName;         // patient_name
     private Integer patientAge;         // patient_age
     private String patientGender;       // patient_gender

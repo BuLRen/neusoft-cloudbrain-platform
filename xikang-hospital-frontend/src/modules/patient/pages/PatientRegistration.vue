@@ -716,6 +716,7 @@ async function runTriage() {
   try {
     const result = await aiApi.triageAnalyze({
       symptoms: triageForm.value.symptoms,
+      patientId: getCurrentPatientId(),
     })
 
     // 如果 AI 没有返回推荐医生，根据 AI 推荐的挂号级别获取医生
