@@ -37,6 +37,13 @@
         FROM department WHERE dept_code = #{code}
     </select>
 
+    <select id="selectByName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM department
+        WHERE dept_name = #{name} AND delmark = 0
+        LIMIT 1
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO department (dept_name, dept_code, dept_type, dept_description, delmark)
         VALUES (#{name}, #{code}, #{type}, #{description}, 0)

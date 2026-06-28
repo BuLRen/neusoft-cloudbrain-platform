@@ -38,6 +38,29 @@
         LIMIT #{size} OFFSET #{offset}
     </select>
 
+    <select id="selectMedtechEmployeeAll" resultType="com.xikang.registration.dto.MedtechAdminView">
+        SELECT
+            e.id,
+            e.deptment_id AS deptmentId,
+            d.dept_name AS deptName,
+            e.realname,
+            e.delmark,
+            u.id AS userId,
+            u.username,
+            u.status AS accountStatus
+        <include refid="Medtech_Employee_Where"/>
+        ORDER BY e.deptment_id, e.id
+    </select>
+
+    <select id="existsActiveMedtechEmployee" resultType="int">
+        SELECT COUNT(*)
+        FROM employee e
+        INNER JOIN department d ON d.id = e.deptment_id AND d.dept_type = '医技科室'
+        WHERE e.delmark = 0
+          AND e.realname = #{realname}
+          AND e.deptment_id = #{deptmentId}
+    </select>
+
     <select id="selectMedtechEmployeeById" resultType="com.xikang.registration.dto.MedtechAdminView">
         SELECT
             e.id,

@@ -32,6 +32,13 @@
         FROM regist_level WHERE regist_code = #{code}
     </select>
 
+    <select id="selectByName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM regist_level
+        WHERE regist_name = #{name} AND delmark = 0
+        LIMIT 1
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO regist_level (regist_code, regist_name, regist_fee, regist_quota, sequence_no, delmark)
         VALUES (#{code}, #{name}, #{price}, #{quota}, #{sequenceNo}, 0)

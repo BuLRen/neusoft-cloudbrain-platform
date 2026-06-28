@@ -2,6 +2,7 @@ package com.xikang.registration.mapper;
 
 import com.xikang.registration.entity.Department;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -18,6 +19,8 @@ public interface DepartmentMapper {
     Department selectById(Long id);
 
     Department selectByCode(String code);
+
+    Department selectByName(@Param("name") String name);
 
     int insert(Department department);
 

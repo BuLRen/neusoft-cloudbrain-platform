@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,12 +20,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminMedtechService {
 
-    private static final String DEFAULT_PASSWORD = "medtech123";
-
     private final AdminMedtechMapper adminMedtechMapper;
     private final EmployeeMapper employeeMapper;
     private final DepartmentMapper departmentMapper;
     private final UserAccountMapper userAccountMapper;
+    private final AdminEmployeeAccountHelper accountHelper;
 
     public Map<String, Object> listMedtechEmployees(
         Long departmentId,
@@ -68,12 +66,7 @@ public class AdminMedtechService {
         }
         assertMedtechDepartment(deptmentId);
 
-        Employee employee = new Employee();
-        employee.setRealname(realname.trim());
-        employee.setDeptmentId(deptmentId);
-        employee.setRegistLevelId(null);
-        employee.setDelmark(0);
-        employeeMapper.insert(employee);
+        Employee employee = accountHelper.insertMedtechEmployee(realname, deptmentId);
 
         if (Boolean.TRUE.equals(request.get("createAccount"))) {
             createAccountForEmployee(employee.getId(), realname.trim(), request);
@@ -130,7 +123,7 @@ public class AdminMedtechService {
         }
         String password = stringValue(request.get("password"));
         if (password == null || password.isBlank()) {
-            password = DEFAULT_PASSWORD;
+            password = AdminEmployeeAccountHelper.MEDTECH_DEFAULT_PASSWORD;
         }
         userAccountMapper.updatePassword(employee.getUserId(), password);
     }
@@ -160,22 +153,11 @@ public class AdminMedtechService {
 
     private void createAccountForEmployee(Long employeeId, String realname, Map<String, Object> request) {
         String username = stringValue(request.get("username"));
-        if (username == null || username.isBlank()) {
-            username = "tech_" + employeeId;
-        }
-        if (userAccountMapper.countByUsername(username) > 0) {
-            throw new BusinessException(409, "用户名已存在：" + username);
-        }
         String password = stringValue(request.get("password"));
         if (password == null || password.isBlank()) {
-            password = DEFAULT_PASSWORD;
+            password = AdminEmployeeAccountHelper.MEDTECH_DEFAULT_PASSWORD;
         }
-        Map<String, Object> row = new HashMap<>();
-        row.put("username", username.trim());
-        row.put("password", password);
-        row.put("realName", realname);
-        row.put("employeeId", employeeId);
-        userAccountMapper.insertMedtechAccount(row);
+        accountHelper.createMedtechAccount(employeeId, realname, username, password);
     }
 
     private String stringValue(Object value) {
