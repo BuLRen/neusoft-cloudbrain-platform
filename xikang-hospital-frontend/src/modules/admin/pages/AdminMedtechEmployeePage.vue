@@ -18,6 +18,7 @@ import {
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import PersonnelExcelToolbar from '@/modules/admin/components/PersonnelExcelToolbar.vue'
 import { adminMedtechApi, type MedtechAdminRecord } from '@/shared/api/modules/adminMedtech'
 import { registrationApi } from '@/shared/api/modules/registration'
 import type { DepartmentOption } from '@/shared/types/registration'
@@ -214,38 +215,36 @@ onMounted(async () => {
         <p>维护医技科室人员档案，并管理其登录账号。</p>
       </div>
     </div>
-    <div v-if="embedded" class="embedded-actions">
-      <ElButton type="primary" @click="openCreate">新增医技人员</ElButton>
-      <ElButton @click="loadRecords">刷新</ElButton>
-    </div>
     <PageHeader
       v-if="!embedded"
       title="医技人员维护"
       description="维护医技科室人员档案，并创建或管理其登录账号。医技人员登录后仅能看到本科室待执行的检查/检验/处置申请。"
       eyebrow="管理员"
-    >
-      <template #actions>
-        <ElButton type="primary" @click="openCreate">新增医技人员</ElButton>
-        <ElButton @click="loadRecords">刷新</ElButton>
-      </template>
-    </PageHeader>
+    />
 
     <GlassCard class="panel">
-      <div class="toolbar">
-        <ElSelect v-model="filters.departmentId" clearable placeholder="医技科室" class="field">
-          <ElOption
-            v-for="dept in medtechDepartments"
-            :key="dept.id"
-            :label="dept.name"
-            :value="dept.id"
-          />
-        </ElSelect>
-        <ElInput v-model="filters.keyword" clearable placeholder="搜索姓名" class="field field--keyword" />
-        <label class="switch-label">
-          <span>含已停用</span>
-          <ElSwitch v-model="filters.includeDisabled" @change="searchRecords" />
-        </label>
-        <ElButton type="primary" @click="searchRecords">查询</ElButton>
+      <div class="personnel-toolbar">
+        <div class="personnel-toolbar__filters">
+          <ElSelect v-model="filters.departmentId" clearable placeholder="医技科室" class="field">
+            <ElOption
+              v-for="dept in medtechDepartments"
+              :key="dept.id"
+              :label="dept.name"
+              :value="dept.id"
+            />
+          </ElSelect>
+          <ElInput v-model="filters.keyword" clearable placeholder="搜索姓名" class="field field--keyword" />
+          <label class="switch-label">
+            <span>含已停用</span>
+            <ElSwitch v-model="filters.includeDisabled" @change="searchRecords" />
+          </label>
+          <ElButton type="primary" @click="searchRecords">查询</ElButton>
+        </div>
+        <div class="personnel-toolbar__actions">
+          <ElButton type="primary" @click="openCreate">新增医技人员</ElButton>
+          <PersonnelExcelToolbar kind="medtech" :filters="filters" @imported="loadRecords" />
+          <ElButton @click="loadRecords">刷新</ElButton>
+        </div>
       </div>
 
       <ElTable v-loading="loading" :data="records" stripe>
@@ -361,44 +360,8 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.embedded-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-block-end: var(--space-4);
-}
-
-.medtech-employee-management.admin-embedded-surface .embedded-actions {
-  margin-block-end: 0;
-  padding-block-end: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-}
 .panel {
   padding: var(--space-4);
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: center;
-  margin-bottom: var(--space-4);
-}
-
-.field {
-  width: 180px;
-}
-
-.field--keyword {
-  width: 220px;
-}
-
-.switch-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-soft);
-  font-size: 14px;
 }
 
 .table-footer {

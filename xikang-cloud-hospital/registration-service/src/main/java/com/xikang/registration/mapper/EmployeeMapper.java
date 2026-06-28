@@ -63,5 +63,17 @@ public interface EmployeeMapper {
 
     com.xikang.registration.dto.PhysicianAdminView selectClinicalPhysicianById(@Param("id") Long id);
 
+    java.util.List<com.xikang.registration.dto.PhysicianAdminView> selectClinicalPhysicianAll(
+        @Param("departmentId") Long departmentId,
+        @Param("keyword") String keyword,
+        @Param("includeDisabled") Boolean includeDisabled
+    );
+
+    int existsActiveClinicalPhysician(
+        @Param("realname") String realname,
+        @Param("deptmentId") Long deptmentId,
+        @Param("registLevelId") Long registLevelId
+    );
+
     int countActiveRegistersByEmployeeId(@Param("employeeId") Long employeeId);
 }

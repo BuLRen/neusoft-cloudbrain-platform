@@ -9,29 +9,25 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class AdminPhysicianService {
 
-    private static final String DEFAULT_PASSWORD = "doctor123";
-
     private final EmployeeMapper employeeMapper;
     private final UserAccountMapper userAccountMapper;
+    private final AdminEmployeeAccountHelper accountHelper;
 
     public Map<String, Object> listPhysicians(Long departmentId, String keyword, Boolean includeDisabled, Integer page, Integer size) {
         int currentPage = page == null || page < 1 ? 1 : page;
         int pageSize = size == null || size < 1 ? 20 : size;
         int offset = (currentPage - 1) * pageSize;
         long total = employeeMapper.countClinicalPhysicians(departmentId, keyword, includeDisabled);
-        List<PhysicianAdminView> records = employeeMapper.selectClinicalPhysicianPage(
+        var records = employeeMapper.selectClinicalPhysicianPage(
             departmentId, keyword, includeDisabled, offset, pageSize
         );
-        Map<String, Object> result = new LinkedHashMap<>();
+        var result = new java.util.LinkedHashMap<String, Object>();
         result.put("records", records);
         result.put("total", total);
         result.put("page", currentPage);
@@ -63,12 +59,7 @@ public class AdminPhysicianService {
             throw new BusinessException(400, "请选择挂号级别");
         }
 
-        Employee employee = new Employee();
-        employee.setRealname(realname.trim());
-        employee.setDeptmentId(deptmentId);
-        employee.setRegistLevelId(registLevelId);
-        employee.setDelmark(0);
-        employeeMapper.insert(employee);
+        Employee employee = accountHelper.insertPhysicianEmployee(realname, deptmentId, registLevelId);
 
         if (Boolean.TRUE.equals(request.get("createAccount"))) {
             createAccountForEmployee(employee.getId(), realname.trim(), request);
@@ -138,7 +129,7 @@ public class AdminPhysicianService {
         }
         String password = stringValue(request.get("password"));
         if (password == null || password.isBlank()) {
-            password = DEFAULT_PASSWORD;
+            password = AdminEmployeeAccountHelper.PHYSICIAN_DEFAULT_PASSWORD;
         }
         userAccountMapper.updatePassword(physician.getUserId(), password);
     }
@@ -155,22 +146,11 @@ public class AdminPhysicianService {
 
     private void createAccountForEmployee(Long employeeId, String realname, Map<String, Object> request) {
         String username = stringValue(request.get("username"));
-        if (username == null || username.isBlank()) {
-            username = "doc_" + employeeId;
-        }
-        if (userAccountMapper.countByUsername(username) > 0) {
-            throw new BusinessException(409, "用户名已存在：" + username);
-        }
         String password = stringValue(request.get("password"));
         if (password == null || password.isBlank()) {
-            password = DEFAULT_PASSWORD;
+            password = AdminEmployeeAccountHelper.PHYSICIAN_DEFAULT_PASSWORD;
         }
-        Map<String, Object> row = new HashMap<>();
-        row.put("username", username.trim());
-        row.put("password", password);
-        row.put("realName", realname);
-        row.put("employeeId", employeeId);
-        userAccountMapper.insertPhysicianAccount(row);
+        accountHelper.createPhysicianAccount(employeeId, realname, username, password);
     }
 
     private String stringValue(Object value) {

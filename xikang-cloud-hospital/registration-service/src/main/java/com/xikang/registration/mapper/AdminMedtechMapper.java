@@ -24,4 +24,15 @@ public interface AdminMedtechMapper {
     );
 
     MedtechAdminView selectMedtechEmployeeById(@Param("id") Long id);
+
+    List<MedtechAdminView> selectMedtechEmployeeAll(
+        @Param("departmentId") Long departmentId,
+        @Param("keyword") String keyword,
+        @Param("includeDisabled") Boolean includeDisabled
+    );
+
+    int existsActiveMedtechEmployee(
+        @Param("realname") String realname,
+        @Param("deptmentId") Long deptmentId
+    );
 }

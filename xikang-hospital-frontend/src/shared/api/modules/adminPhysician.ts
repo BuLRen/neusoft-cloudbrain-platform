@@ -1,4 +1,6 @@
 import { http } from '../request'
+import { blobClient, downloadBlob, filenameFromContentDisposition } from '../blobClient'
+import type { PersonnelImportResult, PersonnelListFilters } from '@/shared/types/adminPersonnel'
 
 export interface PhysicianAdminRecord {
   id: number
@@ -97,6 +99,43 @@ export const adminPhysicianApi = {
       url: `/registration/admin/physicians/${id}/account/status`,
       method: 'PATCH',
       data: { enabled },
+    })
+  },
+
+  async downloadTemplate() {
+    const res = await blobClient.get('/registration/admin/physicians/import/template', {
+      responseType: 'blob',
+    })
+    downloadBlob(
+      res.data,
+      filenameFromContentDisposition(res.headers['content-disposition'], '诊疗医生导入模板.xlsx'),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+  },
+
+  async exportExcel(filters?: PersonnelListFilters) {
+    const res = await blobClient.get('/registration/admin/physicians/export', {
+      responseType: 'blob',
+      params: {
+        departmentId: filters?.departmentId,
+        keyword: filters?.keyword || undefined,
+        includeDisabled: filters?.includeDisabled,
+      },
+    })
+    downloadBlob(
+      res.data,
+      filenameFromContentDisposition(res.headers['content-disposition'], '诊疗医生.xlsx'),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+  },
+
+  importExcel(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return http<PersonnelImportResult>({
+      url: '/registration/admin/physicians/import',
+      method: 'POST',
+      data: formData,
     })
   },
 }
