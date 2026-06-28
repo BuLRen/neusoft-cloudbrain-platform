@@ -25,6 +25,7 @@ import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import DiseaseSearchSelect from './components/DiseaseSearchSelect.vue'
+import AiConsultSummaryCard from './components/AiConsultSummaryCard.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import {
   physicianApi,
@@ -592,54 +593,10 @@ onMounted(async () => {
             <ElDescriptionsItem label="性别">{{ selectedPatient.gender || '-' }}</ElDescriptionsItem>
             <ElDescriptionsItem label="年龄">{{ selectedPatient.age || '-' }}</ElDescriptionsItem>
           </ElDescriptions>
-          <div
-            v-if="selectedPatient.aiConsultSummary"
-            class="ai-consult-card"
-          >
-            <div class="ai-consult-header">
-              <span class="ai-consult-icon">🤖</span>
-              <strong>AI 预问诊摘要</strong>
-              <ElTag v-if="selectedPatient.aiConsultSummary.chiefComplaint" type="success" size="small">已完成</ElTag>
-            </div>
-            <div class="ai-consult-grid">
-              <div class="ai-consult-item">
-                <label>主诉</label>
-                <p>{{ selectedPatient.aiConsultSummary.chiefComplaint || '—' }}</p>
-              </div>
-              <div class="ai-consult-item">
-                <label>症状时长</label>
-                <p>{{ selectedPatient.aiConsultSummary.symptomDuration || '—' }}</p>
-              </div>
-              <div class="ai-consult-item full">
-                <label>现病史</label>
-                <p>{{ selectedPatient.aiConsultSummary.aiSummary || '—' }}</p>
-              </div>
-              <div class="ai-consult-item">
-                <label>既往史</label>
-                <p>{{ selectedPatient.aiConsultSummary.historySummary || '—' }}</p>
-              </div>
-              <div class="ai-consult-item">
-                <label>过敏史</label>
-                <p>{{ selectedPatient.aiConsultSummary.allergySummary || '—' }}</p>
-              </div>
-              <div v-if="selectedPatient.aiConsultSummary.medicationSummary" class="ai-consult-item full">
-                <label>用药史</label>
-                <p>{{ selectedPatient.aiConsultSummary.medicationSummary }}</p>
-              </div>
-              <div v-if="selectedPatient.aiConsultSummary.suggestedExam" class="ai-consult-item full">
-                <label>建议检查</label>
-                <p>{{ selectedPatient.aiConsultSummary.suggestedExam }}</p>
-              </div>
-            </div>
-          </div>
-          <ElAlert
-            v-else-if="selectedPatient.hasAiConsultation === false"
+          <AiConsultSummaryCard
             class="ai-summary"
-            type="info"
-            show-icon
-            :closable="false"
-            title="患者未完成 AI 预问诊"
-            description="患者未在就诊前进行 AI 预问诊，请按常规流程接诊。"
+            :summary="selectedPatient.aiConsultSummary"
+            :has-ai-consultation="selectedPatient.hasAiConsultation"
           />
         </GlassCard>
 
@@ -1007,59 +964,6 @@ onMounted(async () => {
 
 .ai-summary {
   margin-block-start: var(--space-4);
-}
-
-.ai-consult-card {
-  margin-block-start: var(--space-4);
-  padding: var(--space-4);
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border: 1px solid #7dd3fc;
-  border-radius: var(--radius-md);
-}
-
-.ai-consult-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-  font-size: 15px;
-  color: #0369a1;
-}
-
-.ai-consult-icon {
-  font-size: 20px;
-}
-
-.ai-consult-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
-}
-
-.ai-consult-item {
-  background: white;
-  border: 1px solid #e0f2fe;
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-}
-
-.ai-consult-item.full {
-  grid-column: 1 / -1;
-}
-
-.ai-consult-item label {
-  display: block;
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-bottom: 2px;
-}
-
-.ai-consult-item p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--color-text);
-  white-space: pre-wrap;
 }
 
 .form-grid {
