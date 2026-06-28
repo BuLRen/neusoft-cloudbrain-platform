@@ -4,6 +4,7 @@
 
     <resultMap id="BaseResultMap" type="com.xikang.ai.triage.entity.AiTriageRecord">
         <id column="id" property="id"/>
+        <result column="patient_id" property="patientId"/>
         <result column="patient_name" property="patientName"/>
         <result column="patient_age" property="patientAge"/>
         <result column="patient_gender" property="patientGender"/>
@@ -35,7 +36,9 @@
     </select>
 
     <select id="selectByPatientId" resultMap="BaseResultMap">
-        SELECT * FROM ai_triage_record WHERE patient_name = #{patientName} OR register_id = #{patientId}
+        SELECT * FROM ai_triage_record
+        WHERE patient_id = #{patientId}
+           OR register_id = #{patientId}
         ORDER BY triage_time DESC
     </select>
 
@@ -47,11 +50,11 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO ai_triage_record (
-            patient_name, patient_age, patient_gender, symptom_description,
+            patient_id, patient_name, patient_age, patient_gender, symptom_description,
             recommend_dept_id, recommend_dept_name, recommend_doctor_id, recommend_doctor_name,
             risk_level, is_priority, ai_analysis, register_id, triage_time, model_id
         ) VALUES (
-            #{patientName}, #{patientAge}, #{patientGender}, #{symptomDescription},
+            #{patientId}, #{patientName}, #{patientAge}, #{patientGender}, #{symptomDescription},
             #{recommendDeptId}, #{recommendDeptName}, #{recommendDoctorId}, #{recommendDoctorName},
             #{riskLevel}, #{isPriority}, #{aiAnalysis},
             <choose>
@@ -61,6 +64,27 @@
             #{triageTime}, #{modelId}
         )
     </insert>
+
+    <!-- 挂号成功后回填 register_id：定位该患者最近一条 register_id 为空的导诊记录 -->
+    <update id="updateRegisterIdByPatient">
+        UPDATE ai_triage_record
+        SET register_id = #{registerId}
+        WHERE id = (
+            SELECT id FROM ai_triage_record
+            WHERE patient_id = #{patientId}
+              AND register_id IS NULL
+            ORDER BY triage_time DESC
+            LIMIT 1
+        )
+    </update>
+
+    <!-- 按 patientId 查最近一条导诊记录（getTriageSummary 兜底用） -->
+    <select id="selectLatestByPatientId" resultMap="BaseResultMap">
+        SELECT * FROM ai_triage_record
+        WHERE patient_id = #{patientId}
+        ORDER BY triage_time DESC
+        LIMIT 1
+    </select>
 
     <update id="update">
         UPDATE ai_triage_record SET
