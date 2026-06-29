@@ -30,9 +30,15 @@ import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 import DrugSearchPicker from '../components/DrugSearchPicker.vue'
 import W5PrescriptionPanel from '../components/W5PrescriptionPanel.vue'
 
-interface PrescriptionDraft {
+interface PrescriptionDraftForm {
   drugUsage: string
   drugNumber: number
+}
+
+interface PrescriptionBasketItem extends PrescriptionDraftForm {
+  drugId: number
+  drugName: string
+  drugPrice: number
 }
 
 const router = useRouter()
@@ -50,8 +56,8 @@ const drugPickerRef = ref<InstanceType<typeof DrugSearchPicker> | null>(null)
 const confirmedDiagnosis = ref('')
 const w5Output = ref<W5Output | null>(null)
 const savedW5Suggestions = ref<W5Suggestion[]>([])
-const prescriptionDraft = reactive<PrescriptionDraft>({ drugUsage: '', drugNumber: 1 })
-const prescriptionBasket = ref<Array<PrescriptionDraft & { drugName: string; drugPrice: number }>>([])
+const prescriptionDraft = reactive<PrescriptionDraftForm>({ drugUsage: '', drugNumber: 1 })
+const prescriptionBasket = ref<PrescriptionBasketItem[]>([])
 const prescriptions = ref<PrescriptionItem[]>([])
 
 const basketDrugCount = computed(() => prescriptionBasket.value.length)
@@ -370,8 +376,25 @@ onMounted(() => {
             :header-cell-style="{ background: 'var(--color-table-header)', color: 'var(--color-text-soft)', fontWeight: 600 }"
           >
             <ElTableColumn prop="drugName" label="药品" min-width="100" />
-            <ElTableColumn prop="drugUsage" label="用法" min-width="160" show-overflow-tooltip />
-            <ElTableColumn prop="drugNumber" label="数量" width="72" align="center" />
+            <ElTableColumn label="用法" min-width="180">
+              <template #default="{ row }">
+                <ElInput
+                  v-model="row.drugUsage"
+                  size="small"
+                  placeholder="用法用量"
+                />
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="数量" width="120" align="center">
+              <template #default="{ row }">
+                <ElInputNumber
+                  v-model="row.drugNumber"
+                  size="small"
+                  :min="1"
+                  controls-position="right"
+                />
+              </template>
+            </ElTableColumn>
             <ElTableColumn label="操作" width="72" align="center">
               <template #default="{ $index }">
                 <ElButton link type="danger" @click="removeBasketItem($index)">移除</ElButton>
@@ -590,6 +613,15 @@ onMounted(() => {
 .rx-basket-table,
 .rx-submitted-table {
   width: 100%;
+}
+
+.rx-basket-table :deep(.el-input),
+.rx-basket-table :deep(.el-input-number) {
+  width: 100%;
+}
+
+.rx-basket-table :deep(.el-input-number .el-input__wrapper) {
+  padding-inline: 8px;
 }
 
 .rx-basket-table :deep(.el-table__inner-wrapper::before),

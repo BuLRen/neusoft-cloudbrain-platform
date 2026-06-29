@@ -6,9 +6,11 @@ import {
   Document,
   QuestionFilled,
   ShoppingCart,
+  View,
   WarningFilled,
 } from '@element-plus/icons-vue'
-import { physicianApi, type W5Output, type W5Suggestion } from '@/shared/api/modules/physician'
+import { physicianApi, type Drug, type W5Output, type W5Suggestion } from '@/shared/api/modules/physician'
+import PhysicianDrugDetailDialog from './PhysicianDrugDetailDialog.vue'
 import {
   displayDrugName,
   formatW5Confidence,
@@ -37,7 +39,11 @@ const emit = defineEmits<{
 }>()
 
 const liveStockByDrugId = ref<Record<number, LiveStockInfo>>({})
+const drugDetailsById = ref<Record<number, Drug>>({})
 const stockLoading = ref(false)
+const detailVisible = ref(false)
+const detailDrugId = ref<number>()
+const detailInitialDrug = ref<Drug | null>(null)
 
 const hasContent = computed(() => hasW5PanelContent(props.liveOutput, props.savedSuggestions))
 
@@ -83,10 +89,18 @@ function canAdopt(item: W5Suggestion): boolean {
   return stock.stockQuantity > 0
 }
 
+function openDrugDetail(item: W5Suggestion) {
+  if (!item.drugId) return
+  detailDrugId.value = item.drugId
+  detailInitialDrug.value = drugDetailsById.value[item.drugId] ?? null
+  detailVisible.value = true
+}
+
 async function refreshLiveStock(suggestions: W5Suggestion[]) {
   const drugIds = [...new Set(suggestions.map((s) => s.drugId).filter((id): id is number => id != null))]
   if (!drugIds.length) {
     liveStockByDrugId.value = {}
+    drugDetailsById.value = {}
     return
   }
 
@@ -99,20 +113,29 @@ async function refreshLiveStock(suggestions: W5Suggestion[]) {
           return [
             drugId,
             {
-              stockQuantity: drug.stockQuantity ?? 0,
-              drugUnit: drug.drugUnit || '盒',
-              lowStockThreshold: drug.lowStockThreshold ?? 20,
+              stock: {
+                stockQuantity: drug.stockQuantity ?? 0,
+                drugUnit: drug.drugUnit || '盒',
+                lowStockThreshold: drug.lowStockThreshold ?? 20,
+              },
+              drug,
             },
           ] as const
         } catch {
           return [
             drugId,
-            { stockQuantity: 0, drugUnit: '盒', lowStockThreshold: 20 },
+            {
+              stock: { stockQuantity: 0, drugUnit: '盒', lowStockThreshold: 20 },
+              drug: null,
+            },
           ] as const
         }
       }),
     )
-    liveStockByDrugId.value = Object.fromEntries(entries)
+    liveStockByDrugId.value = Object.fromEntries(entries.map(([id, data]) => [id, data.stock]))
+    drugDetailsById.value = Object.fromEntries(
+      entries.filter(([, data]) => data.drug != null).map(([id, data]) => [id, data.drug!]),
+    )
   } finally {
     stockLoading.value = false
   }
@@ -184,8 +207,24 @@ watch(
       >
         <div class="w5-card__head">
           <div class="w5-card__identity">
-            <h5 class="w5-card__name">{{ displayDrugName(item) }}</h5>
-            <p v-if="item.drugCode" class="w5-card__meta">{{ item.drugCode }}</p>
+            <button
+              v-if="item.drugId"
+              type="button"
+              class="w5-card__name-btn"
+              @click="openDrugDetail(item)"
+            >
+              <h5 class="w5-card__name">{{ displayDrugName(item) }}</h5>
+            </button>
+            <h5 v-else class="w5-card__name">{{ displayDrugName(item) }}</h5>
+            <button
+              v-if="item.drugCode && item.drugId"
+              type="button"
+              class="w5-card__meta-btn"
+              @click="openDrugDetail(item)"
+            >
+              {{ item.drugCode }} · 查看详情
+            </button>
+            <p v-else-if="item.drugCode" class="w5-card__meta">{{ item.drugCode }}</p>
           </div>
           <div class="w5-card__tags">
             <ElTag
@@ -235,6 +274,14 @@ watch(
         </p>
 
         <div class="w5-card__actions">
+          <ElButton
+            v-if="item.drugId"
+            class="w5-card__detail"
+            @click="openDrugDetail(item)"
+          >
+            <ElIcon><View /></ElIcon>
+            查看详情
+          </ElButton>
           <ElTooltip
             v-if="resolveStock(item) && isW5OutOfStock(resolveStock(item)!.stockQuantity)"
             content="当前无库存，无法采纳"
@@ -278,6 +325,12 @@ watch(
         </p>
       </article>
     </template>
+
+    <PhysicianDrugDetailDialog
+      v-model="detailVisible"
+      :drug-id="detailDrugId"
+      :initial-drug="detailInitialDrug"
+    />
   </section>
 </template>
 
@@ -411,7 +464,28 @@ watch(
   font-weight: 700;
 }
 
+.w5-card__name-btn,
+.w5-card__meta-btn {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: start;
+  cursor: pointer;
+}
+
+.w5-card__name-btn:hover .w5-card__name,
+.w5-card__meta-btn:hover {
+  color: var(--color-primary-strong);
+}
+
 .w5-card__meta {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-soft);
+  font-size: 12px;
+}
+
+.w5-card__meta-btn {
   margin: var(--space-1) 0 0;
   color: var(--color-text-soft);
   font-size: 12px;
@@ -466,10 +540,15 @@ watch(
 }
 
 .w5-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
   margin-block-start: var(--space-4);
 }
 
+.w5-card__detail,
 .w5-card__adopt {
   width: 100%;
+  margin: 0;
 }
 </style>
