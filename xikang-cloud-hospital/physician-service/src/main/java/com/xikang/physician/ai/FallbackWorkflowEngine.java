@@ -369,6 +369,88 @@ public class FallbackWorkflowEngine {
         return out;
     }
 
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> runW5(Map<String, Object> input) {
+        Long registerId = toLong(input.get("registerId"));
+        String diagnosis = str(input.get("confirmedDiagnosis"));
+        if (diagnosis.isBlank()) {
+            diagnosis = "上呼吸道感染";
+        }
+        String allergy = str(input.get("allergyHistory"));
+        List<Map<String, Object>> drugCatalog = listOfMaps(input.get("drugCatalog"));
+
+        List<Map<String, Object>> suggestions = new ArrayList<>();
+        List<String> allergyWarnings = new ArrayList<>();
+        if (!allergy.isBlank() && !allergy.equals("无") && !allergy.equals("否认")) {
+            allergyWarnings.add("患者过敏史：" + allergy);
+        }
+
+        String searchKeyword = diagnosis.length() > 6 ? diagnosis.substring(0, 6) : diagnosis;
+        int order = 1;
+        for (Map<String, Object> drug : drugCatalog) {
+            String drugName = str(drug.get("drugName"));
+            if (drugName.isBlank()) {
+                continue;
+            }
+            if (containsAllergyConflict(drugName, allergy)) {
+                continue;
+            }
+            if (!drugName.contains(searchKeyword.substring(0, Math.min(2, searchKeyword.length())))
+                && order > 1) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("drugId", drug.get("id"));
+            item.put("drugName", drugName);
+            item.put("drugCode", drug.get("drugCode"));
+            item.put("recommendUsage", "口服，遵医嘱，一日三次");
+            item.put("recommendQuantity", 1);
+            item.put("confidence", 75.0 - (order - 1) * 5.0);
+            item.put("recommendationBasis", "结合确诊「" + diagnosis + "」的常用对症/对因用药方向（Fallback）。");
+            item.put("cautionNotes", allergyWarnings.isEmpty() ? "请核对过敏史与禁忌。" : allergyWarnings.get(0));
+            item.put("sortOrder", order++);
+            suggestions.add(item);
+            if (suggestions.size() >= 3) {
+                break;
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("registerId", registerId);
+        if (suggestions.isEmpty()) {
+            out.put("status", "fallback");
+            out.put("suggestions", List.of());
+            Map<String, Object> fallback = new LinkedHashMap<>();
+            fallback.put("drugName", "对症用药");
+            fallback.put("recommendUsage", "遵医嘱");
+            fallback.put("recommendationBasis", "本地药品库未匹配到合适条目");
+            fallback.put("note", "请手动搜索药品库选药");
+            out.put("fallbackSuggestions", List.of(fallback));
+            out.put("searchAdvice", "建议搜索：" + diagnosis + " 相关常用药");
+        } else {
+            out.put("status", "success");
+            out.put("suggestions", suggestions);
+            out.put("fallbackSuggestions", List.of());
+            out.put("searchAdvice", "");
+        }
+        out.put("clinicalSummaryForDoctor", "基于确诊「" + diagnosis + "」的 Fallback 用药参考，请医生最终确认。");
+        out.put("allergyWarnings", allergyWarnings);
+        return out;
+    }
+
+    private static boolean containsAllergyConflict(String drugName, String allergy) {
+        if (allergy == null || allergy.isBlank()) {
+            return false;
+        }
+        if (allergy.contains("青霉素") && (drugName.contains("阿莫西林") || drugName.contains("青霉素"))) {
+            return true;
+        }
+        if (allergy.contains("头孢") && drugName.contains("头孢")) {
+            return true;
+        }
+        return false;
+    }
+
     private static Map<String, Object> recommendation(Map<String, Object> exam, String reason) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("techId", exam.get("techId"));

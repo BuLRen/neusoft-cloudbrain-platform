@@ -136,6 +136,9 @@ xikang:
       # W4  门诊确诊与概率
       workflow-w4: ${DIFY_WORKFLOW_W4:true}
       api-key-w4: ${DIFY_API_KEY_W4:}
+      # W5  智能荐药（开立处方页）
+      workflow-w5: ${DIFY_WORKFLOW_W5:true}
+      api-key-w5: ${DIFY_API_KEY_W5:}
 
       # ----- 外部 CT 推理服务（W2b 用，未配置则用内置模拟）-----
       ct-inference-url: ${CT_INFERENCE_URL:}

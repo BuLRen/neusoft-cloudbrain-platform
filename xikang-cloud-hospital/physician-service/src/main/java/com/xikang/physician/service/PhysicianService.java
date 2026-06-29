@@ -269,9 +269,15 @@ public class PhysicianService {
         Long registerId = toLong(prescriptionRequest.get("registerId"));
         assertRegisterAccess(registerId);
         List<Map<String, Object>> items = requestItems(prescriptionRequest);
+        String diagnosis = prescriptionRequest.get("confirmedDiagnosis") == null
+            ? null
+            : String.valueOf(prescriptionRequest.get("confirmedDiagnosis")).trim();
         List<Long> prescriptionIds = items.stream().map(item -> {
             Map<String, Object> row = new HashMap<>(item);
             row.put("registerId", registerId);
+            if (diagnosis != null && !diagnosis.isEmpty()) {
+                row.put("diagnosis", diagnosis);
+            }
             physicianMapper.insertPrescription(row);
             return toLong(row.get("id"));
         }).toList();
@@ -368,6 +374,30 @@ public class PhysicianService {
                     "clinicalSummaryForDoctor",
                     "differentialDiagnosis",
                     "warningSigns",
+                    "searchAdvice"
+                )
+            ),
+            "w5RecommendDrugs", Map.of(
+                "inputs", List.of(
+                    "register_id",
+                    "patient_info_text",
+                    "confirmed_diagnosis_text",
+                    "w4_suggestions_text",
+                    "allergy_history",
+                    "past_history",
+                    "chief_complaint",
+                    "w3_analysis_text",
+                    "abnormal_indicators_text",
+                    "preliminary_diagnosis_text",
+                    "doctor_notes"
+                ),
+                "outputs", List.of(
+                    "status",
+                    "registerId",
+                    "suggestions",
+                    "fallbackSuggestions",
+                    "clinicalSummaryForDoctor",
+                    "allergyWarnings",
                     "searchAdvice"
                 )
             ),

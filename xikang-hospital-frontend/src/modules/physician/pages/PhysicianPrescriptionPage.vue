@@ -2,10 +2,12 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElButton, ElCheckbox, ElForm, ElFormItem, ElInput, ElInputNumber, ElMessage, ElMessageBox, ElOption, ElSelect, ElTable, ElTableColumn } from 'element-plus'
-import { physicianApi, type Drug, type PrescriptionItem } from '@/shared/api/modules/physician'
+import { VideoPlay } from '@element-plus/icons-vue'
+import { physicianApi, type Drug, type PrescriptionItem, type W5Output, type W5Suggestion } from '@/shared/api/modules/physician'
 import { clinicalRecordApi } from '@/shared/api/modules/clinicalRecord'
 import { useEncounterStore } from '@/app/stores/encounter'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
+import W5PrescriptionPanel from '../components/W5PrescriptionPanel.vue'
 
 interface PrescriptionDraft {
   drugId?: number
@@ -20,10 +22,13 @@ const endingVisit = ref(false)
 const archiveOnFinish = ref(true)
 
 const loading = ref(false)
+const w5Loading = ref(false)
 const drugKeyword = ref('')
 const drugs = ref<Drug[]>([])
 
 const confirmedDiagnosis = ref('')
+const w5Output = ref<W5Output | null>(null)
+const savedW5Suggestions = ref<W5Suggestion[]>([])
 const prescriptionDraft = reactive<PrescriptionDraft>({ drugUsage: '', drugNumber: 1 })
 const prescriptionBasket = ref<Array<PrescriptionDraft & { drugName: string; drugPrice: number }>>([])
 const prescriptions = ref<PrescriptionItem[]>([])
@@ -32,9 +37,22 @@ async function searchDrugs() {
   drugs.value = await physicianApi.drugs(drugKeyword.value)
 }
 
+const hasConfirmedDiagnosis = computed(() => confirmedDiagnosis.value.trim().length > 0)
+
 function addDrugToBasket() {
   const drug = drugs.value.find((item) => item.id === prescriptionDraft.drugId)
-  if (!drug) return
+  if (!drug) {
+    ElMessage.warning('请选择药品')
+    return
+  }
+  if (!prescriptionDraft.drugUsage.trim()) {
+    ElMessage.warning('请填写用法用量')
+    return
+  }
+  if (prescriptionDraft.drugNumber < 1) {
+    ElMessage.warning('数量至少为 1')
+    return
+  }
   prescriptionBasket.value.push({
     drugId: drug.id,
     drugName: drug.drugName,
@@ -50,6 +68,79 @@ function addDrugToBasket() {
 async function loadPrescriptions() {
   if (!registerId.value) return
   prescriptions.value = await physicianApi.prescriptions(registerId.value)
+}
+
+async function loadSavedW5Suggestions() {
+  if (!registerId.value) {
+    savedW5Suggestions.value = []
+    return
+  }
+  try {
+    savedW5Suggestions.value = await physicianApi.w5Suggestions(registerId.value)
+  } catch {
+    savedW5Suggestions.value = []
+  }
+}
+
+async function runW5() {
+  if (!registerId.value) return
+  if (!hasConfirmedDiagnosis.value) {
+    ElMessage.warning('请先完成门诊确诊并填写确诊病名')
+    return
+  }
+  w5Loading.value = true
+  try {
+    w5Output.value = await physicianApi.aiW5(registerId.value)
+    if (w5Output.value?.status !== 'fallback') {
+      await loadSavedW5Suggestions()
+    }
+    ElMessage.success('W5 用药建议已生成')
+  } finally {
+    w5Loading.value = false
+  }
+}
+
+async function adoptW5Suggestion(item: W5Suggestion) {
+  if (!item.drugId) {
+    ElMessage.warning('该建议无药品库 ID，请手动搜索选药')
+    return
+  }
+  const existing = prescriptionBasket.value.find((row) => row.drugId === item.drugId)
+  if (existing) {
+    ElMessage.info('该药品已在处方篮中')
+    return
+  }
+  let drugName = item.drugName || ''
+  let drugPrice = 0
+  const cached = drugs.value.find((d) => d.id === item.drugId)
+  if (cached) {
+    drugName = cached.drugName
+    drugPrice = cached.drugPrice
+  } else {
+    try {
+      const detail = await physicianApi.drug(item.drugId)
+      drugName = detail.drugName
+      drugPrice = detail.drugPrice
+    } catch {
+      ElMessage.warning('无法加载药品详情，请手动搜索添加')
+      return
+    }
+  }
+  prescriptionBasket.value.push({
+    drugId: item.drugId,
+    drugName,
+    drugPrice,
+    drugUsage: item.recommendUsage || '',
+    drugNumber: item.recommendQuantity && item.recommendQuantity > 0 ? item.recommendQuantity : 1,
+  })
+  if (item.id) {
+    try {
+      await physicianApi.adoptW5Suggestion(item.id)
+    } catch {
+      // non-blocking
+    }
+  }
+  ElMessage.success(`已将「${drugName}」加入处方篮`)
 }
 
 async function loadConfirmedDiagnosis() {
@@ -76,9 +167,25 @@ async function maybeArchiveVisit(id: number) {
   }
 }
 
+function removeBasketItem(index: number) {
+  prescriptionBasket.value.splice(index, 1)
+}
+
 async function submitPrescription() {
   if (!registerId.value) return
-  if (!prescriptionBasket.value.length) return
+  if (!prescriptionBasket.value.length) {
+    ElMessage.warning('处方篮为空，请先添加药品')
+    return
+  }
+  if (!confirmedDiagnosis.value.trim()) {
+    ElMessage.warning('请填写确诊病名后再提交处方')
+    return
+  }
+  const invalidUsage = prescriptionBasket.value.find((item) => !item.drugUsage.trim())
+  if (invalidUsage) {
+    ElMessage.warning(`请为「${invalidUsage.drugName}」填写用法用量`)
+    return
+  }
   const currentRegisterId = registerId.value
   const payload = {
     registerId: currentRegisterId,
@@ -138,12 +245,14 @@ async function removePrescriptionItem(id: number) {
 }
 
 watch(registerId, () => {
+  w5Output.value = null
   void loadPrescriptions()
   void loadConfirmedDiagnosis()
+  void loadSavedW5Suggestions()
 })
 
 onMounted(() => {
-  void Promise.all([searchDrugs(), loadPrescriptions(), loadConfirmedDiagnosis()])
+  void Promise.all([searchDrugs(), loadPrescriptions(), loadConfirmedDiagnosis(), loadSavedW5Suggestions()])
 })
 </script>
 
@@ -151,7 +260,7 @@ onMounted(() => {
   <PhysicianStepLayout
     group-label="门诊诊疗"
     title="开立处方"
-    description="选择药品并提交处方（审方由人员B负责）。"
+    description="选择药品并提交处方；可先运行 W5 获取 AI 用药推荐。"
     prev-path="/physician/diagnosis"
   >
     <div class="rx-grid">
@@ -186,15 +295,39 @@ onMounted(() => {
           <ElTableColumn prop="drugName" label="药品" />
           <ElTableColumn prop="drugUsage" label="用法" />
           <ElTableColumn prop="drugNumber" label="数量" />
+          <ElTableColumn label="操作" width="80">
+            <template #default="{ $index }">
+              <ElButton link type="danger" @click="removeBasketItem($index)">移除</ElButton>
+            </template>
+          </ElTableColumn>
         </ElTable>
       </section>
 
       <section>
         <ElForm label-position="top">
-          <ElFormItem label="确诊病名（用于处方）">
+          <ElFormItem label="确诊病名（用于处方）" required>
             <ElInput v-model="confirmedDiagnosis" placeholder="来自确诊页面或 W4 输出" />
           </ElFormItem>
         </ElForm>
+
+        <div class="w5-actions">
+          <ElButton
+            :loading="w5Loading"
+            :disabled="!hasConfirmedDiagnosis"
+            @click="runW5"
+          >
+            <VideoPlay style="margin-right: 4px" />
+            运行 W5 智能荐药
+          </ElButton>
+          <p v-if="!hasConfirmedDiagnosis" class="w5-hint">请先完成门诊确诊并填写确诊病名</p>
+        </div>
+
+        <W5PrescriptionPanel
+          :live-output="w5Output"
+          :saved-suggestions="savedW5Suggestions"
+          :disabled="loading"
+          @adopt="adoptW5Suggestion"
+        />
 
         <h3>已提交处方</h3>
         <ElTable v-if="prescriptions.length" :data="prescriptions">
@@ -233,6 +366,19 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-block-start: var(--space-3);
+}
+
+.w5-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.w5-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 </style>
 

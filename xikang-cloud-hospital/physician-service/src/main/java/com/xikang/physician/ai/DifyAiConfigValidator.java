@@ -100,5 +100,22 @@ public class DifyAiConfigValidator {
                 properties.getWorkflowW4()
             );
         }
+        String w5Switch = properties.getWorkflowW5();
+        if (w5Switch != null && w5Switch.startsWith("app-")) {
+            log.error(
+                "配置错误：workflow-w5 填了 API Key (app-xxx)。请设置 DIFY_WORKFLOW_W5=true，"
+                    + "并将 Key 放到 DIFY_API_KEY_W5。"
+            );
+        }
+        if (properties.isW5WorkflowSwitchOn() && properties.resolveW5ApiKey().isBlank()) {
+            log.warn("workflow-w5 已启用但 api-key-w5 / DIFY_API_KEY_W5 为空，W5 将走内置 Fallback。");
+        } else if (difyClient.isW5Enabled()) {
+            log.info("W5 智能荐药：已启用 Dify Workflow（使用 api-key-w5）");
+        } else if (properties.isDifyBaseConfigured()) {
+            log.info(
+                "W5 智能荐药：未启用 Dify（workflow-w5={}，需为 true/1/yes 且配置 DIFY_API_KEY_W5）",
+                properties.getWorkflowW5()
+            );
+        }
     }
 }

@@ -74,6 +74,14 @@ public interface PhysicianMapper {
         @Param("limit") int limit
     );
 
+    List<Map<String, Object>> searchDrugsForAi(
+        @Param("drugKeywords") List<String> drugKeywords,
+        @Param("genericKeywords") List<String> genericKeywords,
+        @Param("categoryKeywords") List<String> categoryKeywords,
+        @Param("indicationKeywords") List<String> indicationKeywords,
+        @Param("fetchLimit") int fetchLimit
+    );
+
     List<Map<String, Object>> selectDrugs(@Param("keyword") String keyword);
 
     Map<String, Object> selectDrugById(@Param("id") Long id);
@@ -135,6 +143,14 @@ public interface PhysicianMapper {
     int deleteDiagnosisSuggestionsByRegisterId(@Param("registerId") Long registerId);
 
     int insertDiagnosisSuggestion(Map<String, Object> row);
+
+    int deleteDrugSuggestionsByRegisterId(@Param("registerId") Long registerId);
+
+    int insertDrugSuggestion(Map<String, Object> row);
+
+    List<Map<String, Object>> selectDrugSuggestions(@Param("registerId") Long registerId);
+
+    int updateDrugSuggestionAdopted(@Param("id") Long id, @Param("isAdopted") int isAdopted);
 
     int insertAiMedicalRecordLog(Map<String, Object> row);
 

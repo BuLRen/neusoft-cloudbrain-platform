@@ -39,6 +39,8 @@ public class PhysicianAiPipelineService {
     private final DifyW3OutputMapper w3OutputMapper;
     private final W4DifyInputBuilder w4DifyInputBuilder;
     private final DifyW4OutputMapper w4OutputMapper;
+    private final W5DifyInputBuilder w5DifyInputBuilder;
+    private final DifyW5OutputMapper w5OutputMapper;
     private final FallbackWorkflowEngine fallbackEngine;
     private final CtInferenceService ctInferenceService;
 
@@ -56,6 +58,8 @@ public class PhysicianAiPipelineService {
         DifyW3OutputMapper w3OutputMapper,
         W4DifyInputBuilder w4DifyInputBuilder,
         DifyW4OutputMapper w4OutputMapper,
+        W5DifyInputBuilder w5DifyInputBuilder,
+        DifyW5OutputMapper w5OutputMapper,
         FallbackWorkflowEngine fallbackEngine,
         CtInferenceService ctInferenceService
     ) {
@@ -72,6 +76,8 @@ public class PhysicianAiPipelineService {
         this.w3OutputMapper = w3OutputMapper;
         this.w4DifyInputBuilder = w4DifyInputBuilder;
         this.w4OutputMapper = w4OutputMapper;
+        this.w5DifyInputBuilder = w5DifyInputBuilder;
+        this.w5OutputMapper = w5OutputMapper;
         this.fallbackEngine = fallbackEngine;
         this.ctInferenceService = ctInferenceService;
     }
@@ -370,6 +376,135 @@ public class PhysicianAiPipelineService {
         }
         persistW4(rawOutput, registerId);
         return rawOutput;
+    }
+
+    public List<Map<String, Object>> getDrugSuggestions(Long registerId) {
+        return physicianMapper.selectDrugSuggestions(registerId);
+    }
+
+    @Transactional
+    public Map<String, Object> runW5(Long registerId) {
+        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        String diagnosis = record == null ? "" : String.valueOf(record.getOrDefault("diagnosis", "")).trim();
+        if (diagnosis.isEmpty()) {
+            throw new IllegalArgumentException("请先完成门诊确诊并保存确诊病名");
+        }
+
+        Map<String, Object> rawOutput;
+        if (difyClient.isW5Enabled()) {
+            log.info("W5 registerId={} using Dify workflow (api-key-w5)", registerId);
+            rawOutput = runW5ViaDify(registerId);
+        } else {
+            log.warn(
+                "W5 registerId={} using fallback (w5Switch={}, w5ApiKeyConfigured={})",
+                registerId,
+                difyProperties.isW5WorkflowSwitchOn(),
+                !difyProperties.resolveW5ApiKey().isBlank()
+            );
+            rawOutput = adaptFallbackW5(fallbackEngine.runW5(buildW5FallbackInput(registerId)));
+            rawOutput.put("modelId", "fallback-w5");
+        }
+        persistW5(rawOutput, registerId);
+        return rawOutput;
+    }
+
+    public void markDrugSuggestionAdopted(Long suggestionId) {
+        if (suggestionId == null) {
+            return;
+        }
+        physicianMapper.updateDrugSuggestionAdopted(suggestionId, 1);
+    }
+
+    private Map<String, Object> runW5ViaDify(Long registerId) {
+        try {
+            Map<String, Object> difyInputs = w5DifyInputBuilder.build(registerId);
+            String user = "physician-reg-" + registerId;
+            String traceId = "w5-" + registerId + "-" + System.currentTimeMillis();
+            DifyWorkflowRunResult run = difyClient.runWorkflowBlockingWithApiKey(
+                difyProperties.resolveW5ApiKey(),
+                difyInputs,
+                user,
+                traceId
+            );
+
+            Map<String, Object> mapped = w5OutputMapper.toW5Result(run.getOutputs());
+            if (mapped.get("registerId") == null) {
+                mapped.put("registerId", registerId);
+            }
+            mapped.put("modelId", "dify-w5");
+            mapped.put("workflowRunId", run.getWorkflowRunId());
+            log.info(
+                "W5 registerId={} Dify completed runId={} status={} suggestions={}",
+                registerId,
+                run.getWorkflowRunId(),
+                mapped.get("status"),
+                listOfMaps(mapped.get("suggestions")).size()
+            );
+            return mapped;
+        } catch (DifyWorkflowException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.warn("W5 registerId={} Dify call failed: {}", registerId, ex.toString());
+            throw new DifyWorkflowException("W5 智能荐药工作流调用失败，请稍后重试");
+        }
+    }
+
+    private Map<String, Object> buildW5FallbackInput(Long registerId) {
+        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("registerId", registerId);
+        input.put("confirmedDiagnosis", record == null ? "" : record.get("diagnosis"));
+        input.put("allergyHistory", record == null ? "" : record.get("allergy"));
+        input.put("drugCatalog", physicianMapper.selectDrugs(null));
+        return input;
+    }
+
+    private Map<String, Object> adaptFallbackW5(Map<String, Object> fallbackOutput) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", fallbackOutput.getOrDefault("status", "success"));
+        out.put("registerId", fallbackOutput.get("registerId"));
+        out.put("suggestions", listOfMaps(fallbackOutput.get("suggestions")));
+        out.put("fallbackSuggestions", listOfMaps(fallbackOutput.get("fallbackSuggestions")));
+        out.put("clinicalSummaryForDoctor", fallbackOutput.get("clinicalSummaryForDoctor"));
+        out.put("allergyWarnings", fallbackOutput.get("allergyWarnings"));
+        out.put("searchAdvice", fallbackOutput.getOrDefault("searchAdvice", ""));
+        return out;
+    }
+
+    private void persistW5(Map<String, Object> output, Long registerId) {
+        String status = String.valueOf(output.getOrDefault("status", "success")).trim().toLowerCase();
+        if ("fallback".equals(status)) {
+            log.info("W5 registerId={} status=fallback, skip ai_drug_suggestion persist", registerId);
+            return;
+        }
+
+        List<Map<String, Object>> suggestions = listOfMaps(output.get("suggestions"));
+        if (suggestions.isEmpty()) {
+            return;
+        }
+
+        physicianMapper.deleteDrugSuggestionsByRegisterId(registerId);
+        String modelId = String.valueOf(output.getOrDefault("modelId", difyClient.isW5Enabled() ? "dify-w5" : "fallback-w5"));
+        int order = 1;
+        for (Map<String, Object> item : suggestions) {
+            insertDrugSuggestion(registerId, item, order++, modelId);
+        }
+    }
+
+    private void insertDrugSuggestion(Long registerId, Map<String, Object> item, int sortOrder, String modelId) {
+        Map<String, Object> row = new HashMap<>();
+        row.put("registerId", registerId);
+        row.put("drugId", item.get("drugId"));
+        row.put("drugName", item.getOrDefault("drugName", ""));
+        row.put("recommendUsage", item.getOrDefault("recommendUsage", item.get("recommend_usage")));
+        row.put("recommendQuantity", item.getOrDefault("recommendQuantity", item.get("recommend_quantity")));
+        row.put("confidence", item.get("confidence"));
+        row.put("recommendationBasis", item.getOrDefault("recommendationBasis", item.get("recommendation_basis")));
+        row.put("cautionNotes", item.getOrDefault("cautionNotes", item.get("caution_notes")));
+        Object itemSort = item.get("sortOrder");
+        row.put("sortOrder", itemSort == null ? sortOrder : itemSort);
+        row.put("modelId", modelId);
+        physicianMapper.insertDrugSuggestion(row);
     }
 
     private Map<String, Object> runW4ViaDify(Long registerId) {
