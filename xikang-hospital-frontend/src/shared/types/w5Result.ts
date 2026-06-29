@@ -37,3 +37,18 @@ export function hasW5PanelContent(
 export function displayDrugName(item: W5Suggestion | W5FallbackSuggestion): string {
   return item.drugName || '-'
 }
+
+export function formatW5StockLabel(stock?: number, unit?: string): string {
+  if (stock == null) return '加载中…'
+  return `${stock} ${unit || '盒'}`
+}
+
+export function isW5LowStock(stock?: number, threshold?: number): boolean {
+  if (stock == null) return false
+  const limit = threshold != null && threshold > 0 ? threshold : 20
+  return stock > 0 && stock <= limit
+}
+
+export function isW5OutOfStock(stock?: number): boolean {
+  return stock != null && stock <= 0
+}

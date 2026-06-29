@@ -379,7 +379,35 @@ public class PhysicianAiPipelineService {
     }
 
     public List<Map<String, Object>> getDrugSuggestions(Long registerId) {
-        return physicianMapper.selectDrugSuggestions(registerId);
+        return enrichW5SuggestionsWithLiveStock(physicianMapper.selectDrugSuggestions(registerId));
+    }
+
+    private List<Map<String, Object>> enrichW5SuggestionsWithLiveStock(List<Map<String, Object>> suggestions) {
+        if (suggestions == null || suggestions.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> enriched = new ArrayList<>();
+        for (Map<String, Object> item : suggestions) {
+            Map<String, Object> copy = new LinkedHashMap<>(item);
+            Long drugId = toLong(copy.get("drugId"));
+            if (drugId == null) {
+                enriched.add(copy);
+                continue;
+            }
+            Map<String, Object> drug = physicianMapper.selectDrugById(drugId);
+            if (drug == null) {
+                copy.put("stockQuantity", 0);
+                copy.put("drugUnit", "盒");
+                copy.put("lowStockThreshold", 20);
+                enriched.add(copy);
+                continue;
+            }
+            copy.put("stockQuantity", toInt(drug.get("stockQuantity")));
+            copy.put("drugUnit", String.valueOf(drug.getOrDefault("drugUnit", "盒")));
+            copy.put("lowStockThreshold", toInt(drug.get("lowStockThreshold")) <= 0 ? 20 : toInt(drug.get("lowStockThreshold")));
+            enriched.add(copy);
+        }
+        return enriched;
     }
 
     @Transactional
@@ -562,6 +590,10 @@ public class PhysicianAiPipelineService {
         if (lowStockThreshold <= 0) {
             lowStockThreshold = 20;
         }
+        String unit = String.valueOf(drug.getOrDefault("drugUnit", "盒"));
+        normalized.put("stockQuantity", stock);
+        normalized.put("drugUnit", unit);
+        normalized.put("lowStockThreshold", lowStockThreshold);
         if (stock <= lowStockThreshold) {
             String caution = String.valueOf(normalized.getOrDefault("cautionNotes", "")).trim();
             String stockNote = "库存紧张（当前可用 " + stock + " "

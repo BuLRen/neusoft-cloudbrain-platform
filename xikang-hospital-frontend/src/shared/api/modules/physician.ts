@@ -314,6 +314,10 @@ export interface W5Suggestion {
   cautionNotes?: string
   sortOrder?: number
   isAdopted?: number
+  /** 查询时实时库存（不落库） */
+  stockQuantity?: number
+  drugUnit?: string
+  lowStockThreshold?: number
 }
 
 export interface W5FallbackSuggestion {

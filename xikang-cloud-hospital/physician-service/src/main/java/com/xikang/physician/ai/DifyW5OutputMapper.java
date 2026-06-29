@@ -70,6 +70,9 @@ public class DifyW5OutputMapper {
             suggestion.put("confidence", firstDouble(item, "confidence"));
             suggestion.put("recommendationBasis", firstString(item, "recommendationBasis", "recommendation_basis"));
             suggestion.put("cautionNotes", firstString(item, "cautionNotes", "caution_notes"));
+            suggestion.put("stockQuantity", firstInteger(item, "stockQuantity", "stock_quantity"));
+            suggestion.put("drugUnit", firstString(item, "drugUnit", "drug_unit"));
+            suggestion.put("lowStockThreshold", firstInteger(item, "lowStockThreshold", "low_stock_threshold"));
             Integer sortOrder = firstInteger(item, "sortOrder", "sort_order");
             suggestion.put("sortOrder", sortOrder == null ? order : sortOrder);
             mapped.add(suggestion);
