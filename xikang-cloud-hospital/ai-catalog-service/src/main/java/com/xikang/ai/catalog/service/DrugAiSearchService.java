@@ -1,7 +1,7 @@
-package com.xikang.physician.service;
+package com.xikang.ai.catalog.service;
 
-import com.xikang.physician.dto.DrugAiSearchRequest;
-import com.xikang.physician.mapper.PhysicianMapper;
+import com.xikang.ai.catalog.dto.DrugAiSearchRequest;
+import com.xikang.ai.catalog.mapper.DrugCatalogMapper;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -17,10 +17,10 @@ public class DrugAiSearchService {
     private static final int DEFAULT_LIMIT = 40;
     private static final int MAX_LIMIT = 80;
 
-    private final PhysicianMapper physicianMapper;
+    private final DrugCatalogMapper drugCatalogMapper;
 
-    public DrugAiSearchService(PhysicianMapper physicianMapper) {
-        this.physicianMapper = physicianMapper;
+    public DrugAiSearchService(DrugCatalogMapper drugCatalogMapper) {
+        this.drugCatalogMapper = drugCatalogMapper;
     }
 
     public List<Map<String, Object>> search(DrugAiSearchRequest request) {
@@ -37,7 +37,7 @@ public class DrugAiSearchService {
         }
 
         int fetchLimit = Math.min(Math.max(limit * 3, limit), 200);
-        List<Map<String, Object>> rawRows = physicianMapper.searchDrugsForAi(
+        List<Map<String, Object>> rawRows = drugCatalogMapper.searchDrugsForAi(
             drugKeywords,
             genericKeywords,
             categoryKeywords,

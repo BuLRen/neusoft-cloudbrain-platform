@@ -1,4 +1,4 @@
-package com.xikang.physician.config;
+package com.xikang.ai.catalog.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.result.Result;

@@ -53,7 +53,7 @@ LLM 只能从候选药品中选择（drugId 必须来自候选集）
 
 1. **第 3 节** 所述 NMPA 本位码 ETL 导入（国产 + 进口合并进 `drug_info`）。
 2. 门诊常见病相关品种的 `instructions` / `contraindications` 已做第二层补全（见 **3.5 节**），否则 TC-002 过敏过滤与适应症检索效果不足。
-3. `POST /api/physician/internal/drugs/ai-search` 在 Dify 所在网络可达（Docker 内常用 `http://172.17.0.1:8092/...`）。
+3. `POST /api/physician/internal/drugs/ai-search` 在 Dify 所在网络可达（云侧 **ai-catalog-service :8098**，Docker 内常用 `http://172.17.0.1:8098/...`）。
 4. `INTERNAL_AI_TOKEN` 与后端 `.env` 一致。
 
 ### 2.3 Start 节点输入策略
@@ -267,7 +267,7 @@ LIMIT 10;
 ### 4.3 内部药品检索 API 契约（HTTP 节点 5 调用）
 
 ```http
-POST http://172.17.0.1:8092/api/physician/internal/drugs/ai-search
+POST http://172.17.0.1:8098/api/physician/internal/drugs/ai-search
 Content-Type: application/json
 Authorization: Bearer {{INTERNAL_AI_TOKEN}}
 ```
@@ -581,7 +581,7 @@ def main(drugKeywords, genericKeywords, categoryKeywords, indicationKeywords, ne
 | 项 | 值 |
 |----|-----|
 | Method | POST |
-| URL | `http://172.17.0.1:8092/api/physician/internal/drugs/ai-search` |
+| URL | `http://172.17.0.1:8098/api/physician/internal/drugs/ai-search` |
 | Headers | `Content-Type: application/json` |
 | Headers | `Authorization: Bearer <INTERNAL_AI_TOKEN>`（在 Dify 环境变量或密钥中配置） |
 | Body | `{{search_request_body}}`（raw JSON） |
@@ -963,7 +963,7 @@ def main(register_id, fallbackSuggestions, clinicalSummaryForDoctor, searchAdvic
 |------|-------------|
 | InputBuilder | `physician-service/.../ai/W5DifyInputBuilder.java` |
 | OutputMapper | `physician-service/.../ai/DifyW5OutputMapper.java` |
-| 药品检索 | `DrugAiSearchService.java` + `POST /internal/drugs/ai-search` |
+| 药品检索 | `ai-catalog-service` + `POST /internal/drugs/ai-search` |
 | Pipeline | `PhysicianAiPipelineService.runW5` |
 | 前端 | `W5PrescriptionPanel.vue` + `PhysicianPrescriptionPage.vue` |
 | 药品表结构 | `docker/init-db/migrate_to_partner.sql` → `drug_info` |

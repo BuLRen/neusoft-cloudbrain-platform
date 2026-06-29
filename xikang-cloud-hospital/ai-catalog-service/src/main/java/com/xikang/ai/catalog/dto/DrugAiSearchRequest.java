@@ -1,4 +1,4 @@
-package com.xikang.physician.dto;
+package com.xikang.ai.catalog.dto;
 
 import java.util.ArrayList;
 import java.util.List;

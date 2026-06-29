@@ -1,10 +1,10 @@
-package com.xikang.physician.controller;
+package com.xikang.ai.catalog.controller;
 
+import com.xikang.ai.catalog.dto.DiseaseAiSearchRequest;
+import com.xikang.ai.catalog.dto.DrugAiSearchRequest;
+import com.xikang.ai.catalog.service.DiseaseAiSearchService;
+import com.xikang.ai.catalog.service.DrugAiSearchService;
 import com.xikang.common.result.Result;
-import com.xikang.physician.dto.DiseaseAiSearchRequest;
-import com.xikang.physician.dto.DrugAiSearchRequest;
-import com.xikang.physician.service.DiseaseAiSearchService;
-import com.xikang.physician.service.DrugAiSearchService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,15 +16,16 @@ import java.util.Map;
 
 /**
  * Internal endpoints for Dify workflow HTTP nodes (Bearer {@code INTERNAL_AI_TOKEN}).
+ * Paths kept identical to former physician-service endpoints for minimal Dify migration.
  */
 @RestController
 @RequestMapping("/api/physician/internal")
-public class PhysicianInternalController {
+public class CatalogInternalController {
 
     private final DiseaseAiSearchService diseaseAiSearchService;
     private final DrugAiSearchService drugAiSearchService;
 
-    public PhysicianInternalController(
+    public CatalogInternalController(
         DiseaseAiSearchService diseaseAiSearchService,
         DrugAiSearchService drugAiSearchService
     ) {
@@ -32,18 +33,12 @@ public class PhysicianInternalController {
         this.drugAiSearchService = drugAiSearchService;
     }
 
-    /**
-     * W4 workflow: search candidate diseases from local ICD catalog.
-     */
     @PostMapping("/diseases/ai-search")
     public Result<List<Map<String, Object>>> searchDiseasesForAi(@RequestBody DiseaseAiSearchRequest request) {
         List<Map<String, Object>> data = diseaseAiSearchService.search(request);
         return Result.success(data);
     }
 
-    /**
-     * W5 workflow: search candidate drugs from local drug_info catalog.
-     */
     @PostMapping("/drugs/ai-search")
     public Result<Map<String, Object>> searchDrugsForAi(@RequestBody DrugAiSearchRequest request) {
         List<Map<String, Object>> candidates = drugAiSearchService.search(request);
