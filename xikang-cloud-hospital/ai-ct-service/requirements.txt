@@ -1,0 +1,13 @@
+# ai-ct-service 依赖
+# ==================
+# 注意：torch 装 CPU 版（服务器无 GPU）：
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+fastapi
+uvicorn[standard]
+python-multipart        # 处理文件上传
+torch                   # CPU 版即可，无需 CUDA
+numpy
+SimpleITK               # NIfTI/DICOM 读写
+monai                   # 复用训练时的 transforms，保证预处理一致
+pydantic

@@ -1,0 +1,32 @@
+# 模型权重（大文件，不入 git）
+models/*.pth
+models/*.pt
+models/*.onnx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 临时文件 / 测试输出
+*.tmp
+*.bak
+samples/*.nii
+samples/*.nii.gz
+
+# 日志
+*.log
