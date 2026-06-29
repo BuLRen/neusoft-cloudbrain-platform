@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ElDatePicker, ElMessage, ElMessageBox, ElRadio, ElRadioGroup } from 'element-plus'
+import { ElDatePicker, ElMessage, ElMessageBox, ElRadio, ElRadioButton, ElRadioGroup } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import CheckInQRCode from '@/shared/components/CheckInQRCode.vue'
@@ -14,6 +14,9 @@ import { Warning } from '@element-plus/icons-vue'
 const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+
+// 开发环境标记（模板里不能用 import.meta.env，必须先在 script 暴露）
+const isDev = import.meta.env.DEV
 
 // ========== 预问诊状态映射 ==========
 type PreConsultBtnState = { text: string; type: 'primary' | 'warning' | 'default'; state: 'none' | 'in_progress' | 'completed' } | null
@@ -327,6 +330,19 @@ const visitDateRange = ref<[string, string] | null>(null)
 const sortBy = ref<ExpenseRecordSortBy>('payTime')
 const sortDir = ref<ExpenseRecordSortDir>('desc')
 
+// 状态 tab：全部 / 进行中(1,2,5,6) / 已完成(3) / 已取消(4,7)
+type RegTab = 'all' | 'ongoing' | 'done' | 'cancelled'
+const activeTab = ref<RegTab>('all')
+
+function tabFilter(status?: number): boolean {
+  switch (activeTab.value) {
+    case 'ongoing':   return [1, 2, 5, 6].includes(status ?? 0)
+    case 'done':      return status === 3
+    case 'cancelled': return [4, 7].includes(status ?? 0)
+    default:          return true
+  }
+}
+
 // 状态优先级：待缴费 → 已缴费 → 已退号/爽约（垫底）
 function registrationStatusRank(record: RegistrationRecord): number {
   if (record.status === 4 || record.status === 7) return 2
@@ -362,15 +378,23 @@ function visitDateOf(record: RegistrationRecord): string {
 }
 
 const filteredRegistrations = computed(() => {
+  // 第一层：tab 状态过滤
+  const byTab = sortedRegistrations.value.filter((r) => tabFilter(r.status))
+  // 第二层：日期范围过滤
   const range = visitDateRange.value
-  if (!range || !range[0] || !range[1]) return sortedRegistrations.value
+  if (!range || !range[0] || !range[1]) return byTab
   const [start, end] = range
-  return sortedRegistrations.value.filter((record) => {
+  return byTab.filter((record) => {
     const day = visitDateOf(record)
     if (!day) return false
     return day >= start && day <= end
   })
 })
+
+function clearFilters() {
+  activeTab.value = 'all'
+  visitDateRange.value = null
+}
 
 async function loadRegistrations() {
   const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
@@ -692,9 +716,28 @@ async function startFromDepartmentQuery() {
 
   await loadAvailableSchedules()
 
+  // 优先按 query.scheduleId 精确选中（外部深链接场景）
   const scheduleId = getQueryNumber(route.query.scheduleId)
   if (scheduleId) {
     const matched = availableSchedules.value.find(item => item.id === scheduleId)
+    if (matched) selectSchedule(matched)
+    return
+  }
+
+  // AI 导诊跳转：按 doctorId 匹配该医生的排班
+  const doctorId = getQueryNumber(route.query.doctorId)
+  if (doctorId) {
+    const matched = availableSchedules.value.find(item => item.physicianId === doctorId)
+    if (matched) {
+      selectSchedule(matched)
+      return
+    }
+  }
+
+  // 仅有挂号级别：选该级别的第一个可用排班
+  const registLevelId = getQueryNumber(route.query.registLevelId)
+  if (registLevelId) {
+    const matched = availableSchedules.value.find(item => item.registLevelId === registLevelId)
     if (matched) selectSchedule(matched)
   }
 }
@@ -978,6 +1021,15 @@ const showSuccessCard = computed(() => {
       </div>
 
       <div class="list-filters">
+        <div class="filter-field filter-field--tabs">
+          <label>挂号状态</label>
+          <ElRadioGroup v-model="activeTab" class="tab-filter">
+            <ElRadioButton value="all">全部</ElRadioButton>
+            <ElRadioButton value="ongoing">进行中</ElRadioButton>
+            <ElRadioButton value="done">已完成</ElRadioButton>
+            <ElRadioButton value="cancelled">已取消</ElRadioButton>
+          </ElRadioGroup>
+        </div>
         <div class="filter-field">
           <label>就诊日期</label>
           <ElDatePicker
@@ -1018,7 +1070,7 @@ const showSuccessCard = computed(() => {
         <button class="btn-primary" @click="startRegistration">去预约挂号</button>
       </div>
       <div v-else-if="filteredRegistrations.length === 0" class="empty-state">
-        当前筛选条件下没有挂号记录，<button class="link-btn" @click="visitDateRange = null">清空筛选</button>
+        当前筛选条件下没有挂号记录，<button class="link-btn" @click="clearFilters">清空筛选</button>
       </div>
       <div v-else class="registration-record-list">
         <div v-for="record in filteredRegistrations" :key="record.id" class="registration-record-card">
@@ -1040,7 +1092,7 @@ const showSuccessCard = computed(() => {
             <div class="record-actions">
               <button class="btn-outline btn-sm" @click="openRegistrationDetail(record)">查看详情</button>
               <button v-if="canPay(record)" class="btn-primary btn-sm" :disabled="actionLoading" @click="handlePay(record)">去缴费</button>
-              <button v-if="canCheckInSimulate(record)" class="btn-primary btn-sm" :disabled="actionLoading" @click="handleCheckIn(record)">📍 模拟报到</button>
+              <button v-if="canCheckInSimulate(record) && isDev" class="btn-primary btn-sm" :disabled="actionLoading" @click="handleCheckIn(record)">📍 模拟报到</button>
               <button v-if="canCancel(record)" class="btn-outline btn-sm btn-danger" :disabled="actionLoading" @click="handleCancel(record)">取消挂号</button>
               <button
                 v-if="preConsultBtnFor(record)"
@@ -1628,7 +1680,7 @@ const showSuccessCard = computed(() => {
             取消挂号
           </button>
           <button
-            v-if="selectedRegistration && canCheckInSimulate(selectedRegistration)"
+            v-if="selectedRegistration && canCheckInSimulate(selectedRegistration) && isDev"
             class="btn-primary"
             :disabled="actionLoading"
             @click="handleCheckIn(selectedRegistration)"
@@ -1755,6 +1807,12 @@ const showSuccessCard = computed(() => {
 
 .filter-field .field {
   width: 100%;
+}
+
+/* tab 顶层筛选：占满整行，区别于下方次级筛选 */
+/* tab 字段：作为筛选行的一个普通列，与其他字段并排，宽度不够时由 flex-wrap 自然换行 */
+.filter-field--tabs {
+  min-width: auto;
 }
 
 .filter-summary {

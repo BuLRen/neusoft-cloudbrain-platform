@@ -195,7 +195,7 @@ async function handleExit() {
   if (window.history.length > 1) {
     router.back()
   } else {
-    router.push({ name: 'PatientWorkspace' })
+    router.push({ name: 'PatientOverview' })
   }
 }
 
