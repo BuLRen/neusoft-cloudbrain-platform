@@ -112,26 +112,38 @@ async function adoptW5Suggestion(item: W5Suggestion) {
   }
   let drugName = item.drugName || ''
   let drugPrice = 0
+  let stockQuantity = 0
   const cached = drugs.value.find((d) => d.id === item.drugId)
   if (cached) {
     drugName = cached.drugName
     drugPrice = cached.drugPrice
+    stockQuantity = cached.stockQuantity ?? 0
   } else {
     try {
       const detail = await physicianApi.drug(item.drugId)
       drugName = detail.drugName
       drugPrice = detail.drugPrice
+      stockQuantity = detail.stockQuantity ?? 0
     } catch {
       ElMessage.warning('无法加载药品详情，请手动搜索添加')
       return
     }
+  }
+  if (stockQuantity <= 0) {
+    ElMessage.warning(`「${drugName}」当前无库存，无法采纳，请换用其他药品或手动搜索`)
+    return
+  }
+  const requestedQty = item.recommendQuantity && item.recommendQuantity > 0 ? item.recommendQuantity : 1
+  const drugNumber = Math.min(requestedQty, stockQuantity)
+  if (drugNumber < requestedQty) {
+    ElMessage.warning(`「${drugName}」库存仅 ${stockQuantity}，已按可用数量 ${drugNumber} 加入处方篮`)
   }
   prescriptionBasket.value.push({
     drugId: item.drugId,
     drugName,
     drugPrice,
     drugUsage: item.recommendUsage || '',
-    drugNumber: item.recommendQuantity && item.recommendQuantity > 0 ? item.recommendQuantity : 1,
+    drugNumber,
   })
   if (item.id) {
     try {

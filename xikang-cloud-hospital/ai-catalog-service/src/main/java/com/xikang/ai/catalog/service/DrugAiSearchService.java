@@ -10,12 +10,21 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class DrugAiSearchService {
 
     private static final int DEFAULT_LIMIT = 40;
     private static final int MAX_LIMIT = 80;
+    private static final int PER_DRUG_KEYWORD_LIMIT = 40;
+    private static final int PER_GENERIC_KEYWORD_LIMIT = 30;
+    private static final int PER_CATEGORY_KEYWORD_LIMIT = 25;
+    private static final int PER_INDICATION_KEYWORD_LIMIT = 20;
+
+    private static final Set<String> BROAD_CATEGORY_KEYWORDS = Set.of(
+        "西药", "中成药", "中药", "生物制品", "化学药", "药品"
+    );
 
     private final DrugCatalogMapper drugCatalogMapper;
 
@@ -27,7 +36,7 @@ public class DrugAiSearchService {
         int limit = normalizeLimit(request.getLimit());
         List<String> drugKeywords = cleanKeywords(request.getDrugKeywords());
         List<String> genericKeywords = cleanKeywords(request.getGenericKeywords());
-        List<String> categoryKeywords = cleanKeywords(request.getCategoryKeywords());
+        List<String> categoryKeywords = filterCategoryKeywords(cleanKeywords(request.getCategoryKeywords()));
         List<String> indicationKeywords = cleanKeywords(request.getIndicationKeywords());
         List<String> negativeKeywords = cleanKeywords(request.getNegativeKeywords());
 
@@ -36,36 +45,91 @@ public class DrugAiSearchService {
             return List.of();
         }
 
-        int fetchLimit = Math.min(Math.max(limit * 3, limit), 200);
-        List<Map<String, Object>> rawRows = drugCatalogMapper.searchDrugsForAi(
-            drugKeywords,
-            genericKeywords,
-            categoryKeywords,
-            indicationKeywords,
-            fetchLimit
-        );
+        Map<Long, Map<String, Object>> rawById = new LinkedHashMap<>();
+        collectRows(rawById, fetchByBuckets(drugKeywords, genericKeywords, categoryKeywords, indicationKeywords));
 
-        Map<Long, ScoredDrug> scoredById = new LinkedHashMap<>();
-        for (Map<String, Object> row : rawRows) {
-            ScoredDrug item = scoreRow(row, drugKeywords, genericKeywords, categoryKeywords, indicationKeywords, negativeKeywords);
-            if (item == null) {
-                continue;
-            }
-            Long id = item.drugId();
-            ScoredDrug existing = scoredById.get(id);
-            if (existing == null || item.score() > existing.score()) {
-                scoredById.put(id, item);
+        if (rawById.size() < Math.min(limit, 20)) {
+            int fetchLimit = Math.min(Math.max(limit * 3, limit), 200);
+            collectRows(rawById, drugCatalogMapper.searchDrugsForAi(
+                drugKeywords,
+                genericKeywords,
+                categoryKeywords,
+                indicationKeywords,
+                fetchLimit
+            ));
+        }
+
+        List<ScoredDrug> scored = new ArrayList<>();
+        for (Map<String, Object> row : rawById.values()) {
+            ScoredDrug item = scoreRow(
+                row,
+                drugKeywords,
+                genericKeywords,
+                categoryKeywords,
+                indicationKeywords,
+                negativeKeywords
+            );
+            if (item != null) {
+                scored.add(item);
             }
         }
 
-        return scoredById.values().stream()
-            .sorted(Comparator.comparingInt(ScoredDrug::score).reversed())
-            .limit(limit)
-            .map(ScoredDrug::toCandidate)
-            .toList();
+        scored.sort(Comparator.comparingInt(ScoredDrug::score).reversed());
+
+        Map<Long, ScoredDrug> deduped = new LinkedHashMap<>();
+        for (ScoredDrug item : scored) {
+            deduped.putIfAbsent(item.drugId(), item);
+            if (deduped.size() >= limit) {
+                break;
+            }
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ScoredDrug item : deduped.values()) {
+            result.add(item.toCandidate());
+        }
+        return result;
     }
 
-    private static ScoredDrug scoreRow(
+    private List<Map<String, Object>> fetchByBuckets(
+        List<String> drugKeywords,
+        List<String> genericKeywords,
+        List<String> categoryKeywords,
+        List<String> indicationKeywords
+    ) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (String keyword : drugKeywords) {
+            rows.addAll(drugCatalogMapper.searchDrugsByNameKeyword(keyword, PER_DRUG_KEYWORD_LIMIT));
+        }
+
+        for (String keyword : genericKeywords) {
+            rows.addAll(drugCatalogMapper.searchDrugsByGenericKeyword(keyword, PER_GENERIC_KEYWORD_LIMIT));
+        }
+
+        for (String keyword : categoryKeywords) {
+            rows.addAll(drugCatalogMapper.searchDrugsByCategoryKeyword(keyword, PER_CATEGORY_KEYWORD_LIMIT));
+        }
+
+        for (String keyword : indicationKeywords) {
+            if (keyword.length() >= 2) {
+                rows.addAll(drugCatalogMapper.searchDrugsByIndicationKeyword(keyword, PER_INDICATION_KEYWORD_LIMIT));
+            }
+        }
+
+        return rows;
+    }
+
+    private static void collectRows(Map<Long, Map<String, Object>> target, List<Map<String, Object>> rows) {
+        for (Map<String, Object> row : rows) {
+            Long id = toLong(row.get("drugId"));
+            if (id != null) {
+                target.putIfAbsent(id, row);
+            }
+        }
+    }
+
+    private ScoredDrug scoreRow(
         Map<String, Object> row,
         List<String> drugKeywords,
         List<String> genericKeywords,
@@ -73,53 +137,131 @@ public class DrugAiSearchService {
         List<String> indicationKeywords,
         List<String> negativeKeywords
     ) {
+        Long drugId = toLong(row.get("drugId"));
+        if (drugId == null) {
+            return null;
+        }
+
         String drugName = str(row.get("drugName"));
         String genericName = str(row.get("genericName"));
         String category = str(row.get("category"));
         String instructions = str(row.get("instructions"));
         String contraindications = str(row.get("contraindications"));
-        String searchable = (drugName + " " + genericName + " " + category + " " + instructions).toLowerCase(Locale.ROOT);
+        String searchable = (drugName + " " + genericName + " " + category + " " + instructions)
+            .toLowerCase(Locale.ROOT);
+        String nameLower = drugName.toLowerCase(Locale.ROOT);
+        String genericLower = genericName.toLowerCase(Locale.ROOT);
+        String categoryLower = category.toLowerCase(Locale.ROOT);
+        String instructionsLower = instructions.toLowerCase(Locale.ROOT);
 
         for (String negative : negativeKeywords) {
-            if (!negative.isEmpty() && searchable.contains(negative.toLowerCase(Locale.ROOT))) {
-                return null;
+            if (negative.isBlank()) {
+                continue;
             }
-            if (!negative.isEmpty() && contraindications.toLowerCase(Locale.ROOT).contains(negative.toLowerCase(Locale.ROOT))) {
+            String negativeLower = negative.toLowerCase(Locale.ROOT);
+            if (searchable.contains(negativeLower)
+                || contraindications.toLowerCase(Locale.ROOT).contains(negativeLower)
+                || nameLower.contains(negativeLower)
+                || genericLower.contains(negativeLower)) {
                 return null;
             }
         }
 
         int score = 0;
-        for (String keyword : drugKeywords) {
-            if (drugName.contains(keyword)) {
-                score += 40;
-            } else if (searchable.contains(keyword.toLowerCase(Locale.ROOT))) {
-                score += 20;
+
+        for (int i = 0; i < drugKeywords.size(); i++) {
+            String keyword = drugKeywords.get(i);
+            if (keyword.isBlank()) {
+                continue;
             }
+            int keywordScore = scoreDrugKeyword(keyword, nameLower, genericLower, searchable);
+            if (keywordScore > 0 && i == 0) {
+                keywordScore += 10;
+            }
+            score += keywordScore;
         }
+
         for (String keyword : genericKeywords) {
-            if (genericName.toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT))) {
+            if (keyword.isBlank()) {
+                continue;
+            }
+            String lower = keyword.toLowerCase(Locale.ROOT);
+            if (genericLower.equals(lower)) {
+                score += 35;
+            } else if (genericLower.contains(lower)) {
                 score += 25;
             }
         }
+
         for (String keyword : categoryKeywords) {
-            if (category.contains(keyword)) {
-                score += 15;
+            if (keyword.isBlank() || isBroadCategory(keyword)) {
+                continue;
+            }
+            String lower = keyword.toLowerCase(Locale.ROOT);
+            if (categoryLower.contains(lower)) {
+                score += 18;
             }
         }
+
         for (String keyword : indicationKeywords) {
-            if (instructions.contains(keyword) || drugName.contains(keyword)) {
-                score += 18;
-            } else if (searchable.contains(keyword.toLowerCase(Locale.ROOT))) {
-                score += 8;
+            if (keyword.isBlank()) {
+                continue;
+            }
+            String lower = keyword.toLowerCase(Locale.ROOT);
+            if (instructionsLower.contains(lower)) {
+                score += 20;
+            } else if (nameLower.contains(lower)) {
+                score += 10;
+            } else if (searchable.contains(lower)) {
+                score += 6;
             }
         }
 
         if (score <= 0) {
-            score = 5;
+            return null;
         }
 
-        return new ScoredDrug(toLong(row.get("drugId")), row, score);
+        if (stockQuantity(row) <= 0) {
+            return null;
+        }
+
+        return new ScoredDrug(drugId, row, score);
+    }
+
+    private static int scoreDrugKeyword(
+        String keyword,
+        String nameLower,
+        String genericLower,
+        String searchable
+    ) {
+        String lower = keyword.toLowerCase(Locale.ROOT);
+        if (nameLower.equals(lower) || genericLower.equals(lower)) {
+            return 50;
+        }
+        if (nameLower.contains(lower) || genericLower.contains(lower)) {
+            return 40;
+        }
+        if (searchable.contains(lower)) {
+            return 12;
+        }
+        return 0;
+    }
+
+    private static List<String> filterCategoryKeywords(List<String> categoryKeywords) {
+        List<String> filtered = new ArrayList<>();
+        for (String keyword : categoryKeywords) {
+            if (!isBroadCategory(keyword)) {
+                filtered.add(keyword);
+            }
+        }
+        return filtered;
+    }
+
+    private static boolean isBroadCategory(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return true;
+        }
+        return BROAD_CATEGORY_KEYWORDS.contains(keyword.trim());
     }
 
     private static int normalizeLimit(Integer limit) {
@@ -164,6 +306,21 @@ public class DrugAiSearchService {
         return null;
     }
 
+    private static int stockQuantity(Map<String, Object> row) {
+        Object value = row.get("stockQuantity");
+        if (value instanceof Number number) {
+            return Math.max(0, number.intValue());
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Math.max(0, Integer.parseInt(text.trim()));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
     private record ScoredDrug(Long drugId, Map<String, Object> row, int score) {
         Map<String, Object> toCandidate() {
             Map<String, Object> candidate = new LinkedHashMap<>();
@@ -175,6 +332,9 @@ public class DrugAiSearchService {
             candidate.put("price", row.getOrDefault("price", row.get("drugPrice")));
             candidate.put("instructions", row.get("instructions"));
             candidate.put("contraindications", row.get("contraindications"));
+            candidate.put("stockQuantity", stockQuantity(row));
+            candidate.put("unit", row.getOrDefault("unit", "盒"));
+            candidate.put("lowStockThreshold", row.getOrDefault("lowStockThreshold", 20));
             candidate.put("matchScore", score);
             return candidate;
         }

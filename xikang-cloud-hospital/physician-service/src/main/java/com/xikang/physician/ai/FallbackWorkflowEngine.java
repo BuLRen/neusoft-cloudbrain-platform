@@ -392,6 +392,10 @@ public class FallbackWorkflowEngine {
             if (drugName.isBlank()) {
                 continue;
             }
+            int stock = toInt(drug.get("stockQuantity"));
+            if (stock <= 0) {
+                continue;
+            }
             if (containsAllergyConflict(drugName, allergy)) {
                 continue;
             }
@@ -404,7 +408,7 @@ public class FallbackWorkflowEngine {
             item.put("drugName", drugName);
             item.put("drugCode", drug.get("drugCode"));
             item.put("recommendUsage", "口服，遵医嘱，一日三次");
-            item.put("recommendQuantity", 1);
+            item.put("recommendQuantity", Math.min(1, stock));
             item.put("confidence", 75.0 - (order - 1) * 5.0);
             item.put("recommendationBasis", "结合确诊「" + diagnosis + "」的常用对症/对因用药方向（Fallback）。");
             item.put("cautionNotes", allergyWarnings.isEmpty() ? "请核对过敏史与禁忌。" : allergyWarnings.get(0));
@@ -509,6 +513,20 @@ public class FallbackWorkflowEngine {
             return Long.parseLong(text);
         }
         return null;
+    }
+
+    private static int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Integer.parseInt(text.trim());
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
     }
 
     private static String str(Object value) {

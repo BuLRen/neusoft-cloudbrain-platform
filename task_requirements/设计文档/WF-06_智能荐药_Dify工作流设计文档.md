@@ -1,11 +1,12 @@
 # WF-06: 智能荐药 Dify 工作流设计文档
 
-> 版本：v1.1  
-> 日期：2026-06-28  
+> 版本：v1.2  
+> 日期：2026-06-29  
 > 适配平台：Dify 1.11.2  
-> 状态：设计完成，待在 Dify 控制台编排  
-> 核心目标：根据门诊确诊病名、病历上下文与 **NMPA 本位码导入的** `drug_info` 药品库，为医生推荐 1-5 种可采纳药品。  
-> **v1.1 变更**：药品主数据改为「国家药品编码本位码信息（国产 + 进口）」导入远程库；补充字段映射、导入范围与工作流适配说明。
+> 状态：设计完成，Dify 控制台需按 **v1.2** 同步节点 5.6 / 8A / 9A  
+> 核心目标：根据门诊确诊病名、病历上下文与 **NMPA 本位码导入的** `drug_info` 药品库，为医生推荐 1-5 种**有库存**、可采纳药品。  
+> **v1.1 变更**：药品主数据改为「国家药品编码本位码信息（国产 + 进口）」导入远程库；补充字段映射、导入范围与工作流适配说明。  
+> **v1.2 变更**：荐药须考虑库存——`/drugs/ai-search` 已排除零库存；Dify 节点 5.6 / 8A / 9A 需同步；`physician-service` 落库与前端采纳已加二次校验（代码侧已完成，见第 7 节）。
 
 ---
 
@@ -59,6 +60,30 @@ LLM 只能从候选药品中选择（drugId 必须来自候选集）
 ### 2.3 Start 节点输入策略
 
 Dify 1.11.2 开始节点 **全部使用 string 类型输入**。
+
+### 2.4 库存约束（v1.2 新增）
+
+荐药必须尊重药房库存，采用 **三层防护**（后端硬过滤 → 工作流确定性校验 → 采纳兜底）：
+
+```text
+drug_info.stock_quantity（由 drug_stock 批次汇总）
+  ↓
+ai-catalog /drugs/ai-search：SQL 排除 stock_quantity = 0，响应带 stockQuantity / unit
+  ↓
+Dify 9A 校验：recommendQuantity = min(LLM建议, stockQuantity, 5)
+  ↓
+physician-service persistW5：落库前再次查库过滤/截断
+  ↓
+前端 adoptW5Suggestion：采纳进处方篮前查实时库存
+```
+
+| 库存状态 | 行为 |
+|----------|------|
+| `stock_quantity = 0` | **不推荐**（不进 HTTP 候选集） |
+| `0 < stock ≤ low_stock_threshold` | 可推荐，数量 ≤ 库存，`cautionNotes` 标注「库存紧张」 |
+| `stock > threshold` | 正常推荐，`recommendQuantity ≤ min(stock, 5)` |
+
+**Dify 侧职责**：LLM 只在有货候选中选药；**数量截断由节点 9A Code 确定性完成**，不要仅靠 Prompt。
 
 ---
 
@@ -285,7 +310,7 @@ Authorization: Bearer {{INTERNAL_AI_TOKEN}}
 }
 ```
 
-响应体（`data.candidates` 供下游代码节点读取）：
+响应体（`data.candidates` 供下游代码节点读取；**v1.2 起含库存字段，且零库存药品不会出现在列表中**）：
 
 ```json
 {
@@ -301,12 +326,18 @@ Authorization: Bearer {{INTERNAL_AI_TOKEN}}
         "price": 0.00,
         "genericName": "阿莫西林",
         "instructions": "用于敏感菌所致感染。口服，成人一次0.5g，一日3次。",
-        "contraindications": "青霉素过敏者禁用"
+        "contraindications": "青霉素过敏者禁用",
+        "stockQuantity": 100,
+        "unit": "盒",
+        "lowStockThreshold": 20,
+        "matchScore": 50
       }
     ]
   }
 }
 ```
+
+> **实现说明（代码已完成）**：`ai-catalog-service` 的 `DrugCatalogMapper.xml` 在 `activeDrugFilter` 中增加 `stock_quantity > 0`；`DrugAiSearchService` 在候选中返回 `stockQuantity` / `unit` / `lowStockThreshold`。
 
 ---
 
@@ -600,6 +631,8 @@ def main(drugKeywords, genericKeywords, categoryKeywords, indicationKeywords, ne
 
 ### 5.6：格式化候选药品
 
+> **【v1.2 需在 Dify 控制台修改】** 在候选文本中展示库存，供 LLM 参考；`candidates_json` 须保留完整字段供 9A 截断数量。
+
 | 配置项 | 值 |
 |--------|-----|
 | **节点名称** | `格式化候选药品` |
@@ -621,14 +654,14 @@ def main(drugKeywords, genericKeywords, categoryKeywords, indicationKeywords, ne
 | 变量名 | 类型 | 说明 |
 |--------|------|------|
 | `candidate_count` | Number | 候选药品数量 |
-| `candidates_text` | String | 供 LLM 阅读的候选列表文本 |
-| `candidates_json` | String | 候选 JSON 字符串（供校验节点使用） |
+| `candidates_text` | String | 供 LLM 阅读的候选列表文本（**含库存**） |
+| `candidates_json` | String | 候选 JSON 字符串（供校验节点使用，**含 stockQuantity**） |
 | `register_id` | String | 透传 |
 | `clinical_context` | String | 透传 |
 | `confirmed_diagnosis_text` | String | 透传 |
 | `allergy_history` | String | 透传 |
 
-**节点代码**：
+**节点代码（v1.2 替换整段）**：
 
 ```python
 import json
@@ -648,10 +681,13 @@ def main(http_body, register_id, clinical_context, confirmed_diagnosis_text, all
     for i, c in enumerate(candidates[:40], 1):
         contra = str(c.get('contraindications') or '')[:80]
         instr = str(c.get('instructions') or '（库内暂无说明书摘要）')[:100]
+        stock = c.get('stockQuantity', 0) or 0
+        unit = c.get('unit') or '盒'
         lines.append(
             f"{i}. drugId={c.get('drugId')}; drugCode={c.get('drugCode','')}; "
             f"名称={c.get('drugName')}; 通用名={c.get('genericName','')}; "
             f"规格={c.get('specification','')}; 分类={c.get('category','')}; "
+            f"可用库存={stock}{unit}; "
             f"适应症/用法={instr}; 禁忌={contra or '（未录入）'}"
         )
 
@@ -685,6 +721,8 @@ def main(http_body, register_id, clinical_context, confirmed_diagnosis_text, all
 ---
 
 ### 5.8A：核心用药推荐
+
+> **【v1.2 需在 Dify 控制台修改】** System Prompt 增加库存相关规则（第 4、9 条）。
 
 | 配置项 | 值 |
 |--------|-----|
@@ -732,7 +770,7 @@ def main(http_body, register_id, clinical_context, confirmed_diagnosis_text, all
 }
 ```
 
-**System Prompt**：
+**System Prompt（v1.2 替换）**：
 
 ```text
 你是医院 AI 用药推荐助手。你只能从【候选药品列表】中选择 1-5 种药品推荐给医生。
@@ -741,11 +779,12 @@ def main(http_body, register_id, clinical_context, confirmed_diagnosis_text, all
 1. drugId、drugCode 必须来自候选列表，禁止编造。
 2. 有过敏史时，排除相关药物并在 allergyWarnings 中说明；若候选禁忌字段为「未录入」，须根据药名/通用名常识排除（如青霉素过敏排除阿莫西林、氨苄西林等）。
 3. recommendUsage 格式：给药途径 + 单次剂量 + 频次 + 特殊说明（如饭后）；候选无说明书摘要时，按该药常规临床用法填写，并在 cautionNotes 注明「用法参考通用知识，请以院内说明书为准」。
-4. recommendQuantity 为整数，表示盒/瓶数量，合理范围 1-5。
+4. recommendQuantity 为整数，表示盒/瓶数量；不得超过候选列表中该药的「可用库存」；合理上限 1-5。
 5. confidence 为 0-100 的数值。
 6. 优先推荐与确诊病名匹配的一线用药；可推荐主药 + 对症药，总数不超过 5。
 7. 同一通用名多规格/多厂家时，优先选列表中排序靠前且规格常见的条目。
 8. 你是辅助参考，不替代医生决策。
+9. 候选列表已排除零库存药品；若库存较低，在 cautionNotes 中提醒「库存紧张」。
 ```
 
 **User Prompt**：
@@ -766,6 +805,8 @@ def main(http_body, register_id, clinical_context, confirmed_diagnosis_text, all
 ---
 
 ### 5.9A：校验最终输出
+
+> **【v1.2 需在 Dify 控制台修改 — 最重要】** 用 Code 节点**确定性**截断 `recommendQuantity`，过滤无库存项；不要仅依赖 LLM 遵守库存规则。
 
 | 配置项 | 值 |
 |--------|-----|
@@ -795,7 +836,7 @@ def main(http_body, register_id, clinical_context, confirmed_diagnosis_text, all
 | `allergyWarnings` | Array[String] |
 | `searchAdvice` | String |
 
-**节点代码**：
+**节点代码（v1.2 替换整段）**：
 
 ```python
 import json
@@ -805,18 +846,43 @@ def main(register_id, drugSuggestions, clinicalSummaryForDoctor, allergyWarnings
         candidates = json.loads(candidates_json)
     except Exception:
         candidates = []
+
     valid_ids = {c.get("drugId") for c in candidates}
     code_by_id = {c.get("drugId"): c.get("drugCode") for c in candidates}
+    stock_by_id = {c.get("drugId"): int(c.get("stockQuantity") or 0) for c in candidates}
+    threshold_by_id = {c.get("drugId"): int(c.get("lowStockThreshold") or 20) for c in candidates}
+    unit_by_id = {c.get("drugId"): c.get("unit") or "盒" for c in candidates}
 
     cleaned = []
     for i, s in enumerate(drugSuggestions or [], 1):
         did = s.get("drugId")
         if did not in valid_ids:
             continue
+        stock = stock_by_id.get(did, 0)
+        if stock <= 0:
+            continue
+
         row = dict(s)
         row["sortOrder"] = row.get("sortOrder") or i
         if not row.get("drugCode"):
             row["drugCode"] = code_by_id.get(did) or ""
+
+        qty = row.get("recommendQuantity") or 1
+        try:
+            qty = int(qty)
+        except Exception:
+            qty = 1
+        if qty < 1:
+            qty = 1
+        row["recommendQuantity"] = min(qty, stock, 5)
+
+        threshold = threshold_by_id.get(did, 20)
+        if stock <= threshold:
+            unit = unit_by_id.get(did, "盒")
+            note = f"库存紧张（当前可用 {stock}{unit}）"
+            existing = str(row.get("cautionNotes") or "").strip()
+            row["cautionNotes"] = note if not existing else f"{existing}；{note}"
+
         cleaned.append(row)
 
     status = "success" if cleaned else "fallback"
@@ -827,7 +893,7 @@ def main(register_id, drugSuggestions, clinicalSummaryForDoctor, allergyWarnings
         "fallbackSuggestions": [],
         "clinicalSummaryForDoctor": clinicalSummaryForDoctor or "",
         "allergyWarnings": allergyWarnings or [],
-        "searchAdvice": "" if cleaned else "候选均无效，请检查药品库或手动搜索",
+        "searchAdvice": "" if cleaned else "候选均无可用库存或校验未通过，请手动搜索选药",
     }
 ```
 
@@ -945,6 +1011,7 @@ def main(register_id, fallbackSuggestions, clinicalSummaryForDoctor, searchAdvic
 | TC-004 | 无确诊 | `confirmed_diagnosis_text` 为空 | 后端 400，前端按钮禁用 |
 | TC-005 | 进口品种 | 确诊与胃肠不适相关，库含和胃整肠丸等 | 候选或推荐可出现进口中成药（`approval_number` 含 J/ZJ） |
 | TC-006 | HTTP 失败 | 临时关闭 internal API 或错误 Token | 走 8B 兜底，工作流不整体报错 |
+| TC-007 | 库存约束 | 将某常用药 `stock_quantity` 设为 0 后跑 TC-001 | HTTP 候选不含该药；若 LLM 仍输出则 9A 丢弃；采纳时前端提示无库存 |
 
 **病种包自检**（导入后建议人工 spot-check）：
 
@@ -963,9 +1030,21 @@ def main(register_id, fallbackSuggestions, clinicalSummaryForDoctor, searchAdvic
 |------|-------------|
 | InputBuilder | `physician-service/.../ai/W5DifyInputBuilder.java` |
 | OutputMapper | `physician-service/.../ai/DifyW5OutputMapper.java` |
-| 药品检索 | `ai-catalog-service` + `POST /internal/drugs/ai-search` |
-| Pipeline | `PhysicianAiPipelineService.runW5` |
-| 前端 | `W5PrescriptionPanel.vue` + `PhysicianPrescriptionPage.vue` |
+| 药品检索 | `ai-catalog-service` + `POST /internal/drugs/ai-search`（**v1.2**：过滤零库存，返回 `stockQuantity`） |
+| Pipeline | `PhysicianAiPipelineService.runW5`（**v1.2**：`sanitizeW5Suggestions` 落库前二次校验） |
+| Fallback | `FallbackWorkflowEngine.runW5`（**v1.2**：跳过零库存） |
+| 前端 | `W5PrescriptionPanel.vue` + `PhysicianPrescriptionPage.vue`（**v1.2**：采纳时查库存） |
 | 药品表结构 | `docker/init-db/migrate_to_partner.sql` → `drug_info` |
+| 库存初始化 | `docker/init-db/migrate_023_init_drug_stock_from_catalog.sql` |
 | 接入 handoff | `WF-06_智能荐药_W5接入实施规格.md` |
 | **药品 ETL** | 待新增：`migrate_023_nmpa_drug_import.sql` 或独立 Python ETL（国产+进口 Excel → 远程 `drug_info`） |
+
+### 7.1 Dify 控制台 v1.2 同步清单
+
+编排完成后若已发布旧版，请按序更新并**重新发布**工作流：
+
+- [ ] 重新部署 `ai-catalog-service`（8098），确认 smoke-test 响应含 `stockQuantity`
+- [ ] **节点 5.6** `格式化候选药品`：替换为 v1.2 Python 代码（候选文本含「可用库存=」）
+- [ ] **节点 8A** `核心用药推荐`：替换 System Prompt（第 4、9 条库存规则）
+- [ ] **节点 9A** `校验最终输出`：替换为 v1.2 Python 代码（`min(qty, stock, 5)` + 低库存提示）
+- [ ] 用 TC-001 / TC-007 回归

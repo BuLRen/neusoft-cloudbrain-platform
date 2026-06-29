@@ -16,4 +16,24 @@ public interface DrugCatalogMapper {
         @Param("indicationKeywords") List<String> indicationKeywords,
         @Param("fetchLimit") int fetchLimit
     );
+
+    List<Map<String, Object>> searchDrugsByNameKeyword(
+        @Param("keyword") String keyword,
+        @Param("limit") int limit
+    );
+
+    List<Map<String, Object>> searchDrugsByGenericKeyword(
+        @Param("keyword") String keyword,
+        @Param("limit") int limit
+    );
+
+    List<Map<String, Object>> searchDrugsByCategoryKeyword(
+        @Param("keyword") String keyword,
+        @Param("limit") int limit
+    );
+
+    List<Map<String, Object>> searchDrugsByIndicationKeyword(
+        @Param("keyword") String keyword,
+        @Param("limit") int limit
+    );
 }

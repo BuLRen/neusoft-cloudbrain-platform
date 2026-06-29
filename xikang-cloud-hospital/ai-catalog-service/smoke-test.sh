@@ -18,11 +18,18 @@ if [[ -z "${INTERNAL_AI_TOKEN:-}" ]]; then
   exit 1
 fi
 
-echo "=== drugs ai-search ==="
+echo "=== drugs ai-search (stock fields) ==="
 curl -sf -X POST "${BASE_URL}/api/physician/internal/drugs/ai-search" \
   -H "Authorization: Bearer ${INTERNAL_AI_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"drugKeywords":["阿莫西林"],"limit":3}' | head -c 400
+  -d '{"drugKeywords":["阿莫西林"],"limit":1}' | grep -o '"stockQuantity":[0-9]*' | head -1 || true
+echo ""
+
+echo "=== drugs ai-search (W5 full payload) ==="
+curl -sf -X POST "${BASE_URL}/api/physician/internal/drugs/ai-search" \
+  -H "Authorization: Bearer ${INTERNAL_AI_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"drugKeywords":["阿莫西林","头孢克肟","布洛芬","对乙酰氨基酚"],"genericKeywords":[],"categoryKeywords":["抗生素","解热镇痛","西药"],"indicationKeywords":["急性上呼吸道感染","咽痛","发热","上感"],"negativeKeywords":[],"limit":10}' | head -c 800
 echo ""
 
 echo "=== diseases ai-search ==="

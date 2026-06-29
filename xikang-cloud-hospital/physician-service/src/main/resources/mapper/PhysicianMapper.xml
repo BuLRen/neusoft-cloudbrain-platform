@@ -362,13 +362,18 @@
             drug_dosage AS "drugDosage",
             drug_type AS "drugType",
             drug_price AS "drugPrice",
-            mnemonic_code AS "mnemonicCode"
+            mnemonic_code AS "mnemonicCode",
+            COALESCE(stock_quantity, 0) AS "stockQuantity",
+            COALESCE(low_stock_threshold, 20) AS "lowStockThreshold"
         FROM drug_info
         <where>
+            (status IS NULL OR status = 1)
             <if test="keyword != null and keyword != ''">
+                AND (
                 drug_code ILIKE CONCAT('%', #{keyword}, '%')
                 OR drug_name ILIKE CONCAT('%', #{keyword}, '%')
                 OR mnemonic_code ILIKE CONCAT('%', #{keyword}, '%')
+                )
             </if>
         </where>
         ORDER BY drug_name
@@ -387,7 +392,9 @@
             drug_type AS "drugType",
             drug_price AS "drugPrice",
             mnemonic_code AS "mnemonicCode",
-            creation_date AS "creationDate"
+            creation_date AS "creationDate",
+            COALESCE(stock_quantity, 0) AS "stockQuantity",
+            COALESCE(low_stock_threshold, 20) AS "lowStockThreshold"
         FROM drug_info
         WHERE id = #{id}
     </select>

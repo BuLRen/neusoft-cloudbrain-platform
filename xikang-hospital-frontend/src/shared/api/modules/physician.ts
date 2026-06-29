@@ -160,6 +160,8 @@ export interface Drug {
   drugType?: string
   drugPrice: number
   mnemonicCode?: string
+  stockQuantity?: number
+  lowStockThreshold?: number
 }
 
 export interface AiExamAnalysis {

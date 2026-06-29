@@ -404,6 +404,7 @@ public class PhysicianAiPipelineService {
             rawOutput = adaptFallbackW5(fallbackEngine.runW5(buildW5FallbackInput(registerId)));
             rawOutput.put("modelId", "fallback-w5");
         }
+        sanitizeW5Suggestions(rawOutput);
         persistW5(rawOutput, registerId);
         return rawOutput;
     }
@@ -480,6 +481,10 @@ public class PhysicianAiPipelineService {
 
         List<Map<String, Object>> suggestions = listOfMaps(output.get("suggestions"));
         if (suggestions.isEmpty()) {
+            if ("success".equals(status)) {
+                output.put("status", "fallback");
+                output.put("searchAdvice", "候选药品均无可用库存，请手动搜索选药");
+            }
             return;
         }
 
@@ -489,6 +494,81 @@ public class PhysicianAiPipelineService {
         for (Map<String, Object> item : suggestions) {
             insertDrugSuggestion(registerId, item, order++, modelId);
         }
+    }
+
+    private void sanitizeW5Suggestions(Map<String, Object> output) {
+        if (output == null) {
+            return;
+        }
+        String status = String.valueOf(output.getOrDefault("status", "success")).trim().toLowerCase();
+        if ("fallback".equals(status)) {
+            return;
+        }
+
+        List<Map<String, Object>> suggestions = listOfMaps(output.get("suggestions"));
+        if (suggestions.isEmpty()) {
+            return;
+        }
+
+        List<Map<String, Object>> cleaned = new ArrayList<>();
+        for (Map<String, Object> item : suggestions) {
+            Map<String, Object> normalized = normalizeDrugSuggestionForStock(item);
+            if (normalized != null) {
+                cleaned.add(normalized);
+            }
+        }
+
+        output.put("suggestions", cleaned);
+        if (cleaned.isEmpty()) {
+            output.put("status", "fallback");
+            output.put("fallbackSuggestions", List.of());
+            output.put("searchAdvice", "候选药品均无可用库存，请手动搜索选药");
+            output.put(
+                "clinicalSummaryForDoctor",
+                String.valueOf(output.getOrDefault("clinicalSummaryForDoctor", ""))
+                    + "（系统已过滤无库存药品）"
+            );
+        }
+    }
+
+    private Map<String, Object> normalizeDrugSuggestionForStock(Map<String, Object> item) {
+        if (item == null) {
+            return null;
+        }
+        Long drugId = toLong(item.get("drugId"));
+        if (drugId == null) {
+            return null;
+        }
+
+        Map<String, Object> drug = physicianMapper.selectDrugById(drugId);
+        if (drug == null) {
+            return null;
+        }
+
+        int stock = toInt(drug.get("stockQuantity"));
+        if (stock <= 0) {
+            log.info("W5 skip drugId={} name={} due to zero stock", drugId, drug.get("drugName"));
+            return null;
+        }
+
+        Map<String, Object> normalized = new LinkedHashMap<>(item);
+        int requestedQty = toInt(item.getOrDefault("recommendQuantity", item.get("recommend_quantity")));
+        if (requestedQty < 1) {
+            requestedQty = 1;
+        }
+        normalized.put("recommendQuantity", Math.min(requestedQty, stock));
+
+        int lowStockThreshold = toInt(drug.get("lowStockThreshold"));
+        if (lowStockThreshold <= 0) {
+            lowStockThreshold = 20;
+        }
+        if (stock <= lowStockThreshold) {
+            String caution = String.valueOf(normalized.getOrDefault("cautionNotes", "")).trim();
+            String stockNote = "库存紧张（当前可用 " + stock + " "
+                + String.valueOf(drug.getOrDefault("drugUnit", "盒")) + "）";
+            normalized.put("cautionNotes", caution.isEmpty() ? stockNote : caution + "；" + stockNote);
+        }
+        return normalized;
     }
 
     private void insertDrugSuggestion(Long registerId, Map<String, Object> item, int sortOrder, String modelId) {
@@ -1206,5 +1286,19 @@ public class PhysicianAiPipelineService {
             return Long.parseLong(text);
         }
         return null;
+    }
+
+    private static int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Integer.parseInt(text.trim());
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
     }
 }
