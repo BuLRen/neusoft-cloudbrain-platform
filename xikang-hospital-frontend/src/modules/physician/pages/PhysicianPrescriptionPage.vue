@@ -91,10 +91,14 @@ async function runW5() {
   w5Loading.value = true
   try {
     w5Output.value = await physicianApi.aiW5(registerId.value)
-    if (w5Output.value?.status !== 'fallback') {
+    if (w5Output.value?.status === 'fallback') {
+      ElMessage.warning(w5Output.value.searchAdvice || '药品库未匹配到候选，请手动搜索选药')
+    } else {
       await loadSavedW5Suggestions()
+      ElMessage.success('W5 用药建议已生成')
     }
-    ElMessage.success('W5 用药建议已生成')
+  } catch {
+    w5Output.value = null
   } finally {
     w5Loading.value = false
   }
