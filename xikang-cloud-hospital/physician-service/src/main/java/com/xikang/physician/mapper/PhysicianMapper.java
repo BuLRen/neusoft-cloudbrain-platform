@@ -52,29 +52,15 @@ public interface PhysicianMapper {
 
     List<Map<String, Object>> selectDiseases(@Param("keyword") String keyword);
 
-    List<Map<String, Object>> searchDiseasesForAi(
-        @Param("diseaseKeywords") List<String> diseaseKeywords,
-        @Param("icdPrefixes") List<String> icdPrefixes,
-        @Param("categoryKeywords") List<String> categoryKeywords,
-        @Param("fetchLimit") int fetchLimit
-    );
-
-    List<Map<String, Object>> searchDiseasesByNameKeyword(
-        @Param("keyword") String keyword,
-        @Param("limit") int limit
-    );
-
-    List<Map<String, Object>> searchDiseasesByIcdPrefix(
-        @Param("prefix") String prefix,
-        @Param("limit") int limit
-    );
-
-    List<Map<String, Object>> searchDiseasesByCategoryKeyword(
-        @Param("keyword") String keyword,
-        @Param("limit") int limit
-    );
-
     List<Map<String, Object>> selectDrugs(@Param("keyword") String keyword);
+
+    long countDrugs(@Param("keyword") String keyword);
+
+    List<Map<String, Object>> selectDrugsPage(
+        @Param("keyword") String keyword,
+        @Param("offset") int offset,
+        @Param("limit") int limit
+    );
 
     Map<String, Object> selectDrugById(@Param("id") Long id);
 
@@ -135,6 +121,14 @@ public interface PhysicianMapper {
     int deleteDiagnosisSuggestionsByRegisterId(@Param("registerId") Long registerId);
 
     int insertDiagnosisSuggestion(Map<String, Object> row);
+
+    int deleteDrugSuggestionsByRegisterId(@Param("registerId") Long registerId);
+
+    int insertDrugSuggestion(Map<String, Object> row);
+
+    List<Map<String, Object>> selectDrugSuggestions(@Param("registerId") Long registerId);
+
+    int updateDrugSuggestionAdopted(@Param("id") Long id, @Param("isAdopted") int isAdopted);
 
     int insertAiMedicalRecordLog(Map<String, Object> row);
 

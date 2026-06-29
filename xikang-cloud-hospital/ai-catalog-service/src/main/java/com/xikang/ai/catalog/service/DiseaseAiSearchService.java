@@ -1,7 +1,7 @@
-package com.xikang.physician.service;
+package com.xikang.ai.catalog.service;
 
-import com.xikang.physician.dto.DiseaseAiSearchRequest;
-import com.xikang.physician.mapper.PhysicianMapper;
+import com.xikang.ai.catalog.dto.DiseaseAiSearchRequest;
+import com.xikang.ai.catalog.mapper.DiseaseCatalogMapper;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -19,7 +19,6 @@ public class DiseaseAiSearchService {
 
     private static final Pattern ICD_PREFIX = Pattern.compile("^[A-Z][0-9]{2}");
 
-    /** Short/generic symptoms that must not match disease names (e.g. 头痛 → 偏头痛). */
     private static final Set<String> AMBIGUOUS_SYMPTOM_KEYWORDS = Set.of(
         "头痛", "发热", "咳嗽", "乏力", "疼痛", "恶心", "呕吐", "晕", "痒", "红", "肿"
     );
@@ -28,10 +27,10 @@ public class DiseaseAiSearchService {
     private static final int PER_ICD_PREFIX_LIMIT = 50;
     private static final int PER_CATEGORY_KEYWORD_LIMIT = 30;
 
-    private final PhysicianMapper physicianMapper;
+    private final DiseaseCatalogMapper diseaseCatalogMapper;
 
-    public DiseaseAiSearchService(PhysicianMapper physicianMapper) {
-        this.physicianMapper = physicianMapper;
+    public DiseaseAiSearchService(DiseaseCatalogMapper diseaseCatalogMapper) {
+        this.diseaseCatalogMapper = diseaseCatalogMapper;
     }
 
     public List<Map<String, Object>> search(DiseaseAiSearchRequest request) {
@@ -52,7 +51,7 @@ public class DiseaseAiSearchService {
 
         if (rawById.size() < Math.min(limit, 20)) {
             int fetchLimit = Math.min(Math.max(limit * 3, limit), 500);
-            collectRows(rawById, physicianMapper.searchDiseasesForAi(
+            collectRows(rawById, diseaseCatalogMapper.searchDiseasesForAi(
                 primaryKeywords,
                 icdPrefixes,
                 categoryKeywords,
@@ -101,15 +100,15 @@ public class DiseaseAiSearchService {
         List<Map<String, Object>> rows = new ArrayList<>();
 
         for (String keyword : primaryKeywords) {
-            rows.addAll(physicianMapper.searchDiseasesByNameKeyword(keyword, PER_DISEASE_KEYWORD_LIMIT));
+            rows.addAll(diseaseCatalogMapper.searchDiseasesByNameKeyword(keyword, PER_DISEASE_KEYWORD_LIMIT));
         }
 
         for (String prefix : icdPrefixes) {
-            rows.addAll(physicianMapper.searchDiseasesByIcdPrefix(prefix, PER_ICD_PREFIX_LIMIT));
+            rows.addAll(diseaseCatalogMapper.searchDiseasesByIcdPrefix(prefix, PER_ICD_PREFIX_LIMIT));
         }
 
         for (String category : categoryKeywords) {
-            rows.addAll(physicianMapper.searchDiseasesByCategoryKeyword(category, PER_CATEGORY_KEYWORD_LIMIT));
+            rows.addAll(diseaseCatalogMapper.searchDiseasesByCategoryKeyword(category, PER_CATEGORY_KEYWORD_LIMIT));
         }
 
         for (String symptom : symptomKeywords) {
@@ -117,9 +116,9 @@ public class DiseaseAiSearchService {
                 continue;
             }
             if (symptom.length() >= 4) {
-                rows.addAll(physicianMapper.searchDiseasesByNameKeyword(symptom, 15));
+                rows.addAll(diseaseCatalogMapper.searchDiseasesByNameKeyword(symptom, 15));
             }
-            rows.addAll(physicianMapper.searchDiseasesByCategoryKeyword(symptom, 10));
+            rows.addAll(diseaseCatalogMapper.searchDiseasesByCategoryKeyword(symptom, 10));
         }
 
         return rows;

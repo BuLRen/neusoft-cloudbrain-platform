@@ -69,6 +69,12 @@ public class DifyWorkflowClient {
             && !properties.resolveW4ApiKey().isBlank();
     }
 
+    public boolean isW5Enabled() {
+        return properties.isDifyBaseConfigured()
+            && properties.isW5WorkflowSwitchOn()
+            && !properties.resolveW5ApiKey().isBlank();
+    }
+
     /**
      * Blocking workflow run for preliminary diagnosis (uses {@code base-url-preliminary}).
      */

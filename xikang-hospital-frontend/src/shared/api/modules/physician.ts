@@ -7,6 +7,7 @@ const W2_AI_TIMEOUT_MS = 5 * 60 * 1000
 /** Dify W3 结果解读 blocking 调用超时 */
 const W3_AI_TIMEOUT_MS = 5 * 60 * 1000
 const W4_AI_TIMEOUT_MS = 5 * 60 * 1000
+const W5_AI_TIMEOUT_MS = 5 * 60 * 1000
 import type { PageResult } from '../result'
 
 export interface AiConsultSummary {
@@ -159,6 +160,16 @@ export interface Drug {
   drugType?: string
   drugPrice: number
   mnemonicCode?: string
+  stockQuantity?: number
+  lowStockThreshold?: number
+  creationDate?: string
+}
+
+export interface DrugPageResult {
+  list: Drug[]
+  total: number
+  page: number
+  pageSize: number
 }
 
 export interface AiExamAnalysis {
@@ -299,6 +310,43 @@ export interface W4Output {
   modelId?: string
 }
 
+export interface W5Suggestion {
+  id?: number
+  drugId?: number
+  drugName?: string
+  drugCode?: string
+  recommendUsage?: string
+  recommendQuantity?: number
+  confidence?: number
+  recommendationBasis?: string
+  cautionNotes?: string
+  sortOrder?: number
+  isAdopted?: number
+  /** 查询时实时库存（不落库） */
+  stockQuantity?: number
+  drugUnit?: string
+  lowStockThreshold?: number
+}
+
+export interface W5FallbackSuggestion {
+  drugName?: string
+  recommendUsage?: string
+  recommendationBasis?: string
+  note?: string
+}
+
+export interface W5Output {
+  status?: 'success' | 'fallback'
+  registerId?: number
+  suggestions?: W5Suggestion[]
+  fallbackSuggestions?: W5FallbackSuggestion[]
+  clinicalSummaryForDoctor?: string
+  allergyWarnings?: string[]
+  searchAdvice?: string
+  workflowRunId?: string
+  modelId?: string
+}
+
 export interface PhysicianHistoricalSummary {
   totalCompletedVisits: number
   todayCompletedVisits: number
@@ -424,6 +472,26 @@ export const physicianApi = {
       timeout: W4_AI_TIMEOUT_MS,
     })
   },
+  aiW5(registerId: number) {
+    return http<W5Output>({
+      url: '/physician/ai/w5/recommend-drugs',
+      method: 'POST',
+      data: { registerId },
+      timeout: W5_AI_TIMEOUT_MS,
+    })
+  },
+  w5Suggestions(registerId: number) {
+    return http<W5Suggestion[]>({
+      url: `/physician/ai/w5/suggestions/${registerId}`,
+      method: 'GET',
+    })
+  },
+  adoptW5Suggestion(id: number) {
+    return http<void>({
+      url: `/physician/ai/w5/suggestions/${id}/adopt`,
+      method: 'PATCH',
+    })
+  },
   aiPipelineRun(data: Record<string, unknown>) {
     return http<{
       w1: StructuredRecord
@@ -453,6 +521,16 @@ export const physicianApi = {
   },
   drugs(keyword?: string) {
     return http<Drug[]>({ url: '/physician/drugs', method: 'GET', params: { keyword } })
+  },
+  drugsPage(keyword: string, page = 1, pageSize = 7) {
+    return http<DrugPageResult>({
+      url: '/physician/drugs',
+      method: 'GET',
+      params: { keyword, page, pageSize },
+    })
+  },
+  drug(id: number) {
+    return http<Drug>({ url: `/physician/drugs/${id}`, method: 'GET' })
   },
   createPrescription(data: Record<string, unknown>) {
     return http<{ prescriptionIds: number[]; totalAmount: number; confirmedDiagnosis?: string; visitState?: number }>({

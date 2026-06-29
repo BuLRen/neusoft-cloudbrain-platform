@@ -33,6 +33,7 @@
         <module>ai-consult-service</module>
         <module>ai-diagnosis-service</module>
         <module>ai-pharmacy-service</module>
+        <module>ai-catalog-service</module>
     </modules>
 
     <properties>

@@ -351,118 +351,56 @@
         LIMIT 50
     </select>
 
-    <select id="searchDiseasesForAi" resultType="map">
-        SELECT
-            id AS "id",
-            disease_code AS "diseaseCode",
-            disease_name AS "diseaseName",
-            diseaseicd AS "diseaseIcd",
-            disease_category AS "diseaseCategory"
-        FROM disease
+    <sql id="DrugSearchWhere">
         <where>
-            <trim prefix="(" suffix=")" prefixOverrides="OR">
-                <if test="diseaseKeywords != null and diseaseKeywords.size() &gt; 0">
-                    <foreach collection="diseaseKeywords" item="keyword" separator=" OR ">
-                        (
-                        disease_name ILIKE CONCAT('%', #{keyword}, '%')
-                        OR disease_code ILIKE CONCAT('%', #{keyword}, '%')
-                        OR diseaseicd ILIKE CONCAT('%', #{keyword}, '%')
-                        OR disease_category ILIKE CONCAT('%', #{keyword}, '%')
-                        )
-                    </foreach>
-                </if>
-                <if test="icdPrefixes != null and icdPrefixes.size() &gt; 0">
-                    OR
-                    <foreach collection="icdPrefixes" item="prefix" separator=" OR ">
-                        (
-                        diseaseicd ILIKE CONCAT(#{prefix}, '%')
-                        OR disease_code ILIKE CONCAT(#{prefix}, '%')
-                        )
-                    </foreach>
-                </if>
-                <if test="categoryKeywords != null and categoryKeywords.size() &gt; 0">
-                    OR
-                    <foreach collection="categoryKeywords" item="category" separator=" OR ">
-                        disease_category ILIKE CONCAT('%', #{category}, '%')
-                    </foreach>
-                </if>
-            </trim>
-        </where>
-        LIMIT #{fetchLimit}
-    </select>
-
-    <select id="searchDiseasesByNameKeyword" resultType="map">
-        SELECT
-            id AS "id",
-            disease_code AS "diseaseCode",
-            disease_name AS "diseaseName",
-            diseaseicd AS "diseaseIcd",
-            disease_category AS "diseaseCategory"
-        FROM disease
-        WHERE disease_name ILIKE CONCAT('%', #{keyword}, '%')
-           OR disease_code ILIKE CONCAT('%', #{keyword}, '%')
-           OR diseaseicd ILIKE CONCAT('%', #{keyword}, '%')
-        ORDER BY
-            CASE
-                WHEN disease_name ILIKE #{keyword} THEN 0
-                WHEN disease_name ILIKE CONCAT(#{keyword}, '%') THEN 1
-                WHEN disease_name ILIKE CONCAT('%', #{keyword}, '%') THEN 2
-                ELSE 3
-            END,
-            LENGTH(disease_name),
-            disease_name
-        LIMIT #{limit}
-    </select>
-
-    <select id="searchDiseasesByIcdPrefix" resultType="map">
-        SELECT
-            id AS "id",
-            disease_code AS "diseaseCode",
-            disease_name AS "diseaseName",
-            diseaseicd AS "diseaseIcd",
-            disease_category AS "diseaseCategory"
-        FROM disease
-        WHERE diseaseicd ILIKE CONCAT(#{prefix}, '%')
-           OR disease_code ILIKE CONCAT(#{prefix}, '%')
-        ORDER BY LENGTH(disease_name), disease_name
-        LIMIT #{limit}
-    </select>
-
-    <select id="searchDiseasesByCategoryKeyword" resultType="map">
-        SELECT
-            id AS "id",
-            disease_code AS "diseaseCode",
-            disease_name AS "diseaseName",
-            diseaseicd AS "diseaseIcd",
-            disease_category AS "diseaseCategory"
-        FROM disease
-        WHERE disease_category ILIKE CONCAT('%', #{keyword}, '%')
-        ORDER BY LENGTH(disease_name), disease_name
-        LIMIT #{limit}
-    </select>
-
-    <select id="selectDrugs" resultType="map">
-        SELECT
-            id AS "id",
-            drug_code AS "drugCode",
-            drug_name AS "drugName",
-            drug_format AS "drugFormat",
-            drug_unit AS "drugUnit",
-            manufacturer AS "manufacturer",
-            drug_dosage AS "drugDosage",
-            drug_type AS "drugType",
-            drug_price AS "drugPrice",
-            mnemonic_code AS "mnemonicCode"
-        FROM drug_info
-        <where>
+            (status IS NULL OR status = 1)
             <if test="keyword != null and keyword != ''">
+                AND (
                 drug_code ILIKE CONCAT('%', #{keyword}, '%')
                 OR drug_name ILIKE CONCAT('%', #{keyword}, '%')
                 OR mnemonic_code ILIKE CONCAT('%', #{keyword}, '%')
+                )
             </if>
         </where>
+    </sql>
+
+    <sql id="DrugSearchColumns">
+        id AS "id",
+        drug_code AS "drugCode",
+        drug_name AS "drugName",
+        drug_format AS "drugFormat",
+        drug_unit AS "drugUnit",
+        manufacturer AS "manufacturer",
+        drug_dosage AS "drugDosage",
+        drug_type AS "drugType",
+        drug_price AS "drugPrice",
+        mnemonic_code AS "mnemonicCode",
+        COALESCE(stock_quantity, 0) AS "stockQuantity",
+        COALESCE(low_stock_threshold, 20) AS "lowStockThreshold"
+    </sql>
+
+    <select id="selectDrugs" resultType="map">
+        SELECT
+            <include refid="DrugSearchColumns"/>
+        FROM drug_info
+        <include refid="DrugSearchWhere"/>
         ORDER BY drug_name
         LIMIT 50
+    </select>
+
+    <select id="countDrugs" resultType="long">
+        SELECT COUNT(*)
+        FROM drug_info
+        <include refid="DrugSearchWhere"/>
+    </select>
+
+    <select id="selectDrugsPage" resultType="map">
+        SELECT
+            <include refid="DrugSearchColumns"/>
+        FROM drug_info
+        <include refid="DrugSearchWhere"/>
+        ORDER BY drug_name
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="selectDrugById" resultType="map">
@@ -477,14 +415,16 @@
             drug_type AS "drugType",
             drug_price AS "drugPrice",
             mnemonic_code AS "mnemonicCode",
-            creation_date AS "creationDate"
+            creation_date AS "creationDate",
+            COALESCE(stock_quantity, 0) AS "stockQuantity",
+            COALESCE(low_stock_threshold, 20) AS "lowStockThreshold"
         FROM drug_info
         WHERE id = #{id}
     </select>
 
     <insert id="insertPrescription" parameterType="map" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO prescription (register_id, drug_id, drug_usage, drug_number)
-        VALUES (#{registerId}, #{drugId}, #{drugUsage}, #{drugNumber})
+        INSERT INTO prescription (register_id, drug_id, drug_usage, drug_number, diagnosis)
+        VALUES (#{registerId}, #{drugId}, #{drugUsage}, #{drugNumber}, #{diagnosis})
     </insert>
 
     <select id="selectPrescriptions" resultType="map">
@@ -722,6 +662,46 @@
             #{riskLevel}, #{treatmentDirection}, #{diagnosisBasis}, #{sortOrder}, #{modelId}
         )
     </insert>
+
+    <delete id="deleteDrugSuggestionsByRegisterId">
+        DELETE FROM ai_drug_suggestion WHERE register_id = #{registerId}
+    </delete>
+
+    <insert id="insertDrugSuggestion" parameterType="map">
+        INSERT INTO ai_drug_suggestion (
+            register_id, drug_id, drug_name, recommend_usage, recommend_quantity,
+            confidence, recommendation_basis, caution_notes, sort_order, model_id
+        ) VALUES (
+            #{registerId}, #{drugId}, #{drugName}, #{recommendUsage}, #{recommendQuantity},
+            #{confidence}, #{recommendationBasis}, #{cautionNotes}, #{sortOrder}, #{modelId}
+        )
+    </insert>
+
+    <select id="selectDrugSuggestions" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            drug_id AS "drugId",
+            drug_name AS "drugName",
+            recommend_usage AS "recommendUsage",
+            recommend_quantity AS "recommendQuantity",
+            confidence AS "confidence",
+            recommendation_basis AS "recommendationBasis",
+            caution_notes AS "cautionNotes",
+            is_adopted AS "isAdopted",
+            sort_order AS "sortOrder",
+            model_id AS "modelId",
+            creation_time AS "creationTime"
+        FROM ai_drug_suggestion
+        WHERE register_id = #{registerId}
+        ORDER BY sort_order ASC, confidence DESC NULLS LAST
+    </select>
+
+    <update id="updateDrugSuggestionAdopted">
+        UPDATE ai_drug_suggestion
+        SET is_adopted = #{isAdopted}
+        WHERE id = #{id}
+    </update>
 
     <insert id="insertAiMedicalRecordLog" parameterType="map">
         INSERT INTO ai_medical_record_log (

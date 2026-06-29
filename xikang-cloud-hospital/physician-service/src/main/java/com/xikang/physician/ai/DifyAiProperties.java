@@ -18,6 +18,7 @@ public class DifyAiProperties {
     private String workflowW2b = "";
     private String workflowW3 = "";
     private String workflowW4 = "";
+    private String workflowW5 = "";
     private String workflowPreliminary = "";
     /** 初步诊断 Workflow App 的 API Key（app-xxx）；为空时回退 api-key */
     private String apiKeyPreliminary = "";
@@ -27,6 +28,8 @@ public class DifyAiProperties {
     private String apiKeyW3 = "";
     /** W4 门诊确诊 Workflow App 的 API Key（app-xxx）；为空时不启用 W4 Dify */
     private String apiKeyW4 = "";
+    /** W5 智能荐药 Workflow App 的 API Key（app-xxx）；为空时不启用 W5 Dify */
+    private String apiKeyW5 = "";
     private String ctInferenceUrl = "";
     /** Dify blocking 工作流读取超时（毫秒），慢模型建议 300000（5 分钟） */
     private int readTimeoutMs = 300_000;
@@ -107,6 +110,14 @@ public class DifyAiProperties {
         this.workflowW4 = workflowW4;
     }
 
+    public String getWorkflowW5() {
+        return workflowW5;
+    }
+
+    public void setWorkflowW5(String workflowW5) {
+        this.workflowW5 = workflowW5;
+    }
+
     public String getWorkflowPreliminary() {
         return workflowPreliminary;
     }
@@ -147,6 +158,14 @@ public class DifyAiProperties {
         this.apiKeyW4 = apiKeyW4;
     }
 
+    public String getApiKeyW5() {
+        return apiKeyW5;
+    }
+
+    public void setApiKeyW5(String apiKeyW5) {
+        this.apiKeyW5 = apiKeyW5;
+    }
+
     public W2OutputKeys getW2OutputKeys() {
         return w2OutputKeys;
     }
@@ -181,6 +200,13 @@ public class DifyAiProperties {
      */
     public boolean isW4WorkflowSwitchOn() {
         return isWorkflowSwitchOn(workflowW4);
+    }
+
+    /**
+     * W5 开关：仅 {@code true}/{@code 1}/{@code yes}/{@code on} 视为启用。
+     */
+    public boolean isW5WorkflowSwitchOn() {
+        return isWorkflowSwitchOn(workflowW5);
     }
 
     private static boolean isWorkflowSwitchOn(String flag) {
@@ -230,6 +256,11 @@ public class DifyAiProperties {
     /** W4 专用 Key，不回退通用 api-key，避免误调其它 Workflow App。 */
     public String resolveW4ApiKey() {
         return apiKeyW4 == null ? "" : apiKeyW4.trim();
+    }
+
+    /** W5 专用 Key，不回退通用 api-key。 */
+    public String resolveW5ApiKey() {
+        return apiKeyW5 == null ? "" : apiKeyW5.trim();
     }
 
     public String getCtInferenceUrl() {

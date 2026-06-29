@@ -85,6 +85,7 @@ xikang-cloud-hospital/                    # 父工程 (pom)
 │       ├── application.yml
 │       └── mapper/                       # MyBatis XML
 │
+├── ai-catalog-service/                 # Dify 目录检索 (:8098，云侧)
 ├── physician-service/                    # 门诊医生服务 (:8092)
 │   ├── pom.xml
 │   └── src/main/java/com/xikang/physician/
@@ -237,6 +238,7 @@ xikang-cloud-hospital/                    # 父工程 (pom)
 | `ai-consult-service` | 8102 | AI 问诊 | 预问诊对话、问诊摘要、病历草稿生成 |
 | `ai-diagnosis-service` | 8103 | AI 诊断 | 辅助诊断(疾病+ICD)、检查结果分析 |
 | `ai-pharmacy-service` | 8104 | AI 药学 | 处方审核(药物冲突/过敏)、用药随访计划 |
+| `ai-catalog-service` | 8098 | Dify 目录检索 | W4/W5 HTTP 节点：疾病库 + 药品库只读检索（**云侧与 Dify 同机部署**） |
 
 ---
 
@@ -347,6 +349,7 @@ public class XxxEntity {
 | 8092 | physician-service |
 | 8093 | medtech-service |
 | 8094 | pharmacy-service |
+| 8098 | ai-catalog-service（Dify HTTP 回调，云侧） |
 | 8100 | ai-gateway-service |
 | 8101 | ai-triage-service |
 | 8102 | ai-consult-service |

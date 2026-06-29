@@ -139,6 +139,42 @@ public class PhysicianAiController {
         }
     }
 
+    @PostMapping("/w5/recommend-drugs")
+    public Result<Map<String, Object>> runW5(@RequestBody Map<String, Object> request) {
+        try {
+            Long registerId = toLong(request.get("registerId"));
+            if (registerId == null) {
+                return Result.error("registerId 不能为空");
+            }
+            return Result.success("W5 智能荐药完成", pipelineService.runW5(registerId));
+        } catch (IllegalArgumentException ex) {
+            return Result.error(ex.getMessage());
+        } catch (DifyWorkflowException ex) {
+            if (ex.isPaused()) {
+                return Result.error("AI 工作流需人工介入，当前系统暂不支持，请稍后重试");
+            }
+            String detail = ex.getMessage();
+            if (detail != null && !detail.isBlank() && !detail.contains("请稍后重试")) {
+                return Result.error("AI 智能荐药失败：" + detail);
+            }
+            return Result.error("AI 智能荐药失败，请稍后重试");
+        }
+    }
+
+    @GetMapping("/w5/suggestions/{registerId}")
+    public Result<List<Map<String, Object>>> getW5Suggestions(@PathVariable Long registerId) {
+        if (registerId == null) {
+            return Result.error("registerId 不能为空");
+        }
+        return Result.success(pipelineService.getDrugSuggestions(registerId));
+    }
+
+    @PatchMapping("/w5/suggestions/{id}/adopt")
+    public Result<Void> adoptW5Suggestion(@PathVariable Long id) {
+        pipelineService.markDrugSuggestionAdopted(id);
+        return Result.success("已标记采纳", null);
+    }
+
     @PostMapping("/pipeline/run")
     public Result<Map<String, Object>> runPipeline(@RequestBody Map<String, Object> request) {
         return Result.success("AI 流水线执行完成", pipelineService.runFullPipeline(request));
