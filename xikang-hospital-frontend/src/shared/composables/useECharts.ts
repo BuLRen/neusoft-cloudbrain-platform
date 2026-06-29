@@ -89,6 +89,107 @@ export function buildTrendOption(params: {
   }
 }
 
+export function buildGlucoseTrendOption(params: {
+  title: string
+  actualDates: string[]
+  actualValues: number[]
+  forecastDates?: string[]
+  forecastValues?: number[]
+  unit?: string
+  color?: string
+}): echarts.EChartsOption {
+  const color = params.color ?? '#1f8cff'
+  const dates = [...params.actualDates]
+  const actualData: (number | null)[] = [...params.actualValues]
+
+  const forecastDates = params.forecastDates ?? []
+  const forecastValues = params.forecastValues ?? []
+  const forecastData: (number | null)[] = []
+
+  if (forecastDates.length) {
+    const lastActual = params.actualValues.at(-1)
+    for (const date of forecastDates) {
+      if (!dates.includes(date)) {
+        dates.push(date)
+        actualData.push(null)
+        forecastData.push(null)
+      }
+    }
+    const sorted = dates
+      .map((date, index) => ({ date, actual: actualData[index] ?? null, index }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+
+    const rebuiltActual: (number | null)[] = sorted.map((item) => item.actual)
+    const rebuiltForecast: (number | null)[] = new Array(sorted.length).fill(null)
+
+    const lastActualIndex = sorted.findLastIndex((item) => item.actual != null)
+    if (lastActualIndex >= 0 && lastActual != null) {
+      rebuiltForecast[lastActualIndex] = lastActual
+    }
+
+    forecastDates.forEach((date, idx) => {
+      const pos = sorted.findIndex((item) => item.date === date)
+      if (pos >= 0) {
+        rebuiltForecast[pos] = forecastValues[idx] ?? null
+      }
+    })
+
+    return {
+      title: {
+        text: params.title,
+        left: 0,
+        textStyle: { fontSize: 14, fontWeight: 600, color: '#102033' },
+      },
+      tooltip: {
+        trigger: 'axis',
+        valueFormatter: (value) => `${value ?? '—'}${params.unit ? ` ${params.unit}` : ''}`,
+      },
+      legend: { bottom: 0, data: ['实测', '预测'], textStyle: { color: '#5f7288' } },
+      grid: { left: 40, right: 16, top: 48, bottom: 48 },
+      xAxis: { type: 'category', data: sorted.map((item) => item.date), axisLabel: { color: '#5f7288' } },
+      yAxis: {
+        type: 'value',
+        axisLabel: { color: '#5f7288' },
+        splitLine: { lineStyle: { color: 'rgba(70, 111, 160, 0.12)' } },
+      },
+      series: [
+        {
+          name: '实测',
+          type: 'line',
+          smooth: true,
+          data: rebuiltActual,
+          itemStyle: { color },
+          areaStyle: { color: 'rgba(31, 140, 255, 0.12)' },
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            lineStyle: { type: 'dashed', color: '#ef4d5a', opacity: 0.45 },
+            data: [{ yAxis: 3.9 }, { yAxis: 10.0 }],
+          },
+        },
+        {
+          name: '预测',
+          type: 'line',
+          smooth: true,
+          connectNulls: true,
+          data: rebuiltForecast,
+          itemStyle: { color: '#f59f00' },
+          lineStyle: { type: 'dashed', width: 2 },
+        },
+      ],
+    }
+  }
+
+  return buildTrendOption({
+    title: params.title,
+    dates: params.actualDates,
+    values: params.actualValues,
+    unit: params.unit,
+    chartType: 'line',
+    color,
+  })
+}
+
 export function buildReliefTrendOption(
   records: { followUpTime?: string; symptomRelief?: string; patientFeedback?: string }[],
   formatTime: (value?: string | null) => string,

@@ -22,6 +22,9 @@ export const METRIC_LABELS: Record<string, string> = {
   blood_pressure_systolic: '收缩压',
   blood_pressure_diastolic: '舒张压',
   blood_glucose: '血糖',
+  insulin_total: '胰岛素',
+  meal_flag: '进餐',
+  exercise_flag: '运动',
   heart_rate: '心率',
   body_weight: '体重',
 }
@@ -82,6 +85,17 @@ export const OUTCOME_CHART_PROFILES: Record<string, OutcomeChartProfile> = {
       { key: 'blood_pressure_systolic', label: '收缩压', chart: 'line', unit: 'mmHg' },
       { key: 'blood_pressure_diastolic', label: '舒张压', chart: 'line', unit: 'mmHg' },
       { key: 'blood_glucose', label: '血糖', chart: 'line', unit: 'mmol/L' },
+      { key: 'heart_rate', label: '心率', chart: 'line', unit: '次/分' },
+      { key: 'body_weight', label: '体重', chart: 'line', unit: 'kg' },
+    ],
+  },
+  代谢内分泌疾病: {
+    primary: [
+      { key: 'blood_glucose', label: '血糖', chart: 'line', unit: 'mmol/L' },
+    ],
+    secondary: [
+      { key: 'insulin_total', label: '胰岛素', chart: 'line', unit: 'U' },
+      { key: 'blood_pressure_systolic', label: '收缩压', chart: 'line', unit: 'mmHg' },
       { key: 'heart_rate', label: '心率', chart: 'line', unit: '次/分' },
       { key: 'body_weight', label: '体重', chart: 'line', unit: 'kg' },
     ],

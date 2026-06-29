@@ -48,4 +48,12 @@ public class FollowUpPatientPortalController {
     public Result<Map<String, Object>> submitFeedback(@RequestBody Map<String, Object> request) {
         return Result.success("反馈已提交", patientPortalService.submitFeedback(request));
     }
+
+    @GetMapping("/glucose-forecast")
+    public Result<Map<String, Object>> glucoseForecast(
+        @RequestParam(required = false) Long patientId,
+        @RequestParam(required = false) Long registerId
+    ) {
+        return Result.success(patientPortalService.getGlucoseForecast(patientId, registerId));
+    }
 }

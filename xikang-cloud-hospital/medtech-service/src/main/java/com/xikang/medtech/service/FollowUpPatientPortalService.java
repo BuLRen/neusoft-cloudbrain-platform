@@ -17,6 +17,7 @@ import java.util.Map;
 public class FollowUpPatientPortalService {
 
     private final FollowUpPatientMapper followUpPatientMapper;
+    private final GlucoseForecastService glucoseForecastService;
 
     public List<Map<String, Object>> listPlans(Long patientId, List<Long> registerIds) {
         List<Long> ids = resolveRegisterIds(patientId, registerIds);
@@ -99,6 +100,20 @@ public class FollowUpPatientPortalService {
         result.put("symptomRelief", relief);
         result.put("patientFeedback", combined);
         return result;
+    }
+
+    public Map<String, Object> getGlucoseForecast(Long patientId, Long registerId) {
+        Long targetRegisterId = registerId;
+        if (targetRegisterId == null && patientId != null) {
+            List<Long> ids = followUpPatientMapper.selectRegisterIdsByPatientId(patientId);
+            if (!ids.isEmpty()) {
+                targetRegisterId = ids.get(0);
+            }
+        }
+        if (targetRegisterId == null) {
+            throw new BusinessException("无法确定就诊记录");
+        }
+        return glucoseForecastService.getForecast(targetRegisterId, null, null);
     }
 
     private List<Long> resolveRegisterIds(Long patientId, List<Long> registerIds) {

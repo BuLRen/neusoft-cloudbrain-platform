@@ -26,6 +26,7 @@ import type {
   PatientFollowUpRecordItem,
   PatientMedicationItem,
 } from '@/shared/types/medtechFollowUp'
+import type { GlucoseForecastResult } from '@/shared/types/glucoseForecast'
 
 const outcomeBase = '/medtech/follow-up/outcome'
 const dashboardBase = '/medtech/follow-up/dashboard'
@@ -314,6 +315,36 @@ export const medtechFollowUpApi = {
       url: `${patientPortalBase}/feedback`,
       method: 'POST',
       data: payload,
+    })
+  },
+
+  isGlucoseCohort(registerId: number) {
+    return http<{ registerId: number; glucoseCohort: boolean }>({
+      url: `${outcomeBase}/glucose-cohort/${registerId}`,
+      method: 'GET',
+    })
+  },
+
+  getGlucoseForecast(registerId: number, params?: { from?: string; to?: string }) {
+    return http<GlucoseForecastResult>({
+      url: `${outcomeBase}/forecast/${registerId}`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  refreshGlucoseForecast(registerId: number) {
+    return http<GlucoseForecastResult>({
+      url: `${outcomeBase}/forecast/${registerId}/refresh`,
+      method: 'POST',
+    })
+  },
+
+  getPatientGlucoseForecast(params: { patientId?: number; registerId?: number }) {
+    return http<GlucoseForecastResult>({
+      url: `${patientPortalBase}/glucose-forecast`,
+      method: 'GET',
+      params,
     })
   },
 }
