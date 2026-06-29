@@ -290,7 +290,10 @@ function transactionTitle(tx: PatientBalanceTransaction): string {
 function describeBusiness(businessType: string): string {
   if (businessType === 'REGISTRATION') return '挂号费'
   if (businessType === 'RECHARGE') return '账户充值'
-  return businessType
+  if (businessType === 'PHARMACY') return '药品费'
+  if (businessType === 'MEDTECH') return '检查检验费'
+  if (businessType === 'PRESCRIPTION') return '处方费'
+  return '就诊相关费用'
 }
 
 function transactionStatusName(type: BalanceTransactionType): string {
@@ -747,7 +750,7 @@ onMounted(() => {
             <div class="transaction-meta">
               <span>{{ formatTransactionTime(item.time) }}</span>
               <span>流水号 {{ item.raw.transactionNo }}</span>
-              <span v-if="item.raw.businessId">业务 #{{ item.raw.businessType }}:{{ item.raw.businessId }}</span>
+              <span v-if="item.raw.businessId">用途：{{ describeBusiness(item.raw.businessType || '') }}</span>
             </div>
           </div>
           <div class="transaction-amount" :class="{ income: item.direction === 'in', expense: item.direction === 'out' }">

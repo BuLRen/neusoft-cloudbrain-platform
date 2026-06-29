@@ -114,7 +114,7 @@ function startMediaRecorder() {
     }
   }).catch(err => {
     console.error('[Voice] 录音失败:', err)
-    ElMessage.error('录音启动失败: ' + (err as Error).message)
+    ElMessage.error('录音启动失败，请检查麦克风权限或使用文字输入')
     isRecording.value = false
   })
 }
@@ -194,7 +194,7 @@ async function sendForRecognition(pcmData: Int16Array) {
     }
   } catch (err: any) {
     console.error('[Voice] 识别请求失败:', err)
-    ElMessage.error('识别请求失败: ' + (err.message || '网络错误'))
+    ElMessage.error('语音识别失败，请检查网络或改用文字输入')
   } finally {
     voiceLoading.value = false
   }
@@ -843,7 +843,7 @@ async function loadAvailableSchedules() {
   selectedLevel.value = null
   availableSchedules.value = []
   if (!departmentId) {
-    ElMessage.warning('AI 导诊未返回科室ID，暂时无法加载排班')
+    ElMessage.warning('暂时无法加载排班，请稍后重试或返回导诊重新选择科室')
     return
   }
   scheduleLoading.value = true
