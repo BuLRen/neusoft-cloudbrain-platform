@@ -229,7 +229,12 @@ async function rechargePatient(patient: PatientInfo) {
     patient.accountBalance = newBalance
     authStore.setPatientBalance(patient.id, newBalance)
     ElMessage.success(result.message || '充值成功')
-    await loadTransactions()
+    // 充值后刷新该就诊人的流水；若不是当前就诊人，提示用户切换查看
+    if (currentPatient.value && patient.id === currentPatient.value.id) {
+      await loadTransactions()
+    } else {
+      ElMessage.info(`已为 ${patient.realName} 充值，切换到该就诊人可查看流水`)
+    }
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('充值失败')
@@ -237,11 +242,13 @@ async function rechargePatient(patient: PatientInfo) {
   }
 }
 
-async function loadTransactions() {
-  if (!currentPatient.value) return
+async function loadTransactions(patientId?: number) {
+  // 默认刷当前就诊人；传入 patientId 则刷指定就诊人（用于给家人充值后立即看到该家人流水）
+  const targetId = patientId ?? currentPatient.value?.id
+  if (!targetId) return
   transactionsLoading.value = true
   try {
-    const records = await patientApi.getBalanceTransactions(currentPatient.value.id)
+    const records = await patientApi.getBalanceTransactions(targetId)
     transactions.value = (records || []).map(toTransactionFromLedger)
   } catch (err) {
     console.error('加载交易记录失败:', err)
@@ -283,7 +290,10 @@ function transactionTitle(tx: PatientBalanceTransaction): string {
 function describeBusiness(businessType: string): string {
   if (businessType === 'REGISTRATION') return '挂号费'
   if (businessType === 'RECHARGE') return '账户充值'
-  return businessType
+  if (businessType === 'PHARMACY') return '药品费'
+  if (businessType === 'MEDTECH') return '检查检验费'
+  if (businessType === 'PRESCRIPTION') return '处方费'
+  return '就诊相关费用'
 }
 
 function transactionStatusName(type: BalanceTransactionType): string {
@@ -683,7 +693,7 @@ onMounted(() => {
           <span>交易记录</span>
         </div>
         <div class="header-actions">
-          <button class="btn-outline btn-sm" @click="loadTransactions" :disabled="transactionsLoading">
+          <button class="btn-outline btn-sm" @click="loadTransactions()" :disabled="transactionsLoading">
             {{ transactionsLoading ? '刷新中...' : '刷新' }}
           </button>
         </div>
@@ -740,7 +750,7 @@ onMounted(() => {
             <div class="transaction-meta">
               <span>{{ formatTransactionTime(item.time) }}</span>
               <span>流水号 {{ item.raw.transactionNo }}</span>
-              <span v-if="item.raw.businessId">业务 #{{ item.raw.businessType }}:{{ item.raw.businessId }}</span>
+              <span v-if="item.raw.businessId">用途：{{ describeBusiness(item.raw.businessType || '') }}</span>
             </div>
           </div>
           <div class="transaction-amount" :class="{ income: item.direction === 'in', expense: item.direction === 'out' }">
@@ -771,7 +781,6 @@ onMounted(() => {
             <span class="security-label">手机号</span>
             <span class="security-value sensitive">{{ maskPhone(currentPatient?.phone || '') }}</span>
           </div>
-          <button class="btn-outline">更换</button>
         </div>
         <div class="security-item">
           <div class="security-info">

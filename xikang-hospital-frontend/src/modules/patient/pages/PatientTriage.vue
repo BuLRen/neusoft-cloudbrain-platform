@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import { useAuthStore } from '@/app/stores/auth'
 
+const router = useRouter()
 const authStore = useAuthStore()
 const triageLoading = ref(false)
 const triageSymptoms = ref('')
@@ -113,7 +115,21 @@ onUnmounted(() => {
 })
 
 function goToRegistration() {
-  window.location.href = '/patient/registration'
+  if (!triageResult.value?.recommendedDepartmentId) {
+    ElMessage.warning('请先完成 AI 导诊')
+    return
+  }
+  const query: Record<string, string> = {
+    departmentId: String(triageResult.value.recommendedDepartmentId),
+    departmentName: triageResult.value.recommendedDepartment || '所选科室',
+  }
+  if (triageResult.value.recommendedRegistLevelId) {
+    query.registLevelId = String(triageResult.value.recommendedRegistLevelId)
+  }
+  if (triageResult.value.recommendedDoctors?.[0]?.id) {
+    query.doctorId = String(triageResult.value.recommendedDoctors[0].id)
+  }
+  router.push({ path: '/patient/registration', query })
 }
 
 function riskTone(level?: string) {

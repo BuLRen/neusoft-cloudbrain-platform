@@ -50,7 +50,7 @@ function updateLastMessage(chunk: string) {
 
 async function startSession() {
   if (!registerId.value) {
-    ElMessage.warning('缺少挂号ID参数')
+    ElMessage.warning('未找到对应的挂号记录，请从挂号列表进入预问诊')
     return
   }
   // 先把上一轮未结束的请求中断，避免 emitter 残留
@@ -195,7 +195,7 @@ async function handleExit() {
   if (window.history.length > 1) {
     router.back()
   } else {
-    router.push({ name: 'PatientWorkspace' })
+    router.push({ name: 'PatientOverview' })
   }
 }
 
