@@ -255,6 +255,20 @@ public class PhysicianService {
         return physicianMapper.selectDrugs(keyword);
     }
 
+    public Map<String, Object> getDrugsPage(String keyword, Integer page, Integer pageSize) {
+        int safePage = page == null || page < 1 ? 1 : page;
+        int safeSize = pageSize == null || pageSize < 1 ? 10 : Math.min(pageSize, 50);
+        int offset = (safePage - 1) * safeSize;
+        long total = physicianMapper.countDrugs(keyword);
+        List<Map<String, Object>> list = physicianMapper.selectDrugsPage(keyword, offset, safeSize);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("list", list);
+        result.put("total", total);
+        result.put("page", safePage);
+        result.put("pageSize", safeSize);
+        return result;
+    }
+
     public Map<String, Object> getDrug(Long id) {
         return physicianMapper.selectDrugById(id);
     }

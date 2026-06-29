@@ -162,6 +162,14 @@ export interface Drug {
   mnemonicCode?: string
   stockQuantity?: number
   lowStockThreshold?: number
+  creationDate?: string
+}
+
+export interface DrugPageResult {
+  list: Drug[]
+  total: number
+  page: number
+  pageSize: number
 }
 
 export interface AiExamAnalysis {
@@ -513,6 +521,13 @@ export const physicianApi = {
   },
   drugs(keyword?: string) {
     return http<Drug[]>({ url: '/physician/drugs', method: 'GET', params: { keyword } })
+  },
+  drugsPage(keyword: string, page = 1, pageSize = 7) {
+    return http<DrugPageResult>({
+      url: '/physician/drugs',
+      method: 'GET',
+      params: { keyword, page, pageSize },
+    })
   },
   drug(id: number) {
     return http<Drug>({ url: `/physician/drugs/${id}`, method: 'GET' })

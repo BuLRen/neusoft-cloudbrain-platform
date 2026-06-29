@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElAlert, ElButton, ElEmpty, ElIcon, ElTag, ElTooltip } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import {
+  CircleCheck,
+  Document,
+  QuestionFilled,
+  ShoppingCart,
+  WarningFilled,
+} from '@element-plus/icons-vue'
 import { physicianApi, type W5Output, type W5Suggestion } from '@/shared/api/modules/physician'
 import {
   displayDrugName,
@@ -47,6 +53,8 @@ const displaySuggestions = computed(() => {
 const showFallback = computed(() => props.liveOutput?.status === 'fallback')
 
 const fallbackItems = computed(() => props.liveOutput?.fallbackSuggestions ?? [])
+
+const showGeneratedBadge = computed(() => hasContent.value && status.value !== 'fallback')
 
 function resolveStock(item: W5Suggestion): LiveStockInfo | undefined {
   if (item.drugId == null) return undefined
@@ -122,15 +130,19 @@ watch(
 <template>
   <section class="w5-panel">
     <div class="w5-panel__head">
-      <div>
+      <div class="w5-panel__title-wrap">
         <div class="w5-panel__title-row">
-          <h3 class="w5-panel__title">AI 用药推荐</h3>
+          <h4 class="w5-panel__title">AI 用药推荐</h4>
           <ElTooltip content="根据确诊病名与病历上下文推荐药品，供医生采纳后加入处方篮。库存为查询时实时数据。" placement="top">
             <ElIcon class="w5-panel__help" aria-label="说明"><QuestionFilled /></ElIcon>
           </ElTooltip>
         </div>
         <p class="w5-panel__subtitle">{{ w5StatusLabel(liveOutput?.status) }}</p>
       </div>
+      <span v-if="showGeneratedBadge" class="w5-panel__status">
+        <ElIcon><CircleCheck /></ElIcon>
+        推荐建议已生成
+      </span>
     </div>
 
     <ElEmpty v-if="!hasContent" description="暂无 W5 输出，可运行 W5 获取用药建议。" />
@@ -147,7 +159,10 @@ watch(
       />
 
       <div v-if="liveOutput?.clinicalSummaryForDoctor" class="w5-panel__summary">
-        <strong>用药摘要</strong>
+        <div class="w5-panel__summary-head">
+          <ElIcon class="w5-panel__summary-icon" aria-hidden="true"><Document /></ElIcon>
+          <strong>用药摘要</strong>
+        </div>
         <p>{{ liveOutput.clinicalSummaryForDoctor }}</p>
       </div>
 
@@ -168,8 +183,8 @@ watch(
         class="w5-card"
       >
         <div class="w5-card__head">
-          <div>
-            <h4 class="w5-card__name">{{ displayDrugName(item) }}</h4>
+          <div class="w5-card__identity">
+            <h5 class="w5-card__name">{{ displayDrugName(item) }}</h5>
             <p v-if="item.drugCode" class="w5-card__meta">{{ item.drugCode }}</p>
           </div>
           <div class="w5-card__tags">
@@ -177,6 +192,7 @@ watch(
               v-if="resolveStock(item) && isW5OutOfStock(resolveStock(item)!.stockQuantity)"
               type="danger"
               size="small"
+              effect="light"
             >
               缺货
             </ElTag>
@@ -184,39 +200,57 @@ watch(
               v-else-if="resolveStock(item) && isW5LowStock(resolveStock(item)!.stockQuantity, resolveStock(item)!.lowStockThreshold)"
               type="warning"
               size="small"
+              effect="light"
             >
               低库存
             </ElTag>
-            <ElTag v-if="item.confidence != null" type="success" size="small">
+            <ElTag v-if="item.confidence != null" class="w5-card__confidence" size="small" effect="light">
               置信度 {{ formatW5Confidence(item.confidence) }}
             </ElTag>
           </div>
         </div>
-        <p class="w5-card__line w5-card__stock" :class="{ 'is-loading': stockLoading && !resolveStock(item) }">
-          <strong>可用库存：</strong>{{ stockLabel(item) }}
+
+        <dl class="w5-card__details">
+          <div class="w5-card__detail" :class="{ 'is-loading': stockLoading && !resolveStock(item) }">
+            <dt>可用库存</dt>
+            <dd>{{ stockLabel(item) }}</dd>
+          </div>
+          <div v-if="item.recommendUsage" class="w5-card__detail">
+            <dt>用法</dt>
+            <dd>{{ item.recommendUsage }}</dd>
+          </div>
+          <div v-if="item.recommendQuantity" class="w5-card__detail">
+            <dt>数量</dt>
+            <dd>{{ item.recommendQuantity }}</dd>
+          </div>
+          <div v-if="item.recommendationBasis" class="w5-card__detail">
+            <dt>理由</dt>
+            <dd>{{ item.recommendationBasis }}</dd>
+          </div>
+        </dl>
+
+        <p v-if="item.cautionNotes" class="w5-card__caution">
+          <ElIcon aria-hidden="true"><WarningFilled /></ElIcon>
+          <span>{{ item.cautionNotes }}</span>
         </p>
-        <p v-if="item.recommendUsage" class="w5-card__line"><strong>用法：</strong>{{ item.recommendUsage }}</p>
-        <p v-if="item.recommendQuantity" class="w5-card__line"><strong>数量：</strong>{{ item.recommendQuantity }}</p>
-        <p v-if="item.recommendationBasis" class="w5-card__line"><strong>理由：</strong>{{ item.recommendationBasis }}</p>
-        <p v-if="item.cautionNotes" class="w5-card__caution">{{ item.cautionNotes }}</p>
+
         <div class="w5-card__actions">
           <ElTooltip
             v-if="resolveStock(item) && isW5OutOfStock(resolveStock(item)!.stockQuantity)"
             content="当前无库存，无法采纳"
             placement="top"
           >
-            <ElButton type="primary" size="small" disabled>
-              缺货
-            </ElButton>
+            <ElButton class="w5-card__adopt" type="primary" disabled>缺货</ElButton>
           </ElTooltip>
           <ElButton
             v-else
+            class="w5-card__adopt"
             type="primary"
-            size="small"
             :disabled="!canAdopt(item)"
             :loading="stockLoading && !resolveStock(item)"
             @click="emit('adopt', item)"
           >
+            <ElIcon><ShoppingCart /></ElIcon>
             采纳到处方篮
           </ElButton>
         </div>
@@ -227,10 +261,21 @@ watch(
         :key="`w5-fb-${index}`"
         class="w5-card w5-card--fallback"
       >
-        <h4 class="w5-card__name">{{ displayDrugName(item) }}</h4>
-        <p v-if="item.recommendUsage" class="w5-card__line"><strong>用法：</strong>{{ item.recommendUsage }}</p>
-        <p v-if="item.recommendationBasis" class="w5-card__line"><strong>理由：</strong>{{ item.recommendationBasis }}</p>
-        <p v-if="item.note" class="w5-card__caution">{{ item.note }}</p>
+        <h5 class="w5-card__name">{{ displayDrugName(item) }}</h5>
+        <dl class="w5-card__details">
+          <div v-if="item.recommendUsage" class="w5-card__detail">
+            <dt>用法</dt>
+            <dd>{{ item.recommendUsage }}</dd>
+          </div>
+          <div v-if="item.recommendationBasis" class="w5-card__detail">
+            <dt>理由</dt>
+            <dd>{{ item.recommendationBasis }}</dd>
+          </div>
+        </dl>
+        <p v-if="item.note" class="w5-card__caution">
+          <ElIcon aria-hidden="true"><WarningFilled /></ElIcon>
+          <span>{{ item.note }}</span>
+        </p>
       </article>
     </template>
   </section>
@@ -240,13 +285,20 @@ watch(
 .w5-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--color-border);
 }
 
 .w5-panel__head {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.w5-panel__title-wrap {
+  min-width: 0;
 }
 
 .w5-panel__title-row {
@@ -257,28 +309,59 @@ watch(
 
 .w5-panel__title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .w5-panel__subtitle {
   margin: var(--space-1) 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.875rem;
+  color: var(--color-text-soft);
+  font-size: 12px;
 }
 
 .w5-panel__help {
-  color: var(--color-text-muted);
+  color: var(--color-text-soft);
   cursor: help;
 }
 
+.w5-panel__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--color-success);
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(32, 180, 134, 0.1);
+}
+
 .w5-panel__summary {
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-muted, #f5f7fa);
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: rgba(31, 140, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(31, 140, 255, 0.12);
+}
+
+.w5-panel__summary-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-2);
+  color: var(--color-primary-strong);
+  font-size: 13px;
+}
+
+.w5-panel__summary-icon {
+  font-size: 16px;
 }
 
 .w5-panel__summary p {
-  margin: var(--space-1) 0 0;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .w5-panel__warnings,
@@ -287,9 +370,9 @@ watch(
 }
 
 .w5-card {
-  padding: var(--space-3);
-  border: 1px solid var(--color-border, #e4e7ed);
-  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   background: #fff;
 }
 
@@ -301,8 +384,12 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  gap: var(--space-3);
+  margin-block-end: var(--space-3);
+}
+
+.w5-card__identity {
+  min-width: 0;
 }
 
 .w5-card__tags {
@@ -312,36 +399,77 @@ watch(
   justify-content: flex-end;
 }
 
+.w5-card__confidence {
+  --el-tag-bg-color: rgba(32, 180, 134, 0.1);
+  --el-tag-border-color: rgba(32, 180, 134, 0.22);
+  --el-tag-text-color: var(--color-success);
+}
+
 .w5-card__name {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .w5-card__meta {
   margin: var(--space-1) 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
+  color: var(--color-text-soft);
+  font-size: 12px;
 }
 
-.w5-card__line {
-  margin: 0 0 var(--space-1);
-  font-size: 0.875rem;
-  line-height: 1.5;
+.w5-card__details {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
 }
 
-.w5-card__stock.is-loading {
-  color: var(--color-text-muted);
+.w5-card__detail {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: var(--space-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.w5-card__detail dt {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-weight: 500;
+}
+
+.w5-card__detail dd {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.w5-card__detail.is-loading dd {
+  color: var(--color-text-soft);
 }
 
 .w5-card__caution {
-  margin: var(--space-2) 0 0;
-  font-size: 0.8rem;
-  color: var(--el-color-warning-dark-2, #b88230);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 8px;
+  color: var(--color-warning-strong);
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--color-warning-soft);
+}
+
+.w5-card__caution .el-icon {
+  flex-shrink: 0;
+  margin-block-start: 2px;
+  font-size: 14px;
 }
 
 .w5-card__actions {
-  margin-top: var(--space-2);
-  display: flex;
-  justify-content: flex-end;
+  margin-block-start: var(--space-4);
+}
+
+.w5-card__adopt {
+  width: 100%;
 }
 </style>

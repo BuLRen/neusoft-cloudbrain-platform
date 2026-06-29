@@ -351,21 +351,7 @@
         LIMIT 50
     </select>
 
-    <select id="selectDrugs" resultType="map">
-        SELECT
-            id AS "id",
-            drug_code AS "drugCode",
-            drug_name AS "drugName",
-            drug_format AS "drugFormat",
-            drug_unit AS "drugUnit",
-            manufacturer AS "manufacturer",
-            drug_dosage AS "drugDosage",
-            drug_type AS "drugType",
-            drug_price AS "drugPrice",
-            mnemonic_code AS "mnemonicCode",
-            COALESCE(stock_quantity, 0) AS "stockQuantity",
-            COALESCE(low_stock_threshold, 20) AS "lowStockThreshold"
-        FROM drug_info
+    <sql id="DrugSearchWhere">
         <where>
             (status IS NULL OR status = 1)
             <if test="keyword != null and keyword != ''">
@@ -376,8 +362,45 @@
                 )
             </if>
         </where>
+    </sql>
+
+    <sql id="DrugSearchColumns">
+        id AS "id",
+        drug_code AS "drugCode",
+        drug_name AS "drugName",
+        drug_format AS "drugFormat",
+        drug_unit AS "drugUnit",
+        manufacturer AS "manufacturer",
+        drug_dosage AS "drugDosage",
+        drug_type AS "drugType",
+        drug_price AS "drugPrice",
+        mnemonic_code AS "mnemonicCode",
+        COALESCE(stock_quantity, 0) AS "stockQuantity",
+        COALESCE(low_stock_threshold, 20) AS "lowStockThreshold"
+    </sql>
+
+    <select id="selectDrugs" resultType="map">
+        SELECT
+            <include refid="DrugSearchColumns"/>
+        FROM drug_info
+        <include refid="DrugSearchWhere"/>
         ORDER BY drug_name
         LIMIT 50
+    </select>
+
+    <select id="countDrugs" resultType="long">
+        SELECT COUNT(*)
+        FROM drug_info
+        <include refid="DrugSearchWhere"/>
+    </select>
+
+    <select id="selectDrugsPage" resultType="map">
+        SELECT
+            <include refid="DrugSearchColumns"/>
+        FROM drug_info
+        <include refid="DrugSearchWhere"/>
+        ORDER BY drug_name
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="selectDrugById" resultType="map">

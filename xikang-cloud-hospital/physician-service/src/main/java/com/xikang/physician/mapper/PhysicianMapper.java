@@ -54,6 +54,14 @@ public interface PhysicianMapper {
 
     List<Map<String, Object>> selectDrugs(@Param("keyword") String keyword);
 
+    long countDrugs(@Param("keyword") String keyword);
+
+    List<Map<String, Object>> selectDrugsPage(
+        @Param("keyword") String keyword,
+        @Param("offset") int offset,
+        @Param("limit") int limit
+    );
+
     Map<String, Object> selectDrugById(@Param("id") Long id);
 
     int insertPrescription(Map<String, Object> item);

@@ -144,7 +144,14 @@ public class PhysicianController {
     }
 
     @GetMapping("/drugs")
-    public Result<List<Map<String, Object>>> getDrugs(@RequestParam(required = false) String keyword) {
+    public Result<?> getDrugs(
+        @RequestParam(required = false) String keyword,
+        @RequestParam(required = false) Integer page,
+        @RequestParam(required = false) Integer pageSize
+    ) {
+        if (page != null || pageSize != null) {
+            return Result.success(physicianService.getDrugsPage(keyword, page, pageSize));
+        }
         return Result.success(physicianService.getDrugs(keyword));
     }
 
