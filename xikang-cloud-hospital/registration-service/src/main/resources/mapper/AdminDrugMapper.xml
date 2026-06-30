@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.AdminDrugMapper">
+
+    <sql id="Catalog_Where">
+        WHERE COALESCE(d.status, 1) = 1
+        <if test="keyword != null and keyword != ''">
+            AND (
+                COALESCE(d.name, '') ILIKE CONCAT('%', #{keyword}, '%')
+                OR COALESCE(d.generic_name, '') ILIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="dosageForm != null and dosageForm != ''">
+            AND d.dosage_form = #{dosageForm}
+        </if>
+        <if test="category != null and category != ''">
+            AND d.category = #{category}
+        </if>
+    </sql>
+
+    <sql id="Catalog_Select">
+        SELECT
+            d.id,
+            d.name,
+            d.generic_name AS genericName,
+            d.brand_name AS brandName,
+            d.specification,
+            d.dosage_form AS dosageForm,
+            d.category,
+            d.unit,
+            d.manufacturer,
+            d.approval_number AS approvalNumber,
+            d.price,
+            COALESCE(d.stock_quantity, 0) AS stockQuantity,
+            COALESCE(d.low_stock_threshold, 10) AS lowStockThreshold,
+            COALESCE(d.status, 1) AS status,
+            d.create_time AS createTime,
+            d.update_time AS updateTime
+        FROM drug_info d
+    </sql>
+
+    <select id="countCatalog" resultType="long">
+        SELECT COUNT(*)
+        FROM drug_info d
+        <include refid="Catalog_Where"/>
+    </select>
+
+    <select id="selectCatalog" resultType="com.xikang.registration.dto.DrugCatalogView">
+        <include refid="Catalog_Select"/>
+        <include refid="Catalog_Where"/>
+        ORDER BY d.name
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="selectCategories" resultType="java.lang.String">
+        SELECT DISTINCT category
+        FROM drug_info
+        WHERE COALESCE(status, 1) = 1
+          AND category IS NOT NULL
+          AND category != ''
+        ORDER BY category
+    </select>
+
+</mapper>

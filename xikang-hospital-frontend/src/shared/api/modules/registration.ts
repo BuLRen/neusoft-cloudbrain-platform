@@ -22,6 +22,7 @@ import type {
   TriageDeskCreatePayload,
   TriageDeskRecord,
 } from '@/shared/types/registration'
+import type { DrugOption } from '@/shared/types/pharmacy'
 
 function parseJsonField<T>(value: unknown): T | null {
   if (value == null || value === '') {
@@ -52,6 +53,14 @@ function normalizeTriageRecord(record: TriageDeskRecord): TriageDeskRecord {
   }
 }
 
+export interface AdminDrugPage {
+  records: DrugOption[]
+  total: number
+  page: number
+  size: number
+  totalPages: number
+}
+
 export const registrationApi = {
   get<T>(url: string, params?: Record<string, unknown>) {
     return http<T>({ url, method: 'GET', params })
@@ -76,6 +85,28 @@ export const registrationApi = {
   },
   settleCategories() {
     return http<SettleCategoryOption[]>({ url: '/registration/settle-categories', method: 'GET' })
+  },
+  adminDrugs(params?: {
+    keyword?: string
+    dosageForm?: string
+    category?: string
+    page?: number
+    size?: number
+  }) {
+    return http<AdminDrugPage>({
+      url: '/registration/admin/drugs',
+      method: 'GET',
+      params: {
+        keyword: params?.keyword || undefined,
+        dosageForm: params?.dosageForm || undefined,
+        category: params?.category || undefined,
+        page: params?.page,
+        size: params?.size,
+      },
+    })
+  },
+  adminDrugCategories() {
+    return http<string[]>({ url: '/registration/admin/drugs/categories', method: 'GET' })
   },
   schedulingOptions(departmentId: number, date: string) {
     return http<SchedulingOption[]>({ url: `/registration/scheduling/${departmentId}/${date}`, method: 'GET' })
