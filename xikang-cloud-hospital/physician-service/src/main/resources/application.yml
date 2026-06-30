@@ -149,5 +149,14 @@ xikang:
       workflow-w5: ${DIFY_WORKFLOW_W5:true}
       api-key-w5: ${DIFY_API_KEY_W5:}
 
+      # ----- 门诊临床 Copilot Agent（AI 助手页 · chat-messages）-----
+      agent-api-key: ${DIFY_AGENT_API_KEY:}
+      agent-base-url: ${DIFY_AGENT_BASE_URL:${DIFY_BASE_URL:http://localhost}}
+
       # ----- 外部 CT 推理服务（W2b 用，未配置则用内置模拟）-----
       ct-inference-url: ${CT_INFERENCE_URL:}
+
+  # Dify Agent Custom Tool 回调鉴权（与 Dify 自定义工具 Authorization Header 一致）
+  internal:
+    ai:
+      token: ${INTERNAL_AI_TOKEN:}

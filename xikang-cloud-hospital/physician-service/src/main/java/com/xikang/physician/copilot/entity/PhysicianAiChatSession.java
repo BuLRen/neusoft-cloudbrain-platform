@@ -2,16 +2,15 @@ package com.xikang.physician.copilot.entity;
 
 import java.time.LocalDateTime;
 
-public class PhysicianAiChatMessage {
+public class PhysicianAiChatSession {
 
     private Long id;
     private Long registerId;
-    private Long sessionId;
     private Long doctorId;
-    private String role;
-    private String content;
-    private String toolCallsJson;
+    private String title;
+    private String difyConversationId;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 
     public Long getId() {
         return id;
@@ -29,14 +28,6 @@ public class PhysicianAiChatMessage {
         this.registerId = registerId;
     }
 
-    public Long getSessionId() {
-        return sessionId;
-    }
-
-    public void setSessionId(Long sessionId) {
-        this.sessionId = sessionId;
-    }
-
     public Long getDoctorId() {
         return doctorId;
     }
@@ -45,28 +36,20 @@ public class PhysicianAiChatMessage {
         this.doctorId = doctorId;
     }
 
-    public String getRole() {
-        return role;
+    public String getTitle() {
+        return title;
     }
 
-    public void setRole(String role) {
-        this.role = role;
+    public void setTitle(String title) {
+        this.title = title;
     }
 
-    public String getContent() {
-        return content;
+    public String getDifyConversationId() {
+        return difyConversationId;
     }
 
-    public void setContent(String content) {
-        this.content = content;
-    }
-
-    public String getToolCallsJson() {
-        return toolCallsJson;
-    }
-
-    public void setToolCallsJson(String toolCallsJson) {
-        this.toolCallsJson = toolCallsJson;
+    public void setDifyConversationId(String difyConversationId) {
+        this.difyConversationId = difyConversationId;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -75,5 +58,13 @@ public class PhysicianAiChatMessage {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 }

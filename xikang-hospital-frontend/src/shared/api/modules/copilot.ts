@@ -1,9 +1,10 @@
-import type { CopilotMessage } from '@/shared/types/copilot'
+import type { CopilotAgentThought, CopilotMessage, CopilotRunActionResponse, CopilotSession } from '@/shared/types/copilot'
 
 async function callCopilotSSE(
   url: string,
   body: unknown,
   onToken: (chunk: string) => void,
+  onThought?: (thought: CopilotAgentThought) => void,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   const token = localStorage.getItem('access_token') || ''
@@ -40,6 +41,9 @@ async function callCopilotSSE(
     }
     const data = dataLines.join('\n')
     if (eventName === 'token') onToken(data)
+    else if (eventName === 'thought' && data && onThought) {
+      try { onThought(JSON.parse(data) as CopilotAgentThought) } catch { /* ignore */ }
+    }
     else if (eventName === 'meta' && data) {
       try { meta = JSON.parse(data) } catch { /* ignore */ }
     } else if (eventName === 'error' && data) throw new Error(data)
@@ -59,36 +63,106 @@ async function callCopilotSSE(
   return meta
 }
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('access_token') || ''
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const json = await res.json()
+  if (!res.ok || json.code !== 200) {
+    throw new Error(json.message || '请求失败')
+  }
+  return json.data as T
+}
+
 export const copilotApi = {
-  history(registerId: number) {
-    const token = localStorage.getItem('access_token') || ''
-    return fetch(`/api/physician/ai/copilot/history?registerId=${registerId}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+  listSessions(registerId: number) {
+    return fetch(`/api/physician/ai/copilot/sessions?registerId=${registerId}`, {
+      headers: authHeaders(),
       credentials: 'include',
-    }).then(async (res) => {
-      if (!res.ok) throw new Error('加载对话历史失败')
-      const json = await res.json()
-      return (json.data ?? []) as CopilotMessage[]
-    })
+    }).then((res) => parseJsonResponse<CopilotSession[]>(res))
   },
 
-  clearHistory(registerId: number) {
-    const token = localStorage.getItem('access_token') || ''
-    return fetch(`/api/physician/ai/copilot/history?registerId=${registerId}`, {
+  createSession(registerId: number, title?: string) {
+    return fetch('/api/physician/ai/copilot/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ registerId, title }),
+      credentials: 'include',
+    }).then((res) => parseJsonResponse<CopilotSession>(res))
+  },
+
+  deleteSession(registerId: number, sessionId: number) {
+    return fetch(`/api/physician/ai/copilot/sessions/${sessionId}?registerId=${registerId}`, {
       method: 'DELETE',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: authHeaders(),
       credentials: 'include',
     }).then(async (res) => {
-      if (!res.ok) throw new Error('清空对话失败')
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.message || '删除对话失败')
+      }
     })
   },
 
-  chat(registerId: number, message: string, onToken: (chunk: string) => void, signal?: AbortSignal) {
+  renameSession(registerId: number, sessionId: number, title: string) {
+    return fetch(`/api/physician/ai/copilot/sessions/${sessionId}/title`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ registerId, title }),
+      credentials: 'include',
+    }).then(async (res) => {
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.message || '重命名失败')
+      }
+    })
+  },
+
+  history(registerId: number, sessionId: number) {
+    return fetch(
+      `/api/physician/ai/copilot/history?registerId=${registerId}&sessionId=${sessionId}`,
+      { headers: authHeaders(), credentials: 'include' },
+    ).then((res) => parseJsonResponse<CopilotMessage[]>(res))
+  },
+
+  clearHistory(registerId: number, sessionId: number) {
+    return fetch(
+      `/api/physician/ai/copilot/history?registerId=${registerId}&sessionId=${sessionId}`,
+      { method: 'DELETE', headers: authHeaders(), credentials: 'include' },
+    ).then(async (res) => {
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.message || '清空对话失败')
+      }
+    })
+  },
+
+  chat(
+    registerId: number,
+    sessionId: number,
+    message: string,
+    onToken: (chunk: string) => void,
+    onThought?: (thought: CopilotAgentThought) => void,
+    signal?: AbortSignal,
+  ) {
     return callCopilotSSE(
       '/physician/ai/copilot/chat',
-      { registerId, message },
+      { registerId, sessionId, message },
       onToken,
+      onThought,
       signal,
     )
+  },
+
+  async runAction(registerId: number, actionType: string): Promise<CopilotRunActionResponse> {
+    const response = await fetch('/api/physician/ai/copilot/run-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ registerId, actionType }),
+      credentials: 'include',
+    })
+    return parseJsonResponse<CopilotRunActionResponse>(response)
   },
 }

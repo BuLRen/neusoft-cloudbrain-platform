@@ -9,12 +9,18 @@ import java.util.List;
 @Mapper
 public interface PhysicianAiChatMessageMapper {
 
-    List<PhysicianAiChatMessage> selectByRegisterId(
+    List<PhysicianAiChatMessage> selectBySession(
         @Param("registerId") Long registerId,
+        @Param("sessionId") Long sessionId,
         @Param("limit") int limit
     );
 
     int insert(PhysicianAiChatMessage message);
 
-    int deleteByRegisterId(@Param("registerId") Long registerId);
+    int deleteBySession(
+        @Param("registerId") Long registerId,
+        @Param("sessionId") Long sessionId
+    );
+
+    int deleteBySessionId(@Param("sessionId") Long sessionId);
 }

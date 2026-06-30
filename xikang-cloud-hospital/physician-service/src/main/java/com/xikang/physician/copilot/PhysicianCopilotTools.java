@@ -5,15 +5,17 @@ import com.xikang.physician.service.PhysicianService;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 @Component
 public class PhysicianCopilotTools {
 
     private static final ThreadLocal<Long> REGISTER_ID = new ThreadLocal<>();
+    private static final ThreadLocal<List<Map<String, Object>>> TOOL_CALLS = new ThreadLocal<>();
 
     private final PhysicianAiPipelineService pipelineService;
     private final PhysicianService physicianService;
@@ -31,10 +33,18 @@ public class PhysicianCopilotTools {
 
     public static void bindRegisterId(Long registerId) {
         REGISTER_ID.set(registerId);
+        TOOL_CALLS.set(new ArrayList<>());
     }
 
     public static void clearRegisterId() {
         REGISTER_ID.remove();
+        TOOL_CALLS.remove();
+    }
+
+    public static List<Map<String, Object>> drainToolCalls() {
+        List<Map<String, Object>> calls = TOOL_CALLS.get();
+        TOOL_CALLS.remove();
+        return calls == null ? List.of() : List.copyOf(calls);
     }
 
     private Long currentRegisterId() {
@@ -45,29 +55,20 @@ public class PhysicianCopilotTools {
         return registerId;
     }
 
-    @Tool(description = "为当前患者触发 W2 检查检验推荐，返回推荐项目与初步判断")
-    public String triggerW2Recommendations() {
-        Long registerId = currentRegisterId();
-        Map<String, Object> result = pipelineService.runW2(registerId);
-        return contextBuilder.toJsonSafe(result);
-    }
-
-    @Tool(description = "为当前患者触发 W4 门诊确诊建议，返回鉴别诊断与概率")
-    public String triggerW4Diagnosis() {
-        Long registerId = currentRegisterId();
-        Map<String, Object> result = pipelineService.runW4(registerId);
-        return contextBuilder.toJsonSafe(result);
-    }
-
-    @Tool(description = "为当前患者触发 W5 智能荐药，返回荐药方案（需已保存确诊病名）")
-    public String triggerW5DrugRecommendation() {
-        Long registerId = currentRegisterId();
-        Map<String, Object> result = pipelineService.runW5(registerId);
-        return contextBuilder.toJsonSafe(result);
+    private void recordToolCall(String name) {
+        List<Map<String, Object>> calls = TOOL_CALLS.get();
+        if (calls == null) {
+            return;
+        }
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("name", name);
+        entry.put("at", System.currentTimeMillis());
+        calls.add(entry);
     }
 
     @Tool(description = "获取当前患者检查检验结果摘要")
     public String getLabResultsSummary() {
+        recordToolCall("getLabResultsSummary");
         Long registerId = currentRegisterId();
         List<Map<String, Object>> checks = physicianService.getCheckResults(registerId);
         List<Map<String, Object>> inspections = physicianService.getInspectionResults(registerId);
@@ -79,6 +80,7 @@ public class PhysicianCopilotTools {
 
     @Tool(description = "获取当前患者病历与初步诊断文字摘要")
     public String getMedicalRecordSummary() {
+        recordToolCall("getMedicalRecordSummary");
         Long registerId = currentRegisterId();
         Map<String, Object> record = physicianService.getMedicalRecord(registerId);
         if (record == null || record.isEmpty()) {
@@ -99,6 +101,7 @@ public class PhysicianCopilotTools {
 
     @Tool(description = "获取当前患者 W3 检验检查 AI 解读状态与摘要")
     public String getW3AnalysisSummary() {
+        recordToolCall("getW3AnalysisSummary");
         Long registerId = currentRegisterId();
         Map<String, Object> status = pipelineService.getW3Status(registerId);
         return contextBuilder.toJsonSafe(status);
