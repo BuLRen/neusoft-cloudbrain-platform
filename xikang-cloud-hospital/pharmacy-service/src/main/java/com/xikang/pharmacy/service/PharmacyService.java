@@ -287,12 +287,12 @@ public class PharmacyService {
     }
 
     /**
-     * 历史处方组合查询（按 patientId / status / 日期范围）。
+     * 历史处方组合查询（按 patientId / status / 日期范围 / registerId）。
      */
     public List<Map<String, Object>> queryPrescriptions(Long patientId, Integer status,
-            LocalDateTime startDate, LocalDateTime endDate) {
+            LocalDateTime startDate, LocalDateTime endDate, Long registerId) {
         List<Prescription> prescriptions = prescriptionMapper.selectByConditions(
-                patientId, status, startDate, endDate);
+                patientId, status, startDate, endDate, registerId);
         return prescriptions.stream()
             .peek(p -> p.setPaid(isMedicationPaid(p.getRegisterId())))
             .map(this::toPrescriptionMap)

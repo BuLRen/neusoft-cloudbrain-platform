@@ -51,7 +51,8 @@ public interface PrescriptionMapper {
     List<Prescription> selectByConditions(@Param("patientId") Long patientId,
                                           @Param("status") Integer status,
                                           @Param("startDate") java.time.LocalDateTime startDate,
-                                          @Param("endDate") java.time.LocalDateTime endDate);
+                                          @Param("endDate") java.time.LocalDateTime endDate,
+                                          @Param("registerId") Long registerId);
 
     /**
      * 按 patient_id 反查历史处方（聚合头）。
