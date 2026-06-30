@@ -30,7 +30,7 @@ const kpiCards = computed(() => {
   return [
     { title: '在册科室', value: k?.departments ?? 0, tone: 'primary' as const, to: '/admin/master-data' },
     { title: '在册医生', value: k?.doctors ?? 0, tone: 'success' as const, to: '/admin/personnel?tab=physicians' },
-    { title: '药品目录', value: k?.drugs ?? 0, tone: 'warning' as const, to: '/admin/master-data' },
+    { title: '药品目录', value: k?.drugs ?? 0, tone: 'warning' as const, to: '/admin/master-data?tab=drugs' },
     { title: 'AI 导诊咨询', value: k?.aiTriageConsultations ?? 0, tone: 'ai' as const, to: '/admin/operations?tab=reports' },
   ]
 })
