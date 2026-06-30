@@ -6,16 +6,27 @@
 2. 后端：`cd xikang-cloud-hospital && mvn -pl physician-service -am install -DskipTests && cd physician-service && mvn spring-boot:run`
 3. 前端：`npm run dev`（`/api/physician` 已代理到 `8092`，绕过网关鉴权）
 
-## 页面（门诊诊疗 · 6 步）
+## 页面（门诊诊疗）
 
-- 第 1 步：`/physician/queue` 待诊接诊
-- 第 2 步：`/physician/record` 病历与初步诊断
-- 第 3 步：`/physician/orders` 开立检查检验（W2）
-- 第 4 步：`/physician/results` 查看结果（W3）
-- 第 5 步：`/physician/diagnosis` 门诊确诊（W4）
-- 第 6 步：`/physician/prescription` 开立处方
+- **① 待诊接诊**：`/physician/queue` — 选择患者、查看摘要、开始接诊
+- **② 病历与初步诊断**：`/physician/record`
+- **③ 开立检查检验**：`/physician/orders`（W2）
+- **④ 查看结果**：`/physician/results`（W3）
+- **⑤ 门诊确诊**：`/physician/diagnosis`（W4）
+- **⑥ 开立处方**：`/physician/prescription`
+- **AI 助手**：`/physician/assistant` — Spring AI 临床 Copilot
 
-## AI 流水线（v3）
+除「待诊接诊」外，进入各步骤或 AI 助手前需选择患者（侧栏点击将弹出选患者对话框）。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/physician/ai/copilot/chat` | SSE 流式对话，`{ registerId, message }` |
+| GET | `/api/physician/ai/copilot/history?registerId=` | 对话历史 |
+| DELETE | `/api/physician/ai/copilot/history?registerId=` | 清空历史 |
+
+LLM 配置复用项目根 `.env` 的 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` / `DEEPSEEK_MODEL`。
+
+## AI Copilot API（physician-service）
 
 | 步骤 | API | 说明 |
 |------|-----|------|

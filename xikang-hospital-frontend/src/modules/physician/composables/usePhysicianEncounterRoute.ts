@@ -1,19 +1,9 @@
 import { onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useEncounterStore } from '@/app/stores/encounter'
-import { physicianRoute } from '../constants/visitState'
+import { isPhysicianStepPath, physicianRoute } from '../constants/visitState'
 
-const PHYSICIAN_STEP_PATHS = [
-  '/physician/record',
-  '/physician/orders',
-  '/physician/results',
-  '/physician/diagnosis',
-  '/physician/prescription',
-]
-
-export function isPhysicianStepPath(path: string) {
-  return PHYSICIAN_STEP_PATHS.includes(path)
-}
+export { isPhysicianStepPath }
 
 export function usePhysicianEncounterRoute() {
   const route = useRoute()
@@ -42,13 +32,16 @@ export function usePhysicianEncounterRoute() {
       return
     }
 
-    await router.replace('/physician/queue')
+    await router.replace({
+      path: route.path,
+      query: { ...route.query, selectFor: route.path },
+    })
   }
 
   function navigateWithRegisterId(path: string) {
     const id = encounterStore.registerId
     if (!id) {
-      void router.push('/physician/queue')
+      void router.push({ path, query: { selectFor: path } })
       return
     }
     void router.push(physicianRoute(path, id))

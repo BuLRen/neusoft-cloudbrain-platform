@@ -258,7 +258,7 @@ onMounted(() => {
       :closable="true"
       show-icon
       title="请先选择患者"
-      description="诊疗步骤需从待诊接诊选择患者并进入流程后，方可通过侧边栏访问。"
+      description="请从下方列表选择患者并进入流程，或通过侧栏进入各诊疗步骤时选择患者。"
       class="queue-hint"
       @close="dismissNeedEncounterHint"
     />
