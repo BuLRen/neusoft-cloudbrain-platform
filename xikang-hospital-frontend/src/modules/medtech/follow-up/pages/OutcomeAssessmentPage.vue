@@ -36,6 +36,7 @@ import {
   resolveOutcomeRange,
   type OutcomeRangePreset,
 } from '@/shared/utils/beijingDate'
+import GlucoseForecastPanel from '@/modules/medtech/follow-up/components/GlucoseForecastPanel.vue'
 import { addToTodayInterview, getTodayInterviewScheduled } from '@/modules/medtech/follow-up/services/interviewSchedule'
 import type {
   FollowUpHealthMetric,
@@ -58,6 +59,7 @@ const confirmingObservation = ref(false)
 const loading = ref(false)
 const scheduling = ref(false)
 const enrolling = ref(false)
+const isGlucoseCohort = ref(false)
 
 const selectedPatient = computed(() =>
   patients.value.find((item) => item.registerId === selectedRegisterId.value),
@@ -338,7 +340,7 @@ async function loadPatientData() {
   loading.value = true
   try {
     const { from, to } = currentQueryRange()
-    const [profileRes, metricsRes, recordsRes, scheduleRes, observationRes] = await Promise.all([
+    const [profileRes, metricsRes, recordsRes, scheduleRes, observationRes, cohortRes] = await Promise.all([
       medtechFollowUpApi.getProfile(selectedRegisterId.value),
       medtechFollowUpApi.getMetrics(selectedRegisterId.value, { from, to }),
       medtechFollowUpApi.getRecords(selectedRegisterId.value),
@@ -348,12 +350,14 @@ async function loadPatientData() {
         observationDate: beijingTodayYmd(),
         observed: false,
       })),
+      medtechFollowUpApi.isGlucoseCohort(selectedRegisterId.value).catch(() => ({ registerId: selectedRegisterId.value!, glucoseCohort: false })),
     ])
     profile.value = profileRes
     metrics.value = metricsRes
     records.value = recordsRes
     scheduleScheduled.value = scheduleRes
     observedToday.value = Boolean(observationRes.observed)
+    isGlucoseCohort.value = Boolean(cohortRes.glucoseCohort)
     await renderCharts()
   } catch {
     ElMessage.error('加载患者疗效数据失败')
@@ -604,6 +608,14 @@ void loadPatients().then(() => loadPatientData())
         </ElCol>
       </ElRow>
       <ElEmpty v-else description="当前日期范围内暂无模拟指标数据" />
+    </GlassCard>
+
+    <GlassCard v-if="isGlucoseCohort && selectedRegisterId" class="outcome-card">
+      <GlucoseForecastPanel
+        :register-id="selectedRegisterId"
+        :metrics="metrics"
+        mode="doctor"
+      />
     </GlassCard>
 
     <GlassCard class="outcome-card outcome-card--secondary">

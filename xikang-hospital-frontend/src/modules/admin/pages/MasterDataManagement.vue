@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   ElButton,
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,
+  ElEmpty,
   ElForm,
   ElFormItem,
   ElInput,
@@ -18,13 +20,14 @@ import {
   ElTableColumn,
   ElTabPane,
   ElTabs,
+  ElTag,
 } from 'element-plus'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { useClientPagination } from '@/modules/admin/composables/useClientPagination'
 import { registrationApi } from '@/shared/api/modules/registration'
-import { pharmacyApi } from '@/shared/api/modules/pharmacy'
+import { DOSAGE_FORMS } from '@/shared/constants/pharmacy'
 import type { DepartmentOption, RegistLevelOption, SettleCategoryOption } from '@/shared/types/registration'
 import type { DrugOption } from '@/shared/types/pharmacy'
 
@@ -36,6 +39,7 @@ const DEPT_TYPE_OPTIONS = [
   { label: '医技科室', value: '医技科室' },
 ] as const
 
+const route = useRoute()
 const activeTab = ref<TabKey>('departments')
 
 const loading = ref(false)
@@ -44,11 +48,17 @@ const departments = ref<DepartmentOption[]>([])
 const registLevels = ref<RegistLevelOption[]>([])
 const settleCategories = ref<SettleCategoryOption[]>([])
 const drugs = ref<DrugOption[]>([])
+const drugPage = ref(1)
+const drugPageSize = ref(20)
+const drugTotal = ref(0)
+const drugTotalPages = ref(0)
 
 const deptTypeFilter = ref('')
 const drugKeyword = ref('')
 const drugCategory = ref('')
 const drugCategoryOptions = ref<string[]>([])
+
+const drugLoadError = ref('')
 
 const {
   page: deptPage,
@@ -60,17 +70,6 @@ const {
   onPageSizeChange: onDeptPageSizeChange,
   resetPage: resetDeptPage,
 } = useClientPagination(departments)
-
-const {
-  page: drugPage,
-  size: drugPageSize,
-  total: drugTotal,
-  totalPages: drugTotalPages,
-  pagedRecords: drugPagedRecords,
-  onPageChange: onDrugPageChange,
-  onPageSizeChange: onDrugPageSizeChange,
-  resetPage: resetDrugPage,
-} = useClientPagination(drugs)
 
 // 科室编辑/新增
 const deptDialogVisible = ref(false)
@@ -119,29 +118,64 @@ async function loadBaseData() {
 }
 
 async function loadDrugCategories() {
-  drugCategoryOptions.value = await pharmacyApi.categories()
+  try {
+    drugCategoryOptions.value = (await registrationApi.adminDrugCategories()) ?? []
+  } catch (error) {
+    drugCategoryOptions.value = []
+    console.error('加载药品分类失败', error)
+  }
 }
 
 async function loadDrugs() {
   drugsLoading.value = true
+  drugLoadError.value = ''
   try {
-    const res = await pharmacyApi.drugs({
+    const page = await registrationApi.adminDrugs({
       keyword: drugKeyword.value || undefined,
       category: drugCategory.value || undefined,
-      page: 1,
-      pageSize: 200,
+      page: drugPage.value,
+      size: drugPageSize.value,
     })
-    drugs.value = res.list
-    resetDrugPage()
+    drugs.value = page.records ?? []
+    drugTotal.value = page.total ?? 0
+    drugTotalPages.value = page.totalPages ?? 0
+    drugPage.value = page.page ?? drugPage.value
+    drugPageSize.value = page.size ?? drugPageSize.value
+  } catch (error) {
+    drugs.value = []
+    drugTotal.value = 0
+    drugTotalPages.value = 0
+    drugLoadError.value = error instanceof Error ? error.message : '药品目录加载失败'
+    ElMessage.error(drugLoadError.value)
   } finally {
     drugsLoading.value = false
   }
 }
 
+function searchDrugs() {
+  drugPage.value = 1
+  void loadDrugs()
+}
+
+function onDrugPageChange(page: number) {
+  drugPage.value = page
+  void loadDrugs()
+}
+
+function onDrugPageSizeChange(size: number) {
+  drugPageSize.value = size
+  drugPage.value = 1
+  void loadDrugs()
+}
+
+async function loadDrugTab() {
+  await Promise.all([loadDrugCategories(), loadDrugs()])
+}
+
 async function loadAll() {
   await loadBaseData()
   if (activeTab.value === 'drugs') {
-    await loadDrugs()
+    await loadDrugTab()
   }
 }
 
@@ -149,11 +183,15 @@ function onDeptTypeChange() {
   void loadDepartments()
 }
 
-watch(activeTab, (tab) => {
-  if (tab === 'drugs' && drugs.value.length === 0 && !drugsLoading.value) {
-    void Promise.all([loadDrugCategories(), loadDrugs()])
-  }
-})
+watch(
+  activeTab,
+  (tab) => {
+    if (tab === 'drugs' && !drugsLoading.value) {
+      void loadDrugTab()
+    }
+  },
+  { immediate: true },
+)
 
 // ==================== 科室 CRUD ====================
 function openCreateDept() {
@@ -256,6 +294,18 @@ function openDrugDetail(row: DrugOption) {
   drugDialogVisible.value = true
 }
 
+function drugStatusLabel(status?: number) {
+  return status === 0 ? '已停用' : '启用'
+}
+
+function drugStatusTone(status?: number) {
+  return status === 0 ? 'neutral' : 'success'
+}
+
+function castDrug(row: unknown): DrugOption {
+  return row as DrugOption
+}
+
 function castDept(row: unknown): DepartmentOption {
   return row as DepartmentOption
 }
@@ -264,7 +314,16 @@ function castLevel(row: unknown): RegistLevelOption {
   return row as RegistLevelOption
 }
 
+function resolveInitialTab(): TabKey {
+  const tab = route.query.tab
+  if (tab === 'departments' || tab === 'registLevels' || tab === 'settleCategories' || tab === 'drugs') {
+    return tab
+  }
+  return 'departments'
+}
+
 onMounted(async () => {
+  activeTab.value = resolveInitialTab()
   await loadBaseData()
 })
 </script>
@@ -402,7 +461,7 @@ onMounted(async () => {
             <div class="admin-section-header">
               <div class="admin-section-header__text">
                 <h3>药品目录</h3>
-                <p>来源于 pharmacy-service · drug_info 表，当前版本只读展示（点击行查看详情）。</p>
+                <p>来源于 registration-service · drug_info 表，展示完整药品主数据（点击行查看详情）。</p>
               </div>
               <StatusTag tone="primary">{{ drugTotal }} 条</StatusTag>
             </div>
@@ -413,34 +472,74 @@ onMounted(async () => {
                   <ElOption v-for="c in drugCategoryOptions" :key="c" :label="c" :value="c" />
                 </ElSelect>
               </div>
-              <ElButton type="primary" @click="loadDrugs">查询</ElButton>
+              <ElButton type="primary" @click="searchDrugs">查询</ElButton>
             </div>
+            <ElEmpty
+              v-if="!drugsLoading && drugLoadError"
+              :description="drugLoadError"
+            >
+              <ElButton type="primary" @click="loadDrugTab">重试</ElButton>
+            </ElEmpty>
+            <ElEmpty
+              v-else-if="!drugsLoading && drugTotal === 0"
+              description="暂无药品数据"
+            />
             <ElTable
+              v-else
               v-loading="drugsLoading"
-              :data="drugPagedRecords"
+              :data="drugs"
               class="admin-data-table admin-data-table--clickable"
               border
-              @row-click="(row) => openDrugDetail(row as DrugOption)"
+              @row-click="(row) => openDrugDetail(castDrug(row))"
             >
-            <ElTableColumn prop="drugName" label="药品名称" min-width="160" />
-            <ElTableColumn prop="drugFormat" label="规格" min-width="140" />
-            <ElTableColumn prop="drugDosage" label="剂型" min-width="100" />
-            <ElTableColumn prop="manufacturer" label="生产厂家" min-width="180" show-overflow-tooltip />
-            <ElTableColumn label="单价" min-width="100" align="right">
-              <template #default="{ row }">
-                <span class="price-value">¥ {{ row.drugPrice ?? 0 }}</span>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn label="库存" min-width="120">
-              <template #default="{ row }">
-                <StatusTag
-                  :tone="(row.stockQuantity ?? 0) <= (row.lowStockThreshold ?? 0) ? 'danger' : 'success'"
-                >
-                  {{ row.stockQuantity ?? 0 }} {{ row.drugUnit || '' }}
-                </StatusTag>
-              </template>
-            </ElTableColumn>
-          </ElTable>
+              <ElTableColumn label="药品名称" min-width="180" fixed="left">
+                <template #default="{ row }">
+                  <div class="drug-name-cell">
+                    <span>{{ row.name }}</span>
+                    <ElTag v-if="row.status === 0" type="info" size="small">已停用</ElTag>
+                    <ElTag v-if="row.category" size="small" effect="plain">{{ row.category }}</ElTag>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="genericName" label="通用名" min-width="120" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.genericName || '—' }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="brandName" label="商品品牌" min-width="110" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.brandName || '—' }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="dosageForm" label="剂型" min-width="90">
+                <template #default="{ row }">{{ row.dosageForm || '—' }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="specification" label="规格" min-width="130" show-overflow-tooltip />
+              <ElTableColumn prop="unit" label="单位" min-width="72" align="center">
+                <template #default="{ row }">{{ row.unit || '—' }}</template>
+              </ElTableColumn>
+              <ElTableColumn label="单价" min-width="96" align="right">
+                <template #default="{ row }">
+                  <span class="price-value">¥ {{ row.price ?? 0 }}</span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="approvalNumber" label="批准文号" min-width="140" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.approvalNumber || '—' }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="manufacturer" label="生产厂家" min-width="150" show-overflow-tooltip />
+              <ElTableColumn label="库存" min-width="110">
+                <template #default="{ row }">
+                  <StatusTag
+                    :tone="(row.stockQuantity ?? 0) <= (row.lowStockThreshold ?? 0) ? 'danger' : 'success'"
+                  >
+                    {{ row.stockQuantity ?? 0 }} {{ row.unit || '' }}
+                  </StatusTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="状态" width="88" align="center">
+                <template #default="{ row }">
+                  <StatusTag :tone="drugStatusTone(row.status)">
+                    {{ drugStatusLabel(row.status) }}
+                  </StatusTag>
+                </template>
+              </ElTableColumn>
+            </ElTable>
             <div v-if="drugTotal > 0" class="admin-pagination-bar">
               <p class="table-footer">
                 共 {{ drugTotal }} 种药品
@@ -518,20 +617,37 @@ onMounted(async () => {
     </ElDialog>
 
     <!-- 药品详情弹窗（只读） -->
-    <ElDialog v-model="drugDialogVisible" title="药品详情" width="560px">
+    <ElDialog v-model="drugDialogVisible" title="药品详情" width="720px">
       <template v-if="selectedDrug">
         <ElDescriptions :column="2" border>
-          <ElDescriptionsItem label="药品名称">{{ selectedDrug.drugName }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="规格">{{ selectedDrug.drugFormat || '-' }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="剂型">{{ selectedDrug.drugDosage || '-' }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="单位">{{ selectedDrug.drugUnit || '-' }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="生产厂家">{{ selectedDrug.manufacturer || '-' }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="单价">¥ {{ selectedDrug.drugPrice ?? 0 }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="药品名称">{{ selectedDrug.name }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="状态">{{ drugStatusLabel(selectedDrug.status) }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="通用名">{{ selectedDrug.genericName || '—' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="商品品牌">{{ selectedDrug.brandName || '—' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="分类">{{ selectedDrug.category || '—' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="剂型">{{ selectedDrug.dosageForm || '—' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="规格">{{ selectedDrug.specification || '—' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="单位">{{ selectedDrug.unit || '—' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="单价">¥ {{ selectedDrug.price ?? 0 }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="批准文号">{{ selectedDrug.approvalNumber || '—' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="生产厂家" :span="2">{{ selectedDrug.manufacturer || '—' }}</ElDescriptionsItem>
           <ElDescriptionsItem label="库存">
             {{ selectedDrug.stockQuantity ?? 0 }} {{ selectedDrug.drugUnit || '' }}
           </ElDescriptionsItem>
           <ElDescriptionsItem label="低库存阈值">
             {{ selectedDrug.lowStockThreshold ?? 0 }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="储存条件" :span="2">
+            {{ selectedDrug.storageConditions || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="用药指导" :span="2">
+            {{ selectedDrug.instructions || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="禁忌" :span="2">
+            {{ selectedDrug.contraindications || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="不良反应" :span="2">
+            {{ selectedDrug.adverseReactions || '—' }}
           </ElDescriptionsItem>
         </ElDescriptions>
       </template>
@@ -585,5 +701,12 @@ onMounted(async () => {
 
 .filter-bar__select {
   width: 140px;
+}
+
+.drug-name-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 </style>
