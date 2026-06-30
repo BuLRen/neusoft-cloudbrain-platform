@@ -30,6 +30,7 @@ import PersonnelManagement from '@/modules/admin/pages/PersonnelManagement.vue'
 import MedtechItemsManagement from '@/modules/admin/pages/MedtechItemsManagement.vue'
 import OperationsCenter from '@/modules/admin/pages/OperationsCenter.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
+import PhysicianAiAssistantPage from '@/modules/physician/pages/PhysicianAiAssistantPage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
 import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.vue'
 import PhysicianResultsPage from '@/modules/physician/pages/PhysicianResultsPage.vue'
@@ -168,7 +169,7 @@ export const routes: RouteRecordRaw[] = [
         name: 'Physician',
         component: RouteGroupView,
         redirect: '/physician/queue',
-        meta: { title: '门诊诊疗', description: '接诊 → 病历 → 申请 → 结果 → 确诊 → 处方', icon: 'FirstAidKit', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A', group: 'attending' },
+        meta: { title: '门诊诊疗', description: '待诊接诊 → 病历 → 申请 → 结果 → 确诊 → 处方', icon: 'FirstAidKit', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A', group: 'attending' },
         children: [
           {
             path: 'queue',
@@ -180,31 +181,37 @@ export const routes: RouteRecordRaw[] = [
             path: 'record',
             name: 'PhysicianRecord',
             component: PhysicianRecordPage,
-            meta: { title: '② 病历与初步诊断', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A', group: 'attending', step: 2 },
+            meta: { title: '② 病历与初步诊断', roles: ['physician', 'admin'], requiresAuth: true, requiresEncounter: true, owner: 'A', group: 'attending', step: 2 },
           },
           {
             path: 'orders',
             name: 'PhysicianOrders',
             component: PhysicianOrdersPage,
-            meta: { title: '③ 开立检查检验', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A', group: 'attending', step: 3 },
+            meta: { title: '③ 开立检查检验', roles: ['physician', 'admin'], requiresAuth: true, requiresEncounter: true, owner: 'A', group: 'attending', step: 3 },
           },
           {
             path: 'results',
             name: 'PhysicianResults',
             component: PhysicianResultsPage,
-            meta: { title: '④ 查看结果', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A', group: 'attending', step: 4 },
+            meta: { title: '④ 查看结果', roles: ['physician', 'admin'], requiresAuth: true, requiresEncounter: true, owner: 'A', group: 'attending', step: 4 },
           },
           {
             path: 'diagnosis',
             name: 'PhysicianDiagnosis',
             component: PhysicianDiagnosisPage,
-            meta: { title: '⑤ 门诊确诊', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A', group: 'attending', step: 5 },
+            meta: { title: '⑤ 门诊确诊', roles: ['physician', 'admin'], requiresAuth: true, requiresEncounter: true, owner: 'A', group: 'attending', step: 5 },
           },
           {
             path: 'prescription',
             name: 'PhysicianPrescription',
             component: PhysicianPrescriptionPage,
-            meta: { title: '⑥ 开立处方', roles: ['physician', 'admin'], requiresAuth: true, owner: 'A', group: 'attending', step: 6 },
+            meta: { title: '⑥ 开立处方', roles: ['physician', 'admin'], requiresAuth: true, requiresEncounter: true, owner: 'A', group: 'attending', step: 6 },
+          },
+          {
+            path: 'assistant',
+            name: 'PhysicianAssistant',
+            component: PhysicianAiAssistantPage,
+            meta: { title: 'AI 助手', roles: ['physician', 'admin'], requiresAuth: true, requiresEncounter: true, owner: 'A', group: 'attending' },
           },
         ],
       },

@@ -1,18 +1,17 @@
 # =============================================================================
-# 数据源：默认连远程 PostgreSQL（43.139.102.203:5432），由 config/database.yml 提供
-# 远程密码见项目根目录 .env 中的 DB_REMOTE_PASSWORD
-# 切回本地 Docker：启动加 -Dspring.profiles.active=local
+# 数据源：连接参数与 local/remote 切换见 xikang-cloud-hospital/.env
+#   SPRING_PROFILES_ACTIVE=remote | local
 # =============================================================================
 server:
   port: 8093
 
 spring:
-  profiles:
-    active: remote
   application:
     name: medtech-service
   config:
     import:
+      - optional:file:../.env
+      - optional:file:./.env
       - optional:classpath:config/database.yml
       - optional:file:../config/database.yml
       - optional:file:./config/database.yml

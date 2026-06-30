@@ -105,9 +105,9 @@ const patientBadge = computed(() => {
         </div>
       </template>
       <template v-else>
-        <EmptyState title="尚未选择就诊患者" description="请先从「待诊接诊」页面选择患者进入流程。" />
+        <EmptyState title="尚未选择就诊患者" description="请先从「待诊接诊」选择患者并进入流程。" />
         <div class="step-layout__actions">
-          <ElButton type="primary" @click="router.push('/physician/queue')">返回待诊接诊</ElButton>
+          <ElButton type="primary" @click="router.push('/physician/queue')">前往待诊接诊</ElButton>
         </div>
       </template>
     </GlassCard>

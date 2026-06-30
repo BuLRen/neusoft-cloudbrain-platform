@@ -3,6 +3,7 @@ package com.xikang.physician.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
+import com.xikang.physician.agent.AgentToolExecutionContext;
 import com.xikang.physician.context.PhysicianAuthContext;
 import com.xikang.physician.mapper.PhysicianMapper;
 import org.springframework.stereotype.Service;
@@ -458,6 +459,13 @@ public class PhysicianService {
     private void assertRegisterAccess(Long registerId) {
         if (registerId == null) {
             throw new BusinessException(400, "挂号记录不存在");
+        }
+        if (AgentToolExecutionContext.isActive()) {
+            Long ownerEmployeeId = physicianMapper.selectRegisterEmployeeId(registerId);
+            if (ownerEmployeeId == null) {
+                throw new BusinessException(400, "挂号记录不存在");
+            }
+            return;
         }
         if (PhysicianAuthContext.isAdminAllAccess()) {
             return;
