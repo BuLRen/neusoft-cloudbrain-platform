@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import PatientCommunicationPanel from '@/modules/patient/components/PatientCommunicationPanel.vue'
+import GlucoseForecastPanel from '@/modules/medtech/follow-up/components/GlucoseForecastPanel.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { useAuthStore } from '@/app/stores/auth'
 import type {
@@ -150,6 +151,12 @@ onMounted(() => {
           健康反馈
         </button>
         <button
+          :class="['tab-btn', { active: activeTab === 'glucose' }]"
+          @click="activeTab = 'glucose'"
+        >
+          血糖预测
+        </button>
+        <button
           :class="['tab-btn', { active: activeTab === 'communication' }]"
           @click="activeTab = 'communication'"
         >
@@ -277,6 +284,16 @@ onMounted(() => {
     </GlassCard>
 
     <PatientCommunicationPanel v-if="activeTab === 'communication'" />
+
+    <GlassCard v-if="activeTab === 'glucose'" class="glucose-card">
+      <GlucoseForecastPanel
+        v-if="patientId"
+        :patient-id="patientId"
+        :register-id="followupPlans[0]?.registerId"
+        mode="patient"
+        compact
+      />
+    </GlassCard>
   </div>
 </template>
 
@@ -339,7 +356,8 @@ onMounted(() => {
 
 .plans-card,
 .medications-card,
-.feedback-card {
+.feedback-card,
+.glucose-card {
   padding: var(--space-5);
 }
 

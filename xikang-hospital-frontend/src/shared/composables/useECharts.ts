@@ -89,6 +89,128 @@ export function buildTrendOption(params: {
   }
 }
 
+export interface GlucoseChartPoint {
+  time: string
+  value: number
+}
+
+function parseChartTime(value: string): number {
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T')
+  const ms = new Date(normalized).getTime()
+  return Number.isNaN(ms) ? 0 : ms
+}
+
+export function buildGlucoseTrendOption(params: {
+  title: string
+  actualPoints: GlucoseChartPoint[]
+  forecastPoints: GlucoseChartPoint[]
+  formatTime?: (value: string) => string
+  unit?: string
+  color?: string
+}): echarts.EChartsOption {
+  const color = params.color ?? '#1f8cff'
+  const formatTime = params.formatTime ?? ((v: string) => v)
+  const unit = params.unit ?? 'mmol/L'
+
+  type Slot = { time: string; actual: number | null; forecast: number | null }
+  const slots = new Map<number, Slot>()
+
+  for (const point of params.actualPoints) {
+    const ms = parseChartTime(point.time)
+    slots.set(ms, { time: point.time, actual: point.value, forecast: null })
+  }
+
+  for (const point of params.forecastPoints) {
+    const ms = parseChartTime(point.time)
+    const existing = slots.get(ms)
+    if (existing) {
+      existing.forecast = point.value
+    } else {
+      slots.set(ms, { time: point.time, actual: null, forecast: point.value })
+    }
+  }
+
+  const sorted = [...slots.entries()].sort((a, b) => a[0] - b[0])
+  const lastActual = params.actualPoints.at(-1)
+  const lastActualMs = lastActual ? parseChartTime(lastActual.time) : null
+
+  const axisLabels = sorted.map(([, slot]) => formatTime(slot.time))
+  const actualData = sorted.map(([, slot]) => slot.actual)
+  const forecastData = sorted.map(([ms, slot]) => {
+    if (lastActualMs != null && ms === lastActualMs && lastActual != null) {
+      return lastActual.value
+    }
+    return slot.forecast
+  })
+
+  return {
+    title: {
+      text: params.title,
+      left: 0,
+      textStyle: { fontSize: 14, fontWeight: 600, color: '#102033' },
+    },
+    legend: {
+      top: 4,
+      right: 0,
+      data: ['实测', '预测'],
+      textStyle: { color: '#5f7288' },
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter(items) {
+        const rows = Array.isArray(items) ? items : [items]
+        if (!rows.length) return ''
+        const header = String(rows[0]?.name ?? '')
+        const lines = [header]
+        for (const row of rows) {
+          const val = row?.value
+          if (val == null || val === '') continue
+          lines.push(`${row?.seriesName ?? ''}: ${val} ${unit}`)
+        }
+        return lines.join('<br/>')
+      },
+    },
+    grid: { left: 48, right: 16, top: 56, bottom: 36 },
+    xAxis: {
+      type: 'category',
+      data: axisLabels,
+      axisLabel: { color: '#5f7288', rotate: axisLabels.length > 12 ? 28 : 0 },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#5f7288' },
+      splitLine: { lineStyle: { color: 'rgba(70, 111, 160, 0.12)' } },
+    },
+    series: [
+      {
+        name: '实测',
+        type: 'line',
+        smooth: true,
+        connectNulls: false,
+        data: actualData,
+        itemStyle: { color },
+        lineStyle: { width: 2 },
+        areaStyle: { color: 'rgba(31, 140, 255, 0.12)' },
+        markLine: {
+          silent: true,
+          symbol: 'none',
+          lineStyle: { type: 'dashed', color: '#ef4d5a', opacity: 0.45 },
+          data: [{ yAxis: 3.9 }, { yAxis: 10.0 }],
+        },
+      },
+      {
+        name: '预测',
+        type: 'line',
+        smooth: true,
+        connectNulls: true,
+        data: forecastData,
+        itemStyle: { color: '#f59f00' },
+        lineStyle: { type: 'dashed', width: 2 },
+      },
+    ],
+  }
+}
+
 export function buildReliefTrendOption(
   records: { followUpTime?: string; symptomRelief?: string; patientFeedback?: string }[],
   formatTime: (value?: string | null) => string,

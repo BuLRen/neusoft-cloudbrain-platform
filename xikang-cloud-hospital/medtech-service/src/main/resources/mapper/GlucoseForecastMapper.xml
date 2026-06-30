@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.GlucoseForecastMapper">
+
+    <select id="isGlucoseCohortPatient" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM register r
+            WHERE r.id = #{registerId}
+              AND (
+                  EXISTS (
+                      SELECT 1
+                      FROM medical_record mr
+                      INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+                      INNER JOIN disease d ON d.id = mrd.disease_id
+                      WHERE mr.register_id = r.id
+                        AND (
+                            d.disease_category = '代谢内分泌疾病'
+                            OR d.diseaseicd LIKE 'E10%'
+                            OR d.diseaseicd LIKE 'E11%'
+                            OR d.diseaseicd LIKE 'R73%'
+                            OR d.disease_name LIKE '%糖尿病%'
+                        )
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM patient_health_observation pho
+                      WHERE pho.register_id = r.id AND pho.metric_code = 'blood_glucose'
+                  )
+              )
+        )
+    </select>
+
+    <select id="selectObservationsForPrediction" resultType="map">
+        SELECT
+            to_char(pho.observed_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "observedAt",
+            MAX(CASE WHEN pho.metric_code = 'blood_glucose' THEN pho.metric_value END) AS "bloodGlucose",
+            MAX(CASE WHEN pho.metric_code = 'insulin_total' THEN pho.metric_value END) AS "insulinTotal",
+            MAX(CASE WHEN pho.metric_code = 'meal_flag' THEN pho.metric_value END) AS "mealFlag",
+            MAX(CASE WHEN pho.metric_code = 'exercise_flag' THEN pho.metric_value END) AS "exerciseFlag"
+        FROM patient_health_observation pho
+        WHERE pho.register_id = #{registerId}
+        GROUP BY pho.observed_at
+        ORDER BY pho.observed_at ASC
+    </select>
+
+    <delete id="deleteForecasts">
+        DELETE FROM follow_up_metric_forecast
+        WHERE register_id = #{registerId}
+          AND metric_code = #{metricCode}
+    </delete>
+
+    <insert id="insertForecast">
+        INSERT INTO follow_up_metric_forecast (
+            register_id, metric_code, forecast_at, forecast_value,
+            confidence, model_id, risk_level
+        ) VALUES (
+            #{registerId}, #{metricCode}, #{forecastAt}, #{forecastValue},
+            #{confidence}, #{modelId}, #{riskLevel}
+        )
+        ON CONFLICT (register_id, metric_code, forecast_at) DO UPDATE SET
+            forecast_value = EXCLUDED.forecast_value,
+            confidence = EXCLUDED.confidence,
+            model_id = EXCLUDED.model_id,
+            risk_level = EXCLUDED.risk_level,
+            creation_time = CURRENT_TIMESTAMP
+    </insert>
+
+    <select id="selectForecasts" resultType="map">
+        SELECT
+            forecast_at AS "forecastAt",
+            forecast_value AS "forecastValue",
+            confidence AS "confidence",
+            model_id AS "modelId",
+            risk_level AS "riskLevel"
+        FROM follow_up_metric_forecast
+        WHERE register_id = #{registerId}
+          AND metric_code = #{metricCode}
+        <if test="from != null">AND forecast_at::date &gt;= #{from}</if>
+        <if test="to != null">AND forecast_at::date &lt;= #{to}</if>
+        ORDER BY forecast_at ASC
+    </select>
+
+    <select id="selectLatestForecastMeta" resultType="map">
+        SELECT
+            model_id AS "modelId",
+            risk_level AS "riskLevel",
+            MAX(confidence) AS "confidence",
+            MAX(creation_time) AS "creationTime"
+        FROM follow_up_metric_forecast
+        WHERE register_id = #{registerId}
+          AND metric_code = #{metricCode}
+        GROUP BY model_id, risk_level
+        ORDER BY MAX(creation_time) DESC
+        LIMIT 1
+    </select>
+
+</mapper>
