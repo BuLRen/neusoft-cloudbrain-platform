@@ -9,35 +9,42 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * ai-triage-service 的 Feign 客户端。
  *
- * <p>用途：预问诊开始时按 {@code registerId} 反查导诊小结，把导诊阶段已采集到的
- * 症状原文、推荐科室、AI 分析等注入到预问诊 prompt，实现"导诊 → 预问诊"上下文串联。
+ * <p>用途：预问诊开始时按 {@code sessionId} 精确反查本次就诊对应的导诊小结，
+ * 把导诊阶段已采集到的症状原文、推荐科室、AI 分析等注入到预问诊 prompt，
+ * 实现"导诊 → 预问诊"上下文串联。
+ *
+ * <p><b>设计要点</b>：用 sessionId（导诊创建时生成的 UUID）作为串联键，
+ * 而不是 registerId/patientId。后者曾导致"猜最近一条"回填错绑，
+ * 把患者历史导诊污染进本次预问诊。sessionId 是 1:1 精确绑定，物理上不会错配。
  *
  * <p>采用 url 直连模式（与 registration-service 的 FeignClient 风格一致），
  * 无需引入 spring-cloud-starter-loadbalancer。url 通过配置项 {@code triage.service.url}
  * 注入，默认 {@code http://localhost:8101}（对应 ai-triage-service 的端口）。
  *
- * <p>对应后端契约：{@code AiTriageController#getTriageSummaryByRegisterId}
- * ({@code GET /api/ai/triage/summary/register/{registerId}})。
+ * <p>对应后端契约：{@code AiTriageController#getTriageSummaryBySessionId}
+ * ({@code GET /api/ai/triage/summary/session/{sessionId}})。
  */
 @FeignClient(name = "ai-triage-service", path = "/api/ai/triage",
         url = "${triage.service.url:http://localhost:8101}")
 public interface TriageClient {
 
     /**
-     * 按 registerId 反查导诊小结。
+     * 按 sessionId 精确反查导诊小结（预问诊的权威查询入口）。
      *
-     * @param registerId 挂号 ID
-     * @return 导诊小结；若该挂号未做过导诊，data 为 null
+     * @param sessionId 导诊会话 ID
+     * @return 导诊小结；sessionId 为空或未做过导诊时 data 为 null（预问诊降级为完整流程）
      */
-    @GetMapping("/summary/register/{registerId}")
-    Result<TriageSummary> getTriageSummary(@PathVariable("registerId") Integer registerId);
+    @GetMapping("/summary/session/{sessionId}")
+    Result<TriageSummary> getTriageSummaryBySessionId(@PathVariable("sessionId") String sessionId);
 
     /**
-     * 按 patientId 反查导诊小结（registerId 查不到时的兜底入口）。
+     * 按 registerId 反查导诊小结（兜底入口）。
+     * 用于预问诊没有 sessionId 时，靠挂号回填（按 sessionId 精确绑定的 register_id）反查。
+     * 只要挂号回填成功，这里查到的就是本次导诊。
      *
-     * @param patientId 患者 ID
-     * @return 导诊小结；若该患者未做过导诊，data 为 null
+     * @param registerId 挂号 ID
+     * @return 导诊小结；该挂号未关联导诊时 data 为 null
      */
-    @GetMapping("/summary/patient/{patientId}")
-    Result<TriageSummary> getTriageSummaryByPatientId(@PathVariable("patientId") Long patientId);
+    @GetMapping("/summary/register/{registerId}")
+    Result<TriageSummary> getTriageSummaryByRegisterId(@PathVariable("registerId") Integer registerId);
 }

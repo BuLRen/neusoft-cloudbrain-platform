@@ -63,19 +63,24 @@ public class PreConsultService {
     /**
      * 开始预问诊，返回首条 AI 提问（流式回调）
      *
-     * @param registerId 挂号ID
-     * @param patientId  患者ID
-     * @param tokenConsumer 每个 token 的回调（流式）
+     * @param registerId      挂号ID
+     * @param patientId       患者ID
+     * @param triageSessionId 导诊会话ID（精确关联本次导诊，避免历史污染）；未做导诊时为 null
+     * @param tokenConsumer   每个 token 的回调（流式）
      * @return Map 包含 sessionUuid, done=false, finished=false
      */
-    public Map<String, Object> start(Integer registerId, Integer patientId, Consumer<String> tokenConsumer) {
+    public Map<String, Object> start(Integer registerId, Integer patientId, String triageSessionId,
+                                     Consumer<String> tokenConsumer) {
         String sessionUuid = UUID.randomUUID().toString();
-        log.info("[预问诊开始] registerId={}, patientId={}, sessionUuid={}", registerId, patientId, sessionUuid);
+        log.info("[预问诊开始] registerId={}, patientId={}, triageSessionId={}, sessionUuid={}",
+                registerId, patientId, triageSessionId, sessionUuid);
 
         // 第一次 AI 提问：空历史（repository 此时还没有这个 sessionUuid 的数据）
         String patientAllergy = safeQueryPatientAllergy(patientId);
-        // 拉取导诊上下文（失败降级为 null，预问诊退化为完整 5 步流程，不阻断）
-        String triageContext = safeFetchTriageContext(registerId, patientId);
+        // 拉取本次导诊上下文：优先按 sessionId 精确查（前端透传，最可靠）；
+        // sessionId 缺失则按 registerId 查（靠挂号回填绑定的 register_id 兜底）；
+        // 都查不到则返回 null，走完整流程。
+        String triageContext = safeFetchTriageContext(triageSessionId, registerId);
         List<Message> messages = buildPromptMessages(sessionUuid, "", patientAllergy, triageContext);
         String aiReply = callAi(messages, tokenConsumer);
         boolean finished = PromptUtils.isConsultationFinished(aiReply);
@@ -91,6 +96,9 @@ public class PreConsultService {
         result.put("registerId", registerId);
         result.put("roundNumber", 1);
         result.put("finished", finished);
+        // 暴露导诊关联状态：triageContext 为空 = 未关联导诊（未做导诊或 sessionId 缺失），
+        // 前端可据此提示"未关联导诊，将走完整问诊流程"，让降级可见、可排查。
+        result.put("triageLinked", triageContext != null && !triageContext.isBlank());
         return result;
     }
 
@@ -116,9 +124,9 @@ public class PreConsultService {
         //    （先 buildMessages 再 insert，是为了让 prompt 结构与旧实现严格等价；
         //    insert 仍在 callAi 之前执行，保证 AI 调用失败时患者回答也不会丢失。）
         String patientAllergy = safeQueryPatientAllergy(patientId);
-        // reply 阶段也注入导诊上下文：模型每轮都可见导诊背景，自行判断哪些维度已确认可跳过
-        String triageContext = safeFetchTriageContext(registerId, patientId);
-        List<Message> messages = buildPromptMessages(sessionUuid, patientAnswer, patientAllergy, triageContext);
+        // reply 阶段不再重新拉导诊上下文：导诊背景已在 start 第一轮注入到对话历史中，
+        // 后续轮次通过 ChatMemory 读取历史即可感知，无需每轮重复注入（也避免 reply 还要传 sessionId 的复杂度）。
+        List<Message> messages = buildPromptMessages(sessionUuid, patientAnswer, patientAllergy, null);
 
         // 3. 把"患者回答"持久化到第 nextRound 行
         AiPreVisitRecord answerRow = new AiPreVisitRecord();
@@ -377,49 +385,51 @@ public class PreConsultService {
     /**
      * 安全拉取导诊上下文并格式化为 prompt 可用的字符串。
      *
-     * <p>失败时（triage-service 不可用、无导诊记录、网络异常等）返回 null，
-     * 预问诊自动降级为完整 5 步流程，不阻断主流程。
+     * <p><b>查询策略（双重保障）</b>：
+     * <ol>
+     *   <li>优先按 {@code triageSessionId} 精确查 —— 前端透传的导诊会话ID，1:1 精确绑定本次导诊。</li>
+     *   <li>sessionId 缺失时，按 {@code registerId} 查 —— 靠挂号时按 sessionId 精确回填的 register_id 兜底。</li>
+     * </ol>
+     * <p>只要任一渠道命中，就读到正确的本次导诊；都查不到则返回 null，预问诊降级为完整流程。
      *
-     * @param registerId 挂号 ID
-     * @return 格式化后的导诊上下文文本；无导诊记录或调用失败时返回 null
+     * <p><b>不会错配历史导诊</b>：sessionId 是精确匹配；registerId 也是按 sessionId 精确回填的，
+     * 不再有旧的"按 patientId 猜最近一条"逻辑。
+     *
+     * @param triageSessionId 导诊会话 ID（优先查询键，可为 null）
+     * @param registerId      挂号 ID（兜底查询键，可为 null）
+     * @return 格式化后的导诊上下文文本；都查不到时返回 null
      */
-    /**
-     * 安全拉取导诊上下文并格式化为 prompt 可用的字符串。
-     *
-     * <p>查询顺序：先按 registerId 精确查（挂号回填后命中）；
-     * 查不到则按 patientId 查最近一条导诊记录（兼容回填失败、或导诊后未走完挂号直接进预问诊的场景）。
-     *
-     * <p>失败时（triage-service 不可用、无导诊记录、网络异常等）返回 null，
-     * 预问诊自动降级为完整 5 步流程，不阻断主流程。
-     *
-     * @param registerId 挂号 ID（优先查询键）
-     * @param patientId  患者 ID（兜底查询键）
-     * @return 格式化后的导诊上下文文本；无导诊记录或调用失败时返回 null
-     */
-    private String safeFetchTriageContext(Integer registerId, Integer patientId) {
-        // 1. 先按 registerId 查
+    private String safeFetchTriageContext(String triageSessionId, Integer registerId) {
+        // 1. 优先按 sessionId 精确查
+        if (triageSessionId != null && !triageSessionId.isBlank()) {
+            try {
+                Result<TriageSummary> resp = triageClient.getTriageSummaryBySessionId(triageSessionId);
+                log.info("[预问诊导诊上下文] 按 sessionId 命中 | sessionId={}, symptom={}",
+                        triageSessionId,
+                        resp != null && resp.getData() != null ? resp.getData().symptomDescription() : "null");
+                if (resp != null && resp.isSuccess() && resp.getData() != null) {
+                    return formatTriageContext(resp.getData());
+                }
+            } catch (Exception e) {
+                log.warn("按 sessionId 拉取导诊摘要失败，triageSessionId={}，尝试 registerId 兜底", triageSessionId, e);
+            }
+        }
+        // 2. sessionId 缺失或查不到，按 registerId 兜底
         if (registerId != null) {
             try {
-                Result<TriageSummary> resp = triageClient.getTriageSummary(registerId);
+                Result<TriageSummary> resp = triageClient.getTriageSummaryByRegisterId(registerId);
+                log.info("[预问诊导诊上下文] 按 registerId 命中 | registerId={}, symptom={}",
+                        registerId,
+                        resp != null && resp.getData() != null ? resp.getData().symptomDescription() : "null");
                 if (resp != null && resp.isSuccess() && resp.getData() != null) {
                     return formatTriageContext(resp.getData());
                 }
             } catch (Exception e) {
-                log.warn("按 registerId 拉取导诊摘要失败，registerId={}，尝试 patientId 兜底", registerId, e);
+                log.warn("按 registerId 拉取导诊摘要失败，registerId={}，预问诊降级为完整流程", registerId, e);
             }
         }
-        // 2. registerId 查不到，按 patientId 兜底
-        if (patientId != null) {
-            try {
-                Result<TriageSummary> resp = triageClient.getTriageSummaryByPatientId(patientId.longValue());
-                if (resp != null && resp.isSuccess() && resp.getData() != null) {
-                    log.info("导诊摘要通过 patientId 兜底命中，patientId={}", patientId);
-                    return formatTriageContext(resp.getData());
-                }
-            } catch (Exception e) {
-                log.warn("按 patientId 拉取导诊摘要失败，patientId={}，预问诊降级为完整流程", patientId, e);
-            }
-        }
+        log.info("[预问诊导诊上下文] 未命中（sessionId={}, registerId={}），预问诊走完整流程",
+                triageSessionId, registerId);
         return null;
     }
 

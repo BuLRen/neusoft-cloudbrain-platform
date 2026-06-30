@@ -125,6 +125,14 @@ export const registrationApi = {
     const result = await http<RegistrationRecord[]>({ url: `/registration/patient/${patientId}`, method: 'GET' })
     return result.map(normalizeRegistration)
   },
+  /**
+   * 查询当前登录用户管理的所有就诊人（本人+家属）的挂号列表。
+   * 用于"我的挂号"页：把家属挂号也展示出来。每条带 relation/isFamily 标识。
+   */
+  async registrationsByManaged() {
+    const result = await http<RegistrationRecord[]>({ url: '/registration/managed', method: 'GET' })
+    return result.map(normalizeRegistration)
+  },
   async registrationsByDate(date: string) {
     const result = await http<RegistrationRecord[]>({ url: `/registration/date/${date}`, method: 'GET' })
     return result.map(normalizeRegistration)

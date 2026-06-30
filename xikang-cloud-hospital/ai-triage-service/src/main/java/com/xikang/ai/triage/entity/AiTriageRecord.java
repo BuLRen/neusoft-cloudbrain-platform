@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
  * AiTriageRecord Entity - AI导诊记录表
  * ai_triage_record: id, patient_id, patient_name, patient_age, patient_gender, symptom_description,
  *                   recommend_dept_id, recommend_dept_name, recommend_doctor_id, recommend_doctor_name,
- *                   risk_level, is_priority, ai_analysis, register_id, triage_time, model_id
+ *                   risk_level, is_priority, ai_analysis, register_id, session_id, triage_time, model_id
  */
 @Data
 public class AiTriageRecord implements Serializable {
@@ -18,7 +18,7 @@ public class AiTriageRecord implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Long id;
-    private Long patientId;            // patient_id（患者ID，用于挂号后回填 register_id 定位）
+    private Long patientId;            // patient_id（患者ID）
     private String patientName;         // patient_name
     private Integer patientAge;         // patient_age
     private String patientGender;       // patient_gender
@@ -30,7 +30,8 @@ public class AiTriageRecord implements Serializable {
     private String riskLevel;          // risk_level: normal/urgent/critical
     private Integer isPriority;         // is_priority: 0/1
     private String aiAnalysis;          // ai_analysis (AI分析JSON)
-    private Long registerId;            // register_id (关联挂号ID)
+    private Long registerId;            // register_id (关联挂号ID，由 session_id 精确回填)
+    private String sessionId;          // session_id (导诊会话UUID，精确关联挂号/预问诊，替代"猜最近一条"回填)
     private LocalDateTime triageTime;  // triage_time
     private String modelId;             // model_id
 }

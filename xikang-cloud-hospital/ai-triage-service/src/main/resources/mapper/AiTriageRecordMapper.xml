@@ -17,6 +17,7 @@
         <result column="is_priority" property="isPriority"/>
         <result column="ai_analysis" property="aiAnalysis"/>
         <result column="register_id" property="registerId"/>
+        <result column="session_id" property="sessionId"/>
         <result column="triage_time" property="triageTime"/>
         <result column="model_id" property="modelId"/>
     </resultMap>
@@ -25,8 +26,9 @@
         SELECT * FROM ai_triage_record WHERE id = #{id}
     </select>
 
+    <!-- 按 sessionId 精确查导诊记录（预问诊用，替代按 registerId 查） -->
     <select id="selectBySessionId" resultMap="BaseResultMap">
-        SELECT * FROM ai_triage_record WHERE symptom_description = #{sessionId}
+        SELECT * FROM ai_triage_record WHERE session_id = #{sessionId} LIMIT 1
     </select>
 
     <select id="selectByRegisterId" resultMap="BaseResultMap">
@@ -52,7 +54,7 @@
         INSERT INTO ai_triage_record (
             patient_id, patient_name, patient_age, patient_gender, symptom_description,
             recommend_dept_id, recommend_dept_name, recommend_doctor_id, recommend_doctor_name,
-            risk_level, is_priority, ai_analysis, register_id, triage_time, model_id
+            risk_level, is_priority, ai_analysis, register_id, session_id, triage_time, model_id
         ) VALUES (
             #{patientId}, #{patientName}, #{patientAge}, #{patientGender}, #{symptomDescription},
             #{recommendDeptId}, #{recommendDeptName}, #{recommendDoctorId}, #{recommendDoctorName},
@@ -61,21 +63,16 @@
                 <when test="registerId != null">#{registerId}</when>
                 <otherwise>NULL</otherwise>
             </choose>,
+            #{sessionId},
             #{triageTime}, #{modelId}
         )
     </insert>
 
-    <!-- 挂号成功后回填 register_id：定位该患者最近一条 register_id 为空的导诊记录 -->
-    <update id="updateRegisterIdByPatient">
+    <!-- 按 sessionId 精确回填 register_id：替代旧的"猜最近一条"回填，杜绝错绑 -->
+    <update id="updateRegisterIdBySessionId">
         UPDATE ai_triage_record
         SET register_id = #{registerId}
-        WHERE id = (
-            SELECT id FROM ai_triage_record
-            WHERE patient_id = #{patientId}
-              AND register_id IS NULL
-            ORDER BY triage_time DESC
-            LIMIT 1
-        )
+        WHERE session_id = #{sessionId}
     </update>
 
     <!-- 按 patientId 查最近一条导诊记录（getTriageSummary 兜底用） -->

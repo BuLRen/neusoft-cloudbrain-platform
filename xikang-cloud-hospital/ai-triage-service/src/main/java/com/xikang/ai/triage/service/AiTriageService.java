@@ -84,8 +84,8 @@ public class AiTriageService {
         Map<String, Object> body = toResponseBody(result);
         body.put("sessionId", sessionId);
 
-        // 保存导诊记录
-        saveTriageRecord(request, result);
+        // 保存导诊记录（传入 sessionId，作为精确关联挂号/预问诊的 token）
+        saveTriageRecord(request, result, sessionId);
 
         return body;
     }
@@ -355,10 +355,14 @@ public class AiTriageService {
 
     /**
      * 保存导诊记录到数据库。
+     *
+     * @param sessionId 导诊会话 ID（UUID），作为精确关联挂号/预问诊的 token，
+     *                  替代旧的"按 patientId 猜最近一条"回填，杜绝错绑。
      */
-    private void saveTriageRecord(TriageRequest request, TriageResult result) {
+    private void saveTriageRecord(TriageRequest request, TriageResult result, String sessionId) {
         try {
             AiTriageRecord record = new AiTriageRecord();
+            record.setSessionId(sessionId);
             record.setPatientId(request.patientId());
             record.setPatientName(request.patientName() == null || request.patientName().isBlank()
                     ? "匿名患者" : request.patientName());
@@ -436,14 +440,20 @@ public class AiTriageService {
     }
 
     /**
-     * 按 patientId 反查导诊小结（registerId 查不到时的兜底入口）。
-     * 预问诊只传了 patientId 时可调本方法。
+     * 按 sessionId 精确反查导诊小结（预问诊的权威查询入口）。
+     *
+     * <p>sessionId 是导诊创建时生成的 UUID，由前端透传给预问诊。
+     * 这是"导诊→预问诊"上下文串联的唯一精确方式——
+     * 不再依赖"按 registerId/patientId 猜最近一条"，杜绝历史导诊污染本次预问诊。
+     *
+     * @param sessionId 导诊会话 ID
+     * @return 导诊小结；sessionId 为空或查不到时返回 null（预问诊降级为完整流程）
      */
-    public TriageSummary getTriageSummaryByPatientId(Long patientId) {
-        if (patientId == null) {
+    public TriageSummary getTriageSummaryBySessionId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
             return null;
         }
-        AiTriageRecord r = aiTriageRecordMapper.selectLatestByPatientId(patientId);
+        AiTriageRecord r = aiTriageRecordMapper.selectBySessionId(sessionId);
         return r == null ? null : toSummary(r);
     }
 
@@ -458,23 +468,25 @@ public class AiTriageService {
     }
 
     /**
-     * 挂号成功后回填 register_id 到该患者最近的导诊记录。
+     * 按 sessionId 精确回填 register_id 到导诊记录。
      *
      * <p>业务背景：导诊发生在挂号之前，导诊记录保存时 register_id 为 NULL。
-     * 挂号成功后调用本方法，按 patientId 定位最近一条 register_id 为空的导诊记录并回填，
-     * 之后预问诊就能按 register_id 查到这条导诊记录。
+     * 挂号成功后，前端把导诊时的 sessionId 一起带来，本方法按 sessionId 精确定位那条导诊记录并回填。
      *
-     * @param patientId  患者 ID
+     * <p>这是替代旧版"按 patientId 猜最近一条"回填——旧版曾把多次导诊/挂号交叉的记录错绑，
+     * 导致预问诊读到错误的导诊内容。
+     *
+     * @param sessionId 导诊会话 ID（精确匹配键）
      * @param registerId 挂号 ID
-     * @return true=回填成功；false=没找到匹配的导诊记录（患者未做导诊，正常情况）
+     * @return true=回填成功；false=没找到匹配的导诊记录（未做导诊或 sessionId 缺失）
      */
-    public boolean bindRegisterId(Long patientId, Long registerId) {
-        if (patientId == null || registerId == null) {
+    public boolean bindRegisterId(String sessionId, Long registerId) {
+        if (sessionId == null || sessionId.isBlank() || registerId == null) {
             return false;
         }
-        int rows = aiTriageRecordMapper.updateRegisterIdByPatient(patientId, registerId);
-        log.info("[triage] 回填 register_id: patientId={}, registerId={}, 受影响行数={}",
-                patientId, registerId, rows);
+        int rows = aiTriageRecordMapper.updateRegisterIdBySessionId(sessionId, registerId);
+        log.info("[triage] 按 sessionId 回填 register_id: sessionId={}, registerId={}, 受影响行数={}",
+                sessionId, registerId, rows);
         return rows > 0;
     }
 }

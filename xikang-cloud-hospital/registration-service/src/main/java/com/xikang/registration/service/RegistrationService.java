@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -57,6 +59,11 @@ public class RegistrationService {
         Integer patientIdParam = request.get("patientId") != null
             ? ((Number) request.get("patientId")).intValue()
             : null;
+
+        // triageSessionId：前端从导诊页透传过来的导诊会话ID，用于精确回填 register_id 到本次导诊记录。
+        // 若患者没做导诊直接挂号，此值为 null，回填会被跳过（预问诊走完整流程，不会污染）。
+        String triageSessionId = request.get("triageSessionId") != null
+            ? request.get("triageSessionId").toString() : null;
 
         String realName = (String) request.get("patientName");
         String gender = (String) request.get("gender");
@@ -227,22 +234,35 @@ public class RegistrationService {
 
         log.info("挂号成功 | registerId={}, patient={}, department={}", register.getId(), realName, department.getName());
 
-        // 挂号成功后回填 register_id 到该患者最近的导诊记录（用于"导诊→预问诊"上下文串联）。
-        // 放在事务内、try-catch 包住：回填失败绝不能影响挂号主流程。
-        // 注意：若后续把回填失败导致的事务回滚视为不可接受，可改为 TransactionSynchronizationManager
-        //       在 afterCommit 阶段调用；当前 try-catch 已能保证 Feign 异常不抛出。
-        if (patientIdParam != null) {
-            try {
-                Map<String, Object> bindBody = new HashMap<>();
-                bindBody.put("patientId", patientIdParam.longValue());
-                bindBody.put("registerId", register.getId());
-                Map<String, Object> bindResp = aiTriageFeignClient.bindRegister(bindBody);
-                log.info("导诊记录回填完成 | patientId={}, registerId={}, resp={}",
-                        patientIdParam, register.getId(), bindResp);
-            } catch (Exception e) {
-                log.warn("导诊记录回填失败（不影响挂号） | patientId={}, registerId={}",
-                        patientIdParam, register.getId(), e);
-            }
+        // 挂号成功后按 sessionId 精确回填 register_id 到本次导诊记录（用于"导诊→预问诊"上下文串联）。
+        // 【设计要点】
+        //   1. 用 sessionId（前端从导诊页透传）精确匹配，替代旧的"按 patientId 猜最近一条"——
+        //      后者曾把多次导诊/挂号交叉的记录错绑，导致预问诊读到错误的导诊内容。
+        //   2. 放在 afterCommit 阶段：跨服务 Feign 调用慢且不稳，放在事务内会拖慢/回滚挂号主流程。
+        //   3. triageSessionId 为 null（患者未做导诊）时跳过回填，预问诊自动走完整流程，不污染。
+        //   4. 失败用 error 级日志暴露，让"导诊未关联"这类问题可见、可排查。
+        if (triageSessionId != null && !triageSessionId.isBlank()
+                && TransactionSynchronizationManager.isSynchronizationActive()) {
+            final String sessionIdForBind = triageSessionId;
+            final Long registerIdForBind = register.getId();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        Map<String, Object> bindBody = new HashMap<>();
+                        bindBody.put("sessionId", sessionIdForBind);
+                        bindBody.put("registerId", registerIdForBind);
+                        Map<String, Object> bindResp = aiTriageFeignClient.bindRegister(bindBody);
+                        log.info("导诊记录回填完成 | sessionId={}, registerId={}, resp={}",
+                                sessionIdForBind, registerIdForBind, bindResp);
+                    } catch (Exception e) {
+                        // 回填失败不影响已提交的挂号，但必须 error 级暴露：
+                        // 这是"导诊→预问诊"链路断裂的根因，吞成 warn 会让人看不见。
+                        log.error("导诊记录回填失败 | sessionId={}, registerId={}，预问诊将无法关联本次导诊",
+                                sessionIdForBind, registerIdForBind, e);
+                    }
+                }
+            });
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -297,6 +317,27 @@ public class RegistrationService {
     public List<Map<String, Object>> listRegistrationsByPatient(Long patientId) {
         List<Register> registers = registrationMapper.selectByPatientId(patientId);
         return registers.stream().map(this::toMap).toList();
+    }
+
+    /**
+     * 获取当前登录用户管理的所有就诊人（本人+家属）的挂号列表。
+     * 用于"我的挂号"页：本人 + 家属挂号统一展示。
+     * 每条记录带 relation 字段（本人/配偶/父母等），便于前端区分标签。
+     * 已退号(visit_state=4) 不展示。
+     */
+    public List<Map<String, Object>> listRegistrationsByManaged(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+        List<Register> registers = registrationMapper.selectByManagedUserId(userId);
+        return registers.stream().map(r -> {
+            Map<String, Object> map = toMap(r);
+            // relation 可能为空（数据补全前的老数据），统一兜底为"本人"
+            String relation = r.getRelation();
+            map.put("relation", relation != null ? relation : "本人");
+            map.put("isFamily", relation != null && !"本人".equals(relation));
+            return map;
+        }).toList();
     }
 
     /**

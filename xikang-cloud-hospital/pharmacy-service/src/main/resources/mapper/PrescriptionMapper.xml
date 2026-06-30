@@ -17,6 +17,22 @@
 -->
 <mapper namespace="com.xikang.pharmacy.mapper.PrescriptionMapper">
 
+    <!--
+        处方数量安全转数字。
+        prescription.drug_number 是 varchar(255)，正常应是数字（如 "10"），
+        但历史上/前端录入异常时会混入规格串（如 "0.5g×60片"）。
+        直接 CAST(... AS NUMERIC) 会让整条聚合查询抛 invalid input syntax，
+        一条坏数据就能把整个发药工作台打挂。
+        这里用正则守卫：只有纯数字（含小数）才转换，否则按 0 参与金额计算。
+        影响：金额会少算这一行，但查询不再崩溃；坏数据应在录入侧根治。
+    -->
+    <sql id="safeDrugNumber">
+        CASE WHEN p.drug_number ~ '^[0-9]+(\.[0-9]+)?$'
+             THEN CAST(p.drug_number AS NUMERIC)
+             ELSE 0
+        END
+    </sql>
+
     <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.Prescription">
         <id column="id" property="id"/>
         <result column="register_id"        property="registerId"/>
@@ -52,7 +68,7 @@
             r.employee_id                               AS physician_id,
             e.realname                                  AS physician_name,
             MAX(p.diagnosis)                            AS diagnosis,
-            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+            SUM(COALESCE(d.price, 0) * (<include refid="safeDrugNumber"/>))
                                                         AS total_amount,
             CASE
                 WHEN COUNT(*) FILTER (WHERE p.drug_state = '未发') = 0
@@ -89,7 +105,7 @@
             r.employee_id                               AS physician_id,
             e.realname                                  AS physician_name,
             MAX(p.diagnosis)                            AS diagnosis,
-            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+            SUM(COALESCE(d.price, 0) * (<include refid="safeDrugNumber"/>))
                                                         AS total_amount,
             <choose>
                 <when test="status == 1">
@@ -141,7 +157,7 @@
             r.employee_id                               AS physician_id,
             e.realname                                  AS physician_name,
             MAX(p.diagnosis)                            AS diagnosis,
-            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+            SUM(COALESCE(d.price, 0) * (<include refid="safeDrugNumber"/>))
                                                         AS total_amount,
             CASE
                 WHEN COUNT(*) FILTER (WHERE p.drug_state = '未发') = 0
@@ -200,7 +216,7 @@
             r.employee_id                               AS physician_id,
             e.realname                                  AS physician_name,
             MAX(p.diagnosis)                            AS diagnosis,
-            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+            SUM(COALESCE(d.price, 0) * (<include refid="safeDrugNumber"/>))
                                                         AS total_amount,
             0                                           AS dispensation_status,
             MAX(p.dispensation_time)                    AS dispensation_time,
@@ -239,7 +255,7 @@
             r.employee_id                               AS physician_id,
             e.realname                                  AS physician_name,
             MAX(p.diagnosis)                            AS diagnosis,
-            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+            SUM(COALESCE(d.price, 0) * (<include refid="safeDrugNumber"/>))
                                                         AS total_amount,
             CASE
                 WHEN COUNT(*) FILTER (WHERE p.drug_state = '未发') = 0
@@ -274,7 +290,7 @@
             r.employee_id                               AS physician_id,
             e.realname                                  AS physician_name,
             MAX(p.diagnosis)                            AS diagnosis,
-            SUM(COALESCE(d.price, 0) * COALESCE(CAST(p.drug_number AS NUMERIC), 0))
+            SUM(COALESCE(d.price, 0) * (<include refid="safeDrugNumber"/>))
                                                         AS total_amount,
             CASE
                 WHEN COUNT(*) FILTER (WHERE p.drug_state = '未发') = 0

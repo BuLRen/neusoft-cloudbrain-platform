@@ -18,6 +18,13 @@ public interface RegistrationMapper {
     List<Register> selectByPatientId(Long patientId);
 
     /**
+     * 查询当前登录用户管理的所有就诊人（本人+家属）的挂号记录。
+     * 通过 user_patient_managed 关联，结果带 relation 字段（本人/配偶/父母等）。
+     * 用于"我的挂号"列表：本人 + 家属挂号都能看到。
+     */
+    List<Register> selectByManagedUserId(Long userId);
+
+    /**
      * 查询爽约候选：visit_state = 1 且就诊时间早于指定时间
      */
     List<Register> selectMissedCandidates(@Param("deadline") java.time.LocalDateTime deadline);

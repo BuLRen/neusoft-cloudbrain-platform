@@ -129,6 +129,10 @@ function goToRegistration() {
   if (triageResult.value.recommendedDoctors?.[0]?.id) {
     query.doctorId = String(triageResult.value.recommendedDoctors[0].id)
   }
+  // 透传导诊 sessionId 到挂号页，供挂号提交时回填 register_id
+  if (triageResult.value.sessionId) {
+    query.triageSessionId = triageResult.value.sessionId
+  }
   router.push({ path: '/patient/registration', query })
 }
 

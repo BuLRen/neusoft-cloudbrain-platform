@@ -108,6 +108,8 @@ export interface RegistrationCreatePayload {
   operatorId?: number
   operatorName?: string
   aiTriageResult?: TriageAnalysisResult | string | null
+  /** 导诊会话ID，供后端精确回填 register_id 到本次导诊记录（未做导诊时省略） */
+  triageSessionId?: string
 }
 
 export interface RegistrationCreateResult {
@@ -164,6 +166,10 @@ export interface RegistrationRecord {
   aiTriageResult?: string | TriageAnalysisResult | null
   aiPreVisit?: string
   createTime?: string
+  /** 当前登录用户与该患者的关系（本人/配偶/父母等），来自 /managed 接口 */
+  relation?: string
+  /** 是否家属挂号（relation 非"本人"），用于列表显示家属标签 */
+  isFamily?: boolean
 }
 
 export interface PendingChargeItem {

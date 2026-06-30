@@ -6,6 +6,7 @@ import com.xikang.registration.entity.Employee;
 import com.xikang.registration.entity.RegistLevel;
 import com.xikang.registration.entity.SettleCategory;
 import com.xikang.registration.service.*;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -75,6 +76,18 @@ public class RegistrationController {
     @GetMapping("/patient/{patientId}")
     public Result<List<Map<String, Object>>> getPatientRegistrations(@PathVariable Long patientId) {
         List<Map<String, Object>> registrations = registrationService.listRegistrationsByPatient(patientId);
+        return Result.success(registrations);
+    }
+
+    /**
+     * 获取当前登录用户管理的所有就诊人（本人+家属）的挂号列表。
+     * 用于"我的挂号"页：本人 + 家属挂号统一展示，每条带 relation/isFamily 标识。
+     * userId 由 ClinicalRecordAuthInterceptor 从 JWT 注入。
+     */
+    @GetMapping("/managed")
+    public Result<List<Map<String, Object>>> getManagedRegistrations(HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("clinicalRecordUserId");
+        List<Map<String, Object>> registrations = registrationService.listRegistrationsByManaged(userId);
         return Result.success(registrations);
     }
 

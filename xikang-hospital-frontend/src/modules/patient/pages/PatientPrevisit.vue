@@ -109,7 +109,12 @@ async function startSession() {
   abortCtl = new AbortController()
   try {
     const meta = await aiApi.previsitStart(
-      { registerId: registerId.value, patientId: patientId.value },
+      {
+        registerId: registerId.value,
+        patientId: patientId.value,
+        // 从 URL 读取导诊 sessionId（挂号页跳转时透传），精确关联本次导诊
+        triageSessionId: (route.query.triageSessionId as string) || undefined,
+      },
       updateLastMessage,
       abortCtl.signal,
     )
