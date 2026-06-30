@@ -30,6 +30,10 @@ public class DifyAiProperties {
     private String apiKeyW4 = "";
     /** W5 智能荐药 Workflow App 的 API Key（app-xxx）；为空时不启用 W5 Dify */
     private String apiKeyW5 = "";
+    /** 门诊临床 Copilot Agent App 的 API Key（app-xxx） */
+    private String agentApiKey = "";
+    /** Agent 根地址；为空时回退 base-url（自托管 Dify） */
+    private String agentBaseUrl = "";
     private String ctInferenceUrl = "";
     /** Dify blocking 工作流读取超时（毫秒），慢模型建议 300000（5 分钟） */
     private int readTimeoutMs = 300_000;
@@ -166,6 +170,22 @@ public class DifyAiProperties {
         this.apiKeyW5 = apiKeyW5;
     }
 
+    public String getAgentApiKey() {
+        return agentApiKey;
+    }
+
+    public void setAgentApiKey(String agentApiKey) {
+        this.agentApiKey = agentApiKey;
+    }
+
+    public String getAgentBaseUrl() {
+        return agentBaseUrl;
+    }
+
+    public void setAgentBaseUrl(String agentBaseUrl) {
+        this.agentBaseUrl = agentBaseUrl;
+    }
+
     public W2OutputKeys getW2OutputKeys() {
         return w2OutputKeys;
     }
@@ -261,6 +281,23 @@ public class DifyAiProperties {
     /** W5 专用 Key，不回退通用 api-key。 */
     public String resolveW5ApiKey() {
         return apiKeyW5 == null ? "" : apiKeyW5.trim();
+    }
+
+    public String resolveAgentBaseUrl() {
+        if (agentBaseUrl != null && !agentBaseUrl.isBlank()) {
+            return agentBaseUrl.trim();
+        }
+        return baseUrl == null ? "" : baseUrl.trim();
+    }
+
+    public String resolveAgentApiKey() {
+        return agentApiKey == null ? "" : agentApiKey.trim();
+    }
+
+    public boolean isAgentEnabled() {
+        return enabled
+            && !resolveAgentBaseUrl().isBlank()
+            && !resolveAgentApiKey().isBlank();
     }
 
     public String getCtInferenceUrl() {

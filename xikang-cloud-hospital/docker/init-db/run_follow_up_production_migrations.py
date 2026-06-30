@@ -31,23 +31,31 @@ CHECKS = [
 ]
 
 
-def load_password() -> str:
-    password = "changeme"
-    if ENV_PATH.exists():
-        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-            if line.startswith("DB_REMOTE_PASSWORD="):
-                password = line.split("=", 1)[1].strip()
-                break
-    return password
+def load_env() -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not ENV_PATH.exists():
+        return values
+    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def load_password(env: dict[str, str]) -> str:
+    return env.get("DB_PASSWORD") or env.get("DB_REMOTE_PASSWORD") or "changeme"
 
 
 def main() -> None:
+    env = load_env()
     conn = psycopg2.connect(
-        host="43.139.102.203",
-        port=5432,
-        dbname="xikang_hospital",
-        user="xikang_hospital",
-        password=load_password(),
+        host=env.get("DB_HOST", "43.139.102.203"),
+        port=int(env.get("DB_PORT", "5432")),
+        dbname=env.get("DB_NAME", "xikang_hospital"),
+        user=env.get("DB_USERNAME", "xikang_hospital"),
+        password=load_password(env),
     )
     conn.autocommit = True
     cur = conn.cursor()

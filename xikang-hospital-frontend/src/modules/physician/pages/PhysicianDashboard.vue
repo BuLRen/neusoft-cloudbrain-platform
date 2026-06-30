@@ -7,7 +7,7 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { physicianApi, type PhysicianHistoricalSummary, type PhysicianPatient } from '@/shared/api/modules/physician'
 import { useAuthStore } from '@/app/stores/auth'
-import { physicianRoute, resumePathForVisitState, visitStateLabel, VISIT_STATE } from '../constants/visitState'
+import { physicianRoute, resumePathForVisitState, visitStateLabel, VISIT_STATE, PHYSICIAN_QUEUE, PHYSICIAN_ASSISTANT } from '../constants/visitState'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -29,10 +29,10 @@ const stats = computed(() => {
 })
 
 const kpiCards = computed(() => [
-  { title: '待接诊', value: stats.value.waiting, tone: 'warning' as const, to: '/physician/queue' },
-  { title: '接诊中', value: stats.value.inProgress, tone: 'primary' as const, to: '/physician/queue' },
-  { title: '待查看结果', value: stats.value.resultsReady, tone: 'ai' as const, to: '/physician/results' },
-  { title: '今日完成看诊', value: stats.value.todayCompleted, tone: 'success' as const, to: '/physician/queue' },
+  { title: '待接诊', value: stats.value.waiting, tone: 'warning' as const, to: PHYSICIAN_QUEUE },
+  { title: '接诊中', value: stats.value.inProgress, tone: 'primary' as const, to: PHYSICIAN_QUEUE },
+  { title: '待查看结果', value: stats.value.resultsReady, tone: 'ai' as const, action: 'results' as const },
+  { title: '今日完成看诊', value: stats.value.todayCompleted, tone: 'success' as const, to: PHYSICIAN_QUEUE },
 ])
 
 const historicalCards = computed(() => {
@@ -56,14 +56,26 @@ const resultsPending = computed(() =>
 )
 
 const quickEntries = [
-  { title: '进入接诊队列', description: '查看待诊患者并开始接诊流程。', path: '/physician/queue', tone: 'primary' as const },
-  { title: '查看检查结果', description: '查看已完成检查/检验的患者结果。', path: '/physician/results', tone: 'ai' as const },
+  { title: '待诊接诊', description: '查看待诊患者并开始接诊流程。', path: PHYSICIAN_QUEUE, tone: 'primary' as const },
+  { title: '病历与初步诊断', description: '录入病历、生成初步诊断。', path: '/physician/record', tone: 'primary' as const },
+  { title: '打开 AI 助手', description: '基于患者上下文进行临床问答与辅助决策。', path: PHYSICIAN_ASSISTANT, tone: 'ai' as const },
 ]
 
 function aiSummary(patient: PhysicianPatient) {
   const summary = patient.aiConsultSummary
   if (!summary) return '暂无 AI 预问诊摘要'
   return summary.chiefComplaint || summary.aiSummary || summary.suggestedExam || '已完成 AI 预问诊'
+}
+
+function openKpi(card: { to?: string; action?: string }) {
+  if (card.action === 'results') {
+    const target = resultsPending.value[0]
+    if (target) {
+      openPatient(target)
+      return
+    }
+  }
+  if (card.to) router.push(card.to)
 }
 
 function open(path: string) {
@@ -100,12 +112,12 @@ onMounted(load)
     >
       <template #actions>
         <ElButton @click="load">刷新</ElButton>
-        <ElButton type="primary" @click="open('/physician/queue')">进入接诊队列</ElButton>
+        <ElButton type="primary" @click="open(PHYSICIAN_QUEUE)">待诊接诊</ElButton>
       </template>
     </PageHeader>
 
     <section class="kpi-grid" v-loading="loading">
-      <GlassCard v-for="card in kpiCards" :key="card.title" class="kpi-card" @click="open(card.to)">
+      <GlassCard v-for="card in kpiCards" :key="card.title" class="kpi-card" @click="openKpi(card)">
         <StatusTag :tone="card.tone">{{ card.title }}</StatusTag>
         <strong>{{ card.value }}</strong>
         <span class="kpi-hint">点击进入相关页面</span>
@@ -136,7 +148,7 @@ onMounted(load)
             <h3>待诊患者预览</h3>
             <p>最近待接诊与接诊中的患者，最多显示 5 条。</p>
           </div>
-          <ElButton link type="primary" @click="open('/physician/queue')">查看全部</ElButton>
+          <ElButton link type="primary" @click="open(PHYSICIAN_QUEUE)">查看全部</ElButton>
         </div>
         <div v-if="waitingPreview.length > 0" class="list-stack">
           <button
@@ -182,7 +194,7 @@ onMounted(load)
             <h3>待查看结果</h3>
             <p>检查/检验已完成、等待医生查看结果的患者。</p>
           </div>
-          <ElButton link type="primary" @click="open('/physician/results')">前往查看结果</ElButton>
+          <ElButton link type="primary" @click="openKpi({ action: 'results' })">前往查看结果</ElButton>
         </div>
         <div v-if="resultsPending.length > 0" class="list-stack">
           <button

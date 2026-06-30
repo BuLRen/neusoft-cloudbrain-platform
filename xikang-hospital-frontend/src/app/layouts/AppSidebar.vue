@@ -3,21 +3,20 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Box, Calendar, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { appName } from '@/shared/constants/app'
 import { useAuthStore } from '@/app/stores/auth'
 import { useEncounterStore } from '@/app/stores/encounter'
-import { isPhysicianStepPath } from '@/modules/physician/composables/usePhysicianEncounterRoute'
-import { physicianRoute } from '@/modules/physician/constants/visitState'
+import { usePhysicianPatientSelectStore } from '@/app/stores/physicianPatientSelect'
+import { isPhysicianEncounterPath } from '@/modules/physician/constants/visitState'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const encounterStore = useEncounterStore()
+const patientSelectStore = usePhysicianPatientSelectStore()
 const iconMap = { Box, Calendar, DataBoard, FirstAidKit, MagicStick, Menu, Operation, Setting, Tickets, User }
 
-// 患者角色时隐藏左侧菜单
 const isPatient = computed(() => authStore.role === 'patient')
-const encounterStore = useEncounterStore()
 
 function isRouteAccessible(item: any) {
   if (item?.meta?.hidden) return false
@@ -49,19 +48,11 @@ function joinPath(...segments: string[]) {
   return `/${segments.filter(Boolean).join('/')}`
 }
 
-function isPhysicianStepDisabled(path: string) {
-  return isPhysicianStepPath(path) && !encounterStore.hasEncounter
-}
-
 function handleMenuSelect(index: string) {
   if (index === route.path) return
 
-  if (isPhysicianStepPath(index)) {
-    if (!encounterStore.registerId) {
-      ElMessage.warning('请先从「待诊接诊」选择患者并进入流程')
-      return
-    }
-    void router.push(physicianRoute(index, encounterStore.registerId))
+  if (isPhysicianEncounterPath(index) && !encounterStore.registerId) {
+    patientSelectStore.open(index)
     return
   }
 
@@ -70,7 +61,6 @@ function handleMenuSelect(index: string) {
 </script>
 
 <template>
-  <!-- 患者角色时隐藏左侧菜单 -->
   <aside v-if="!isPatient" class="app-sidebar">
     <RouterLink class="app-sidebar__brand" to="/dashboard">
       <span class="app-sidebar__logo">熙</span>
@@ -114,8 +104,6 @@ function handleMenuSelect(index: string) {
             <el-menu-item
               v-else
               :index="joinPath(item.path, child.path)"
-              :disabled="isPhysicianStepDisabled(joinPath(item.path, child.path))"
-              :class="{ 'app-sidebar__item--disabled': isPhysicianStepDisabled(joinPath(item.path, child.path)) }"
             >
               <span>{{ child.meta?.title }}</span>
             </el-menu-item>
@@ -227,11 +215,5 @@ function handleMenuSelect(index: string) {
 
 .app-sidebar :deep(.el-menu-item.is-active) {
   background-color: var(--color-primary-soft) !important;
-}
-
-.app-sidebar :deep(.el-menu-item.is-disabled),
-.app-sidebar :deep(.app-sidebar__item--disabled) {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 </style>

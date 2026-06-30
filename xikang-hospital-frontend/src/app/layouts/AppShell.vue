@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import AppHeader from './AppHeader.vue'
 import AppSidebar from './AppSidebar.vue'
+import PhysicianPatientSelectDialog from '@/modules/physician/components/PhysicianPatientSelectDialog.vue'
 </script>
 
 <template>
@@ -13,6 +14,7 @@ import AppSidebar from './AppSidebar.vue'
         <RouterView />
       </section>
     </main>
+    <PhysicianPatientSelectDialog />
   </div>
 </template>
 

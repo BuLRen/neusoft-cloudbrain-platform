@@ -9,7 +9,9 @@ spring:
         server-addr: localhost:8848
         file-extension: yaml
   config:
-    import: optional:file:./.env
+    import:
+      - optional:file:../.env
+      - optional:file:./.env
 
 baidu:
   asr:

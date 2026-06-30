@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.physician.copilot.mapper.PhysicianAiChatSessionMapper">
+
+    <resultMap id="PhysicianAiChatSessionMap" type="com.xikang.physician.copilot.entity.PhysicianAiChatSession">
+        <id property="id" column="id"/>
+        <result property="registerId" column="register_id"/>
+        <result property="doctorId" column="doctor_id"/>
+        <result property="title" column="title"/>
+        <result property="difyConversationId" column="dify_conversation_id"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="selectByRegisterId" resultMap="PhysicianAiChatSessionMap">
+        SELECT id, register_id, doctor_id, title, dify_conversation_id, created_at, updated_at
+        FROM physician_ai_chat_session
+        WHERE register_id = #{registerId}
+        ORDER BY updated_at DESC
+    </select>
+
+    <select id="selectById" resultMap="PhysicianAiChatSessionMap">
+        SELECT id, register_id, doctor_id, title, dify_conversation_id, created_at, updated_at
+        FROM physician_ai_chat_session
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO physician_ai_chat_session (
+            register_id, doctor_id, title, created_at, updated_at
+        ) VALUES (
+            #{registerId}, #{doctorId}, #{title},
+            COALESCE(#{createdAt}, NOW()), COALESCE(#{updatedAt}, NOW())
+        )
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM physician_ai_chat_session WHERE id = #{id}
+    </delete>
+
+    <update id="updateTitle">
+        UPDATE physician_ai_chat_session
+        SET title = #{title}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="touchUpdatedAt">
+        UPDATE physician_ai_chat_session
+        SET updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateDifyConversationId">
+        UPDATE physician_ai_chat_session
+        SET dify_conversation_id = #{difyConversationId}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="clearDifyConversationId">
+        UPDATE physician_ai_chat_session
+        SET dify_conversation_id = NULL, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+</mapper>

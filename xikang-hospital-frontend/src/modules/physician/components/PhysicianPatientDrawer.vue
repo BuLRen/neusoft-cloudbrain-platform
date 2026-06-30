@@ -6,7 +6,7 @@ import { Check } from '@element-plus/icons-vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { physicianApi, type PhysicianPatient } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
-import { VISIT_STATE, physicianRoute, resumePathForVisitState, visitStateLabel } from '../constants/visitState'
+import { VISIT_STATE, PHYSICIAN_QUEUE, physicianRoute, resumePathForVisitState, visitStateLabel } from '../constants/visitState'
 
 const visible = defineModel<boolean>('visible', { default: false })
 
@@ -44,7 +44,7 @@ async function onSelect(patient: PhysicianPatient) {
 
 function goToQueue() {
   visible.value = false
-  void router.push('/physician/queue')
+  void router.push(PHYSICIAN_QUEUE)
 }
 
 watch(visible, (open) => {
