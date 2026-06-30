@@ -89,105 +89,126 @@ export function buildTrendOption(params: {
   }
 }
 
+export interface GlucoseChartPoint {
+  time: string
+  value: number
+}
+
+function parseChartTime(value: string): number {
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T')
+  const ms = new Date(normalized).getTime()
+  return Number.isNaN(ms) ? 0 : ms
+}
+
 export function buildGlucoseTrendOption(params: {
   title: string
-  actualDates: string[]
-  actualValues: number[]
-  forecastDates?: string[]
-  forecastValues?: number[]
+  actualPoints: GlucoseChartPoint[]
+  forecastPoints: GlucoseChartPoint[]
+  formatTime?: (value: string) => string
   unit?: string
   color?: string
 }): echarts.EChartsOption {
   const color = params.color ?? '#1f8cff'
-  const dates = [...params.actualDates]
-  const actualData: (number | null)[] = [...params.actualValues]
+  const formatTime = params.formatTime ?? ((v: string) => v)
+  const unit = params.unit ?? 'mmol/L'
 
-  const forecastDates = params.forecastDates ?? []
-  const forecastValues = params.forecastValues ?? []
-  const forecastData: (number | null)[] = []
+  type Slot = { time: string; actual: number | null; forecast: number | null }
+  const slots = new Map<number, Slot>()
 
-  if (forecastDates.length) {
-    const lastActual = params.actualValues.at(-1)
-    for (const date of forecastDates) {
-      if (!dates.includes(date)) {
-        dates.push(date)
-        actualData.push(null)
-        forecastData.push(null)
-      }
-    }
-    const sorted = dates
-      .map((date, index) => ({ date, actual: actualData[index] ?? null, index }))
-      .sort((a, b) => a.date.localeCompare(b.date))
+  for (const point of params.actualPoints) {
+    const ms = parseChartTime(point.time)
+    slots.set(ms, { time: point.time, actual: point.value, forecast: null })
+  }
 
-    const rebuiltActual: (number | null)[] = sorted.map((item) => item.actual)
-    const rebuiltForecast: (number | null)[] = new Array(sorted.length).fill(null)
-
-    const lastActualIndex = sorted.findLastIndex((item) => item.actual != null)
-    if (lastActualIndex >= 0 && lastActual != null) {
-      rebuiltForecast[lastActualIndex] = lastActual
-    }
-
-    forecastDates.forEach((date, idx) => {
-      const pos = sorted.findIndex((item) => item.date === date)
-      if (pos >= 0) {
-        rebuiltForecast[pos] = forecastValues[idx] ?? null
-      }
-    })
-
-    return {
-      title: {
-        text: params.title,
-        left: 0,
-        textStyle: { fontSize: 14, fontWeight: 600, color: '#102033' },
-      },
-      tooltip: {
-        trigger: 'axis',
-        valueFormatter: (value) => `${value ?? '—'}${params.unit ? ` ${params.unit}` : ''}`,
-      },
-      legend: { bottom: 0, data: ['实测', '预测'], textStyle: { color: '#5f7288' } },
-      grid: { left: 40, right: 16, top: 48, bottom: 48 },
-      xAxis: { type: 'category', data: sorted.map((item) => item.date), axisLabel: { color: '#5f7288' } },
-      yAxis: {
-        type: 'value',
-        axisLabel: { color: '#5f7288' },
-        splitLine: { lineStyle: { color: 'rgba(70, 111, 160, 0.12)' } },
-      },
-      series: [
-        {
-          name: '实测',
-          type: 'line',
-          smooth: true,
-          data: rebuiltActual,
-          itemStyle: { color },
-          areaStyle: { color: 'rgba(31, 140, 255, 0.12)' },
-          markLine: {
-            silent: true,
-            symbol: 'none',
-            lineStyle: { type: 'dashed', color: '#ef4d5a', opacity: 0.45 },
-            data: [{ yAxis: 3.9 }, { yAxis: 10.0 }],
-          },
-        },
-        {
-          name: '预测',
-          type: 'line',
-          smooth: true,
-          connectNulls: true,
-          data: rebuiltForecast,
-          itemStyle: { color: '#f59f00' },
-          lineStyle: { type: 'dashed', width: 2 },
-        },
-      ],
+  for (const point of params.forecastPoints) {
+    const ms = parseChartTime(point.time)
+    const existing = slots.get(ms)
+    if (existing) {
+      existing.forecast = point.value
+    } else {
+      slots.set(ms, { time: point.time, actual: null, forecast: point.value })
     }
   }
 
-  return buildTrendOption({
-    title: params.title,
-    dates: params.actualDates,
-    values: params.actualValues,
-    unit: params.unit,
-    chartType: 'line',
-    color,
+  const sorted = [...slots.entries()].sort((a, b) => a[0] - b[0])
+  const lastActual = params.actualPoints.at(-1)
+  const lastActualMs = lastActual ? parseChartTime(lastActual.time) : null
+
+  const axisLabels = sorted.map(([, slot]) => formatTime(slot.time))
+  const actualData = sorted.map(([, slot]) => slot.actual)
+  const forecastData = sorted.map(([ms, slot]) => {
+    if (lastActualMs != null && ms === lastActualMs && lastActual != null) {
+      return lastActual.value
+    }
+    return slot.forecast
   })
+
+  return {
+    title: {
+      text: params.title,
+      left: 0,
+      textStyle: { fontSize: 14, fontWeight: 600, color: '#102033' },
+    },
+    legend: {
+      top: 4,
+      right: 0,
+      data: ['实测', '预测'],
+      textStyle: { color: '#5f7288' },
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter(items) {
+        const rows = Array.isArray(items) ? items : [items]
+        if (!rows.length) return ''
+        const header = String(rows[0]?.name ?? '')
+        const lines = [header]
+        for (const row of rows) {
+          const val = row?.value
+          if (val == null || val === '') continue
+          lines.push(`${row?.seriesName ?? ''}: ${val} ${unit}`)
+        }
+        return lines.join('<br/>')
+      },
+    },
+    grid: { left: 48, right: 16, top: 56, bottom: 36 },
+    xAxis: {
+      type: 'category',
+      data: axisLabels,
+      axisLabel: { color: '#5f7288', rotate: axisLabels.length > 12 ? 28 : 0 },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#5f7288' },
+      splitLine: { lineStyle: { color: 'rgba(70, 111, 160, 0.12)' } },
+    },
+    series: [
+      {
+        name: '实测',
+        type: 'line',
+        smooth: true,
+        connectNulls: false,
+        data: actualData,
+        itemStyle: { color },
+        lineStyle: { width: 2 },
+        areaStyle: { color: 'rgba(31, 140, 255, 0.12)' },
+        markLine: {
+          silent: true,
+          symbol: 'none',
+          lineStyle: { type: 'dashed', color: '#ef4d5a', opacity: 0.45 },
+          data: [{ yAxis: 3.9 }, { yAxis: 10.0 }],
+        },
+      },
+      {
+        name: '预测',
+        type: 'line',
+        smooth: true,
+        connectNulls: true,
+        data: forecastData,
+        itemStyle: { color: '#f59f00' },
+        lineStyle: { type: 'dashed', width: 2 },
+      },
+    ],
+  }
 }
 
 export function buildReliefTrendOption(

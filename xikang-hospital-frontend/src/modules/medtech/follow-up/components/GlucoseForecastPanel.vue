@@ -5,6 +5,7 @@ import { ElButton, ElEmpty, ElMessage } from 'element-plus'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { buildGlucoseTrendOption } from '@/shared/composables/useECharts'
+import { beijingTodayYmd, beijingYmdAddDays, formatBeijingDateTime } from '@/shared/utils/beijingDate'
 import type { FollowUpHealthMetric } from '@/shared/types/medtechFollowUp'
 import {
   GLUCOSE_RISK_LABELS,
@@ -30,6 +31,7 @@ const props = withDefaults(
 const loading = ref(false)
 const refreshing = ref(false)
 const forecast = ref<GlucoseForecastResult | null>(null)
+const glucoseMetrics = ref<FollowUpHealthMetric[]>([])
 const chartEl = ref<HTMLElement | null>(null)
 let chart: echarts.ECharts | null = null
 
@@ -38,23 +40,28 @@ const riskLabel = computed(() => GLUCOSE_RISK_LABELS[riskLevel.value] ?? riskLev
 const riskTone = computed(() => GLUCOSE_RISK_TONES[riskLevel.value] ?? 'neutral')
 
 const actualSeries = computed(() => {
-  const rows = props.metrics
+  const source = glucoseMetrics.value.length
+    ? glucoseMetrics.value
+    : props.metrics.filter((item) => item.metricKey === 'blood_glucose')
+  const rows = source
     .filter((item) => item.metricKey === 'blood_glucose')
-    .sort((a, b) => a.recordDate.localeCompare(b.recordDate))
+    .sort((a, b) => String(a.recordedAt ?? a.recordDate).localeCompare(String(b.recordedAt ?? b.recordDate)))
+  const recent = rows.slice(-72)
   return {
-    dates: rows.map((item) => item.recordDate),
-    values: rows.map((item) => Number(item.metricValue)),
-    unit: rows[0]?.unit ?? 'mmol/L',
+    points: recent.map((item) => ({
+      time: String(item.recordedAt ?? item.recordDate),
+      value: Number(item.metricValue),
+    })),
+    unit: recent[0]?.unit ?? 'mmol/L',
   }
 })
 
-const forecastSeries = computed(() => {
-  const points = forecast.value?.forecasts ?? []
-  return {
-    dates: points.map((item) => String(item.forecastAt).slice(0, 16).replace('T', ' ')),
-    values: points.map((item) => Number(item.forecastValue)),
-  }
-})
+const forecastSeries = computed(() => ({
+  points: (forecast.value?.forecasts ?? []).map((item) => ({
+    time: String(item.forecastAt),
+    value: Number(item.forecastValue),
+  })),
+}))
 
 function disposeChart() {
   chart?.dispose()
@@ -67,24 +74,41 @@ async function renderChart() {
   disposeChart()
   const actual = actualSeries.value
   const predicted = forecastSeries.value
-  if (!actual.dates.length && !predicted.dates.length) return
+  if (!actual.points.length && !predicted.points.length) return
   chart = echarts.init(chartEl.value)
   chart.setOption(
     buildGlucoseTrendOption({
       title: props.compact ? '血糖趋势与预测' : '血糖监测与 24h 预测',
-      actualDates: actual.dates,
-      actualValues: actual.values,
-      forecastDates: predicted.dates,
-      forecastValues: predicted.values,
+      actualPoints: actual.points,
+      forecastPoints: predicted.points,
+      formatTime: (value) => formatBeijingDateTime(value),
       unit: actual.unit,
     }),
   )
+}
+
+async function loadGlucoseMetrics() {
+  if (!props.registerId) return
+  const to = beijingTodayYmd()
+  const from = beijingYmdAddDays(-7, to)
+  try {
+    glucoseMetrics.value = await medtechFollowUpApi.getMetrics(props.registerId, {
+      from,
+      to,
+      metricKeys: ['blood_glucose'],
+    })
+  } catch {
+    glucoseMetrics.value = []
+  }
 }
 
 async function loadForecast() {
   if (!props.registerId && !props.patientId) return
   loading.value = true
   try {
+    if (props.registerId) {
+      await loadGlucoseMetrics()
+    }
     if (props.mode === 'patient') {
       forecast.value = await medtechFollowUpApi.getPatientGlucoseForecast({
         patientId: props.patientId,
@@ -106,6 +130,7 @@ async function refreshForecast() {
   refreshing.value = true
   try {
     forecast.value = await medtechFollowUpApi.refreshGlucoseForecast(props.registerId)
+    await loadGlucoseMetrics()
     ElMessage.success('血糖预测已更新')
     await renderChart()
   } catch {
@@ -116,11 +141,21 @@ async function refreshForecast() {
 }
 
 watch(
-  () => [props.registerId, props.patientId, props.metrics],
+  () => [props.registerId, props.patientId],
   () => {
     void loadForecast()
   },
-  { deep: true, immediate: true },
+  { immediate: true },
+)
+
+watch(
+  () => props.metrics,
+  () => {
+    if (!glucoseMetrics.value.length) {
+      void renderChart()
+    }
+  },
+  { deep: true },
 )
 
 onUnmounted(disposeChart)
@@ -131,7 +166,7 @@ onUnmounted(disposeChart)
     <div class="glucose-forecast__head">
       <div>
         <h3>{{ compact ? '血糖预测' : 'AI 血糖预测' }}</h3>
-        <p v-if="!compact">基于 LSTM 模型对未来 24 小时血糖进行趋势预测</p>
+        <p v-if="!compact">展示最近 72 小时实测与 LSTM 未来 24 小时预测</p>
       </div>
       <div class="glucose-forecast__actions">
         <StatusTag :tone="riskTone">{{ riskLabel }}</StatusTag>
@@ -152,8 +187,8 @@ onUnmounted(disposeChart)
       {{ forecast.message }}
     </div>
 
-    <div v-if="actualSeries.dates.length || forecastSeries.dates.length" ref="chartEl" class="glucose-forecast__chart" />
-    <ElEmpty v-else description="暂无血糖观测数据" />
+    <div v-if="actualSeries.points.length || forecastSeries.points.length" ref="chartEl" class="glucose-forecast__chart" />
+    <ElEmpty v-else description="暂无血糖观测数据，请先导入或刷新预测" />
 
     <div v-if="forecast?.modelId" class="glucose-forecast__meta">
       模型 {{ forecast.modelId }}

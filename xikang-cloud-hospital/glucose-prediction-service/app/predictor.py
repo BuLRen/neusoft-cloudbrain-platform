@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from app.config import HORIZON, N_FEATURES, SEQ_LEN
+from app.norm import denormalize_glucose, load_norm_stats, normalize_glucose
 
 
 def classify_risk(values: list[float]) -> str:
@@ -28,6 +29,8 @@ def build_feature_matrix(observations: list[dict]) -> np.ndarray | None:
         mat[i, 1] = float(o.get("insulin_total") or 0)
         mat[i, 2] = float(o.get("meal_flag") or 0)
         mat[i, 3] = float(o.get("exercise_flag") or 0)
+    stats = load_norm_stats()
+    mat[:, 0] = (mat[:, 0] - stats.get("glucose_mean", 0.0)) / max(stats.get("glucose_std", 1.0), 1e-6)
     return mat
 
 
@@ -44,6 +47,6 @@ class GlucosePredictor:
             return None
         inp = mat.reshape(1, SEQ_LEN, N_FEATURES)
         out = self.session.run(None, {self.input_name: inp})[0]
-        values = [float(v) for v in out[0].tolist()]
+        values = denormalize_glucose([float(v) for v in out[0].tolist()[:HORIZON]])
         confidence = max(0.5, min(0.95, 1.0 - np.std(values) / 10.0))
         return values, confidence

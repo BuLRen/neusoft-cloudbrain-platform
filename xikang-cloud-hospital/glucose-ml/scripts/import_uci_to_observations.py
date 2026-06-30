@@ -11,7 +11,8 @@ import psycopg2
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.prepare_uci import find_patient_files, parse_patient_file, to_hourly  # noqa: E402
+from src.hourly import resample_to_hourly
+from src.parsers.uci import events_from_uci, find_patient_files, parse_patient_file
 
 ENV_PATH = ROOT.parent / ".env"
 DEFAULT_REGISTER_ID = 3
@@ -27,12 +28,23 @@ def load_password() -> str:
     return password
 
 
+def align_to_recent(hourly: pd.DataFrame) -> pd.DataFrame:
+    """UCI 原始时间为 1991 年；平移到「当前小时」为序列末端，便于前端展示与默认时间窗过滤。"""
+    if hourly.empty:
+        return hourly
+    out = hourly.copy()
+    last_ts = out["ts"].max()
+    now = pd.Timestamp.now().floor("h")
+    out["ts"] = out["ts"] + (now - last_ts)
+    return out
+
+
 def main() -> None:
     register_id = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_REGISTER_ID
     files = find_patient_files()
     if not files:
         raise SystemExit("No UCI files. Run download_uci.py first.")
-    hourly = to_hourly(parse_patient_file(files[0]))
+    hourly = align_to_recent(resample_to_hourly(events_from_uci(parse_patient_file(files[0]))))
     if len(hourly) < 48:
         raise SystemExit("Not enough hourly points")
 
@@ -48,6 +60,10 @@ def main() -> None:
 
     cur.execute(
         "DELETE FROM patient_health_observation WHERE register_id = %s AND source_type = 'uci_import'",
+        (register_id,),
+    )
+    cur.execute(
+        "DELETE FROM follow_up_metric_forecast WHERE register_id = %s AND metric_code = 'blood_glucose'",
         (register_id,),
     )
 
@@ -102,6 +118,7 @@ def main() -> None:
             )
 
     print(f"Imported {rows} observations for register_id={register_id}")
+    print(f"Time range: {hourly['ts'].min()} -> {hourly['ts'].max()} (aligned to recent)")
     cur.close()
     conn.close()
 
