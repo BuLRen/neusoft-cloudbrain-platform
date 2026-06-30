@@ -27,6 +27,11 @@
         <result column="check_in_time" property="checkInTime"/>
     </resultMap>
 
+    <!-- 带 relation 的扩展结果集：JOIN user_patient_managed 后填充"本人/配偶"等关系 -->
+    <resultMap id="ManagedResultMap" type="com.xikang.registration.entity.Register" extends="BaseResultMap">
+        <result column="relation" property="relation"/>
+    </resultMap>
+
     <sql id="Base_Column_List">
         id, patient_id, scheduling_id, case_number, real_name, gender, card_number, birthdate, age, age_type,
         home_address, visit_date, noon, deptment_id, employee_id, regist_level_id,
@@ -42,6 +47,26 @@
         SELECT <include refid="Base_Column_List"/>
         FROM register WHERE patient_id = #{patientId}
         ORDER BY visit_date DESC
+    </select>
+
+    <!--
+        查询当前用户管理的所有就诊人的挂号记录（"我的挂号"列表：本人 + 家属）。
+        JOIN user_patient_managed：只返回当前 user_id 管理的 patient 的挂号，
+        并把 relation 列带出来（本人/配偶/父母等），用于前端区分显示。
+        visit_state != 4：过滤掉已退号的（与病历视角一致）。
+    -->
+    <select id="selectByManagedUserId" resultMap="ManagedResultMap">
+        SELECT
+            r.id, r.patient_id, r.scheduling_id, r.case_number, r.real_name, r.gender,
+            r.card_number, r.birthdate, r.age, r.age_type, r.home_address, r.visit_date,
+            r.noon, r.deptment_id, r.employee_id, r.regist_level_id, r.settle_category_id,
+            r.is_book, r.regist_method, r.regist_money, r.visit_state, r.check_in_time,
+            upm.relation AS relation
+        FROM register r
+        INNER JOIN user_patient_managed upm ON upm.patient_id = r.patient_id
+        WHERE upm.user_id = #{userId}
+          AND r.visit_state != 4
+        ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
     </select>
 
     <select id="selectByStatus" resultMap="BaseResultMap">

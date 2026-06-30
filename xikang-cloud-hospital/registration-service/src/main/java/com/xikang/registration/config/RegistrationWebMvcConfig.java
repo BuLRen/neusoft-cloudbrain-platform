@@ -23,6 +23,7 @@ public class RegistrationWebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(adminAuthInterceptor)
             .addPathPatterns("/api/registration/admin/**");
         registry.addInterceptor(clinicalRecordAuthInterceptor)
-            .addPathPatterns("/api/registration/clinical-record/**");
+            .addPathPatterns("/api/registration/clinical-record/**")
+            .addPathPatterns("/api/registration/managed/**");
     }
 }

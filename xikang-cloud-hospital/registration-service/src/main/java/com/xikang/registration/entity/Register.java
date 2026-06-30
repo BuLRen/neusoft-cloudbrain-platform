@@ -52,4 +52,6 @@ public class Register implements Serializable {
     private String complaint;
     private String patientPhone;
     private String idCard;
+    // 当前登录用户与该患者的管理关系（来自 user_patient_managed，本人/配偶/父母等）
+    private String relation;
 }

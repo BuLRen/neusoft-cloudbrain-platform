@@ -26,18 +26,19 @@ public interface AiTriageRecordMapper {
     int update(AiTriageRecord record);
 
     /**
-     * 挂号成功后回填 register_id：定位该患者最近一条 register_id 为空的导诊记录并更新。
-     * 用于"导诊 → 预问诊"上下文串联（导诊时还没有 registerId，需要挂号后回填）。
+     * 按 sessionId 精确回填 register_id。
+     * 替代旧的 updateRegisterIdByPatient（按"猜最近一条"回填，曾导致导诊记录错绑到错误的挂号）。
+     * sessionId 是导诊创建时生成的 UUID，由前端透传到挂号，保证 1:1 精确绑定。
      *
-     * @param patientId  患者 ID
+     * @param sessionId 导诊会话 ID
      * @param registerId 挂号 ID
      * @return 受影响行数（0 表示没找到匹配记录，1 表示回填成功）
      */
-    int updateRegisterIdByPatient(@org.apache.ibatis.annotations.Param("patientId") Long patientId,
-                                  @org.apache.ibatis.annotations.Param("registerId") Long registerId);
+    int updateRegisterIdBySessionId(@org.apache.ibatis.annotations.Param("sessionId") String sessionId,
+                                    @org.apache.ibatis.annotations.Param("registerId") Long registerId);
 
     /**
-     * 按 patientId 查最近一条导诊记录（getTriageSummary 兜底用：registerId 查不到时退而求其次）。
+     * 按 patientId 查最近一条导诊记录（保留给历史/统计查询用，预问诊不再依赖）。
      */
     AiTriageRecord selectLatestByPatientId(@org.apache.ibatis.annotations.Param("patientId") Long patientId);
 }

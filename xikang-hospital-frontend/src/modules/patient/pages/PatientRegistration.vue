@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ElDatePicker, ElMessage, ElMessageBox, ElRadio, ElRadioButton, ElRadioGroup } from 'element-plus'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ElDatePicker, ElMessage, ElMessageBox, ElPagination, ElOption, ElRadio, ElRadioButton, ElRadioGroup, ElSelect } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import CheckInQRCode from '@/shared/components/CheckInQRCode.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
 import type { RegistrationRecord } from '@/shared/types/registration'
-import type { ExpenseRecordSortBy, ExpenseRecordSortDir } from '@/shared/types/registration'
 import { useAuthStore } from '@/app/stores/auth'
 import { Warning } from '@element-plus/icons-vue'
 
@@ -327,8 +326,12 @@ function goToStep(index: number) {
 
 // ========== 列表筛选 / 排序 ==========
 const visitDateRange = ref<[string, string] | null>(null)
-const sortBy = ref<ExpenseRecordSortBy>('payTime')
-const sortDir = ref<ExpenseRecordSortDir>('desc')
+// 就诊人筛选：默认 'all'（本人+家属全部展示）
+// 用 patientId 作为 key，'all' 表示不限
+const selectedPatientFilter = ref<number | 'all'>('all')
+// 分页：每页 5 条
+const PAGE_SIZE = 5
+const currentPage = ref(1)
 
 // 状态 tab：全部 / 进行中(1,2,5,6) / 已完成(3) / 已取消(4,7)
 type RegTab = 'all' | 'ongoing' | 'done' | 'cancelled'
@@ -351,23 +354,46 @@ function registrationStatusRank(record: RegistrationRecord): number {
   return 1
 }
 
-function parseRegistrationTime(record: RegistrationRecord, key: ExpenseRecordSortBy): number {
-  const value = key === 'createTime' ? record.createTime : key === 'refundTime' ? record.refundTime : (record as any).payTime
-  if (!value) return Number.POSITIVE_INFINITY
-  const time = new Date(value).getTime()
-  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY
+// 排序固定为：状态优先级 → 就诊时间倒序（最近在前）→ id 倒序
+// 与后端默认 ORDER BY visit_date DESC 一致，体验上"最近的挂号排最前"
+function visitTimeOf(record: RegistrationRecord): number {
+  // visitDate 是日期字符串（YYYY-MM-DD），补成时间戳；优先 visitDate，回退 createTime
+  const v = record.visitDate || record.createTime
+  if (!v) return 0
+  const t = new Date(v).getTime()
+  return Number.isFinite(t) ? t : 0
 }
 
 const sortedRegistrations = computed(() => {
   const list = registrations.value.slice()
-  const dir = sortDir.value === 'asc' ? 1 : -1
-  const key = sortBy.value
   return list.sort((a, b) => {
     const rankDiff = registrationStatusRank(a) - registrationStatusRank(b)
     if (rankDiff !== 0) return rankDiff
-    const timeDiff = (parseRegistrationTime(a, key) - parseRegistrationTime(b, key)) * dir
+    const timeDiff = visitTimeOf(b) - visitTimeOf(a) // 倒序：大的（近）在前
     if (timeDiff !== 0) return timeDiff
-    return a.id - b.id
+    return b.id - a.id
+  })
+})
+
+// 从已有挂号里派生就诊人选项（去重：同 patientId 只出现一次，本人排在前）
+const patientFilterOptions = computed(() => {
+  const map = new Map<number, { patientId: number; patientName: string; relation?: string; isFamily?: boolean }>()
+  for (const r of registrations.value) {
+    if (r.patientId == null) continue
+    if (!map.has(r.patientId)) {
+      map.set(r.patientId, {
+        patientId: r.patientId,
+        patientName: r.patientName || `就诊人 ${r.patientId}`,
+        relation: r.relation,
+        isFamily: r.isFamily,
+      })
+    }
+  }
+  // 本人排在前、家属按原顺序在后
+  return Array.from(map.values()).sort((a, b) => {
+    const aSelf = a.isFamily ? 1 : 0
+    const bSelf = b.isFamily ? 1 : 0
+    return aSelf - bSelf
   })
 })
 
@@ -378,9 +404,13 @@ function visitDateOf(record: RegistrationRecord): string {
 }
 
 const filteredRegistrations = computed(() => {
-  // 第一层：tab 状态过滤
-  const byTab = sortedRegistrations.value.filter((r) => tabFilter(r.status))
-  // 第二层：日期范围过滤
+  // 第一层：就诊人过滤
+  const byPatient = selectedPatientFilter.value === 'all'
+    ? sortedRegistrations.value
+    : sortedRegistrations.value.filter(r => r.patientId === selectedPatientFilter.value)
+  // 第二层：tab 状态过滤
+  const byTab = byPatient.filter((r) => tabFilter(r.status))
+  // 第三层：日期范围过滤
   const range = visitDateRange.value
   if (!range || !range[0] || !range[1]) return byTab
   const [start, end] = range
@@ -391,17 +421,31 @@ const filteredRegistrations = computed(() => {
   })
 })
 
+// 分页切片：基于 filteredRegistrations，每页 PAGE_SIZE 条
+const totalFiltered = computed(() => filteredRegistrations.value.length)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalFiltered.value / PAGE_SIZE)))
+const pagedRegistrations = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE
+  return filteredRegistrations.value.slice(start, start + PAGE_SIZE)
+})
+
+// 任意筛选条件变化时，回到第 1 页（避免停在不存在的页码）
+watch([selectedPatientFilter, activeTab, visitDateRange], () => {
+  currentPage.value = 1
+})
+
 function clearFilters() {
   activeTab.value = 'all'
   visitDateRange.value = null
+  selectedPatientFilter.value = 'all'
+  currentPage.value = 1
 }
 
 async function loadRegistrations() {
-  const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
-  if (!patientId) return
   registrationLoading.value = true
   try {
-    registrations.value = await registrationApi.registrationsByPatient(patientId)
+    // 拉取当前用户管理的所有就诊人（本人+家属）的挂号，统一在"我的挂号"展示
+    registrations.value = await registrationApi.registrationsByManaged()
     await loadPreConsultStates()
   } catch (err) {
     console.error('加载我的挂号失败:', err)
@@ -460,18 +504,21 @@ function preConsultBtnFor(record: RegistrationRecord): PreConsultBtnState {
 
 function goPrevisit(record: RegistrationRecord) {
   const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
-  router.push({
-    path: '/patient/previsit',
-    query: { registerId: record.id, patientId },
-  })
+  const query: Record<string, string> = { registerId: String(record.id), patientId: String(patientId) }
+  // 透传导诊 sessionId，让预问诊页能精确关联本次导诊（跨页传递，不依赖 localStorage）
+  if (triageResult.value?.sessionId) {
+    query.triageSessionId = triageResult.value.sessionId
+  }
+  router.push({ path: '/patient/previsit', query })
 }
 
 function goPrevisitById(registerId: number) {
   const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
-  router.push({
-    path: '/patient/previsit',
-    query: { registerId, patientId },
-  })
+  const query: Record<string, string> = { registerId: String(registerId), patientId: String(patientId) }
+  if (triageResult.value?.sessionId) {
+    query.triageSessionId = triageResult.value.sessionId
+  }
+  router.push({ path: '/patient/previsit', query })
 }
 
 function formatMoney(value?: number | string | null) {
@@ -712,6 +759,8 @@ async function startFromDepartmentQuery() {
   triageResult.value = {
     recommendedDepartmentId: departmentId,
     recommendedDepartment: getQueryString(route.query.departmentName) || '所选科室',
+    // 从独立导诊页跳转过来时，接收其透传的 sessionId（供挂号提交回填 register_id）
+    sessionId: getQueryString(route.query.triageSessionId),
   }
 
   await loadAvailableSchedules()
@@ -743,6 +792,12 @@ async function startFromDepartmentQuery() {
 }
 
 onMounted(startFromDepartmentQuery)
+
+// 切换就诊人时清空导诊结果：防止上一位就诊人的 sessionId 残留，错配到本次（家属）挂号。
+// 切换后用户需要重新导诊，生成属于本次就诊人的新 sessionId。
+watch(() => authStore.currentPatientId, () => {
+  triageResult.value = null
+})
 
 // 组件卸载兜底：用户在请求中途切走页面，防止 loading 状态遗留为 true
 onUnmounted(() => {
@@ -918,6 +973,9 @@ async function submitRegistration() {
       settleCategoryId,
       complaint: triageForm.value.symptoms,
       aiTriageResult: triageResult.value,
+      // 透传导诊 sessionId，供后端精确回填 register_id 到本次导诊记录。
+      // 直接从本次导诊结果内存值取（挂号页 runTriage 已存入 triageResult.value），不依赖 localStorage。
+      triageSessionId: triageResult.value?.sessionId || undefined,
     })
 
     registrationResult.value = {
@@ -1044,19 +1102,21 @@ const showSuccessCard = computed(() => {
           />
         </div>
         <div class="filter-field">
-          <label>排序字段</label>
-          <select v-model="sortBy" class="form-input">
-            <option value="payTime">就诊时间</option>
-            <option value="createTime">开单时间</option>
-            <option value="refundTime">退号时间</option>
-          </select>
-        </div>
-        <div class="filter-field">
-          <label>排序方向</label>
-          <ElRadioGroup v-model="sortDir">
-            <ElRadio value="desc">降序</ElRadio>
-            <ElRadio value="asc">升序</ElRadio>
-          </ElRadioGroup>
+          <label>就诊人</label>
+          <ElSelect
+            v-model="selectedPatientFilter"
+            placeholder="全部就诊人"
+            class="field"
+            style="width: 180px"
+          >
+            <ElOption label="全部就诊人" :value="'all'" />
+            <ElOption
+              v-for="p in patientFilterOptions"
+              :key="p.patientId"
+              :label="`${p.patientName}${p.isFamily ? `（${p.relation || '家属'}）` : ''}`"
+              :value="p.patientId"
+            />
+          </ElSelect>
         </div>
         <div class="filter-field filter-summary">
           <span>已显示 {{ filteredRegistrations.length }} / {{ registrations.length }} 条</span>
@@ -1073,16 +1133,18 @@ const showSuccessCard = computed(() => {
         当前筛选条件下没有挂号记录，<button class="link-btn" @click="clearFilters">清空筛选</button>
       </div>
       <div v-else class="registration-record-list">
-        <div v-for="record in filteredRegistrations" :key="record.id" class="registration-record-card">
+        <div v-for="record in pagedRegistrations" :key="record.id" class="registration-record-card">
           <div class="record-main">
             <div class="record-title-row">
               <strong>{{ record.departmentName || '未分配科室' }}</strong>
+              <StatusTag v-if="record.isFamily" tone="ai">{{ record.relation || '家属' }}</StatusTag>
               <StatusTag :tone="registrationStatusTone(record)">{{ registrationStatusLabel(record) }}</StatusTag>
               <StatusTag :tone="paymentStatusTone(record.payStatus)">{{ record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费') }}</StatusTag>
               <StatusTag v-if="record.checkedIn" tone="success">✅ 已报到</StatusTag>
               <StatusTag v-else-if="canCheckIn(record)" tone="warning">待报到</StatusTag>
             </div>
             <div class="record-meta">
+              <span>就诊人：{{ record.patientName || '-' }}<template v-if="record.isFamily">（{{ record.relation }}）</template></span>
               <span>挂号单号：{{ record.id }}</span>
               <span>就诊时间：{{ formatVisitTime(record) }}</span>
               <span>医生：{{ record.physicianName || '待分配' }}</span>
@@ -1107,6 +1169,16 @@ const showSuccessCard = computed(() => {
             <span class="record-pay">{{ record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费') }}</span>
           </div>
         </div>
+      </div>
+
+      <div v-if="filteredRegistrations.length > PAGE_SIZE" class="list-pagination">
+        <ElPagination
+          v-model:current-page="currentPage"
+          :page-size="PAGE_SIZE"
+          :total="totalFiltered"
+          layout="prev, pager, next, total"
+          background
+        />
       </div>
     </div>
 
@@ -1838,6 +1910,12 @@ const showSuccessCard = computed(() => {
 .registration-record-list {
   display: grid;
   gap: var(--space-4);
+}
+
+.list-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
 }
 
 .registration-record-card {

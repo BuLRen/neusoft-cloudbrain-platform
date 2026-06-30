@@ -67,7 +67,8 @@ public class AiTriageController {
     }
 
     /**
-     * 按 registerId 反查导诊小结（供预问诊等下游服务调用，实现"导诊→预问诊"上下文串联）
+     * 按 registerId 反查导诊小结（保留给历史/统计查询用）。
+     * 预问诊已改用 sessionId 查询，不再依赖本接口。
      */
     @GetMapping("/summary/register/{registerId}")
     public Result<TriageSummary> getTriageSummaryByRegisterId(@PathVariable Integer registerId) {
@@ -75,24 +76,28 @@ public class AiTriageController {
     }
 
     /**
-     * 按 patientId 反查导诊小结（registerId 查不到时的兜底入口，供预问诊调用）。
+     * 按 sessionId 精确反查导诊小结（预问诊的权威查询入口）。
+     *
+     * <p>供 ai-consult-service 调用：预问诊开始时，前端把导诊 sessionId 透传过来，
+     * 本接口按 sessionId 精确定位本次就诊对应的导诊记录，
+     * 杜绝"按 patientId/registerId 猜最近一条"导致的历史导诊污染。
      */
-    @GetMapping("/summary/patient/{patientId}")
-    public Result<TriageSummary> getTriageSummaryByPatientId(@PathVariable Long patientId) {
-        return Result.success(aiTriageService.getTriageSummaryByPatientId(patientId));
+    @GetMapping("/summary/session/{sessionId}")
+    public Result<TriageSummary> getTriageSummaryBySessionId(@PathVariable String sessionId) {
+        return Result.success(aiTriageService.getTriageSummaryBySessionId(sessionId));
     }
 
     /**
-     * 挂号成功后回填 register_id 到该患者最近的导诊记录。
-     * 供 registration-service 在创建挂号成功后调用，实现"导诊→预问诊"上下文串联。
+     * 按 sessionId 精确回填 register_id 到导诊记录。
+     * 供 registration-service 在创建挂号成功后调用。
      *
-     * <p>body: { "patientId": 1, "registerId": 100 }
+     * <p>body: { "sessionId": "uuid", "registerId": 100 }
      */
     @PostMapping("/bind-register")
     public Result<Boolean> bindRegister(@RequestBody Map<String, Object> body) {
-        Long patientId = toLong(body.get("patientId"));
+        String sessionId = body.get("sessionId") == null ? null : body.get("sessionId").toString();
         Long registerId = toLong(body.get("registerId"));
-        boolean ok = aiTriageService.bindRegisterId(patientId, registerId);
+        boolean ok = aiTriageService.bindRegisterId(sessionId, registerId);
         return Result.success(ok);
     }
 

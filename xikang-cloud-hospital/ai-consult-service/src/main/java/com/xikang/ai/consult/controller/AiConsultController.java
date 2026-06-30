@@ -31,12 +31,14 @@ public class AiConsultController {
     public SseEmitter startPreConsult(@RequestBody Map<String, Object> body) {
         Integer registerId = toInt(body.get("registerId"));
         Integer patientId = toInt(body.get("patientId"));
+        // triageSessionId：前端透传的导诊会话ID，用于精确关联本次导诊，避免历史导诊污染预问诊
+        String triageSessionId = body.get("triageSessionId") == null ? null : body.get("triageSessionId").toString();
 
         SseEmitter emitter = new SseEmitter(60_000L);
         // 关键：在 controller 自己捕获并把错误作为 SSE 事件推回前端，
         // 避免进入 ResponseBodyEmitterReturnValueHandler.sendInternal 的 null-data 路径
         try {
-            Map<String, Object> meta = preConsultService.start(registerId, patientId, chunk -> {
+            Map<String, Object> meta = preConsultService.start(registerId, patientId, triageSessionId, chunk -> {
                 try {
                     if (chunk != null && !chunk.isEmpty()) {
                         emitter.send(SseEmitter.event().name("token").data(chunk));

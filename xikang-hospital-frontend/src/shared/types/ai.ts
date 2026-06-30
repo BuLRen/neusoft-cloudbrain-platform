@@ -160,6 +160,8 @@ export interface PrevisitRecord {
 export interface PrevisitChatStartPayload {
   registerId: number
   patientId: number
+  /** 导诊会话ID，精确关联本次导诊（未做导诊时为 undefined，预问诊走完整流程） */
+  triageSessionId?: string
 }
 
 export interface PrevisitChatReplyPayload {
