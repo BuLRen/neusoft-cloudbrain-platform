@@ -66,6 +66,12 @@ function statusTone(status?: number) {
   return 'warning'
 }
 
+/** 把后端 ISO 时间（2026-06-30T10:36:08.32531）格式化成 2026-06-30 10:36 */
+function formatTime(t?: string | null): string {
+  if (!t) return '-'
+  return t.replace('T', ' ').slice(0, 16)
+}
+
 async function load() {
   loading.value = true
   try {
@@ -180,7 +186,7 @@ onMounted(() => {
           </template>
         </ElTableColumn>
         <ElTableColumn prop="totalAmount" label="金额" min-width="100" align="right" />
-        <ElTableColumn prop="createTime" label="开方时间" min-width="160" />
+        <ElTableColumn prop="createTime" label="开方时间" min-width="160" :formatter="(_row, _col, val) => formatTime(val as string)" />
         <ElTableColumn label="操作" width="100" fixed="right" align="center">
           <template #default="{ row }">
             <ElButton link size="small" @click.stop="viewDetail(row as PrescriptionSummary)">
@@ -223,7 +229,7 @@ onMounted(() => {
               </StatusTag>
             </ElDescriptionsItem>
             <ElDescriptionsItem label="发药人">{{ detail.prescription.pharmacist || '-' }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="发药时间">{{ detail.prescription.dispensationTime || '-' }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="发药时间">{{ formatTime(detail.prescription.dispensationTime) }}</ElDescriptionsItem>
             <ElDescriptionsItem label="总金额" :span="2">
               {{ detail.prescription.totalAmount ?? '-' }} 元
             </ElDescriptionsItem>

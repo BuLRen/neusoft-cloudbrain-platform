@@ -58,8 +58,50 @@ public class PharmacyService {
         return drugInfoMapper.selectByConditions(keyword, dosageForm, category);
     }
 
+    /**
+     * 药品列表分页查询（照搬 physician-service getDrugsPage 模式）。
+     * 入参 dosageForm → drug_dosage，category → drug_type。
+     */
+    public Map<String, Object> getDrugsPage(String keyword, String dosageForm, String category,
+                                            Integer page, Integer pageSize) {
+        int safePage = page == null || page < 1 ? 1 : page;
+        int safeSize = pageSize == null || pageSize < 1 ? 20 : Math.min(pageSize, 100);
+        int offset = (safePage - 1) * safeSize;
+        long total = drugInfoMapper.countDrugs(keyword, dosageForm, category);
+        List<DrugInfo> list = drugInfoMapper.selectDrugsPage(keyword, dosageForm, category, offset, safeSize);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("list", list);
+        result.put("total", total);
+        result.put("page", safePage);
+        result.put("pageSize", safeSize);
+        return result;
+    }
+
+    /**
+     * 低库存分页查询。
+     */
+    public Map<String, Object> getLowStockDrugsPage(Integer page, Integer pageSize) {
+        int safePage = page == null || page < 1 ? 1 : page;
+        int safeSize = pageSize == null || pageSize < 1 ? 20 : Math.min(pageSize, 100);
+        int offset = (safePage - 1) * safeSize;
+        long total = drugInfoMapper.countLowStock();
+        List<DrugInfo> list = drugInfoMapper.selectLowStockPage(offset, safeSize);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("list", list);
+        result.put("total", total);
+        result.put("page", safePage);
+        result.put("pageSize", safeSize);
+        return result;
+    }
+
+    /** 已用分类（drug_type）：西药/中成药/生物制品 */
     public List<String> getCategories() {
-        return drugInfoMapper.selectCategories();
+        return drugInfoMapper.selectDrugTypes();
+    }
+
+    /** 已用剂型（drug_dosage），供前端动态下拉 */
+    public List<String> getDosageForms() {
+        return drugInfoMapper.selectDosageForms();
     }
 
     public DrugInfo getDrug(Long id) {
@@ -99,14 +141,36 @@ public class PharmacyService {
      * daysRemaining 用 ChronoUnit.DAYS.between 而非 Period.getDays()，避免跨月归一化。
      */
     public List<Map<String, Object>> getExpiringStock(int days) {
-        List<DrugStock> stocks = drugStockMapper.selectExpiring(days);
+        return toExpiringStockView(drugStockMapper.selectExpiring(days));
+    }
+
+    /**
+     * 近效期可用批次分页（照搬 physician 分页响应结构）。
+     */
+    public Map<String, Object> getExpiringStockPage(int days, Integer page, Integer pageSize) {
+        int safePage = page == null || page < 1 ? 1 : page;
+        int safeSize = pageSize == null || pageSize < 1 ? 20 : Math.min(pageSize, 100);
+        int offset = (safePage - 1) * safeSize;
+        long total = drugStockMapper.countExpiring(days);
+        List<Map<String, Object>> list = toExpiringStockView(
+            drugStockMapper.selectExpiringPage(days, offset, safeSize));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("list", list);
+        result.put("total", total);
+        result.put("page", safePage);
+        result.put("pageSize", safeSize);
+        return result;
+    }
+
+    /** DrugStock → 前端视图（带药品名、剩余天数）。全量与分页共用。 */
+    private List<Map<String, Object>> toExpiringStockView(List<DrugStock> stocks) {
         java.time.LocalDate today = java.time.LocalDate.now();
         return stocks.stream().map(s -> {
             Map<String, Object> map = new HashMap<>();
             map.put("id", s.getId());
             map.put("drugId", s.getDrugId());
             DrugInfo drug = s.getDrugId() != null ? drugInfoMapper.selectById(s.getDrugId()) : null;
-            map.put("drugName", drug != null ? drug.getName() : null);
+            map.put("drugName", drug != null ? drug.getDrugName() : null);
             map.put("batchNumber", s.getBatchNumber());
             map.put("quantity", s.getQuantity());
             map.put("expiryDate", s.getExpiryDate());
@@ -159,11 +223,11 @@ public class PharmacyService {
         PharmacyTransaction transaction = new PharmacyTransaction();
         transaction.setType("入库");
         transaction.setDrugId(drugId);
-        transaction.setDrugName(drug != null ? drug.getName() : null);
+        transaction.setDrugName(drug != null ? drug.getDrugName() : null);
         transaction.setQuantity(quantity);
-        transaction.setUnitPrice(drug != null ? drug.getPrice() : null);
-        transaction.setTotalAmount(drug != null && drug.getPrice() != null
-            ? drug.getPrice().multiply(BigDecimal.valueOf(quantity))
+        transaction.setUnitPrice(drug != null ? drug.getDrugPrice() : null);
+        transaction.setTotalAmount(drug != null && drug.getDrugPrice() != null
+            ? drug.getDrugPrice().multiply(BigDecimal.valueOf(quantity))
             : null);
         transaction.setReason(batchNumber != null ? "入库批号：" + batchNumber : "药品入库");
         transaction.setTransactionTime(LocalDateTime.now());
@@ -195,11 +259,11 @@ public class PharmacyService {
         PharmacyTransaction transaction = new PharmacyTransaction();
         transaction.setType("盘点");
         transaction.setDrugId(drugId);
-        transaction.setDrugName(before != null ? before.getName() : null);
+        transaction.setDrugName(before != null ? before.getDrugName() : null);
         transaction.setQuantity(diff);
-        transaction.setUnitPrice(before != null ? before.getPrice() : null);
-        transaction.setTotalAmount(before != null && before.getPrice() != null
-            ? before.getPrice().multiply(BigDecimal.valueOf(diff))
+        transaction.setUnitPrice(before != null ? before.getDrugPrice() : null);
+        transaction.setTotalAmount(before != null && before.getDrugPrice() != null
+            ? before.getDrugPrice().multiply(BigDecimal.valueOf(diff))
             : null);
         transaction.setReason("库存盘点调整：" + beforeQty + " → " + quantity);
         transaction.setTransactionTime(LocalDateTime.now());
@@ -308,7 +372,7 @@ public class PharmacyService {
             if (affected == 0) {
                 DrugInfo latest = drugInfoMapper.selectById(detail.getDrugId());
                 int currentStock = latest != null && latest.getStockQuantity() != null ? latest.getStockQuantity() : 0;
-                throw new BusinessException(400, "药品库存不足: " + drug.getName()
+                throw new BusinessException(400, "药品库存不足: " + drug.getDrugName()
                     + "，当前库存: " + currentStock + "，需要: " + detail.getQuantity());
             }
 
@@ -473,9 +537,9 @@ public class PharmacyService {
             DrugInfo drug = d.getDrugId() != null ? drugInfoMapper.selectById(d.getDrugId()) : null;
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("drugId", d.getDrugId());
-            item.put("drugName", d.getDrugName() != null ? d.getDrugName() : (drug != null ? drug.getName() : null));
-            item.put("specification", drug != null ? drug.getSpecification() : null);
-            item.put("dosageForm", drug != null ? drug.getDosageForm() : null);
+            item.put("drugName", d.getDrugName() != null ? d.getDrugName() : (drug != null ? drug.getDrugName() : null));
+            item.put("drugFormat", drug != null ? drug.getDrugFormat() : null);
+            item.put("drugDosage", drug != null ? drug.getDrugDosage() : null);
             item.put("quantity", d.getQuantity());
             item.put("usageText", d.getUsage());
             item.put("instructions", drug != null ? drug.getInstructions() : null);
@@ -749,10 +813,9 @@ public class PharmacyService {
         }
         Map<String, Object> drugInfo = new HashMap<>();
         drugInfo.put("drugId", drug.getId());
-        drugInfo.put("drugName", drug.getName());
-        drugInfo.put("genericName", drug.getGenericName());
-        drugInfo.put("specification", drug.getSpecification());
-        drugInfo.put("dosageForm", drug.getDosageForm());
+        drugInfo.put("drugName", drug.getDrugName());
+        drugInfo.put("drugFormat", drug.getDrugFormat());
+        drugInfo.put("drugDosage", drug.getDrugDosage());
         drugInfo.put("instructions", drug.getInstructions());
         drugInfo.put("contraindications", drug.getContraindications());
         drugInfo.put("adverseReactions", drug.getAdverseReactions());
@@ -903,8 +966,8 @@ public class PharmacyService {
                 // 这里不强制做唯一性检查，由 DB 唯一索引/业务规则决定
                 totalItems++;
                 totalQuantity += quantity == null ? 0 : quantity;
-                if (drug.getPrice() != null && quantity != null) {
-                    totalAmount = totalAmount.add(drug.getPrice().multiply(BigDecimal.valueOf(quantity)));
+                if (drug.getDrugPrice() != null && quantity != null) {
+                    totalAmount = totalAmount.add(drug.getDrugPrice().multiply(BigDecimal.valueOf(quantity)));
                 }
             }
         }
@@ -944,11 +1007,11 @@ public class PharmacyService {
             PharmacyTransaction transaction = new PharmacyTransaction();
             transaction.setType("入库");
             transaction.setDrugId(drugId);
-            transaction.setDrugName(drug != null ? drug.getName() : null);
+            transaction.setDrugName(drug != null ? drug.getDrugName() : null);
             transaction.setQuantity(quantity);
-            transaction.setUnitPrice(drug != null ? drug.getPrice() : null);
-            transaction.setTotalAmount(drug != null && drug.getPrice() != null
-                ? drug.getPrice().multiply(BigDecimal.valueOf(quantity))
+            transaction.setUnitPrice(drug != null ? drug.getDrugPrice() : null);
+            transaction.setTotalAmount(drug != null && drug.getDrugPrice() != null
+                ? drug.getDrugPrice().multiply(BigDecimal.valueOf(quantity))
                 : null);
             transaction.setReason("批量入库批号：" + batchNumber);
             transaction.setTransactionTime(now);
@@ -956,7 +1019,7 @@ public class PharmacyService {
 
             Map<String, Object> r = new HashMap<>();
             r.put("drugId", drugId);
-            r.put("drugName", drug != null ? drug.getName() : null);
+            r.put("drugName", drug != null ? drug.getDrugName() : null);
             r.put("batchId", drugStock.getId());
             r.put("batchNumber", batchNumber);
             r.put("quantity", quantity);
@@ -1041,11 +1104,11 @@ public class PharmacyService {
         PharmacyTransaction transaction = new PharmacyTransaction();
         transaction.setType("报损");
         transaction.setDrugId(drugId);
-        transaction.setDrugName(drug.getName());
+        transaction.setDrugName(drug.getDrugName());
         transaction.setQuantity(-quantity);
-        transaction.setUnitPrice(drug.getPrice());
-        transaction.setTotalAmount(drug.getPrice() != null
-            ? drug.getPrice().multiply(BigDecimal.valueOf(quantity)).negate()
+        transaction.setUnitPrice(drug.getDrugPrice());
+        transaction.setTotalAmount(drug.getDrugPrice() != null
+            ? drug.getDrugPrice().multiply(BigDecimal.valueOf(quantity)).negate()
             : null);
         transaction.setOperatorId(operatorId);
         transaction.setOperatorName(operatorName);

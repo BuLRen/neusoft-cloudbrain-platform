@@ -127,7 +127,7 @@ async function toggleFreeze(row: DrugStock) {
 <template>
   <ElDialog
     :model-value="modelValue"
-    :title="drug ? `${drug.name} · 库存批次` : '库存批次'"
+    :title="drug ? `${drug.drugName} · 库存批次` : '库存批次'"
     width="860px"
     align-center
     @update:model-value="emit('update:modelValue', $event)"
@@ -137,23 +137,23 @@ async function toggleFreeze(row: DrugStock) {
       <div class="summary">
         <div class="summary__main">
           <div class="summary__name">
-            <strong>{{ drug.name }}</strong>
-            <ElTag v-if="drug.category" size="small" effect="plain">{{ drug.category }}</ElTag>
-            <ElTag v-if="drug.dosageForm" size="small" type="info" effect="plain">
-              {{ drug.dosageForm }}
+            <strong>{{ drug.drugName }}</strong>
+            <ElTag v-if="drug.drugType" size="small" effect="plain">{{ drug.drugType }}</ElTag>
+            <ElTag v-if="drug.drugDosage" size="small" type="info" effect="plain">
+              {{ drug.drugDosage }}
             </ElTag>
             <ElTag v-if="isLowStock" type="danger" size="small" effect="dark">低库存</ElTag>
           </div>
           <div class="summary__meta">
-            <span>规格：{{ drug.specification || '-' }}</span>
-            <span>单价：{{ drug.price ?? '-' }} 元</span>
+            <span>规格：{{ drug.drugFormat || '-' }}</span>
+            <span>单价：{{ drug.drugPrice ?? '-' }} 元</span>
             <span>预警阈值：{{ drug.lowStockThreshold ?? '-' }}</span>
             <span>批次数：{{ rows.length }}</span>
           </div>
         </div>
         <div class="summary__stock" :class="{ 'is-low': isLowStock }">
           <div class="summary__stock-num">{{ drug.stockQuantity ?? 0 }}</div>
-          <div class="summary__stock-label">当前总库存 / {{ drug.unit || '件' }}</div>
+          <div class="summary__stock-label">当前总库存 / {{ drug.drugUnit || '件' }}</div>
         </div>
       </div>
 

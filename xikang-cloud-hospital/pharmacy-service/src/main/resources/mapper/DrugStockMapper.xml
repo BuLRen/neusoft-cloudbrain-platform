@@ -30,14 +30,29 @@
         SELECT <include refid="Base_Column_List"/> FROM drug_stock WHERE drug_id = #{drugId} AND status = 1 ORDER BY expiry_date
     </select>
 
-    <!-- P1-4.2 近效期批次查询：status=1 且 expiry_date 在今天到 today+days 之间 -->
-    <select id="selectExpiring" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM drug_stock
+    <!-- 近效期批次查询：status=1 且 expiry_date 在今天到 today+days 之间 -->
+    <sql id="expiringWhere">
         WHERE status = 1
           AND expiry_date IS NOT NULL
           AND expiry_date &gt;= CURRENT_DATE
           AND expiry_date &lt;= (CURRENT_DATE + (#{days} || ' days')::interval)
+    </sql>
+
+    <select id="selectExpiring" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_stock
+        <include refid="expiringWhere"/>
+        ORDER BY expiry_date LIMIT 200
+    </select>
+
+    <select id="countExpiring" resultType="long">
+        SELECT COUNT(*) FROM drug_stock <include refid="expiringWhere"/>
+    </select>
+
+    <select id="selectExpiringPage" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_stock
+        <include refid="expiringWhere"/>
         ORDER BY expiry_date
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">

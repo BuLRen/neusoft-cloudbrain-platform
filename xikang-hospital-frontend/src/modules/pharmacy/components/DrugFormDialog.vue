@@ -12,8 +12,8 @@ import {
   ElSelect,
 } from 'element-plus'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
-import { DOSAGE_FORMS } from '@/shared/constants/pharmacy'
 import type { DrugOption } from '@/shared/types/pharmacy'
+// 注：ElSelect/ElOption 仍用于"分类"字段，剂型已改为自由文本输入。
 
 const props = defineProps<{
   modelValue: boolean
@@ -33,16 +33,15 @@ const form = ref<DrugOption>(makeEmpty())
 function makeEmpty(): DrugOption {
   return {
     id: 0,
-    name: '',
-    genericName: '',
-    brandName: '',
-    specification: '',
-    dosageForm: '',
-    category: '',
-    unit: '盒',
+    drugCode: '',
+    drugName: '',
+    drugFormat: '',
+    drugUnit: '盒',
     manufacturer: '',
-    approvalNumber: '',
-    price: 0,
+    drugDosage: '',
+    drugType: '',
+    drugPrice: 0,
+    mnemonicCode: '',
     stockQuantity: 0,
     lowStockThreshold: 10,
     storageConditions: '',
@@ -68,11 +67,11 @@ watch(
 )
 
 async function submit() {
-  if (!form.value.name?.trim()) {
+  if (!form.value.drugName?.trim()) {
     ElMessage.warning('请填写药品名称')
     return
   }
-  if (form.value.price == null || form.value.price < 0) {
+  if (form.value.drugPrice == null || form.value.drugPrice < 0) {
     ElMessage.warning('单价必须 ≥ 0')
     return
   }
@@ -104,36 +103,38 @@ async function submit() {
     <ElForm :label-width="`92px`" label-position="right">
       <div class="form-grid">
         <ElFormItem label="药品名称" required>
-          <ElInput v-model="form.name" placeholder="如：阿司匹林肠溶片" />
+          <ElInput v-model="form.drugName" placeholder="如：阿司匹林肠溶片" />
         </ElFormItem>
-        <ElFormItem label="通用名">
-          <ElInput v-model="form.genericName" placeholder="如：Aspirin" />
+        <ElFormItem label="药品编码">
+          <ElInput v-model="form.drugCode" placeholder="drug_code（唯一）" />
         </ElFormItem>
-        <ElFormItem label="商品品牌">
-          <ElInput v-model="form.brandName" />
+        <ElFormItem label="助记码">
+          <ElInput v-model="form.mnemonicCode" placeholder="拼音助记码" />
         </ElFormItem>
         <ElFormItem label="剂型">
-          <ElSelect v-model="form.dosageForm" placeholder="选择剂型" clearable>
-            <ElOption v-for="f in DOSAGE_FORMS" :key="f" :label="f" :value="f" />
-          </ElSelect>
+          <ElInput v-model="form.drugDosage" placeholder="如：片剂 / 胶囊 / 注射剂" />
         </ElFormItem>
         <ElFormItem label="分类">
-          <ElInput v-model="form.category" placeholder="如：西药 / 中成药 / OTC" />
+          <ElSelect v-model="form.drugType" placeholder="选择分类" clearable>
+            <ElOption label="西药" value="西药" />
+            <ElOption label="中成药" value="中成药" />
+            <ElOption label="生物制品" value="生物制品" />
+          </ElSelect>
         </ElFormItem>
         <ElFormItem label="规格">
-          <ElInput v-model="form.specification" placeholder="如：100mg*30片/盒" />
+          <ElInput v-model="form.drugFormat" placeholder="如：100mg*30片/盒" />
         </ElFormItem>
         <ElFormItem label="单位">
-          <ElInput v-model="form.unit" placeholder="盒 / 瓶 / 支" />
+          <ElInput v-model="form.drugUnit" placeholder="盒 / 瓶 / 支" />
         </ElFormItem>
         <ElFormItem label="单价" required>
-          <ElInputNumber v-model="form.price" :min="0" :precision="2" :controls="false" />
+          <ElInputNumber v-model="form.drugPrice" :min="0" :precision="2" :controls="false" />
         </ElFormItem>
         <ElFormItem label="预警阈值">
           <ElInputNumber v-model="form.lowStockThreshold" :min="0" :controls="false" />
         </ElFormItem>
-        <ElFormItem label="批准文号">
-          <ElInput v-model="form.approvalNumber" placeholder="国药准字 Hxxxxxxxx" />
+        <ElFormItem label="库存数量">
+          <ElInputNumber v-model="form.stockQuantity" :min="0" :controls="false" />
         </ElFormItem>
         <ElFormItem label="生产厂家" class="span-2">
           <ElInput v-model="form.manufacturer" />

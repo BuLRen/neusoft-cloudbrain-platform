@@ -45,6 +45,7 @@ const statusFilter = ref<number>(STATUS_ALL)
 const selectedPrescriptionId = ref<number | undefined>()
 const selectedPrescription = ref<PrescriptionDetailResponse | null>(null)
 const reviewing = ref(false)
+const dispensing = ref(false)
 
 // 按筛选条件过滤后的列表
 const filteredPrescriptions = computed(() => {
@@ -230,30 +231,38 @@ function showReviewResult(result: ReviewResult) {
 }
 
 async function dispenseSelected() {
+  if (dispensing.value) return
   const prescription = selectedPrescription.value?.prescription
   if (!prescription?.registerId || !prescription.patientId) {
     ElMessage.warning('请先选择一条待发药处方')
     return
   }
   const itemsCount = selectedPrescription.value?.details.length ?? 0
+  dispensing.value = true
   try {
-    await ElMessageBox.confirm(
-      `确认对此挂号的 ${itemsCount} 条药品明细发药？发药后库存会立即扣减并触发 AI 随访计划创建。`,
-      '发药确认',
-      { type: 'warning', confirmButtonText: '确认发药', cancelButtonText: '取消' },
-    )
+    try {
+      await ElMessageBox.confirm(
+        `确认对此挂号的 ${itemsCount} 条药品明细发药？发药后库存会立即扣减并触发 AI 随访计划创建。`,
+        '发药确认',
+        { type: 'warning', confirmButtonText: '确认发药', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
+    const payload: DispensePayload = {
+      pharmacistId: pharmacistId.value,
+      pharmacistName: pharmacistName.value,
+    }
+    await pharmacyApi.dispense(prescription.registerId, payload)
+    ElMessage.success('发药成功，随访计划将在后台自动创建')
+    await loadPrescriptions()
+    // 指导单在发药 afterCommit 异步生成，前端稍后探测；先清空旧状态
+    guideStatus.value = null
   } catch {
-    return
+    ElMessage.error('发药失败，请稍后重试')
+  } finally {
+    dispensing.value = false
   }
-  const payload: DispensePayload = {
-    pharmacistId: pharmacistId.value,
-    pharmacistName: pharmacistName.value,
-  }
-  await pharmacyApi.dispense(prescription.registerId, payload)
-  ElMessage.success('发药成功，随访计划将在后台自动创建')
-  await loadPrescriptions()
-  // 指导单在发药 afterCommit 异步生成，前端稍后探测；先清空旧状态
-  guideStatus.value = null
 }
 
 async function returnSelected() {
@@ -416,12 +425,13 @@ onMounted(() => {
             <div class="actions">
               <!-- 待发药：审方预检 + 确认发药 -->
               <template v-if="currentStatus === 0">
-                <ElButton :loading="reviewing" @click="reviewBeforeDispense">审方预检</ElButton>
+                <ElButton :loading="reviewing" :disabled="dispensing" @click="reviewBeforeDispense">审方预检</ElButton>
                 <ElButton
                   type="primary"
+                  :loading="dispensing"
                   :disabled="!selectedPrescription.prescription.paid"
                   @click="dispenseSelected"
-                >确认发药</ElButton>
+                >{{ dispensing ? '发药中…' : '确认发药' }}</ElButton>
                 <ElAlert
                   v-if="!selectedPrescription.prescription.paid"
                   type="warning"
@@ -450,8 +460,6 @@ onMounted(() => {
         </section>
       </div>
     </GlassCard>
-
-    <!-- 随访管理请到独立页面 /pharmacy/follow-up -->
 
     <!-- PDF 渲染容器：屏幕外，用户不可见；导出时 html2pdf 截图此 DOM -->
     <div class="mg-print-host" aria-hidden="true">

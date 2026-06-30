@@ -16,8 +16,8 @@
     {
       "drugId": 数字,
       "drugName": "药品名",
-      "specification": "规格",
-      "dosageForm": "剂型",
+      "drugFormat": "规格",
+      "drugDosage": "剂型",
       "quantity": 数量,
       "usageText": "医生原话用法（直接回显）",
       "howToTake": "用通俗易懂的语言说明怎么吃：每次几片/几粒、每日几次、饭前还是饭后",

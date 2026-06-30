@@ -50,6 +50,15 @@ public class AiPharmacyService {
         return medicationGuidePromptTemplate;
     }
 
+    private String drugGuidePromptTemplate;
+
+    private String getDrugGuidePromptTemplate() {
+        if (drugGuidePromptTemplate == null) {
+            drugGuidePromptTemplate = loadPrompt("classpath:prompts/drug-guide-prompt.st");
+        }
+        return drugGuidePromptTemplate;
+    }
+
     private String loadPrompt(String location) {
         try {
             Resource resource = resourceLoader.getResource(location);
@@ -108,8 +117,8 @@ public class AiPharmacyService {
             sb.append("--- 药品 ").append(i + 1).append(" ---\n");
             sb.append("drugId: ").append(item.get("drugId")).append("\n");
             sb.append("药品名: ").append(item.get("drugName")).append("\n");
-            sb.append("规格: ").append(item.get("specification")).append("\n");
-            sb.append("剂型: ").append(item.get("dosageForm")).append("\n");
+            sb.append("规格: ").append(item.get("drugFormat")).append("\n");
+            sb.append("剂型: ").append(item.get("drugDosage")).append("\n");
             sb.append("数量: ").append(item.get("quantity")).append("\n");
             sb.append("医生用法: ").append(item.get("usageText")).append("\n");
             sb.append("说明书用法: ").append(item.get("instructions")).append("\n");
@@ -145,8 +154,8 @@ public class AiPharmacyService {
 
                     g.put("drugId", drugId);
                     g.put("drugName", textOr(orig, n, "drugName", "drugName"));
-                    g.put("specification", textOr(orig, n, "specification", "specification"));
-                    g.put("dosageForm", textOr(orig, n, "dosageForm", "dosageForm"));
+                    g.put("drugFormat", textOr(orig, n, "drugFormat", "drugFormat"));
+                    g.put("drugDosage", textOr(orig, n, "drugDosage", "drugDosage"));
                     g.put("quantity", orig != null ? orig.get("quantity") : null);
                     // usageText 必须用医生原话，不接受 AI 改写
                     g.put("usageText", orig != null ? orig.get("usageText") : text(n, "usageText"));
@@ -215,8 +224,8 @@ public class AiPharmacyService {
             Map<String, Object> g = new LinkedHashMap<>();
             g.put("drugId", item.get("drugId"));
             g.put("drugName", item.get("drugName"));
-            g.put("specification", item.get("specification"));
-            g.put("dosageForm", item.get("dosageForm"));
+            g.put("drugFormat", item.get("drugFormat"));
+            g.put("drugDosage", item.get("drugDosage"));
             g.put("quantity", item.get("quantity"));
             g.put("usageText", item.get("usageText"));
             g.put("howToTake", item.get("instructions"));
@@ -276,24 +285,73 @@ public class AiPharmacyService {
     }
 
     /**
-     * 获取用药指导
+     * 药品级用药说明（真 AI 生成，含降级）。
      *
-     * <p>直接透传 pharmacy-service 传来的数据库字段（drug_info 表的 instructions /
-     * contraindications / adverseReactions 等），不再返回写死的 mock 模板。
-     * 待接入真大模型后，此处改为基于这些字段做患者友好的二次生成。</p>
+     * <p>基于药品名/规格/剂型调大模型，生成该类药物的通用用药常识
+     * （用法、注意事项、不良反应、储存）。AI 不可用时降级为 drug_info
+     * 字段透传（目前这些字段全空，但保留兜底，以后录了数据能接住）。</p>
      */
     public Map<String, Object> getMedicationGuide(Map<String, Object> drugInfo) {
-        log.info("AI获取用药指导: {}", drugInfo);
+        log.info("[药品级用药说明] 开始生成 | drugName={}", drugInfo.get("drugName"));
 
+        String prompt = getDrugGuidePromptTemplate()
+            .replace("{drugName}", nullSafe(drugInfo.get("drugName")))
+            .replace("{drugFormat}", nullSafe(drugInfo.get("drugFormat")))
+            .replace("{drugDosage}", nullSafe(drugInfo.get("drugDosage")));
+
+        try {
+            String aiReply = chatClient.prompt()
+                .messages(new UserMessage(prompt))
+                .call()
+                .content();
+            Map<String, Object> guide = parseDrugGuideJson(aiReply, drugInfo);
+            guide.put("generatedAt", LocalDateTime.now().toString());
+            guide.put("modelVersion", modelId);
+            log.info("[药品级用药说明] AI 生成成功 | drugName={}", drugInfo.get("drugName"));
+            return guide;
+        } catch (Exception e) {
+            log.warn("[药品级用药说明] AI 调用失败，走降级透传 | drugName={}, error={}",
+                drugInfo.get("drugName"), e.getMessage());
+            Map<String, Object> fallback = buildDrugGuideFallback(drugInfo);
+            fallback.put("generatedAt", LocalDateTime.now().toString());
+            fallback.put("modelVersion", modelId + " (fallback)");
+            return fallback;
+        }
+    }
+
+    /**
+     * 解析药品级 AI 返回 JSON。失败抛异常让上层走降级。
+     */
+    private Map<String, Object> parseDrugGuideJson(String aiText, Map<String, Object> drugInfo) {
+        String json = extractJson(aiText);
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            Map<String, Object> guide = new LinkedHashMap<>();
+            guide.put("drugName", drugInfo.getOrDefault("drugName", ""));
+            guide.put("drugFormat", drugInfo.getOrDefault("drugFormat", ""));
+            guide.put("drugDosage", drugInfo.getOrDefault("drugDosage", ""));
+            guide.put("usage", text(root, "usage"));
+            guide.put("precautions", text(root, "precautions"));
+            guide.put("sideEffects", text(root, "sideEffects"));
+            guide.put("storage", text(root, "storage"));
+            return guide;
+        } catch (Exception e) {
+            throw new RuntimeException("解析药品级 AI JSON 失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 降级方案：AI 不可用时，把 drug_info 字段直接透传输出。
+     */
+    private Map<String, Object> buildDrugGuideFallback(Map<String, Object> drugInfo) {
         Map<String, Object> guide = new HashMap<>();
         guide.put("drugName", drugInfo.getOrDefault("drugName", ""));
-        guide.put("genericName", drugInfo.getOrDefault("genericName", ""));
-        guide.put("specification", drugInfo.getOrDefault("specification", ""));
-        guide.put("dosageForm", drugInfo.getOrDefault("dosageForm", ""));
+        guide.put("drugFormat", drugInfo.getOrDefault("drugFormat", ""));
+        guide.put("drugDosage", drugInfo.getOrDefault("drugDosage", ""));
         guide.put("usage", drugInfo.getOrDefault("instructions", ""));
         guide.put("precautions", drugInfo.getOrDefault("contraindications", ""));
         guide.put("sideEffects", drugInfo.getOrDefault("adverseReactions", ""));
-
+        guide.put("storage", drugInfo.getOrDefault("storageConditions", ""));
         return guide;
     }
 

@@ -25,7 +25,6 @@ import StatusTag from '@/shared/components/StatusTag.vue'
 import { useClientPagination } from '@/modules/admin/composables/useClientPagination'
 import { registrationApi } from '@/shared/api/modules/registration'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
-import { DOSAGE_FORMS } from '@/shared/constants/pharmacy'
 import type { DepartmentOption, RegistLevelOption, SettleCategoryOption } from '@/shared/types/registration'
 import type { DrugOption } from '@/shared/types/pharmacy'
 
@@ -48,7 +47,6 @@ const drugs = ref<DrugOption[]>([])
 
 const deptTypeFilter = ref('')
 const drugKeyword = ref('')
-const drugDosageForm = ref('')
 const drugCategory = ref('')
 const drugCategoryOptions = ref<string[]>([])
 
@@ -127,13 +125,13 @@ async function loadDrugCategories() {
 async function loadDrugs() {
   drugsLoading.value = true
   try {
-    const params: Record<string, string | undefined> = {
+    const res = await pharmacyApi.drugs({
       keyword: drugKeyword.value || undefined,
-      dosageForm: drugDosageForm.value || undefined,
       category: drugCategory.value || undefined,
-    }
-    const hasFilter = Object.values(params).some((v) => v)
-    drugs.value = await pharmacyApi.drugs(hasFilter ? params : undefined)
+      page: 1,
+      pageSize: 200,
+    })
+    drugs.value = res.list
     resetDrugPage()
   } finally {
     drugsLoading.value = false
@@ -410,10 +408,7 @@ onMounted(async () => {
             </div>
             <div class="filter-bar">
               <div class="filter-bar__inputs">
-                <ElInput v-model="drugKeyword" placeholder="药品名称 / 通用名" clearable class="filter-bar__keyword" />
-                <ElSelect v-model="drugDosageForm" placeholder="剂型" clearable class="filter-bar__select">
-                  <ElOption v-for="form in DOSAGE_FORMS" :key="form" :label="form" :value="form" />
-                </ElSelect>
+                <ElInput v-model="drugKeyword" placeholder="药品名称 / 编码 / 助记码" clearable class="filter-bar__keyword" />
                 <ElSelect v-model="drugCategory" placeholder="分类" clearable class="filter-bar__select">
                   <ElOption v-for="c in drugCategoryOptions" :key="c" :label="c" :value="c" />
                 </ElSelect>
@@ -427,13 +422,13 @@ onMounted(async () => {
               border
               @row-click="(row) => openDrugDetail(row as DrugOption)"
             >
-            <ElTableColumn prop="name" label="药品名称" min-width="160" />
-            <ElTableColumn prop="specification" label="规格" min-width="140" />
-            <ElTableColumn prop="dosageForm" label="剂型" min-width="100" />
+            <ElTableColumn prop="drugName" label="药品名称" min-width="160" />
+            <ElTableColumn prop="drugFormat" label="规格" min-width="140" />
+            <ElTableColumn prop="drugDosage" label="剂型" min-width="100" />
             <ElTableColumn prop="manufacturer" label="生产厂家" min-width="180" show-overflow-tooltip />
             <ElTableColumn label="单价" min-width="100" align="right">
               <template #default="{ row }">
-                <span class="price-value">¥ {{ row.price ?? 0 }}</span>
+                <span class="price-value">¥ {{ row.drugPrice ?? 0 }}</span>
               </template>
             </ElTableColumn>
             <ElTableColumn label="库存" min-width="120">
@@ -441,7 +436,7 @@ onMounted(async () => {
                 <StatusTag
                   :tone="(row.stockQuantity ?? 0) <= (row.lowStockThreshold ?? 0) ? 'danger' : 'success'"
                 >
-                  {{ row.stockQuantity ?? 0 }} {{ row.unit || '' }}
+                  {{ row.stockQuantity ?? 0 }} {{ row.drugUnit || '' }}
                 </StatusTag>
               </template>
             </ElTableColumn>
@@ -526,14 +521,14 @@ onMounted(async () => {
     <ElDialog v-model="drugDialogVisible" title="药品详情" width="560px">
       <template v-if="selectedDrug">
         <ElDescriptions :column="2" border>
-          <ElDescriptionsItem label="药品名称">{{ selectedDrug.name }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="规格">{{ selectedDrug.specification || '-' }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="剂型">{{ selectedDrug.dosageForm || '-' }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="单位">{{ selectedDrug.unit || '-' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="药品名称">{{ selectedDrug.drugName }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="规格">{{ selectedDrug.drugFormat || '-' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="剂型">{{ selectedDrug.drugDosage || '-' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="单位">{{ selectedDrug.drugUnit || '-' }}</ElDescriptionsItem>
           <ElDescriptionsItem label="生产厂家">{{ selectedDrug.manufacturer || '-' }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="单价">¥ {{ selectedDrug.price ?? 0 }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="单价">¥ {{ selectedDrug.drugPrice ?? 0 }}</ElDescriptionsItem>
           <ElDescriptionsItem label="库存">
-            {{ selectedDrug.stockQuantity ?? 0 }} {{ selectedDrug.unit || '' }}
+            {{ selectedDrug.stockQuantity ?? 0 }} {{ selectedDrug.drugUnit || '' }}
           </ElDescriptionsItem>
           <ElDescriptionsItem label="低库存阈值">
             {{ selectedDrug.lowStockThreshold ?? 0 }}

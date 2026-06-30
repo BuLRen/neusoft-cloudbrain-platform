@@ -22,12 +22,11 @@ import type {
   Dispensing,
   DrugInboundPayload,
   DrugOption,
+  DrugPageResult,
   DrugQuery,
   DrugStock,
   DrugStockUpdatePayload,
   ExpiringStockItem,
-  FollowUpFeedback,
-  FollowUpPlan,
   MedicationGuide,
   MedicationGuideRecord,
   PendingPrescriptionQuery,
@@ -36,7 +35,6 @@ import type {
   PharmacyTransactionQuery,
   PrescriptionDetailResponse,
   PrescriptionSummary,
-  StatisticsResult,
   ReturnDrugPayload,
   ReviewResult,
 } from '@/shared/types/pharmacy'
@@ -73,12 +71,17 @@ export const pharmacyApi = {
   review(registerId: number) {
     return http<ReviewResult>({ url: `/pharmacy/dispense/${registerId}/review`, method: 'POST' })
   },
+  /** 药品列表：传 page/pageSize 走分页返回 DrugPageResult；不传走全量（后端 LIMIT 200 兜底） */
   drugs(params?: DrugQuery) {
-    return http<DrugOption[]>({ url: '/pharmacy/drugs', method: 'GET', params })
+    return http<DrugPageResult>({ url: '/pharmacy/drugs', method: 'GET', params })
   },
-  /** P1-4.3 查询所有已用药品分类 */
+  /** 查询所有已用药品分类（drug_type：西药/中成药/生物制品） */
   categories() {
     return http<string[]>({ url: '/pharmacy/drugs/categories', method: 'GET' })
+  },
+  /** 查询所有已用药品剂型（drug_dosage），供前端动态下拉 */
+  dosageForms() {
+    return http<string[]>({ url: '/pharmacy/drugs/dosage-forms', method: 'GET' })
   },
   drugDetail(id: number) {
     return http<DrugOption>({ url: `/pharmacy/drugs/${id}`, method: 'GET' })
@@ -92,8 +95,9 @@ export const pharmacyApi = {
   deleteDrug(id: number) {
     return http<void>({ url: `/pharmacy/drugs/${id}`, method: 'DELETE' })
   },
-  lowStockDrugs() {
-    return http<DrugOption[]>({ url: '/pharmacy/drugs/low-stock', method: 'GET' })
+  /** 低库存药品：传 page 走分页，不传走全量 */
+  lowStockDrugs(params?: { page?: number; pageSize?: number }) {
+    return http<DrugPageResult>({ url: '/pharmacy/drugs/low-stock', method: 'GET', params })
   },
   inventory(drugId: number) {
     return http<DrugStock[]>({ url: `/pharmacy/inventory/${drugId}`, method: 'GET' })
@@ -166,25 +170,9 @@ export const pharmacyApi = {
     // 释放 blob URL
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   },
-  /** P1-6.2 患者随访计划 */
-  patientFollowUpPlans(patientId: number) {
-    return http<FollowUpPlan[]>({ url: `/pharmacy/followup/patient/${patientId}`, method: 'GET' })
-  },
-  /** P2-6.3 重试创建随访 */
-  retryFollowUp(prescriptionId: number) {
-    return http<Record<string, unknown>>({ url: `/pharmacy/followup/retry/${prescriptionId}`, method: 'POST' })
-  },
-  /** P2-6.4 录入随访反馈 */
-  submitFollowUpFeedback(planId: number, data: FollowUpFeedback) {
-    return http<void>({ url: `/pharmacy/followup/${planId}/feedback`, method: 'POST', data })
-  },
   /** P2-4.6 查询发药单 */
   dispensingByRegister(registerId: number) {
     return http<Dispensing[]>({ url: `/pharmacy/dispensing/${registerId}`, method: 'GET' })
-  },
-  /** P1-8 统计报表 */
-  statistics(params?: { startDate?: string; endDate?: string; topLimit?: number }) {
-    return http<StatisticsResult>({ url: '/pharmacy/statistics', method: 'GET', params })
   },
   /**
    * 患者端「我的处方」：返回该患者所有处方（按挂号聚合），

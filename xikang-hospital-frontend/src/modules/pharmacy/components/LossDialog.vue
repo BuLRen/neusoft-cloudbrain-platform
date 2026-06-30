@@ -110,7 +110,7 @@ async function submit() {
       reason: form.value.reason.trim(),
       operatorName: form.value.operatorName.trim() || undefined,
     })
-    ElMessage.success(`已报损 ${qty} ${props.drug.unit || '件'}：${form.value.reason}`)
+    ElMessage.success(`已报损 ${qty} ${props.drug.drugUnit || '件'}：${form.value.reason}`)
     emit('update:modelValue', false)
     emit('success')
   } finally {
@@ -128,11 +128,11 @@ async function submit() {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <ElDescriptions v-if="drug" :column="1" border size="small">
-      <ElDescriptionsItem label="药品">{{ drug.name }}</ElDescriptionsItem>
-      <ElDescriptionsItem label="规格">{{ drug.specification || '-' }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="药品">{{ drug.drugName }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="规格">{{ drug.drugFormat || '-' }}</ElDescriptionsItem>
       <ElDescriptionsItem label="当前总库存">
         <strong :class="{ 'stock-low': (drug.stockQuantity ?? 0) <= (drug.lowStockThreshold ?? 0) }">
-          {{ drug.stockQuantity ?? 0 }} {{ drug.unit || '件' }}
+          {{ drug.stockQuantity ?? 0 }} {{ drug.drugUnit || '件' }}
         </strong>
       </ElDescriptionsItem>
     </ElDescriptions>
