@@ -28,7 +28,7 @@ ssh "${REMOTE_SSH_USER}@${REMOTE_SSH_HOST}" bash -s <<EOF
 set -euo pipefail
 cd '${REMOTE_DEPLOY_PATH}'
 if [[ ! -f .env ]]; then
-  echo "ERROR: ${REMOTE_DEPLOY_PATH}/.env 不存在，请先创建 DB_REMOTE_PASSWORD 与 INTERNAL_AI_TOKEN"
+  echo "ERROR: ${REMOTE_DEPLOY_PATH}/.env 不存在，请先创建 DB_HOST/DB_PASSWORD 与 INTERNAL_AI_TOKEN"
   exit 1
 fi
 pkill -f 'ai-catalog-service-1.0.0.jar' 2>/dev/null || true

@@ -6,6 +6,8 @@ spring:
     name: ai-diagnosis-service
   config:
     import:
+      - optional:file:../.env
+      - optional:file:./.env
       - optional:classpath:config/database.yml
       - optional:file:../config/database.yml
       - optional:file:./config/database.yml

@@ -25,10 +25,15 @@ export REMOTE_DEPLOY_PATH=/www/wwwroot/cz/xikang/ai-catalog
 
 1. 上传 JAR 与 `.env` 到云主机（例如 `/www/wwwroot/cz/xikang/ai-catalog/`）
 
-2. `.env` 最少包含：
+2. `.env` 最少包含（可与项目根 `xikang-cloud-hospital/.env` 共用同一套 `DB_*`）：
 
 ```bash
-DB_REMOTE_PASSWORD=<远程 PostgreSQL 密码>
+SPRING_PROFILES_ACTIVE=remote
+DB_HOST=43.139.102.203
+DB_PORT=5432
+DB_NAME=xikang_hospital
+DB_USERNAME=xikang_hospital
+DB_PASSWORD=<远程 PostgreSQL 密码>
 INTERNAL_AI_TOKEN=<与 Dify HTTP 节点 Header 一致>
 ```
 
