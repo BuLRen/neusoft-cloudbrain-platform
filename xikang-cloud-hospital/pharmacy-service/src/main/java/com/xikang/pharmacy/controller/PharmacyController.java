@@ -33,30 +33,46 @@ public class PharmacyController {
     // ==================== 药品管理接口 ====================
 
     /**
-     * 获取药品列表（支持组合查询：keyword + dosageForm + category）
+     * 获取药品列表（支持组合查询：keyword + dosageForm + category）。
+     * <p>双模式（照搬 physician-service）：传了 page/pageSize 走分页返回 {list,total,page,pageSize}；
+     * 没传走全量（Mapper 已加 LIMIT 200 兜底防 OOM）。</p>
      */
     @GetMapping("/drugs")
-    public Result<List<DrugInfo>> getDrugs(
+    public Result<?> getDrugs(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String dosageForm,
-            @RequestParam(required = false) String category) {
-        // 优先走组合查询（P1-4.3）：带 category，或同时带 keyword + dosageForm
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer pageSize) {
+        if (page != null || pageSize != null) {
+            return Result.success(pharmacyService.getDrugsPage(keyword, dosageForm, category, page, pageSize));
+        }
+        // 兼容旧调用（无分页）—— Mapper 内 LIMIT 200 兜底
         boolean hasCategory = category != null && !category.isEmpty();
         boolean hasKeywordAndForm = (keyword != null && !keyword.isEmpty())
                 && (dosageForm != null && !dosageForm.isEmpty());
         if (hasCategory || hasKeywordAndForm) {
             return Result.success(pharmacyService.getDrugsByConditions(keyword, dosageForm, category));
         }
-        // 兼容旧调用（keyword 与 dosageForm 互斥）
         return Result.success(pharmacyService.getDrugs(keyword, dosageForm));
     }
 
     /**
-     * P1-4.3 查询所有已用药品分类
+     * 查询所有已用药品分类（drug_type：西药/中成药/生物制品）
      */
     @GetMapping("/drugs/categories")
     public Result<List<String>> getCategories() {
         return Result.success(pharmacyService.getCategories());
+    }
+
+    /**
+     * 查询所有已用药品剂型（drug_dosage），供前端动态下拉。
+     * 真实表 drug_dosage 取值有 30+ 种（片剂/注射剂/胶囊剂/丸剂(大蜜丸)/...），
+     * 前端写死枚举无法覆盖，改为后端动态返回。
+     */
+    @GetMapping("/drugs/dosage-forms")
+    public Result<List<String>> getDosageForms() {
+        return Result.success(pharmacyService.getDosageForms());
     }
 
     /**
@@ -96,12 +112,16 @@ public class PharmacyController {
     }
 
     /**
-     * 获取低库存药品
+     * 获取低库存药品。双模式：传 page/pageSize 走分页，否则全量（LIMIT 200 兜底）。
      */
     @GetMapping("/drugs/low-stock")
-    public Result<List<DrugInfo>> getLowStockDrugs() {
-        List<DrugInfo> drugs = pharmacyService.getLowStockDrugs();
-        return Result.success(drugs);
+    public Result<?> getLowStockDrugs(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer pageSize) {
+        if (page != null || pageSize != null) {
+            return Result.success(pharmacyService.getLowStockDrugsPage(page, pageSize));
+        }
+        return Result.success(pharmacyService.getLowStockDrugs());
     }
 
     // ==================== 库存管理接口 ====================
@@ -138,11 +158,16 @@ public class PharmacyController {
     }
 
     /**
-     * P1-4.2 近效期批次查询
+     * 近效期批次查询。双模式：传 page/pageSize 走分页，否则全量（LIMIT 200 兜底）。
      */
     @GetMapping("/inventory/expiring")
-    public Result<List<Map<String, Object>>> getExpiringStock(
-            @RequestParam(defaultValue = "30") int days) {
+    public Result<?> getExpiringStock(
+            @RequestParam(defaultValue = "30") int days,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer pageSize) {
+        if (page != null || pageSize != null) {
+            return Result.success(pharmacyService.getExpiringStockPage(days, page, pageSize));
+        }
         return Result.success(pharmacyService.getExpiringStock(days));
     }
 

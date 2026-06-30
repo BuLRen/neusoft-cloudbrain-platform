@@ -5,6 +5,7 @@ import {
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,
+  ElMessage,
   ElTag,
 } from 'element-plus'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
@@ -36,7 +37,7 @@ async function generateGuide() {
   try {
     guide.value = await pharmacyApi.medicationGuide(props.drug.id)
   } catch {
-    // 拦截器统一报错
+    ElMessage.warning('AI 生成失败，请稍后重试或咨询药师')
   } finally {
     guideLoading.value = false
   }
@@ -52,32 +53,32 @@ async function generateGuide() {
   >
     <template v-if="drug">
       <ElDescriptions :column="2" border>
-        <ElDescriptionsItem label="商品名">{{ drug.name }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="通用名">{{ drug.genericName || '-' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="品牌">{{ drug.brandName || '-' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="剂型">{{ drug.dosageForm || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="药品名称">{{ drug.drugName }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="药品编码">{{ drug.drugCode || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="助记码">{{ drug.mnemonicCode || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="剂型">{{ drug.drugDosage || '-' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="分类">
-          <ElTag v-if="drug.category" size="small">{{ drug.category }}</ElTag>
+          <ElTag v-if="drug.drugType" size="small">{{ drug.drugType }}</ElTag>
           <span v-else>-</span>
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="规格">{{ drug.specification || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="规格">{{ drug.drugFormat || '-' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="厂家">{{ drug.manufacturer || '-' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="批准文号">{{ drug.approvalNumber || '-' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="单价">{{ drug.price ?? '-' }} 元</ElDescriptionsItem>
+        <ElDescriptionsItem label="单价">{{ drug.drugPrice ?? '-' }} 元</ElDescriptionsItem>
         <ElDescriptionsItem label="库存">
           <span :class="{ 'stock-low': (drug.stockQuantity ?? 0) <= (drug.lowStockThreshold ?? 0) }">
-            {{ drug.stockQuantity }} {{ drug.unit }}
+            {{ drug.stockQuantity }} {{ drug.drugUnit }}
           </span>
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="储存条件" :span="2">{{ drug.storageConditions || '-' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="用药指导" :span="2">{{ drug.instructions || '-' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="禁忌" :span="2">{{ drug.contraindications || '-' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="不良反应" :span="2">{{ drug.adverseReactions || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="预警阈值">{{ drug.lowStockThreshold ?? '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem v-if="drug.storageConditions" label="储存条件" :span="2">{{ drug.storageConditions }}</ElDescriptionsItem>
+        <ElDescriptionsItem v-if="drug.instructions" label="用药指导" :span="2">{{ drug.instructions }}</ElDescriptionsItem>
+        <ElDescriptionsItem v-if="drug.contraindications" label="禁忌" :span="2">{{ drug.contraindications }}</ElDescriptionsItem>
+        <ElDescriptionsItem v-if="drug.adverseReactions" label="不良反应" :span="2">{{ drug.adverseReactions }}</ElDescriptionsItem>
       </ElDescriptions>
 
       <div class="detail-actions">
         <ElButton type="primary" :loading="guideLoading" @click="generateGuide">
-          查看用药说明
+          {{ guideLoading ? 'AI 生成中…' : '查看用药说明' }}
         </ElButton>
         <ElButton @click="emit('check', drug)">库存盘点</ElButton>
       </div>
@@ -86,11 +87,12 @@ async function generateGuide() {
         <h4>用药说明</h4>
         <ElDescriptions :column="1" border>
           <ElDescriptionsItem v-if="guide.usage" label="用法用量">{{ guide.usage }}</ElDescriptionsItem>
-          <ElDescriptionsItem v-if="guide.precautions" label="禁忌">{{ guide.precautions }}</ElDescriptionsItem>
+          <ElDescriptionsItem v-if="guide.precautions" label="注意事项">{{ guide.precautions }}</ElDescriptionsItem>
           <ElDescriptionsItem v-if="guide.sideEffects" label="不良反应">{{ guide.sideEffects }}</ElDescriptionsItem>
+          <ElDescriptionsItem v-if="guide.storage" label="储存建议">{{ guide.storage }}</ElDescriptionsItem>
         </ElDescriptions>
-        <p v-if="!guide.usage && !guide.precautions && !guide.sideEffects" class="guide-empty">
-          该药品暂未维护说明书信息
+        <p v-if="!guide.usage && !guide.precautions && !guide.sideEffects && !guide.storage" class="guide-empty">
+          AI 暂未能生成用药说明，请咨询药师
         </p>
       </div>
     </template>

@@ -79,7 +79,7 @@ function formatTime(t?: string) {
       <div class="mg-sheet__drug-head">
         <span class="mg-sheet__drug-idx">{{ idx + 1 }}</span>
         <span class="mg-sheet__drug-name">{{ item.drugName || '-' }}</span>
-        <span v-if="item.specification" class="mg-sheet__drug-spec">{{ item.specification }}</span>
+        <span v-if="item.drugFormat" class="mg-sheet__drug-spec">{{ item.drugFormat }}</span>
       </div>
       <table class="mg-sheet__drug-table">
         <tbody>

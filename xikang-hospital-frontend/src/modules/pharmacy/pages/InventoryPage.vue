@@ -19,7 +19,6 @@ import StockBatchesDialog from '@/modules/pharmacy/components/StockBatchesDialog
 import LossDialog from '@/modules/pharmacy/components/LossDialog.vue'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
 import {
-  DOSAGE_FORMS,
   NEAR_EXPIRY_DAYS,
   PAGE_SIZE_DEFAULT,
 } from '@/shared/constants/pharmacy'
@@ -33,12 +32,12 @@ function goBatchInbound() {
 
 // ===== 筛选条件 =====
 const drugKeyword = ref('')
-const drugDosageForm = ref<string>('')
 const drugCategory = ref<string>('')
 const stockFilter = ref<'all' | 'low' | 'zero' | 'frozen'>('all')
 
 const categoryOptions = ref<string[]>([])
 const drugs = ref<DrugOption[]>([])
+const drugsTotal = ref(0)
 const lowStockDrugs = ref<DrugOption[]>([])
 const expiringBatches = ref<ExpiringStockItem[]>([])
 const loading = ref(false)
@@ -53,7 +52,7 @@ function debouncedSearch() {
 }
 
 // 任何筛选条件变化都触发（输入、下拉变化、状态过滤）
-watch([drugKeyword, drugDosageForm, drugCategory, stockFilter], () => {
+watch([drugKeyword, drugCategory, stockFilter], () => {
   drugPage.value = 1
   debouncedSearch()
 })
@@ -107,14 +106,12 @@ const filteredDrugs = computed(() => {
   return list
 })
 
-const pagedDrugs = computed(() => {
-  const start = (drugPage.value - 1) * drugPageSize.value
-  return filteredDrugs.value.slice(start, start + drugPageSize.value)
-})
+// 真分页：后端已按 drugPage/drugPageSize 返回当前页，前端不再 slice
+const pagedDrugs = computed(() => filteredDrugs.value)
 
 // ===== 总览指标 =====
 const overview = computed(() => {
-  const totalDrugs = drugs.value.length
+  const totalDrugs = drugsTotal.value
   const totalStock = drugs.value.reduce((s, d) => s + (d.stockQuantity ?? 0), 0)
   const lowStockCount = lowStockDrugs.value.length
   const expiringCount = expiringBatches.value.length
@@ -137,13 +134,14 @@ function expiryTone(days: number | undefined): 'danger' | 'warning' {
 async function loadDrugCatalog() {
   loading.value = true
   try {
-    const params: Record<string, string | undefined> = {
+    const res = await pharmacyApi.drugs({
       keyword: drugKeyword.value.trim() || undefined,
-      dosageForm: drugDosageForm.value || undefined,
       category: drugCategory.value || undefined,
-    }
-    const hasFilter = Object.values(params).some((v) => v)
-    drugs.value = await pharmacyApi.drugs(hasFilter ? params : undefined)
+      page: drugPage.value,
+      pageSize: drugPageSize.value,
+    })
+    drugs.value = res.list
+    drugsTotal.value = res.total
   } finally {
     loading.value = false
   }
@@ -151,17 +149,22 @@ async function loadDrugCatalog() {
 
 async function loadOverview() {
   // 并行拉取：低库存、近效期
-  const [low, expiring] = await Promise.all([
-    pharmacyApi.lowStockDrugs(),
+  const [lowRes, expiring] = await Promise.all([
+    pharmacyApi.lowStockDrugs({ page: 1, pageSize: 200 }),
     pharmacyApi.expiringStock(NEAR_EXPIRY_DAYS).catch(() => [] as ExpiringStockItem[]),
   ])
-  lowStockDrugs.value = low
+  lowStockDrugs.value = lowRes.list
   expiringBatches.value = expiring
 }
 
 async function loadCategories() {
   categoryOptions.value = await pharmacyApi.categories()
 }
+
+// 翻页：直接加载（不走防抖）
+watch(drugPage, () => {
+  void loadDrugCatalog()
+})
 
 function openBatches(drug: DrugOption) {
   selectedDrug.value = drug
@@ -190,7 +193,6 @@ function refreshAll() {
 
 function resetFilters() {
   drugKeyword.value = ''
-  drugDosageForm.value = ''
   drugCategory.value = ''
   stockFilter.value = 'all'
 }
@@ -269,13 +271,13 @@ onMounted(() => {
           >
             <div class="alert-panel__strip" :class="lowStockTone(d)"></div>
             <div class="alert-panel__body">
-              <div class="alert-panel__name">{{ d.name }}</div>
+              <div class="alert-panel__name">{{ d.drugName }}</div>
               <div class="alert-panel__meta">
                 <span :class="lowStockTone(d) === 'danger' ? 'text-danger' : 'text-warning'">
                   {{ (d.stockQuantity ?? 0) === 0 ? '缺货' : '低库存' }}
                 </span>
                 <span class="dot">·</span>
-                <span>{{ d.stockQuantity ?? 0 }} {{ d.unit || '件' }}</span>
+                <span>{{ d.stockQuantity ?? 0 }} {{ d.drugUnit || '件' }}</span>
                 <template v-if="(d.stockQuantity ?? 0) > 0 && d.lowStockThreshold">
                   <span class="dot">·</span>
                   <span>阈值 {{ d.lowStockThreshold }}</span>
@@ -354,21 +356,10 @@ onMounted(() => {
         <div class="filter-bar__field">
           <ElInput
             v-model="drugKeyword"
-            placeholder="药品名称 / 通用名"
+            placeholder="药品名称 / 编码 / 助记码"
             clearable
             size="default"
           />
-        </div>
-        <div class="filter-bar__field">
-          <ElSelect
-            v-model="drugDosageForm"
-            placeholder="选择剂型"
-            clearable
-            size="default"
-            class="full"
-          >
-            <ElOption v-for="f in DOSAGE_FORMS" :key="f" :label="f" :value="f" />
-          </ElSelect>
         </div>
         <div class="filter-bar__field">
           <ElSelect
@@ -394,7 +385,7 @@ onMounted(() => {
       <div class="section-title">
         <h3>药品目录</h3>
         <StatusTag tone="primary">
-          {{ filteredDrugs.length }} / {{ drugs.length }} 条 · 点击行查看批次
+          {{ drugsTotal }} 条 · 点击行查看批次
         </StatusTag>
       </div>
 
@@ -409,23 +400,23 @@ onMounted(() => {
         empty-text="没有匹配的药品"
         @row-click="openBatches"
       >
-        <ElTableColumn prop="name" label="药品名称" min-width="220">
+        <ElTableColumn prop="drugName" label="药品名称" min-width="220">
           <template #default="{ row }">
             <div class="drug-name-cell">
-              <span class="drug-name">{{ row.name }}</span>
+              <span class="drug-name">{{ row.drugName }}</span>
               <div class="drug-tags">
-                <ElTag v-if="row.category" size="small" effect="plain">{{ row.category }}</ElTag>
-                <ElTag v-if="row.dosageForm" size="small" type="info" effect="plain">
-                  {{ row.dosageForm }}
+                <ElTag v-if="row.drugType" size="small" effect="plain">{{ row.drugType }}</ElTag>
+                <ElTag v-if="row.drugDosage" size="small" type="info" effect="plain">
+                  {{ row.drugDosage }}
                 </ElTag>
               </div>
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="specification" label="规格" min-width="140" show-overflow-tooltip />
+        <ElTableColumn prop="drugFormat" label="规格" min-width="140" show-overflow-tooltip />
         <ElTableColumn prop="manufacturer" label="厂家" min-width="160" show-overflow-tooltip />
-        <ElTableColumn prop="price" label="单价" min-width="90" align="right">
-          <template #default="{ row }">¥ {{ row.price ?? '-' }}</template>
+        <ElTableColumn prop="drugPrice" label="单价" min-width="90" align="right">
+          <template #default="{ row }">¥ {{ row.drugPrice ?? '-' }}</template>
         </ElTableColumn>
         <ElTableColumn label="库存" min-width="120" align="right">
           <template #default="{ row }">
@@ -437,7 +428,7 @@ onMounted(() => {
             >
               {{ row.stockQuantity ?? 0 }}
             </span>
-            <span class="unit-suffix">{{ row.unit || '' }}</span>
+            <span class="unit-suffix">{{ row.drugUnit || '' }}</span>
             <ElTag
               v-if="(row.stockQuantity ?? 0) === 0"
               type="danger"
@@ -480,13 +471,15 @@ onMounted(() => {
 
       <div class="pagination-row">
         <ElPagination
-          v-model:current-page="drugPage"
-          v-model:page-size="drugPageSize"
-          :total="filteredDrugs.length"
+          :current-page="drugPage"
+          :page-size="drugPageSize"
+          :total="drugsTotal"
           :page-sizes="[10, 20, 50]"
           layout="total, sizes, prev, pager, next"
           small
           background
+          @current-change="(p: number) => { drugPage = p }"
+          @size-change="(s: number) => { drugPageSize = s; drugPage = 1; void loadDrugCatalog() }"
         />
       </div>
     </GlassCard>

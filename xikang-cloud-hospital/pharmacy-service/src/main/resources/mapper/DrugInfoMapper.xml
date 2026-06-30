@@ -2,18 +2,19 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.xikang.pharmacy.mapper.DrugInfoMapper">
 
+    <!-- 字段对齐线上 drug_info 真实表：drug_* 列为主，业务扩展列保留 -->
     <resultMap id="BaseResultMap" type="com.xikang.pharmacy.entity.DrugInfo">
         <id column="id" property="id"/>
-        <result column="name" property="name"/>
-        <result column="generic_name" property="genericName"/>
-        <result column="brand_name" property="brandName"/>
-        <result column="specification" property="specification"/>
-        <result column="dosage_form" property="dosageForm"/>
-        <result column="category" property="category"/>
-        <result column="unit" property="unit"/>
+        <result column="drug_code" property="drugCode"/>
+        <result column="drug_name" property="drugName"/>
+        <result column="drug_format" property="drugFormat"/>
+        <result column="drug_unit" property="drugUnit"/>
         <result column="manufacturer" property="manufacturer"/>
-        <result column="approval_number" property="approvalNumber"/>
-        <result column="price" property="price"/>
+        <result column="drug_dosage" property="drugDosage"/>
+        <result column="drug_type" property="drugType"/>
+        <result column="drug_price" property="drugPrice"/>
+        <result column="mnemonic_code" property="mnemonicCode"/>
+        <result column="creation_date" property="creationDate"/>
         <result column="stock_quantity" property="stockQuantity"/>
         <result column="low_stock_threshold" property="lowStockThreshold"/>
         <result column="storage_conditions" property="storageConditions"/>
@@ -26,77 +27,138 @@
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, name, generic_name, brand_name, specification, dosage_form, category, unit, manufacturer,
-        approval_number, price, stock_quantity, low_stock_threshold, storage_conditions,
-        instructions, contraindications, adverse_reactions, status, create_time, update_time
+        id, drug_code, drug_name, drug_format, drug_unit, manufacturer, drug_dosage, drug_type,
+        drug_price, mnemonic_code, creation_date, stock_quantity, low_stock_threshold,
+        storage_conditions, instructions, contraindications, adverse_reactions, status,
+        create_time, update_time
+    </sql>
+
+    <!-- 组合查询 WHERE 片段（与 physician-service DrugSearchWhere 一致：status 兼容 + ILIKE） -->
+    <sql id="conditionWhere">
+        <where>
+            (status IS NULL OR status = 1)
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    drug_code ILIKE CONCAT('%', #{keyword}, '%')
+                    OR drug_name ILIKE CONCAT('%', #{keyword}, '%')
+                    OR mnemonic_code ILIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+            <if test="dosageForm != null and dosageForm != ''">
+                AND drug_dosage = #{dosageForm}
+            </if>
+            <if test="category != null and category != ''">
+                AND drug_type = #{category}
+            </if>
+        </where>
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE id = #{id}
     </select>
 
+    <!-- 全量查询兜底：16 万+ 数据，裸查必 OOM。LIMIT 200 防护 -->
     <select id="selectAll" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE status = 1 ORDER BY name
+        SELECT <include refid="Base_Column_List"/> FROM drug_info
+        WHERE (status IS NULL OR status = 1)
+        ORDER BY drug_name LIMIT 200
     </select>
 
     <select id="selectByKeyword" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/> FROM drug_info
-        WHERE status = 1 AND (name LIKE CONCAT('%', #{keyword}, '%') OR generic_name LIKE CONCAT('%', #{keyword}, '%'))
-        ORDER BY name
+        WHERE (status IS NULL OR status = 1)
+          AND (drug_name ILIKE CONCAT('%', #{keyword}, '%') OR mnemonic_code ILIKE CONCAT('%', #{keyword}, '%'))
+        ORDER BY drug_name LIMIT 200
     </select>
 
     <select id="selectByDosageForm" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE dosage_form = #{dosageForm} AND status = 1 ORDER BY name
+        SELECT <include refid="Base_Column_List"/> FROM drug_info
+        WHERE (status IS NULL OR status = 1) AND drug_dosage = #{dosageForm}
+        ORDER BY drug_name LIMIT 200
     </select>
 
-    <!-- P1-4.3 组合条件查询（AND），任一参数为空则忽略该条件 -->
+    <!-- 组合条件查询（AND），任一参数为空则忽略。dosageForm→drug_dosage, category→drug_type -->
     <select id="selectByConditions" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/> FROM drug_info
-        WHERE status = 1
-        <if test="keyword != null and keyword != ''">
-            AND (name LIKE CONCAT('%', #{keyword}, '%') OR generic_name LIKE CONCAT('%', #{keyword}, '%'))
-        </if>
-        <if test="dosageForm != null and dosageForm != ''">
-            AND dosage_form = #{dosageForm}
-        </if>
-        <if test="category != null and category != ''">
-            AND category = #{category}
-        </if>
-        ORDER BY name
+        <include refid="conditionWhere"/>
+        ORDER BY drug_name LIMIT 200
     </select>
 
-    <select id="selectCategories" resultType="java.lang.String">
-        SELECT DISTINCT category FROM drug_info
-        WHERE status = 1 AND category IS NOT NULL AND category != ''
-        ORDER BY category
+    <select id="selectDrugTypes" resultType="java.lang.String">
+        SELECT DISTINCT drug_type FROM drug_info
+        WHERE (status IS NULL OR status = 1) AND drug_type IS NOT NULL AND drug_type != ''
+        ORDER BY drug_type
+    </select>
+
+    <select id="selectDosageForms" resultType="java.lang.String">
+        SELECT DISTINCT drug_dosage FROM drug_info
+        WHERE (status IS NULL OR status = 1) AND drug_dosage IS NOT NULL AND drug_dosage != ''
+        ORDER BY drug_dosage
     </select>
 
     <select id="selectLowStock" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/> FROM drug_info
-        WHERE status = 1 AND stock_quantity &lt;= low_stock_threshold ORDER BY stock_quantity
+        WHERE (status IS NULL OR status = 1)
+          AND stock_quantity IS NOT NULL
+          AND low_stock_threshold IS NOT NULL
+          AND stock_quantity &lt;= low_stock_threshold
+        ORDER BY stock_quantity LIMIT 200
+    </select>
+
+    <!-- ============ 主列表分页 ============ -->
+    <select id="countDrugs" resultType="long">
+        SELECT COUNT(*) FROM drug_info
+        <include refid="conditionWhere"/>
+    </select>
+
+    <select id="selectDrugsPage" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_info
+        <include refid="conditionWhere"/>
+        ORDER BY drug_name
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- ============ 低库存分页 ============ -->
+    <sql id="lowStockWhere">
+        WHERE (status IS NULL OR status = 1)
+          AND stock_quantity IS NOT NULL
+          AND low_stock_threshold IS NOT NULL
+          AND stock_quantity &lt;= low_stock_threshold
+    </sql>
+
+    <select id="countLowStock" resultType="long">
+        SELECT COUNT(*) FROM drug_info <include refid="lowStockWhere"/>
+    </select>
+
+    <select id="selectLowStockPage" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/> FROM drug_info
+        <include refid="lowStockWhere"/>
+        ORDER BY stock_quantity
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="selectByCode" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE approval_number = #{code}
+        SELECT <include refid="Base_Column_List"/> FROM drug_info WHERE drug_code = #{code}
     </select>
 
+    <!-- 新增药品：只写 drug_* 列 + 业务扩展列，不动旧的 name/specification 等空列 -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO drug_info (
-            name, generic_name, brand_name, specification, dosage_form, category, unit, manufacturer,
-            approval_number, price, stock_quantity, low_stock_threshold, storage_conditions,
+            drug_code, drug_name, drug_format, drug_unit, manufacturer, drug_dosage, drug_type,
+            drug_price, mnemonic_code, stock_quantity, low_stock_threshold, storage_conditions,
             instructions, contraindications, adverse_reactions, status
         ) VALUES (
-            #{name}, #{genericName}, #{brandName}, #{specification}, #{dosageForm}, #{category}, #{unit}, #{manufacturer},
-            #{approvalNumber}, #{price}, #{stockQuantity}, #{lowStockThreshold}, #{storageConditions},
+            #{drugCode}, #{drugName}, #{drugFormat}, #{drugUnit}, #{manufacturer}, #{drugDosage}, #{drugType},
+            #{drugPrice}, #{mnemonicCode}, #{stockQuantity}, #{lowStockThreshold}, #{storageConditions},
             #{instructions}, #{contraindications}, #{adverseReactions}, #{status}
         )
     </insert>
 
     <update id="update">
         UPDATE drug_info SET
-            name = #{name}, generic_name = #{genericName}, brand_name = #{brandName},
-            specification = #{specification}, dosage_form = #{dosageForm}, category = #{category}, unit = #{unit},
-            manufacturer = #{manufacturer}, approval_number = #{approvalNumber}, price = #{price},
+            drug_code = #{drugCode}, drug_name = #{drugName}, drug_format = #{drugFormat},
+            drug_unit = #{drugUnit}, manufacturer = #{manufacturer}, drug_dosage = #{drugDosage},
+            drug_type = #{drugType}, drug_price = #{drugPrice}, mnemonic_code = #{mnemonicCode},
             stock_quantity = #{stockQuantity}, low_stock_threshold = #{lowStockThreshold},
             storage_conditions = #{storageConditions}, instructions = #{instructions},
             contraindications = #{contraindications}, adverse_reactions = #{adverseReactions}, status = #{status}

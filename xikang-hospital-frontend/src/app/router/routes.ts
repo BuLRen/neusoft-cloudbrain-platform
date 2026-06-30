@@ -20,10 +20,8 @@ import PharmacyDispensingPage from '@/modules/pharmacy/pages/DispensingPage.vue'
 import PharmacyInventoryPage from '@/modules/pharmacy/pages/InventoryPage.vue'
 import PharmacyBatchInboundPage from '@/modules/pharmacy/pages/BatchInboundPage.vue'
 import PharmacyTransactionsPage from '@/modules/pharmacy/pages/TransactionsPage.vue'
-import PharmacyFollowUpPage from '@/modules/pharmacy/pages/FollowUpPage.vue'
 import PharmacyDrugDictionaryPage from '@/modules/pharmacy/pages/DrugDictionaryPage.vue'
 import PharmacyPrescriptionQueryPage from '@/modules/pharmacy/pages/PrescriptionQueryPage.vue'
-import PharmacyStatisticsPage from '@/modules/pharmacy/pages/StatisticsPage.vue'
 import AdminWorkspace from '@/modules/admin/AdminWorkspace.vue'
 import ScheduleManagement from '@/modules/admin/pages/ScheduleManagement.vue'
 import MasterDataManagement from '@/modules/admin/pages/MasterDataManagement.vue'
@@ -325,28 +323,16 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: '③ 出入库流水', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 3 },
           },
           {
-            path: 'follow-up',
-            name: 'PharmacyFollowUp',
-            component: PharmacyFollowUpPage,
-            meta: { title: '④ 患者随访', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 4 },
-          },
-          {
             path: 'drug-dictionary',
             name: 'PharmacyDrugDictionary',
             component: PharmacyDrugDictionaryPage,
-            meta: { title: '⑤ 药品字典', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 5 },
+            meta: { title: '④ 药品字典', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 4 },
           },
           {
             path: 'prescription-query',
             name: 'PharmacyPrescriptionQuery',
             component: PharmacyPrescriptionQueryPage,
-            meta: { title: '⑥ 处方追溯', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 6 },
-          },
-          {
-            path: 'statistics',
-            name: 'PharmacyStatistics',
-            component: PharmacyStatisticsPage,
-            meta: { title: '⑦ 消耗统计', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 7 },
+            meta: { title: '⑤ 处方追溯', roles: ['pharmacy', 'admin'], requiresAuth: true, owner: 'B', step: 5 },
           },
         ],
       },

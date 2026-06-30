@@ -55,7 +55,6 @@ const drugTotalPages = ref(0)
 
 const deptTypeFilter = ref('')
 const drugKeyword = ref('')
-const drugDosageForm = ref('')
 const drugCategory = ref('')
 const drugCategoryOptions = ref<string[]>([])
 
@@ -133,7 +132,6 @@ async function loadDrugs() {
   try {
     const page = await registrationApi.adminDrugs({
       keyword: drugKeyword.value || undefined,
-      dosageForm: drugDosageForm.value || undefined,
       category: drugCategory.value || undefined,
       page: drugPage.value,
       size: drugPageSize.value,
@@ -469,10 +467,7 @@ onMounted(async () => {
             </div>
             <div class="filter-bar">
               <div class="filter-bar__inputs">
-                <ElInput v-model="drugKeyword" placeholder="药品名称 / 通用名" clearable class="filter-bar__keyword" />
-                <ElSelect v-model="drugDosageForm" placeholder="剂型" clearable class="filter-bar__select">
-                  <ElOption v-for="form in DOSAGE_FORMS" :key="form" :label="form" :value="form" />
-                </ElSelect>
+                <ElInput v-model="drugKeyword" placeholder="药品名称 / 编码 / 助记码" clearable class="filter-bar__keyword" />
                 <ElSelect v-model="drugCategory" placeholder="分类" clearable class="filter-bar__select">
                   <ElOption v-for="c in drugCategoryOptions" :key="c" :label="c" :value="c" />
                 </ElSelect>
@@ -637,7 +632,7 @@ onMounted(async () => {
           <ElDescriptionsItem label="批准文号">{{ selectedDrug.approvalNumber || '—' }}</ElDescriptionsItem>
           <ElDescriptionsItem label="生产厂家" :span="2">{{ selectedDrug.manufacturer || '—' }}</ElDescriptionsItem>
           <ElDescriptionsItem label="库存">
-            {{ selectedDrug.stockQuantity ?? 0 }} {{ selectedDrug.unit || '' }}
+            {{ selectedDrug.stockQuantity ?? 0 }} {{ selectedDrug.drugUnit || '' }}
           </ElDescriptionsItem>
           <ElDescriptionsItem label="低库存阈值">
             {{ selectedDrug.lowStockThreshold ?? 0 }}

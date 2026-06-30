@@ -56,12 +56,12 @@ async function load() {
       registrationApi.kpi(),
       registrationApi.dailyTrend(7),
       registrationApi.departmentWorkload(),
-      pharmacyApi.lowStockDrugs(),
+      pharmacyApi.lowStockDrugs({ page: 1, pageSize: 200 }),
     ])
     kpi.value = k
     trend.value = t
     workload.value = w
-    lowStock.value = ls
+    lowStock.value = ls.list
   } finally {
     loading.value = false
   }
@@ -159,8 +159,8 @@ onMounted(load)
         <div v-if="lowStock.length > 0" class="list-stack">
           <div v-for="item in lowStock" :key="item.id" class="list-item list-item--column">
             <div class="panel__header">
-              <strong>{{ item.name }}</strong>
-              <StatusTag tone="danger">{{ item.stockQuantity ?? 0 }} {{ item.unit || '' }}</StatusTag>
+              <strong>{{ item.drugName }}</strong>
+              <StatusTag tone="danger">{{ item.stockQuantity ?? 0 }} {{ item.drugUnit || '' }}</StatusTag>
             </div>
             <p>{{ item.manufacturer || '-' }} · 阈值 {{ item.lowStockThreshold ?? 0 }}</p>
           </div>

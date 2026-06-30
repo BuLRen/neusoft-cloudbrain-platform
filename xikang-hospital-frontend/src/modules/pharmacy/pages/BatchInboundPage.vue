@@ -75,7 +75,7 @@ function clearAll() {
 function onDrugChange(row: Row, val: number | null) {
   row.drugId = val
   const found = drugs.value.find((d) => d.id === val)
-  row.drugName = found?.name ?? ''
+  row.drugName = found?.drugName ?? ''
   row._err = undefined
 }
 
@@ -102,7 +102,7 @@ const totalAmount = computed(() => {
   for (const r of rows.value) {
     if (!r.drugId || !r.quantity) continue
     const drug = drugs.value.find((d) => d.id === r.drugId)
-    if (drug?.price) sum += drug.price * r.quantity
+    if (drug?.drugPrice) sum += drug.drugPrice * r.quantity
   }
   return sum
 })
@@ -130,7 +130,7 @@ function applyPaste() {
       continue
     }
     const [name, qtyStr, batch, prod, exp, loc] = cols
-    const matched = drugs.value.find((d) => d.name === name)
+    const matched = drugs.value.find((d) => d.drugName === name)
     if (!matched) {
       unmatched.push(line)
       continue
@@ -139,7 +139,7 @@ function applyPaste() {
     newRows.push({
       _key: keySeed++,
       drugId: matched.id,
-      drugName: matched.name,
+      drugName: matched.drugName,
       quantity: Number.isFinite(qty) && qty > 0 ? qty : null,
       batchNumber: batch,
       productionDate: prod,
@@ -230,7 +230,8 @@ function backToInventory() {
 async function loadDrugs() {
   loadingDrugs.value = true
   try {
-    drugs.value = await pharmacyApi.drugs()
+    const res = await pharmacyApi.drugs({ page: 1, pageSize: 200 })
+    drugs.value = res.list
   } finally {
     loadingDrugs.value = false
   }
@@ -319,12 +320,12 @@ onMounted(() => {
               <ElOption
                 v-for="d in drugs"
                 :key="d.id"
-                :label="d.name"
+                :label="d.drugName"
                 :value="d.id"
               >
-                <span class="drug-option-name">{{ d.name }}</span>
+                <span class="drug-option-name">{{ d.drugName }}</span>
                 <span class="drug-option-meta">
-                  {{ d.specification || '-' }} · ¥{{ d.price ?? '-' }}
+                  {{ d.drugFormat || '-' }} · ¥{{ d.drugPrice ?? '-' }}
                 </span>
               </ElOption>
             </ElSelect>
@@ -402,7 +403,7 @@ onMounted(() => {
         <ElTableColumn label="单价" width="100" align="right">
           <template #default="{ row }">
             <template v-if="(row as Row).drugId">
-              <span class="unit-price">¥ {{ (drugs.find((d) => d.id === (row as Row).drugId)?.price ?? 0).toFixed(2) }}</span>
+              <span class="unit-price">¥ {{ (drugs.find((d) => d.id === (row as Row).drugId)?.drugPrice ?? 0).toFixed(2) }}</span>
             </template>
             <template v-else>
               <span class="unit-price muted">-</span>
@@ -413,7 +414,7 @@ onMounted(() => {
         <ElTableColumn label="小计" width="120" align="right">
           <template #default="{ row }">
             <template v-if="(row as Row).drugId && (row as Row).quantity">
-              ¥ {{ ((drugs.find((d) => d.id === (row as Row).drugId)?.price ?? 0) * (row as Row).quantity!).toFixed(2) }}
+              ¥ {{ ((drugs.find((d) => d.id === (row as Row).drugId)?.drugPrice ?? 0) * (row as Row).quantity!).toFixed(2) }}
             </template>
             <template v-else>
               <span class="muted">-</span>

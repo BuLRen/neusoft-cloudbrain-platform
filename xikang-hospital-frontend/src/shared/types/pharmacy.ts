@@ -70,16 +70,16 @@ export interface ReturnDrugPayload {
 
 export interface DrugOption {
   id: number
-  name: string
-  genericName?: string
-  brandName?: string
-  specification?: string
-  dosageForm?: string
-  category?: string
-  unit?: string
+  drugCode?: string
+  drugName: string
+  drugFormat?: string
+  drugUnit?: string
   manufacturer?: string
-  approvalNumber?: string
-  price?: number
+  drugDosage?: string
+  drugType?: string
+  drugPrice?: number
+  mnemonicCode?: string
+  creationDate?: string
   stockQuantity?: number
   lowStockThreshold?: number
   storageConditions?: string
@@ -91,10 +91,20 @@ export interface DrugOption {
   updateTime?: string
 }
 
+/** 药品分页响应（与 physician-service DrugPageResult 同构） */
+export interface DrugPageResult {
+  list: DrugOption[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 export interface DrugQuery {
   keyword?: string
   dosageForm?: string
   category?: string
+  page?: number
+  pageSize?: number
 }
 
 export interface ExpiringStockItem {
@@ -125,31 +135,6 @@ export interface ReviewResult {
   totalAmount?: number
 }
 
-export interface FollowUpPlan {
-  id?: number
-  planId?: number
-  patientId?: number
-  patientName?: string
-  prescriptionId?: number
-  status?: string
-  currentStage?: string
-  nextFollowUpTime?: string
-  createTime?: string
-  [key: string]: unknown
-}
-
-export interface FollowUpFeedback {
-  followUpType?: string
-  medicationAdherence?: string
-  symptomScoreCurrent?: number
-  aiAssessment?: string
-  patientEducation?: string[]
-  nextFollowUpPlan?: string
-  needReferral?: boolean
-  referralReason?: string
-  [key: string]: unknown
-}
-
 /** P2-4.6 发药单 */
 export interface Dispensing {
   id: number
@@ -165,8 +150,8 @@ export interface Dispensing {
 export interface MedicationGuide {
   drugName?: string
   genericName?: string
-  specification?: string
-  dosageForm?: string
+  drugFormat?: string
+  drugDosage?: string
   usage?: string
   dosage?: string
   frequency?: string
@@ -182,8 +167,8 @@ export interface MedicationGuide {
 export interface MedicationGuideItem {
   drugId?: number
   drugName?: string
-  specification?: string
-  dosageForm?: string
+  drugFormat?: string
+  drugDosage?: string
   quantity?: number | string
   usageText?: string      // 医生原话用法
   howToTake?: string      // AI 生成的服药建议
@@ -265,14 +250,6 @@ export interface PharmacyTransaction {
   createTime?: string
 }
 
-export interface StatisticsOverview {
-  prescriptionCount?: number
-  dispensedQuantity?: number
-  dispensedAmount?: number
-  inboundQuantity?: number
-  returnedAmount?: number
-}
-
 /** 批量入库单行 */
 export interface BatchInboundItem {
   drugId: number | null
@@ -298,24 +275,3 @@ export interface BatchInboundResult {
   }>
 }
 
-export interface TopDrugItem {
-  drugId?: number
-  drugName?: string
-  dispensedQuantity?: number
-  dispenseTimes?: number
-}
-
-export interface OperatorStatItem {
-  operatorName?: string
-  operationCount?: number
-  dispenseCount?: number
-  inboundCount?: number
-}
-
-export interface StatisticsResult {
-  overview?: StatisticsOverview
-  topDrugs?: TopDrugItem[]
-  operatorStats?: OperatorStatItem[]
-  startDate?: string
-  endDate?: string
-}

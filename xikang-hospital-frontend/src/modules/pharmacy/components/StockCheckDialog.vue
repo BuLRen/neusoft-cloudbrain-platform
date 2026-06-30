@@ -74,9 +74,9 @@ async function submit() {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <ElDescriptions v-if="drug" :column="1" border>
-      <ElDescriptionsItem label="药品">{{ drug.name }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="药品">{{ drug.drugName }}</ElDescriptionsItem>
       <ElDescriptionsItem label="账面库存">
-        {{ drug.stockQuantity ?? 0 }} {{ drug.unit || '' }}
+        {{ drug.stockQuantity ?? 0 }} {{ drug.drugUnit || '' }}
       </ElDescriptionsItem>
     </ElDescriptions>
     <ElForm class="mt" label-width="92px">

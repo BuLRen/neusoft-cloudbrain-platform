@@ -95,7 +95,7 @@ async function submit() {
   submitting.value = true
   try {
     await pharmacyApi.inbound(props.drug.id, form.value)
-    ElMessage.success(`已入库 ${form.value.quantity} ${props.drug.unit || '件'}`)
+    ElMessage.success(`已入库 ${form.value.quantity} ${props.drug.drugUnit || '件'}`)
     emit('update:modelValue', false)
     emit('success')
   } finally {
@@ -113,9 +113,9 @@ async function submit() {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <ElDescriptions v-if="drug" :column="1" border size="small">
-      <ElDescriptionsItem label="药品">{{ drug.name }}</ElDescriptionsItem>
-      <ElDescriptionsItem label="规格">{{ drug.specification || '-' }}</ElDescriptionsItem>
-      <ElDescriptionsItem label="单位">{{ drug.unit || '-' }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="药品">{{ drug.drugName }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="规格">{{ drug.drugFormat || '-' }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="单位">{{ drug.drugUnit || '-' }}</ElDescriptionsItem>
     </ElDescriptions>
     <ElForm
       ref="formRef"
