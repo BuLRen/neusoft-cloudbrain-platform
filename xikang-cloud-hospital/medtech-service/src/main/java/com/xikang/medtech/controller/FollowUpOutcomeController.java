@@ -1,6 +1,7 @@
 package com.xikang.medtech.controller;
 
 import com.xikang.common.result.Result;
+import com.xikang.medtech.debug.AgentDebugLog;
 import com.xikang.medtech.service.FollowUpOutcomeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -39,9 +40,35 @@ public class FollowUpOutcomeController {
         @PathVariable Long registerId,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-        @RequestParam(required = false) List<String> metricKeys
+        @RequestParam(required = false) List<String> metricKeys,
+        @RequestParam(required = false) String sourceType
     ) {
-        return Result.success(followUpOutcomeService.getMetrics(registerId, from, to, metricKeys));
+        return Result.success(followUpOutcomeService.getMetrics(registerId, from, to, metricKeys, sourceType));
+    }
+
+    @GetMapping("/last-visit/{registerId}")
+    public Result<Map<String, Object>> getLastVisit(@PathVariable Long registerId) {
+        return Result.success(followUpOutcomeService.getLastVisit(registerId));
+    }
+
+    @GetMapping("/revisit-requests")
+    public Result<List<Map<String, Object>>> listRevisitRequests(
+        @RequestParam(required = false) Long departmentId
+    ) {
+        return Result.success(followUpOutcomeService.listRevisitRequests(departmentId));
+    }
+
+    @GetMapping("/glucose-advice/{registerId}")
+    public Result<Map<String, Object>> getGlucoseAdvice(@PathVariable Long registerId) {
+        // #region agent log
+        AgentDebugLog.log(
+            "A",
+            "FollowUpOutcomeController:getGlucoseAdvice",
+            "outcome glucose-advice handler invoked",
+            Map.of("registerId", registerId)
+        );
+        // #endregion
+        return Result.success(followUpOutcomeService.getGlucoseAdvice(registerId));
     }
 
     @GetMapping("/records/{registerId}")

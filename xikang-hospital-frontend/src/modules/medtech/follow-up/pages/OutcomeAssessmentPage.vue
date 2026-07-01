@@ -36,7 +36,8 @@ import {
   resolveOutcomeRange,
   type OutcomeRangePreset,
 } from '@/shared/utils/beijingDate'
-import GlucoseForecastPanel from '@/modules/medtech/follow-up/components/GlucoseForecastPanel.vue'
+import LastVisitSnapshotPanel from '@/modules/medtech/follow-up/components/LastVisitSnapshotPanel.vue'
+import HomeGlucoseMonitoringPanel from '@/modules/medtech/follow-up/components/HomeGlucoseMonitoringPanel.vue'
 import { addToTodayInterview, getTodayInterviewScheduled } from '@/modules/medtech/follow-up/services/interviewSchedule'
 import type {
   FollowUpHealthMetric,
@@ -585,6 +586,17 @@ void loadPatients().then(() => loadPatientData())
       </div>
     </GlassCard>
 
+    <LastVisitSnapshotPanel
+      v-if="selectedRegisterId"
+      :register-id="selectedRegisterId"
+      mode="doctor"
+    />
+
+    <HomeGlucoseMonitoringPanel
+      v-if="isGlucoseCohort && selectedRegisterId"
+      :register-id="selectedRegisterId"
+    />
+
     <GlassCard class="outcome-card">
       <h3 class="section-title">疾病适配主视角</h3>
       <p class="section-desc">根据诊断分类「{{ profile?.primaryDiseaseCategory ?? '默认' }}」展示核心疗效指标趋势。</p>
@@ -608,14 +620,6 @@ void loadPatients().then(() => loadPatientData())
         </ElCol>
       </ElRow>
       <ElEmpty v-else description="当前日期范围内暂无模拟指标数据" />
-    </GlassCard>
-
-    <GlassCard v-if="isGlucoseCohort && selectedRegisterId" class="outcome-card">
-      <GlucoseForecastPanel
-        :register-id="selectedRegisterId"
-        :metrics="metrics"
-        mode="doctor"
-      />
     </GlassCard>
 
     <GlassCard class="outcome-card outcome-card--secondary">

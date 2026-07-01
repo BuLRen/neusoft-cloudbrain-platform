@@ -1,34 +1,42 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElOption, ElSelect } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import PatientCommunicationPanel from '@/modules/patient/components/PatientCommunicationPanel.vue'
+import PatientGlucoseEntryForm from '@/modules/patient/components/PatientGlucoseEntryForm.vue'
+import LastVisitSnapshotPanel from '@/modules/medtech/follow-up/components/LastVisitSnapshotPanel.vue'
 import GlucoseForecastPanel from '@/modules/medtech/follow-up/components/GlucoseForecastPanel.vue'
+import { clinicalRecordApi, type ClinicalVisitSummary } from '@/shared/api/modules/clinicalRecord'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { useAuthStore } from '@/app/stores/auth'
 import type {
   PatientFollowUpPlanItem,
-  PatientFollowUpRecordItem,
   PatientMedicationItem,
 } from '@/shared/types/medtechFollowUp'
 
 const authStore = useAuthStore()
-const activeTab = ref('plans')
+const activeTab = ref('lastVisit')
 const loading = ref(false)
 
+const visits = ref<ClinicalVisitSummary[]>([])
+const selectedRegisterId = ref<number | undefined>()
 const followupPlans = ref<PatientFollowUpPlanItem[]>([])
 const medications = ref<PatientMedicationItem[]>([])
-const feedbackRecords = ref<PatientFollowUpRecordItem[]>([])
 
 const patientId = computed(() => authStore.currentPatientId || authStore.currentPatient?.patientId)
 
-const feedbackForm = ref({
-  symptom: '',
-  feedback: '',
-  rating: 5,
-})
-const feedbackLoading = ref(false)
+const visitOptions = computed(() =>
+  visits.value.map((item) => ({
+    value: item.registerId,
+    label: `${item.departmentName ?? '科室'} · ${item.visitDate?.slice(0, 10) ?? item.registerId}`,
+  })),
+)
+
+const revisitForm = ref({ reason: '', urgency: 'normal' as 'normal' | 'urgent' })
+const revisitLoading = ref(false)
+
+const glucosePanelKey = ref(0)
 
 function statusTone(status?: string) {
   if (status === 'completed') return 'success'
@@ -54,19 +62,30 @@ function planTitle(plan: PatientFollowUpPlanItem) {
   return typeMap[plan.followUpType ?? ''] ?? '随访计划'
 }
 
+async function loadVisits() {
+  if (!patientId.value) return
+  try {
+    visits.value = await clinicalRecordApi.patientVisits(patientId.value)
+    if (!selectedRegisterId.value && visits.value.length) {
+      selectedRegisterId.value = visits.value[0]!.registerId
+    }
+  } catch {
+    ElMessage.error('加载就诊记录失败')
+  }
+}
+
 async function loadPortalData() {
   if (!patientId.value) return
   loading.value = true
   try {
-    const params = { patientId: patientId.value }
-    const [plans, meds, records] = await Promise.all([
+    const registerIds = selectedRegisterId.value ? [selectedRegisterId.value] : undefined
+    const params = { patientId: patientId.value, registerIds }
+    const [plans, meds] = await Promise.all([
       medtechFollowUpApi.listPatientPlans(params),
       medtechFollowUpApi.listPatientMedications(params),
-      medtechFollowUpApi.listPatientRecords(params),
     ])
     followupPlans.value = plans
     medications.value = meds
-    feedbackRecords.value = records
   } catch {
     ElMessage.error('加载随访数据失败')
   } finally {
@@ -74,32 +93,42 @@ async function loadPortalData() {
   }
 }
 
-async function submitFeedback() {
-  if (!feedbackForm.value.symptom.trim()) {
-    ElMessage.warning('请填写症状描述')
+async function onGlucoseSubmitted() {
+  glucosePanelKey.value += 1
+}
+
+async function submitRevisit() {
+  if (!revisitForm.value.reason.trim()) {
+    ElMessage.warning('请填写复诊原因')
     return
   }
-  const registerId = followupPlans.value[0]?.registerId
-  if (!registerId) {
-    ElMessage.warning('暂无关联就诊记录，无法提交反馈')
+  if (!selectedRegisterId.value) {
+    ElMessage.warning('请先选择就诊记录')
     return
   }
-  feedbackLoading.value = true
+  revisitLoading.value = true
   try {
-    await medtechFollowUpApi.submitPatientFeedback({
-      registerId,
-      followUpPlanId: followupPlans.value.find((p) => p.planStatus !== 'completed')?.id,
-      symptom: feedbackForm.value.symptom,
-      feedback: feedbackForm.value.feedback,
-      rating: feedbackForm.value.rating,
-    })
-    ElMessage.success('反馈提交成功')
-    feedbackForm.value = { symptom: '', feedback: '', rating: 5 }
-    await loadPortalData()
+    await medtechFollowUpApi.submitRevisitRequest(
+      {
+        registerId: selectedRegisterId.value,
+        reason: revisitForm.value.reason.trim(),
+        urgency: revisitForm.value.urgency,
+      },
+      { patientId: patientId.value },
+    )
+    ElMessage.success('复诊申请已提交')
+    revisitForm.value = { reason: '', urgency: 'normal' }
   } catch {
-    ElMessage.error('反馈提交失败')
+    ElMessage.error('提交失败')
   } finally {
-    feedbackLoading.value = false
+    revisitLoading.value = false
+  }
+}
+
+function goToCommunication(prefill?: string) {
+  activeTab.value = 'communication'
+  if (prefill) {
+    revisitForm.value.reason = prefill
   }
 }
 
@@ -113,14 +142,19 @@ async function markComplete(planId: number) {
   }
 }
 
+watch(selectedRegisterId, () => {
+  void loadPortalData()
+})
+
 watch(activeTab, (tab) => {
   if (tab !== 'communication') {
     void loadPortalData()
   }
 })
 
-onMounted(() => {
-  void loadPortalData()
+onMounted(async () => {
+  await loadVisits()
+  await loadPortalData()
 })
 </script>
 
@@ -129,40 +163,92 @@ onMounted(() => {
     <GlassCard class="followup-tabs-card">
       <div class="tabs-header">
         <h2>随访管理</h2>
-        <p>管理您的随访计划、用药提醒和健康反馈</p>
+        <p>上次看诊、居家血糖、复诊申请与医患沟通</p>
       </div>
+
+      <div class="register-picker">
+        <span class="picker-label">就诊记录</span>
+        <ElSelect v-model="selectedRegisterId" placeholder="选择就诊" style="min-width: 260px">
+          <ElOption
+            v-for="item in visitOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </ElSelect>
+      </div>
+
       <div class="tabs-nav">
-        <button
-          :class="['tab-btn', { active: activeTab === 'plans' }]"
-          @click="activeTab = 'plans'"
-        >
+        <button :class="['tab-btn', { active: activeTab === 'lastVisit' }]" @click="activeTab = 'lastVisit'">
+          上次看诊
+        </button>
+        <button :class="['tab-btn', { active: activeTab === 'glucose' }]" @click="activeTab = 'glucose'">
+          血糖管理
+        </button>
+        <button :class="['tab-btn', { active: activeTab === 'revisit' }]" @click="activeTab = 'revisit'">
+          复诊与沟通
+        </button>
+        <button :class="['tab-btn', { active: activeTab === 'plans' }]" @click="activeTab = 'plans'">
           随访计划
         </button>
-        <button
-          :class="['tab-btn', { active: activeTab === 'medications' }]"
-          @click="activeTab = 'medications'"
-        >
+        <button :class="['tab-btn', { active: activeTab === 'medications' }]" @click="activeTab = 'medications'">
           用药提醒
         </button>
-        <button
-          :class="['tab-btn', { active: activeTab === 'feedback' }]"
-          @click="activeTab = 'feedback'"
-        >
-          健康反馈
-        </button>
-        <button
-          :class="['tab-btn', { active: activeTab === 'glucose' }]"
-          @click="activeTab = 'glucose'"
-        >
-          血糖预测
-        </button>
-        <button
-          :class="['tab-btn', { active: activeTab === 'communication' }]"
-          @click="activeTab = 'communication'"
-        >
-          医患沟通
+      </div>
+    </GlassCard>
+
+    <LastVisitSnapshotPanel
+      v-if="activeTab === 'lastVisit' && selectedRegisterId"
+      :register-id="selectedRegisterId"
+      :patient-id="patientId"
+      mode="patient"
+      compact
+    />
+
+    <template v-if="activeTab === 'glucose' && selectedRegisterId">
+      <PatientGlucoseEntryForm
+        :register-id="selectedRegisterId"
+        :patient-id="patientId"
+        @submitted="onGlucoseSubmitted"
+      />
+      <GlassCard class="glucose-card">
+        <GlucoseForecastPanel
+          :key="glucosePanelKey"
+          :patient-id="patientId"
+          :register-id="selectedRegisterId"
+          mode="patient"
+          compact
+          @revisit="goToCommunication('根据血糖预测建议，申请复诊调整用药')"
+        />
+      </GlassCard>
+    </template>
+
+    <GlassCard v-if="activeTab === 'revisit'" class="revisit-card">
+      <div class="section-header">
+        <h3>申请复诊</h3>
+      </div>
+      <div class="revisit-form">
+        <textarea
+          v-model="revisitForm.reason"
+          class="form-textarea"
+          rows="4"
+          placeholder="请描述复诊原因，如：血糖持续偏高、出现低血糖症状..."
+        />
+        <div class="urgency-row">
+          <label>
+            <input v-model="revisitForm.urgency" type="radio" value="normal" />
+            普通
+          </label>
+          <label>
+            <input v-model="revisitForm.urgency" type="radio" value="urgent" />
+            紧急
+          </label>
+        </div>
+        <button class="btn-primary" :disabled="revisitLoading" @click="submitRevisit">
+          {{ revisitLoading ? '提交中...' : '提交复诊申请' }}
         </button>
       </div>
+      <PatientCommunicationPanel />
     </GlassCard>
 
     <GlassCard v-if="activeTab === 'plans'" class="plans-card" v-loading="loading">
@@ -184,10 +270,16 @@ onMounted(() => {
             </div>
             <div class="plan-meta">
               <span v-if="plan.plannedDate">📅 {{ plan.plannedDate }}</span>
-              <span v-if="plan.contentTemplate">📝 含用药/康复指导</span>
             </div>
           </div>
           <div class="plan-actions">
+            <button
+              v-if="plan.followUpType === 'revisit' && plan.planStatus !== 'completed'"
+              class="btn-outline"
+              @click="goToCommunication()"
+            >
+              申请复诊
+            </button>
             <button
               v-if="plan.planStatus === 'pending' || plan.planStatus === 'overdue'"
               class="btn-outline"
@@ -226,74 +318,6 @@ onMounted(() => {
         </div>
       </div>
     </GlassCard>
-
-    <GlassCard v-if="activeTab === 'feedback'" class="feedback-card">
-      <div class="section-header">
-        <h3>提交健康反馈</h3>
-        <p class="feedback-tip">定期反馈有助于医生了解您的康复情况</p>
-      </div>
-      <div v-if="feedbackRecords.length" class="feedback-history">
-        <h4>历史反馈</h4>
-        <div v-for="record in feedbackRecords.slice(0, 5)" :key="record.id" class="feedback-history-item">
-          <span>{{ record.followUpTime?.slice(0, 10) ?? '—' }}</span>
-          <p>{{ record.patientFeedback }}</p>
-        </div>
-      </div>
-      <div class="feedback-form">
-        <div class="form-group">
-          <label class="form-label">症状描述</label>
-          <textarea
-            v-model="feedbackForm.symptom"
-            class="form-textarea"
-            placeholder="请描述您目前的症状，如：无不适 / 胃痛减轻但仍有反酸..."
-            rows="4"
-          ></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">反馈内容（可选）</label>
-          <textarea
-            v-model="feedbackForm.feedback"
-            class="form-textarea"
-            placeholder="如有其他需要补充的内容，请在此说明..."
-            rows="3"
-          ></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">整体评价</label>
-          <div class="rating-stars">
-            <button
-              v-for="star in 5"
-              :key="star"
-              :class="['star-btn', { active: star <= feedbackForm.rating }]"
-              @click="feedbackForm.rating = star"
-            >
-              {{ star <= feedbackForm.rating ? '★' : '☆' }}
-            </button>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button
-            class="btn-primary"
-            :disabled="feedbackLoading"
-            @click="submitFeedback"
-          >
-            {{ feedbackLoading ? '提交中...' : '提交反馈' }}
-          </button>
-        </div>
-      </div>
-    </GlassCard>
-
-    <PatientCommunicationPanel v-if="activeTab === 'communication'" />
-
-    <GlassCard v-if="activeTab === 'glucose'" class="glucose-card">
-      <GlucoseForecastPanel
-        v-if="patientId"
-        :patient-id="patientId"
-        :register-id="followupPlans[0]?.registerId"
-        mode="patient"
-        compact
-      />
-    </GlassCard>
   </div>
 </template>
 
@@ -313,7 +337,7 @@ onMounted(() => {
 .tabs-header {
   display: grid;
   gap: var(--space-2);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
 .tabs-header h2 {
@@ -327,8 +351,21 @@ onMounted(() => {
   margin: 0;
 }
 
+.register-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.picker-label {
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
 .tabs-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   border-bottom: 1px solid var(--color-border);
   padding-bottom: var(--space-3);
@@ -341,11 +378,6 @@ onMounted(() => {
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: all var(--duration-base) var(--ease-standard);
-}
-
-.tab-btn:hover {
-  color: var(--color-primary);
 }
 
 .tab-btn.active {
@@ -356,8 +388,8 @@ onMounted(() => {
 
 .plans-card,
 .medications-card,
-.feedback-card,
-.glucose-card {
+.glucose-card,
+.revisit-card {
   padding: var(--space-5);
 }
 
@@ -374,180 +406,67 @@ onMounted(() => {
   margin: 0;
 }
 
-.feedback-tip {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  margin: var(--space-2) 0 0;
-}
-
-.feedback-history {
+.revisit-form {
+  display: grid;
+  gap: var(--space-3);
   margin-bottom: var(--space-5);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.feedback-history h4 {
-  margin: 0 0 var(--space-3);
-  font-size: 14px;
-}
-
-.feedback-history-item {
-  padding: var(--space-2) 0;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.feedback-history-item p {
-  margin: var(--space-1) 0 0;
-  color: var(--color-text);
-}
-
-.plans-list {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.plan-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-}
-
-.plan-status {
-  flex-shrink: 0;
-}
-
-.plan-info {
-  flex: 1;
-  display: grid;
-  gap: var(--space-2);
-}
-
-.plan-main {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.plan-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.plan-doctor {
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
-
-.plan-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.medications-list {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.medication-item {
-  padding: var(--space-5);
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-}
-
-.med-header {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-.med-name {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.med-dosage {
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.med-row {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.med-label {
-  color: var(--color-text-muted);
-  min-width: 48px;
-}
-
-.feedback-form {
-  display: grid;
-  gap: var(--space-5);
-}
-
-.form-group {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.form-label {
-  font-weight: 500;
-  font-size: 14px;
 }
 
 .form-textarea {
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  font-size: 14px;
-  line-height: 1.6;
-  resize: vertical;
   font-family: inherit;
+  resize: vertical;
 }
 
-.rating-stars {
+.urgency-row {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-4);
 }
 
-.star-btn {
-  font-size: 28px;
-  background: transparent;
-  border: none;
+.plans-list,
+.medications-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.plan-item,
+.medication-item {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.plan-info {
+  flex: 1;
+}
+
+.plan-main {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.btn-primary,
+.btn-outline {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  color: var(--color-border);
-}
-
-.star-btn.active {
-  color: #f59e0b;
 }
 
 .btn-primary {
-  padding: var(--space-3) var(--space-5);
   background: var(--color-primary);
   color: white;
   border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
 }
 
 .btn-outline {
-  padding: var(--space-2) var(--space-4);
   background: transparent;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
 }
 
 .empty-state {

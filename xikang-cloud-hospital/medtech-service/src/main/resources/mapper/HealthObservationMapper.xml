@@ -27,6 +27,15 @@
                 #{key}
             </foreach>
         </if>
+        <if test="sourceType != null and sourceType != ''">
+            AND pho.source_type = #{sourceType}
+        </if>
+        <if test="sourceTypes != null and sourceTypes.size() &gt; 0">
+            AND pho.source_type IN
+            <foreach collection="sourceTypes" item="st" open="(" separator="," close=")">
+                #{st}
+            </foreach>
+        </if>
         ORDER BY pho.observed_at ASC, pho.metric_code ASC
     </select>
 

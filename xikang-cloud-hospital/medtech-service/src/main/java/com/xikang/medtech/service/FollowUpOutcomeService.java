@@ -2,7 +2,9 @@ package com.xikang.medtech.service;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.context.MedtechAuthContext;
+import com.xikang.medtech.mapper.FollowUpLastVisitMapper;
 import com.xikang.medtech.mapper.FollowUpOutcomeMapper;
+import com.xikang.medtech.mapper.RevisitRequestMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +22,9 @@ public class FollowUpOutcomeService {
 
     private final FollowUpOutcomeMapper followUpOutcomeMapper;
     private final HealthObservationService healthObservationService;
+    private final FollowUpLastVisitMapper followUpLastVisitMapper;
+    private final RevisitRequestMapper revisitRequestMapper;
+    private final GlucoseForecastService glucoseForecastService;
 
     public List<Map<String, Object>> listPatients(Integer visitState) {
         List<Map<String, Object>> patients = followUpOutcomeMapper.selectFollowUpPatients(visitState);
@@ -59,6 +64,36 @@ public class FollowUpOutcomeService {
 
     public List<Map<String, Object>> getMetrics(Long registerId, LocalDate from, LocalDate to, List<String> metricKeys) {
         return healthObservationService.getMetrics(registerId, from, to, metricKeys);
+    }
+
+    public List<Map<String, Object>> getMetrics(
+        Long registerId,
+        LocalDate from,
+        LocalDate to,
+        List<String> metricKeys,
+        String sourceType
+    ) {
+        return healthObservationService.getMetrics(registerId, from, to, metricKeys, sourceType, null);
+    }
+
+    public Map<String, Object> getLastVisit(Long registerId) {
+        Map<String, Object> snapshot = followUpLastVisitMapper.selectByRegisterId(registerId);
+        if (snapshot == null || snapshot.isEmpty()) {
+            throw new BusinessException("暂无上次看诊快照");
+        }
+        return snapshot;
+    }
+
+    public List<Map<String, Object>> listRevisitRequests(Long departmentId) {
+        return revisitRequestMapper.selectPending(departmentId);
+    }
+
+    public int countPendingRevisitRequests(Long registerId) {
+        return revisitRequestMapper.countPendingByRegisterId(registerId);
+    }
+
+    public Map<String, Object> getGlucoseAdvice(Long registerId) {
+        return glucoseForecastService.buildAdvice(registerId);
     }
 
     public List<Map<String, Object>> getRecords(Long registerId) {

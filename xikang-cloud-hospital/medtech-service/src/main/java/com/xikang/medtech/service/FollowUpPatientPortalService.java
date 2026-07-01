@@ -1,12 +1,17 @@
 package com.xikang.medtech.service;
 
 import com.xikang.common.exception.BusinessException;
+import com.xikang.medtech.context.PatientFollowUpAuthContext;
+import com.xikang.medtech.mapper.FollowUpLastVisitMapper;
 import com.xikang.medtech.mapper.FollowUpPatientMapper;
+import com.xikang.medtech.mapper.PatientFollowUpAuthMapper;
+import com.xikang.medtech.mapper.RevisitRequestMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,9 +23,15 @@ public class FollowUpPatientPortalService {
 
     private final FollowUpPatientMapper followUpPatientMapper;
     private final GlucoseForecastService glucoseForecastService;
+    private final HealthObservationService healthObservationService;
+    private final FollowUpLastVisitMapper followUpLastVisitMapper;
+    private final RevisitRequestMapper revisitRequestMapper;
+    private final PatientFollowUpAuthMapper patientFollowUpAuthMapper;
+    private final FollowUpCommunicationService followUpCommunicationService;
 
     public List<Map<String, Object>> listPlans(Long patientId, List<Long> registerIds) {
-        List<Long> ids = resolveRegisterIds(patientId, registerIds);
+        Long resolvedPatientId = resolvePatientId(patientId);
+        List<Long> ids = resolveRegisterIds(resolvedPatientId, registerIds);
         if (ids.isEmpty()) {
             return List.of();
         }
@@ -28,7 +39,8 @@ public class FollowUpPatientPortalService {
     }
 
     public List<Map<String, Object>> listRecords(Long patientId, List<Long> registerIds) {
-        List<Long> ids = resolveRegisterIds(patientId, registerIds);
+        Long resolvedPatientId = resolvePatientId(patientId);
+        List<Long> ids = resolveRegisterIds(resolvedPatientId, registerIds);
         if (ids.isEmpty()) {
             return List.of();
         }
@@ -36,11 +48,117 @@ public class FollowUpPatientPortalService {
     }
 
     public List<Map<String, Object>> listMedications(Long patientId, List<Long> registerIds) {
-        List<Long> ids = resolveRegisterIds(patientId, registerIds);
+        Long resolvedPatientId = resolvePatientId(patientId);
+        List<Long> ids = resolveRegisterIds(resolvedPatientId, registerIds);
         if (ids.isEmpty()) {
             return List.of();
         }
         return followUpPatientMapper.selectPrescriptionsByRegisterIds(ids);
+    }
+
+    public Map<String, Object> getLastVisit(Long patientId, Long registerId) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        Map<String, Object> snapshot = followUpLastVisitMapper.selectByRegisterId(targetRegisterId);
+        if (snapshot == null || snapshot.isEmpty()) {
+            throw new BusinessException("暂无上次看诊记录");
+        }
+        return snapshot;
+    }
+
+    public List<Map<String, Object>> listObservations(
+        Long patientId,
+        Long registerId,
+        LocalDate from,
+        LocalDate to,
+        String sourceType
+    ) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        List<String> sourceTypes = null;
+        if (sourceType == null || sourceType.isBlank()) {
+            sourceTypes = List.of("patient_report", "uci_import");
+        }
+        return healthObservationService.getMetrics(
+            targetRegisterId,
+            from,
+            to,
+            List.of("blood_glucose"),
+            sourceType,
+            sourceTypes
+        );
+    }
+
+    @Transactional
+    public Map<String, Object> createObservation(Long patientId, Map<String, Object> request) {
+        Long registerId = toLong(request.get("registerId"));
+        Long resolvedPatientId = resolvePatientId(patientId);
+        Long targetRegisterId = requireAccessibleRegister(resolvedPatientId, registerId);
+
+        double metricValue = toDouble(request.get("metricValue"));
+        if (metricValue <= 0 || metricValue > 33) {
+            throw new BusinessException("血糖数值不合理，请输入 0~33 mmol/L 范围内的值");
+        }
+
+        LocalDateTime observedAt = parseDateTime(request.get("observedAt"));
+        String note = request.get("note") != null ? String.valueOf(request.get("note")).trim() : null;
+
+        Map<String, Object> created = healthObservationService.insertPatientReportObservation(
+            targetRegisterId,
+            observedAt,
+            metricValue,
+            note
+        );
+
+        glucoseForecastService.refreshForecastAsync(targetRegisterId);
+        return created;
+    }
+
+    @Transactional
+    public Map<String, Object> createRevisitRequest(Long patientId, Map<String, Object> request) {
+        Long registerId = toLong(request.get("registerId"));
+        Long resolvedPatientId = resolvePatientId(patientId);
+        Long targetRegisterId = requireAccessibleRegister(resolvedPatientId, registerId);
+
+        String reason = request.get("reason") != null ? String.valueOf(request.get("reason")).trim() : "";
+        if (reason.isEmpty()) {
+            throw new BusinessException("请填写复诊原因");
+        }
+        String urgency = request.get("urgency") != null ? String.valueOf(request.get("urgency")) : "normal";
+        if (!"normal".equals(urgency) && !"urgent".equals(urgency)) {
+            urgency = "normal";
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("registerId", targetRegisterId);
+        payload.put("patientId", resolvedPatientId);
+        payload.put("reason", reason);
+        payload.put("urgency", urgency);
+        payload.put("status", "pending");
+        revisitRequestMapper.insertRequest(payload);
+
+        try {
+            Map<String, Object> session = followUpCommunicationService.getPatientSession(targetRegisterId);
+            if (session != null && session.get("id") != null) {
+                Long sessionId = toLong(session.get("id"));
+                String prefix = "urgent".equals(urgency) ? "【紧急复诊申请】" : "【复诊申请】";
+                followUpCommunicationService.sendPatientMessage(sessionId, prefix + " " + reason, false);
+            }
+        } catch (Exception ignored) {
+            // 沟通会话可选
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", payload.get("id"));
+        result.put("registerId", targetRegisterId);
+        result.put("patientId", resolvedPatientId);
+        result.put("reason", reason);
+        result.put("urgency", urgency);
+        result.put("status", "pending");
+        return result;
+    }
+
+    public Map<String, Object> getGlucoseAdvice(Long patientId, Long registerId) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        return glucoseForecastService.buildAdvice(targetRegisterId);
     }
 
     @Transactional
@@ -58,6 +176,10 @@ public class FollowUpPatientPortalService {
     @Transactional
     public Map<String, Object> submitFeedback(Map<String, Object> request) {
         Long registerId = toLong(request.get("registerId"));
+        Long resolvedPatientId = resolvePatientId(null);
+        if (registerId != null && resolvedPatientId != null) {
+            requireAccessibleRegister(resolvedPatientId, registerId);
+        }
         Long followUpPlanId = toLong(request.get("followUpPlanId"));
         if (registerId == null) {
             throw new BusinessException("registerId 不能为空");
@@ -103,17 +225,44 @@ public class FollowUpPatientPortalService {
     }
 
     public Map<String, Object> getGlucoseForecast(Long patientId, Long registerId) {
-        Long targetRegisterId = registerId;
-        if (targetRegisterId == null && patientId != null) {
-            List<Long> ids = followUpPatientMapper.selectRegisterIdsByPatientId(patientId);
-            if (!ids.isEmpty()) {
-                targetRegisterId = ids.get(0);
-            }
-        }
-        if (targetRegisterId == null) {
-            throw new BusinessException("无法确定就诊记录");
-        }
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
         return glucoseForecastService.getForecast(targetRegisterId, null, null);
+    }
+
+    private Long resolvePatientId(Long patientId) {
+        if (patientId != null) {
+            return patientId;
+        }
+        Long fromContext = PatientFollowUpAuthContext.primaryPatientIdOrNull();
+        if (fromContext != null) {
+            return fromContext;
+        }
+        List<Long> ids = PatientFollowUpAuthContext.patientIdsOrEmpty();
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    private Long requireAccessibleRegister(Long patientId, Long registerId) {
+        if (patientId == null) {
+            throw new BusinessException("无法确定患者身份");
+        }
+        Long targetRegisterId = registerId;
+        if (targetRegisterId == null) {
+            List<Long> ids = followUpPatientMapper.selectRegisterIdsByPatientId(patientId);
+            if (ids.isEmpty()) {
+                throw new BusinessException("无法确定就诊记录");
+            }
+            targetRegisterId = ids.get(0);
+        }
+
+        List<Long> patientIds = PatientFollowUpAuthContext.patientIdsOrEmpty();
+        if (patientIds.isEmpty()) {
+            patientIds = List.of(patientId);
+        }
+        Long userId = PatientFollowUpAuthContext.userIdOrNull();
+        if (!patientFollowUpAuthMapper.isRegisterAccessible(targetRegisterId, patientIds, userId)) {
+            throw new BusinessException("无权访问该就诊记录");
+        }
+        return targetRegisterId;
     }
 
     private List<Long> resolveRegisterIds(Long patientId, List<Long> registerIds) {
@@ -137,6 +286,31 @@ public class FollowUpPatientPortalService {
             return "unchanged";
         }
         return "worsened";
+    }
+
+    private LocalDateTime parseDateTime(Object value) {
+        if (value == null) {
+            return LocalDateTime.now();
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return LocalDateTime.now();
+        }
+        try {
+            return LocalDateTime.parse(text.replace(' ', 'T'));
+        } catch (Exception ex) {
+            return LocalDateTime.now();
+        }
+    }
+
+    private double toDouble(Object value) {
+        if (value == null) {
+            return 0.0;
+        }
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        return Double.parseDouble(String.valueOf(value));
     }
 
     private Long toLong(Object value) {

@@ -104,6 +104,7 @@ export function buildGlucoseTrendOption(params: {
   title: string
   actualPoints: GlucoseChartPoint[]
   forecastPoints: GlucoseChartPoint[]
+  baselinePoints?: GlucoseChartPoint[]
   formatTime?: (value: string) => string
   unit?: string
   color?: string
@@ -112,22 +113,32 @@ export function buildGlucoseTrendOption(params: {
   const formatTime = params.formatTime ?? ((v: string) => v)
   const unit = params.unit ?? 'mmol/L'
 
-  type Slot = { time: string; actual: number | null; forecast: number | null }
+  type Slot = { time: string; actual: number | null; forecast: number | null; baseline: number | null }
   const slots = new Map<number, Slot>()
+
+  const ensureSlot = (time: string, ms: number) => {
+    if (!slots.has(ms)) {
+      slots.set(ms, { time, actual: null, forecast: null, baseline: null })
+    }
+    return slots.get(ms)!
+  }
 
   for (const point of params.actualPoints) {
     const ms = parseChartTime(point.time)
-    slots.set(ms, { time: point.time, actual: point.value, forecast: null })
+    const slot = ensureSlot(point.time, ms)
+    slot.actual = point.value
+  }
+
+  for (const point of params.baselinePoints ?? []) {
+    const ms = parseChartTime(point.time)
+    const slot = ensureSlot(point.time, ms)
+    slot.baseline = point.value
   }
 
   for (const point of params.forecastPoints) {
     const ms = parseChartTime(point.time)
-    const existing = slots.get(ms)
-    if (existing) {
-      existing.forecast = point.value
-    } else {
-      slots.set(ms, { time: point.time, actual: null, forecast: point.value })
-    }
+    const slot = ensureSlot(point.time, ms)
+    slot.forecast = point.value
   }
 
   const sorted = [...slots.entries()].sort((a, b) => a[0] - b[0])
@@ -136,12 +147,58 @@ export function buildGlucoseTrendOption(params: {
 
   const axisLabels = sorted.map(([, slot]) => formatTime(slot.time))
   const actualData = sorted.map(([, slot]) => slot.actual)
+  const baselineData = sorted.map(([, slot]) => slot.baseline)
   const forecastData = sorted.map(([ms, slot]) => {
     if (lastActualMs != null && ms === lastActualMs && lastActual != null) {
       return lastActual.value
     }
     return slot.forecast
   })
+
+  const legendItems = ['实测', '预测']
+  if ((params.baselinePoints?.length ?? 0) > 0) {
+    legendItems.unshift('基线(演示)')
+  }
+
+  const series: echarts.SeriesOption[] = []
+  if ((params.baselinePoints?.length ?? 0) > 0) {
+    series.push({
+      name: '基线(演示)',
+      type: 'line',
+      smooth: true,
+      connectNulls: false,
+      data: baselineData,
+      itemStyle: { color: '#94a3b8' },
+      lineStyle: { type: 'dotted', width: 1.5 },
+    })
+  }
+  series.push(
+    {
+      name: '实测',
+      type: 'line',
+      smooth: true,
+      connectNulls: false,
+      data: actualData,
+      itemStyle: { color },
+      lineStyle: { width: 2 },
+      areaStyle: { color: 'rgba(31, 140, 255, 0.12)' },
+      markLine: {
+        silent: true,
+        symbol: 'none',
+        lineStyle: { type: 'dashed', color: '#ef4d5a', opacity: 0.45 },
+        data: [{ yAxis: 3.9 }, { yAxis: 10.0 }],
+      },
+    },
+    {
+      name: '预测',
+      type: 'line',
+      smooth: true,
+      connectNulls: true,
+      data: forecastData,
+      itemStyle: { color: '#f59f00' },
+      lineStyle: { type: 'dashed', width: 2 },
+    },
+  )
 
   return {
     title: {
@@ -152,7 +209,7 @@ export function buildGlucoseTrendOption(params: {
     legend: {
       top: 4,
       right: 0,
-      data: ['实测', '预测'],
+      data: legendItems,
       textStyle: { color: '#5f7288' },
     },
     tooltip: {
@@ -181,33 +238,7 @@ export function buildGlucoseTrendOption(params: {
       axisLabel: { color: '#5f7288' },
       splitLine: { lineStyle: { color: 'rgba(70, 111, 160, 0.12)' } },
     },
-    series: [
-      {
-        name: '实测',
-        type: 'line',
-        smooth: true,
-        connectNulls: false,
-        data: actualData,
-        itemStyle: { color },
-        lineStyle: { width: 2 },
-        areaStyle: { color: 'rgba(31, 140, 255, 0.12)' },
-        markLine: {
-          silent: true,
-          symbol: 'none',
-          lineStyle: { type: 'dashed', color: '#ef4d5a', opacity: 0.45 },
-          data: [{ yAxis: 3.9 }, { yAxis: 10.0 }],
-        },
-      },
-      {
-        name: '预测',
-        type: 'line',
-        smooth: true,
-        connectNulls: true,
-        data: forecastData,
-        itemStyle: { color: '#f59f00' },
-        lineStyle: { type: 'dashed', width: 2 },
-      },
-    ],
+    series,
   }
 }
 

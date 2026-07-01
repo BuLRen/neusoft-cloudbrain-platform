@@ -334,3 +334,50 @@ export interface FollowUpCommunicationPatientBrief {
   interviewScheduledToday?: boolean
   latestSummary?: FollowUpCaseSummary
 }
+
+export interface ProfessionalMetricItem {
+  value: number
+  unit?: string
+  label?: string
+}
+
+export interface LastVisitSnapshot {
+  registerId: number
+  visitDate?: string
+  diagnosisSummary?: string
+  professionalMetrics?: Record<string, ProfessionalMetricItem>
+  doctorName?: string
+  departmentName?: string
+  updatedAt?: string
+}
+
+export interface PatientObservationPayload {
+  registerId: number
+  metricValue: number
+  observedAt?: string
+  note?: string
+}
+
+export interface RevisitRequest {
+  id?: number
+  registerId: number
+  patientId?: number
+  reason: string
+  urgency?: 'normal' | 'urgent'
+  status?: 'pending' | 'acknowledged' | 'scheduled'
+  createdAt?: string
+  caseNumber?: string
+  patientName?: string
+}
+
+export interface GlucoseAdvice {
+  registerId: number
+  riskLevel?: string
+  revisitRecommended?: boolean
+  adviceText?: string
+  recentReportCount?: number
+  forecastMin?: number
+  forecastMax?: number
+  modelId?: string
+  confidence?: number
+}

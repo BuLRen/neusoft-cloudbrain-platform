@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.RevisitRequestMapper">
+
+    <insert id="insertRequest" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_revisit_request (
+            register_id, patient_id, reason, urgency, status
+        ) VALUES (
+            #{registerId}, #{patientId}, #{reason}, #{urgency}, COALESCE(#{status}, 'pending')
+        )
+    </insert>
+
+    <select id="selectByRegisterId" resultType="map">
+        SELECT
+            r.id AS "id",
+            r.register_id AS "registerId",
+            r.patient_id AS "patientId",
+            r.reason AS "reason",
+            r.urgency AS "urgency",
+            r.status AS "status",
+            r.created_at AS "createdAt"
+        FROM follow_up_revisit_request r
+        WHERE r.register_id = #{registerId}
+        <if test="status != null and status != ''">
+            AND r.status = #{status}
+        </if>
+        ORDER BY r.created_at DESC
+    </select>
+
+    <select id="selectPending" resultType="map">
+        SELECT
+            r.id AS "id",
+            r.register_id AS "registerId",
+            r.patient_id AS "patientId",
+            r.reason AS "reason",
+            r.urgency AS "urgency",
+            r.status AS "status",
+            r.created_at AS "createdAt",
+            reg.case_number AS "caseNumber",
+            reg.real_name AS "patientName"
+        FROM follow_up_revisit_request r
+        INNER JOIN register reg ON reg.id = r.register_id
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.register_id
+        WHERE r.status = 'pending'
+        <if test="departmentId != null">
+            AND fe.managing_department_id = #{departmentId}
+        </if>
+        ORDER BY
+            CASE r.urgency WHEN 'urgent' THEN 0 ELSE 1 END,
+            r.created_at DESC
+    </select>
+
+    <select id="countPendingByRegisterId" resultType="int">
+        SELECT COUNT(*)
+        FROM follow_up_revisit_request
+        WHERE register_id = #{registerId}
+          AND status = 'pending'
+    </select>
+
+</mapper>

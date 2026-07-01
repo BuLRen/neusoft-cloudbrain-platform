@@ -15,7 +15,9 @@ public interface HealthObservationMapper {
         @Param("registerId") Long registerId,
         @Param("from") LocalDate from,
         @Param("to") LocalDate to,
-        @Param("metricKeys") List<String> metricKeys
+        @Param("metricKeys") List<String> metricKeys,
+        @Param("sourceType") String sourceType,
+        @Param("sourceTypes") List<String> sourceTypes
     );
 
     List<Map<String, Object>> selectLabMetricMappings();

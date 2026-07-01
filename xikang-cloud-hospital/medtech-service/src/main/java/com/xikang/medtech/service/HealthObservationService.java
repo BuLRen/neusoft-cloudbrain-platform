@@ -36,19 +36,33 @@ public class HealthObservationService {
         LocalDate to,
         List<String> metricKeys
     ) {
-        List<Map<String, Object>> production = loadProductionMetrics(registerId, from, to, metricKeys);
+        return getMetrics(registerId, from, to, metricKeys, null, null);
+    }
+
+    public List<Map<String, Object>> getMetrics(
+        Long registerId,
+        LocalDate from,
+        LocalDate to,
+        List<String> metricKeys,
+        String sourceType,
+        List<String> sourceTypes
+    ) {
+        List<Map<String, Object>> production = loadProductionMetrics(
+            registerId, from, to, metricKeys, sourceType, sourceTypes
+        );
         if (!production.isEmpty() || followUpProperties.isProductionMode()) {
-            if (production.isEmpty() && followUpProperties.preferProductionObservations()) {
+            if (production.isEmpty() && followUpProperties.preferProductionObservations()
+                && sourceType == null && (sourceTypes == null || sourceTypes.isEmpty())) {
                 syncFromLabResults(registerId);
-                production = loadProductionMetrics(registerId, from, to, metricKeys);
+                production = loadProductionMetrics(registerId, from, to, metricKeys, sourceType, sourceTypes);
             }
             return production;
         }
 
         if (followUpProperties.isHybridMode()) {
-            if (production.isEmpty()) {
+            if (production.isEmpty() && sourceType == null && (sourceTypes == null || sourceTypes.isEmpty())) {
                 syncFromLabResults(registerId);
-                production = loadProductionMetrics(registerId, from, to, metricKeys);
+                production = loadProductionMetrics(registerId, from, to, metricKeys, sourceType, sourceTypes);
             }
             if (!production.isEmpty()) {
                 return production;
@@ -73,17 +87,71 @@ public class HealthObservationService {
         Long registerId,
         LocalDate from,
         LocalDate to,
-        List<String> metricKeys
+        List<String> metricKeys,
+        String sourceType,
+        List<String> sourceTypes
     ) {
         if (!followUpProperties.preferProductionObservations()) {
             return List.of();
         }
         try {
-            return healthObservationMapper.selectObservations(registerId, from, to, metricKeys);
+            return healthObservationMapper.selectObservations(
+                registerId, from, to, metricKeys, sourceType, sourceTypes
+            );
         } catch (DataAccessException ex) {
             log.warn("patient_health_observation 读取失败（可能尚未执行 migrate_020）: {}", ex.getMessage());
             return List.of();
         }
+    }
+
+    public Map<String, Object> insertPatientReportObservation(
+        Long registerId,
+        LocalDateTime observedAt,
+        double metricValue,
+        String note
+    ) {
+        LocalDateTime at = observedAt != null ? observedAt : LocalDateTime.now();
+        healthObservationMapper.insertObservation(
+            registerId,
+            at,
+            "blood_glucose",
+            metricValue,
+            "mmol/L",
+            "patient_report",
+            null,
+            note
+        );
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("registerId", registerId);
+        row.put("recordDate", at.toLocalDate().toString());
+        row.put("recordedAt", at.toString());
+        row.put("metricKey", "blood_glucose");
+        row.put("metricValue", metricValue);
+        row.put("unit", "mmol/L");
+        row.put("source", "patient_report");
+        row.put("note", note);
+        return row;
+    }
+
+    public int countRecentGlucoseReports(Long registerId, int hours) {
+        LocalDate from = LocalDate.now().minusDays(Math.max(1, hours / 24 + 1));
+        List<Map<String, Object>> rows = getMetrics(
+            registerId,
+            from,
+            null,
+            List.of("blood_glucose"),
+            "patient_report",
+            null
+        );
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(hours);
+        int count = 0;
+        for (Map<String, Object> row : rows) {
+            LocalDateTime at = parseDateTime(row.get("recordedAt"));
+            if (at != null && !at.isBefore(cutoff)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public void syncFromLabResults(Long registerId) {

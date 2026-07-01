@@ -88,9 +88,17 @@
     <select id="selectRegisterIdsByPatientId" resultType="long">
         SELECT r.id
         FROM register r
-        INNER JOIN patient p ON p.real_name = r.real_name AND p.birthdate = r.birthdate
-        WHERE p.id = #{patientId}
-          AND p.delmark = 1
+        WHERE (
+            r.patient_id = #{patientId}
+            OR EXISTS (
+                SELECT 1
+                FROM patient p
+                WHERE p.id = #{patientId}
+                  AND p.delmark = 0
+                  AND p.real_name = r.real_name
+                  AND p.birthdate = r.birthdate
+            )
+        )
         ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
     </select>
 
