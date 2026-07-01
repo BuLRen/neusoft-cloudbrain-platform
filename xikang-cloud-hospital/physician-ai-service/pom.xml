@@ -10,11 +10,11 @@
         <version>1.0.0</version>
     </parent>
 
-    <artifactId>physician-service</artifactId>
+    <artifactId>physician-ai-service</artifactId>
     <packaging>jar</packaging>
 
-    <name>Physician Service</name>
-    <description>Outpatient Physician Service</description>
+    <name>Physician AI Service</name>
+    <description>Outpatient Physician AI — Dify workflows, Agent tools, Copilot</description>
 
     <dependencies>
         <dependency>
@@ -32,6 +32,18 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

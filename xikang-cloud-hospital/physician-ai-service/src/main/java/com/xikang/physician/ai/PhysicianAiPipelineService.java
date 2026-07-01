@@ -1,8 +1,8 @@
 package com.xikang.physician.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.xikang.physician.mapper.PhysicianMapper;
-import com.xikang.physician.service.PhysicianService;
+import com.xikang.physician.mapper.PhysicianAiMapper;
+import com.xikang.physician.client.PhysicianClinicalClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -26,8 +26,8 @@ public class PhysicianAiPipelineService {
     /** W2 返回的 preliminaryAssessment，按 registerId 缓存（进程内，重启后回退到病历/推荐理由）。 */
     private final Map<Long, String> w2PreliminaryAssessmentByRegister = new ConcurrentHashMap<>();
 
-    private final PhysicianMapper physicianMapper;
-    private final PhysicianService physicianService;
+    private final PhysicianAiMapper physicianAiMapper;
+    private final PhysicianClinicalClient physicianClinicalClient;
     private final DifyWorkflowClient difyClient;
     private final DifyAiProperties difyProperties;
     private final DifyPreliminaryOutputMapper preliminaryOutputMapper;
@@ -45,8 +45,8 @@ public class PhysicianAiPipelineService {
     private final CtInferenceService ctInferenceService;
 
     public PhysicianAiPipelineService(
-        PhysicianMapper physicianMapper,
-        @Lazy PhysicianService physicianService,
+        PhysicianAiMapper physicianAiMapper,
+        @Lazy PhysicianClinicalClient physicianClinicalClient,
         DifyWorkflowClient difyClient,
         DifyAiProperties difyProperties,
         DifyPreliminaryOutputMapper preliminaryOutputMapper,
@@ -63,8 +63,8 @@ public class PhysicianAiPipelineService {
         FallbackWorkflowEngine fallbackEngine,
         CtInferenceService ctInferenceService
     ) {
-        this.physicianMapper = physicianMapper;
-        this.physicianService = physicianService;
+        this.physicianAiMapper = physicianAiMapper;
+        this.physicianClinicalClient = physicianClinicalClient;
         this.difyClient = difyClient;
         this.difyProperties = difyProperties;
         this.preliminaryOutputMapper = preliminaryOutputMapper;
@@ -83,7 +83,7 @@ public class PhysicianAiPipelineService {
     }
 
     public List<Map<String, Object>> getAvailableExaminations() {
-        return physicianMapper.selectAvailableExaminations();
+        return physicianClinicalClient.getAvailableExaminations();
     }
 
     @Transactional
@@ -98,7 +98,7 @@ public class PhysicianAiPipelineService {
         }
 
         boolean preHandle = Boolean.TRUE.equals(request.get("preHandle"));
-        List<Map<String, Object>> diseaseCatalog = physicianMapper.selectDiseases(null);
+        List<Map<String, Object>> diseaseCatalog = physicianClinicalClient.getDiseases(null);
 
         Map<String, Object> fallbackInput = new LinkedHashMap<>();
         fallbackInput.put("registerId", registerId);
@@ -222,7 +222,7 @@ public class PhysicianAiPipelineService {
         }
 
         Map<String, Object> structured = loadStructuredRecord(registerId);
-        List<Map<String, Object>> ordered = physicianMapper.selectOpenRequestsForSimulation(registerId);
+        List<Map<String, Object>> ordered = physicianClinicalClient.getOpenRequestsForSimulation(registerId);
         List<Map<String, Object>> labExams = new ArrayList<>();
         List<Map<String, Object>> ctExams = new ArrayList<>();
 
@@ -344,7 +344,7 @@ public class PhysicianAiPipelineService {
     }
 
     public Map<String, Object> getW3Status(Long registerId) {
-        List<Map<String, Object>> analyses = physicianMapper.selectExamAnalysisByRegisterId(registerId);
+        List<Map<String, Object>> analyses = physicianAiMapper.selectExamAnalysisByRegisterId(registerId);
         Map<String, Object> w3Output = loadW3Output(registerId);
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("registerId", registerId);
@@ -379,7 +379,7 @@ public class PhysicianAiPipelineService {
     }
 
     public List<Map<String, Object>> getDrugSuggestions(Long registerId) {
-        return enrichW5SuggestionsWithLiveStock(physicianMapper.selectDrugSuggestions(registerId));
+        return enrichW5SuggestionsWithLiveStock(physicianAiMapper.selectDrugSuggestions(registerId));
     }
 
     private List<Map<String, Object>> enrichW5SuggestionsWithLiveStock(List<Map<String, Object>> suggestions) {
@@ -394,7 +394,7 @@ public class PhysicianAiPipelineService {
                 enriched.add(copy);
                 continue;
             }
-            Map<String, Object> drug = physicianMapper.selectDrugById(drugId);
+            Map<String, Object> drug = physicianClinicalClient.getDrug(drugId);
             if (drug == null) {
                 copy.put("stockQuantity", 0);
                 copy.put("drugUnit", "盒");
@@ -412,7 +412,7 @@ public class PhysicianAiPipelineService {
 
     @Transactional
     public Map<String, Object> runW5(Long registerId) {
-        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
         String diagnosis = record == null ? "" : String.valueOf(record.getOrDefault("diagnosis", "")).trim();
         if (diagnosis.isEmpty()) {
             throw new IllegalArgumentException("请先完成门诊确诊并保存确诊病名");
@@ -441,7 +441,7 @@ public class PhysicianAiPipelineService {
         if (suggestionId == null) {
             return;
         }
-        physicianMapper.updateDrugSuggestionAdopted(suggestionId, 1);
+        physicianAiMapper.updateDrugSuggestionAdopted(suggestionId, 1);
     }
 
     private Map<String, Object> runW5ViaDify(Long registerId) {
@@ -479,12 +479,12 @@ public class PhysicianAiPipelineService {
     }
 
     private Map<String, Object> buildW5FallbackInput(Long registerId) {
-        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("registerId", registerId);
         input.put("confirmedDiagnosis", record == null ? "" : record.get("diagnosis"));
         input.put("allergyHistory", record == null ? "" : record.get("allergy"));
-        input.put("drugCatalog", physicianMapper.selectDrugs(null));
+        input.put("drugCatalog", physicianClinicalClient.getDrugs(null));
         return input;
     }
 
@@ -516,7 +516,7 @@ public class PhysicianAiPipelineService {
             return;
         }
 
-        physicianMapper.deleteDrugSuggestionsByRegisterId(registerId);
+        physicianAiMapper.deleteDrugSuggestionsByRegisterId(registerId);
         String modelId = String.valueOf(output.getOrDefault("modelId", difyClient.isW5Enabled() ? "dify-w5" : "fallback-w5"));
         int order = 1;
         for (Map<String, Object> item : suggestions) {
@@ -568,7 +568,7 @@ public class PhysicianAiPipelineService {
             return null;
         }
 
-        Map<String, Object> drug = physicianMapper.selectDrugById(drugId);
+        Map<String, Object> drug = physicianClinicalClient.getDrug(drugId);
         if (drug == null) {
             return null;
         }
@@ -616,7 +616,7 @@ public class PhysicianAiPipelineService {
         Object itemSort = item.get("sortOrder");
         row.put("sortOrder", itemSort == null ? sortOrder : itemSort);
         row.put("modelId", modelId);
-        physicianMapper.insertDrugSuggestion(row);
+        physicianAiMapper.insertDrugSuggestion(row);
     }
 
     private Map<String, Object> runW4ViaDify(Long registerId) {
@@ -658,7 +658,7 @@ public class PhysicianAiPipelineService {
         input.put("registerId", registerId);
         input.put("structuredRecord", loadStructuredRecord(registerId));
         input.put("w3Output", loadW3Output(registerId));
-        input.put("diseaseCatalog", physicianMapper.selectDiseases(null));
+        input.put("diseaseCatalog", physicianClinicalClient.getDiseases(null));
         return input;
     }
 
@@ -731,8 +731,8 @@ public class PhysicianAiPipelineService {
     }
 
     private Map<String, Object> buildStructuredFromPreConsultation(Long registerId) {
-        Map<String, Object> consult = physicianMapper.selectLatestAiConsultation(registerId);
-        Map<String, Object> register = physicianMapper.selectRegisterById(registerId);
+        Map<String, Object> consult = physicianClinicalClient.getLatestAiConsultation(registerId);
+        Map<String, Object> register = physicianClinicalClient.getRegister(registerId);
         if (consult == null || consult.isEmpty()) {
             return Map.of();
         }
@@ -782,7 +782,7 @@ public class PhysicianAiPipelineService {
         log.put("aiDiagnosis", output.get("diagnosisText"));
         log.put("modelId", output.get("modelId"));
         log.put("doctorModification", JsonMapUtils.toJson(meta));
-        physicianMapper.insertAiMedicalRecordLog(log);
+        physicianAiMapper.insertAiMedicalRecordLog(log);
     }
 
     private void persistStructuredRecord(Map<String, Object> structured) {
@@ -799,12 +799,12 @@ public class PhysicianAiPipelineService {
         record.put("allergy", structured.get("allergy"));
         record.put("physique", structured.get("physique"));
 
-        Map<String, Object> existing = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Map<String, Object> existing = physicianClinicalClient.getMedicalRecord(registerId);
         if (existing == null) {
-            physicianMapper.insertMedicalRecord(record);
+            physicianClinicalClient.upsertMedicalRecord(record);
         } else {
             record.put("id", toLong(existing.get("id")));
-            physicianMapper.updateMedicalRecord(record);
+            physicianClinicalClient.upsertMedicalRecord(record);
         }
 
         Map<String, Object> log = new HashMap<>();
@@ -817,7 +817,7 @@ public class PhysicianAiPipelineService {
         log.put("aiPhysique", structured.get("physique"));
         log.put("aiDiagnosis", structured.get("preliminaryImpression"));
         log.put("modelId", difyClient.isReady() ? "dify-w1" : "fallback-w1");
-        physicianMapper.insertAiMedicalRecordLog(log);
+        physicianAiMapper.insertAiMedicalRecordLog(log);
     }
 
     private void persistW2(Map<String, Object> output, Long registerId) {
@@ -825,7 +825,7 @@ public class PhysicianAiPipelineService {
         if (!preliminary.isEmpty()) {
             w2PreliminaryAssessmentByRegister.put(registerId, preliminary);
         }
-        physicianMapper.deleteExamSuggestionsByRegisterId(registerId);
+        physicianAiMapper.deleteExamSuggestionsByRegisterId(registerId);
         String modelId = String.valueOf(output.getOrDefault("modelId", resolveW2ModelIdLabel()));
         for (Map<String, Object> item : listOfMaps(output.get("recommendedExaminations"))) {
             Map<String, Object> row = new HashMap<>();
@@ -836,7 +836,7 @@ public class PhysicianAiPipelineService {
             row.put("suggestReason", item.get("reason"));
             row.put("priority", item.getOrDefault("priority", 1));
             row.put("modelId", modelId);
-            physicianMapper.insertExamSuggestion(row);
+            physicianAiMapper.insertExamSuggestion(row);
         }
     }
 
@@ -845,7 +845,7 @@ public class PhysicianAiPipelineService {
     }
 
     private void createRequestsFromSuggestions(Long registerId) {
-        List<Map<String, Object>> suggestions = physicianMapper.selectExamSuggestions(registerId);
+        List<Map<String, Object>> suggestions = physicianAiMapper.selectExamSuggestions(registerId);
         List<Map<String, Object>> checkItems = new ArrayList<>();
         List<Map<String, Object>> inspectionItems = new ArrayList<>();
         for (Map<String, Object> sug : suggestions) {
@@ -865,10 +865,10 @@ public class PhysicianAiPipelineService {
             }
         }
         if (!checkItems.isEmpty()) {
-            physicianService.createCheckRequest(Map.of("registerId", registerId, "items", checkItems));
+            physicianClinicalClient.createCheckRequest(Map.of("registerId", registerId, "items", checkItems));
         }
         if (!inspectionItems.isEmpty()) {
-            physicianService.createInspectionRequest(Map.of("registerId", registerId, "items", inspectionItems));
+            physicianClinicalClient.createInspectionRequest(Map.of("registerId", registerId, "items", inspectionItems));
         }
     }
 
@@ -877,9 +877,9 @@ public class PhysicianAiPipelineService {
         String techType = String.valueOf(labResult.get("techType"));
         String resultText = String.valueOf(labResult.get("resultText"));
         if ("check".equals(techType)) {
-            physicianMapper.updateCheckRequestResult(registerId, techId, resultText, "已完成");
+            physicianClinicalClient.updateCheckRequestResult(registerId, techId, resultText, "已完成");
         } else {
-            physicianMapper.updateInspectionRequestResult(registerId, techId, resultText, "已完成");
+            physicianClinicalClient.updateInspectionRequestResult(registerId, techId, resultText, "已完成");
         }
     }
 
@@ -887,11 +887,11 @@ public class PhysicianAiPipelineService {
         Long registerId = toLong(ctExam.get("registerId"));
         Long techId = toLong(ctExam.get("techId"));
         String resultText = String.valueOf(ctResult.get("resultText"));
-        physicianMapper.updateCheckRequestResult(registerId, techId, resultText, "已完成");
+        physicianClinicalClient.updateCheckRequestResult(registerId, techId, resultText, "已完成");
     }
 
     private void persistW3(Map<String, Object> output, Long registerId, Object modelIdHint) {
-        physicianMapper.deleteExamAnalysisByRegisterId(registerId);
+        physicianAiMapper.deleteExamAnalysisByRegisterId(registerId);
         String modelId = modelIdHint != null
             ? String.valueOf(modelIdHint)
             : (difyClient.isW3Enabled() ? "dify-w3" : "fallback-w3");
@@ -924,7 +924,7 @@ public class PhysicianAiPipelineService {
                 row.put("analysisReport", overallAnalysis);
                 row.put("correlationAnalysis", overallAnalysis);
                 row.put("modelId", modelId);
-                physicianMapper.insertExamAnalysis(row);
+                physicianAiMapper.insertExamAnalysis(row);
             }
             return;
         }
@@ -964,7 +964,7 @@ public class PhysicianAiPipelineService {
             row.put("analysisReport", summary.get("interpretation"));
             row.put("correlationAnalysis", isFirst ? overallAnalysis : null);
             row.put("modelId", modelId);
-            physicianMapper.insertExamAnalysis(row);
+            physicianAiMapper.insertExamAnalysis(row);
         }
     }
 
@@ -977,14 +977,14 @@ public class PhysicianAiPipelineService {
 
         List<Map<String, Object>> suggestions = listOfMaps(output.get("suggestions"));
         if (suggestions.isEmpty() && "empty".equals(status)) {
-            physicianMapper.deleteDiagnosisSuggestionsByRegisterId(registerId);
+            physicianAiMapper.deleteDiagnosisSuggestionsByRegisterId(registerId);
             return;
         }
         if (suggestions.isEmpty()) {
             return;
         }
 
-        physicianMapper.deleteDiagnosisSuggestionsByRegisterId(registerId);
+        physicianAiMapper.deleteDiagnosisSuggestionsByRegisterId(registerId);
         String modelId = String.valueOf(output.getOrDefault("modelId", difyClient.isW4Enabled() ? "dify-w4" : "fallback-w4"));
         int order = 1;
         for (Map<String, Object> item : suggestions) {
@@ -1007,7 +1007,7 @@ public class PhysicianAiPipelineService {
         Object itemSort = item.get("sortOrder");
         row.put("sortOrder", itemSort == null ? sortOrder : itemSort);
         row.put("modelId", modelId);
-        physicianMapper.insertDiagnosisSuggestion(row);
+        physicianAiMapper.insertDiagnosisSuggestion(row);
     }
 
     private Map<String, Object> buildW3Input(Long registerId) {
@@ -1021,7 +1021,7 @@ public class PhysicianAiPipelineService {
 
     private List<Map<String, Object>> buildAllResults(Long registerId) {
         List<Map<String, Object>> all = new ArrayList<>();
-        for (Map<String, Object> row : physicianMapper.selectCheckResults(registerId)) {
+        for (Map<String, Object> row : physicianClinicalClient.getCheckResults(registerId)) {
             if (row.get("checkResult") == null) {
                 continue;
             }
@@ -1032,7 +1032,7 @@ public class PhysicianAiPipelineService {
             item.put("resultText", row.get("checkResult"));
             all.add(item);
         }
-        for (Map<String, Object> row : physicianMapper.selectInspectionResults(registerId)) {
+        for (Map<String, Object> row : physicianClinicalClient.getInspectionResults(registerId)) {
             if (row.get("inspectionResult") == null) {
                 continue;
             }
@@ -1047,7 +1047,7 @@ public class PhysicianAiPipelineService {
     }
 
     private Map<String, Object> loadW3Output(Long registerId) {
-        List<Map<String, Object>> analyses = physicianMapper.selectExamAnalysisByRegisterId(registerId);
+        List<Map<String, Object>> analyses = physicianAiMapper.selectExamAnalysisByRegisterId(registerId);
         List<Map<String, Object>> summaries = new ArrayList<>();
         String overallAnalysis = "";
         String globalClinicalImpression = "";
@@ -1102,9 +1102,9 @@ public class PhysicianAiPipelineService {
 
     private Map<String, Object> loadStructuredRecord(Long registerId) {
         Map<String, Object> fromPre = buildStructuredFromPreConsultation(registerId);
-        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
         if (record != null && record.get("readme") != null) {
-            Map<String, Object> register = physicianMapper.selectRegisterById(registerId);
+            Map<String, Object> register = physicianClinicalClient.getRegister(registerId);
             Map<String, Object> out = new LinkedHashMap<>(fromPre.isEmpty() ? Map.of() : fromPre);
             out.put("registerId", registerId);
             if (register != null) {
@@ -1135,7 +1135,7 @@ public class PhysicianAiPipelineService {
             return cached.trim();
         }
 
-        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
         if (record != null) {
             String preliminaryDiagnosis = String.valueOf(record.getOrDefault("preliminaryDiagnosis", "")).trim();
             if (!preliminaryDiagnosis.isEmpty()) {
@@ -1149,7 +1149,7 @@ public class PhysicianAiPipelineService {
             return impression;
         }
 
-        List<Map<String, Object>> suggestions = physicianMapper.selectExamSuggestions(registerId);
+        List<Map<String, Object>> suggestions = physicianAiMapper.selectExamSuggestions(registerId);
         if (suggestions.isEmpty()) {
             return "";
         }
@@ -1197,7 +1197,7 @@ public class PhysicianAiPipelineService {
 
     private Map<String, Long> buildCheckRequestIdByTechName(Long registerId) {
         Map<String, Long> map = new HashMap<>();
-        for (Map<String, Object> row : physicianMapper.selectCheckResults(registerId)) {
+        for (Map<String, Object> row : physicianClinicalClient.getCheckResults(registerId)) {
             String name = String.valueOf(row.getOrDefault("techName", "")).trim();
             Long id = toLong(row.get("id"));
             if (!name.isEmpty() && id != null) {
@@ -1209,7 +1209,7 @@ public class PhysicianAiPipelineService {
 
     private Map<String, Long> buildInspectionRequestIdByTechName(Long registerId) {
         Map<String, Long> map = new HashMap<>();
-        for (Map<String, Object> row : physicianMapper.selectInspectionResults(registerId)) {
+        for (Map<String, Object> row : physicianClinicalClient.getInspectionResults(registerId)) {
             String name = String.valueOf(row.getOrDefault("techName", "")).trim();
             Long id = toLong(row.get("id"));
             if (!name.isEmpty() && id != null) {

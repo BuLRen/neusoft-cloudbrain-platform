@@ -3,7 +3,7 @@ package com.xikang.physician.copilot;
 import com.xikang.physician.agent.AgentCommitExecutor;
 import com.xikang.physician.agent.AgentConfirmationService;
 import com.xikang.physician.agent.AgentToolAuditService;
-import com.xikang.physician.agent.AgentToolExecutionContext;
+import com.xikang.common.agent.AgentToolExecutionContext;
 import com.xikang.physician.ai.DifyAgentClient;
 import com.xikang.physician.ai.DifyAgentAnswerSanitizer;
 import com.xikang.physician.ai.DifyAgentChatResult;
@@ -25,7 +25,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.xikang.physician.service.PhysicianService;
+import com.xikang.physician.client.PhysicianClinicalClient;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -53,7 +53,7 @@ public class PhysicianCopilotService {
     private final PhysicianCopilotContextBuilder contextBuilder;
     private final PhysicianAiChatMessageMapper chatMessageMapper;
     private final PhysicianAiChatSessionMapper chatSessionMapper;
-    private final PhysicianService physicianService;
+    private final PhysicianClinicalClient physicianClinicalClient;
     private final PhysicianAiPipelineService pipelineService;
     private final AgentConfirmationService confirmationService;
     private final AgentCommitExecutor commitExecutor;
@@ -66,7 +66,7 @@ public class PhysicianCopilotService {
         PhysicianCopilotContextBuilder contextBuilder,
         PhysicianAiChatMessageMapper chatMessageMapper,
         PhysicianAiChatSessionMapper chatSessionMapper,
-        PhysicianService physicianService,
+        PhysicianClinicalClient physicianClinicalClient,
         PhysicianAiPipelineService pipelineService,
         AgentConfirmationService confirmationService,
         AgentCommitExecutor commitExecutor,
@@ -78,7 +78,7 @@ public class PhysicianCopilotService {
         this.contextBuilder = contextBuilder;
         this.chatMessageMapper = chatMessageMapper;
         this.chatSessionMapper = chatSessionMapper;
-        this.physicianService = physicianService;
+        this.physicianClinicalClient = physicianClinicalClient;
         this.pipelineService = pipelineService;
         this.confirmationService = confirmationService;
         this.commitExecutor = commitExecutor;
@@ -394,13 +394,13 @@ public class PhysicianCopilotService {
         try {
             return switch (actionType) {
                 case "commit_medical_record", "commit_preliminary_diagnosis", "commit_diagnosis" ->
-                    objectMapper.writeValueAsString(physicianService.getMedicalRecord(registerId));
+                    objectMapper.writeValueAsString(physicianClinicalClient.getMedicalRecord(registerId));
                 case "commit_prescription" ->
-                    objectMapper.writeValueAsString(physicianService.getPrescriptionList(registerId));
+                    objectMapper.writeValueAsString(physicianClinicalClient.getPrescriptionList(registerId));
                 case "commit_check_requests", "commit_inspection_requests" -> {
                     Map<String, Object> lab = new LinkedHashMap<>();
-                    lab.put("checks", physicianService.getCheckResults(registerId));
-                    lab.put("inspections", physicianService.getInspectionResults(registerId));
+                    lab.put("checks", physicianClinicalClient.getCheckResults(registerId));
+                    lab.put("inspections", physicianClinicalClient.getInspectionResults(registerId));
                     yield objectMapper.writeValueAsString(lab);
                 }
                 default -> null;
@@ -419,8 +419,8 @@ public class PhysicianCopilotService {
     }
 
     private Map<String, Object> runPreliminaryDiagnosisAction(Long registerId) {
-        Map<String, Object> record = physicianService.getMedicalRecord(registerId);
-        Map<String, Object> patient = physicianService.getPatient(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
+        Map<String, Object> patient = physicianClinicalClient.getPatient(registerId);
         String text = buildPreliminaryInputText(record, patient);
         if (text.isBlank()) {
             throw new IllegalArgumentException("暂无病历或预问诊内容，无法运行初步诊断");
@@ -527,7 +527,7 @@ public class PhysicianCopilotService {
         if (registerId == null || registerId <= 0) {
             throw new IllegalArgumentException("registerId 无效");
         }
-        Map<String, Object> patient = physicianService.getPatient(registerId);
+        Map<String, Object> patient = physicianClinicalClient.getPatient(registerId);
         if (patient == null) {
             throw new IllegalArgumentException("患者不存在或无权访问");
         }

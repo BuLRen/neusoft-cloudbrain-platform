@@ -1,7 +1,7 @@
 package com.xikang.physician.copilot;
 
 import com.xikang.physician.ai.PhysicianAiPipelineService;
-import com.xikang.physician.service.PhysicianService;
+import com.xikang.physician.client.PhysicianClinicalClient;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 
@@ -18,16 +18,16 @@ public class PhysicianCopilotTools {
     private static final ThreadLocal<List<Map<String, Object>>> TOOL_CALLS = new ThreadLocal<>();
 
     private final PhysicianAiPipelineService pipelineService;
-    private final PhysicianService physicianService;
+    private final PhysicianClinicalClient physicianClinicalClient;
     private final PhysicianCopilotContextBuilder contextBuilder;
 
     public PhysicianCopilotTools(
         PhysicianAiPipelineService pipelineService,
-        PhysicianService physicianService,
+        PhysicianClinicalClient physicianClinicalClient,
         PhysicianCopilotContextBuilder contextBuilder
     ) {
         this.pipelineService = pipelineService;
-        this.physicianService = physicianService;
+        this.physicianClinicalClient = physicianClinicalClient;
         this.contextBuilder = contextBuilder;
     }
 
@@ -70,8 +70,8 @@ public class PhysicianCopilotTools {
     public String getLabResultsSummary() {
         recordToolCall("getLabResultsSummary");
         Long registerId = currentRegisterId();
-        List<Map<String, Object>> checks = physicianService.getCheckResults(registerId);
-        List<Map<String, Object>> inspections = physicianService.getInspectionResults(registerId);
+        List<Map<String, Object>> checks = physicianClinicalClient.getCheckResults(registerId);
+        List<Map<String, Object>> inspections = physicianClinicalClient.getInspectionResults(registerId);
         return contextBuilder.toJsonSafe(Map.of(
             "checkResults", checks,
             "inspectionResults", inspections
@@ -82,7 +82,7 @@ public class PhysicianCopilotTools {
     public String getMedicalRecordSummary() {
         recordToolCall("getMedicalRecordSummary");
         Long registerId = currentRegisterId();
-        Map<String, Object> record = physicianService.getMedicalRecord(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
         if (record == null || record.isEmpty()) {
             return "暂无病历记录";
         }

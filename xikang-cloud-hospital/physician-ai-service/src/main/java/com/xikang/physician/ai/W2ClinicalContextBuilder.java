@@ -1,7 +1,6 @@
 package com.xikang.physician.ai;
 
-import com.xikang.physician.mapper.PhysicianMapper;
-import com.xikang.physician.service.PhysicianService;
+import com.xikang.physician.client.PhysicianClinicalClient;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -11,25 +10,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Builds {@code clinical_context_json} for the Dify W2 examination-recommendation workflow.
- */
 @Component
 public class W2ClinicalContextBuilder {
 
-    private final PhysicianMapper physicianMapper;
-    private final PhysicianService physicianService;
+    private final PhysicianClinicalClient physicianClinicalClient;
 
-    public W2ClinicalContextBuilder(PhysicianMapper physicianMapper, PhysicianService physicianService) {
-        this.physicianMapper = physicianMapper;
-        this.physicianService = physicianService;
+    public W2ClinicalContextBuilder(PhysicianClinicalClient physicianClinicalClient) {
+        this.physicianClinicalClient = physicianClinicalClient;
     }
 
     public Map<String, Object> build(Long registerId) {
         Map<String, Object> ctx = new LinkedHashMap<>();
         ctx.put("registerId", registerId);
 
-        Map<String, Object> register = physicianMapper.selectRegisterById(registerId);
+        Map<String, Object> register = physicianClinicalClient.getRegister(registerId);
         if (register != null) {
             Map<String, Object> patient = new LinkedHashMap<>();
             patient.put("realName", register.get("realName"));
@@ -39,7 +33,7 @@ public class W2ClinicalContextBuilder {
             ctx.put("patient", patient);
         }
 
-        Map<String, Object> recordDto = physicianService.getMedicalRecord(registerId);
+        Map<String, Object> recordDto = physicianClinicalClient.getMedicalRecord(registerId);
         ctx.put("record", buildRecordSection(recordDto));
         ctx.put("diagnosis", buildDiagnosisSection(recordDto));
         ctx.put("preConsultation", buildPreConsultationSection(registerId));
@@ -143,7 +137,7 @@ public class W2ClinicalContextBuilder {
     }
 
     private Map<String, Object> buildPreConsultationSection(Long registerId) {
-        Map<String, Object> consult = physicianMapper.selectLatestAiConsultation(registerId);
+        Map<String, Object> consult = physicianClinicalClient.getLatestAiConsultation(registerId);
         if (consult == null || consult.isEmpty()) {
             return Map.of();
         }

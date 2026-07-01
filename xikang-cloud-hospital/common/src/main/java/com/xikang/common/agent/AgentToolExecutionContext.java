@@ -1,7 +1,7 @@
-package com.xikang.physician.agent;
+package com.xikang.common.agent;
 
 /**
- * Thread-local context for Dify Agent custom-tool calls ({@code INTERNAL_AI_TOKEN}).
+ * Thread-local context for Dify Agent custom-tool calls.
  * Carries doctor/session identity for access checks and audit.
  */
 public final class AgentToolExecutionContext {
@@ -58,6 +58,11 @@ public final class AgentToolExecutionContext {
     public static String getToolName() {
         Context ctx = CONTEXT.get();
         return ctx == null ? null : ctx.toolName();
+    }
+
+    public static RiskLevel getRiskLevel() {
+        Context ctx = CONTEXT.get();
+        return ctx == null ? null : ctx.riskLevel();
     }
 
     public static void clear() {
