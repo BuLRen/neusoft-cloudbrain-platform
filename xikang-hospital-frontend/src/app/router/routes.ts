@@ -49,6 +49,7 @@ import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
 import NotFoundPage from '@/modules/error/NotFoundPage.vue'
+import ScanTestPage from '@/modules/registration/pages/ScanTestPage.vue'
 
 // 患者端独立布局路由（不经过 AppShell）
 const patientRoutes: RouteRecordRaw[] = [
@@ -137,6 +138,13 @@ const patientRoutes: RouteRecordRaw[] = [
 const placeholder = RoutePlaceholder
 
 export const routes: RouteRecordRaw[] = [
+  // 扫码联调测试页：不挂布局、不要登录、不加权限，纯前端
+  {
+    path: '/test',
+    name: 'ScanTest',
+    component: ScanTestPage,
+    meta: { title: '扫码测试', hidden: true },
+  },
   ...patientRoutes,
   {
     path: '/login',
