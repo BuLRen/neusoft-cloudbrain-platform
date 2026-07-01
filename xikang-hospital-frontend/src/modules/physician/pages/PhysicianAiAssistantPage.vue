@@ -50,6 +50,7 @@ const loading = ref(false)
 const historyLoading = ref(false)
 const sessionsLoading = ref(false)
 const chatScrollRef = ref<InstanceType<typeof ElScrollbar> | null>(null)
+const composerInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const patient = ref<PhysicianPatient | null>(null)
 const medicalRecord = ref<MedicalRecord | null>(null)
 const medicalRecordLoading = ref(false)
@@ -71,13 +72,22 @@ const currentSession = computed(() =>
   sessions.value.find((s) => s.id === currentSessionId.value) ?? null,
 )
 
-const quickPrompts = [
+const composerPrompts = [
+  '帮我智能分析初步诊断',
   '请总结这位患者的主诉与病史要点',
-  '根据现有检查检验结果，有哪些异常需要关注？',
+  '根据检查检验结果，有哪些异常需要关注？',
   '请给出鉴别诊断思路',
-  '是否需要补充哪些检查？',
-  '帮我生成初步诊断',
+  '推荐需要补充哪些检查？',
+  '帮我把预问诊内容补充到病历中',
 ]
+
+function applyComposerPrompt(text: string) {
+  if (loading.value || !currentSessionId.value) return
+  draft.value = text
+  void nextTick(() => {
+    composerInputRef.value?.focus?.()
+  })
+}
 
 function actionStateKey(messageIndex: number, actionIndex: number) {
   return `${messageIndex}-${actionIndex}`
@@ -583,7 +593,7 @@ onMounted(() => {
                 :class="{ 'is-active': session.id === currentSessionId }"
               >
                 <button type="button" class="copilot-sessions__btn" @click="switchSession(session.id)">
-                  <span class="copilot-sessions__title">{{ session.title }}</span>
+                  <span class="copilot-sessions__title" :title="session.title">{{ session.title }}</span>
                   <span class="copilot-sessions__time">{{ formatSessionTime(session.updatedAt) }}</span>
                 </button>
                 <ElButton
@@ -636,11 +646,6 @@ onMounted(() => {
               class="copilot-context__summary"
             />
           </div>
-          <p v-else class="copilot-context__hint">点击上方按钮查看 AI 预问诊或患者病历</p>
-
-          <p class="copilot-context__note">
-            助手可提议运行工作流或提交病历/检查/确诊/处方；所有写操作需你确认后才会保存。
-          </p>
         </GlassCard>
       </aside>
 
@@ -667,7 +672,7 @@ onMounted(() => {
               <p>你好，我是 Dify 临床 Copilot。你可以询问病情、检验解读、鉴别诊断；需要时会自动调用初步诊断、检查推荐等工作流工具。</p>
               <div class="copilot-chat__quick">
                 <button
-                  v-for="item in quickPrompts"
+                  v-for="item in composerPrompts"
                   :key="item"
                   type="button"
                   class="copilot-chat__quick-btn"
@@ -752,33 +757,52 @@ onMounted(() => {
             </div>
           </ElScrollbar>
 
-          <div class="copilot-chat__composer">
-            <ElInput
-              v-model="draft"
-              type="textarea"
-              :rows="3"
-              resize="none"
-              :disabled="!currentSessionId || loading"
-              placeholder="输入临床问题，例如：帮我生成初步诊断"
-              @keydown.enter.exact.prevent="sendMessage()"
-            />
-            <ElButton
-              v-if="loading"
-              type="danger"
-              plain
-              @click="stopGeneration"
-            >
-              停止
-            </ElButton>
-            <ElButton
-              type="primary"
-              :loading="loading"
-              :disabled="!currentSessionId || loading"
-              :icon="Promotion"
-              @click="sendMessage()"
-            >
-              发送
-            </ElButton>
+          <div class="copilot-chat__composer-area">
+            <div v-if="currentSessionId" class="copilot-chat__suggestions">
+              <span class="copilot-chat__suggestions-label">快捷提问</span>
+              <div class="copilot-chat__suggestions-list">
+                <button
+                  v-for="item in composerPrompts"
+                  :key="`composer-${item}`"
+                  type="button"
+                  class="copilot-chat__suggestion-btn"
+                  :disabled="loading"
+                  @click="applyComposerPrompt(item)"
+                >
+                  {{ item }}
+                </button>
+              </div>
+            </div>
+
+            <div class="copilot-chat__composer">
+              <ElInput
+                ref="composerInputRef"
+                v-model="draft"
+                type="textarea"
+                :rows="3"
+                resize="none"
+                :disabled="!currentSessionId || loading"
+                placeholder="输入临床问题，例如：帮我智能分析初步诊断"
+                @keydown.enter.exact.prevent="sendMessage()"
+              />
+              <ElButton
+                v-if="loading"
+                type="danger"
+                plain
+                @click="stopGeneration"
+              >
+                停止
+              </ElButton>
+              <ElButton
+                type="primary"
+                :loading="loading"
+                :disabled="!currentSessionId || loading"
+                :icon="Promotion"
+                @click="sendMessage()"
+              >
+                发送
+              </ElButton>
+            </div>
           </div>
         </GlassCard>
       </section>
@@ -866,14 +890,17 @@ onMounted(() => {
   margin: 0;
   padding: 0;
   max-height: 180px;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
 .copilot-sessions__item {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: var(--space-1);
+  min-width: 0;
   border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 .copilot-sessions__item.is-active {
@@ -883,18 +910,21 @@ onMounted(() => {
 .copilot-sessions__btn {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   padding: 8px 10px;
   border: none;
   background: transparent;
   cursor: pointer;
   text-align: left;
   min-width: 0;
+  overflow: hidden;
 }
 
 .copilot-sessions__title {
+  width: 100%;
+  min-width: 0;
   font-size: 13px;
   color: var(--color-text);
   overflow: hidden;
@@ -928,10 +958,13 @@ onMounted(() => {
 .copilot-chat__card {
   display: flex;
   flex-direction: column;
-  min-height: 560px;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .copilot-chat__toolbar {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -943,6 +976,7 @@ onMounted(() => {
 
 .copilot-chat__session {
   flex: 1;
+  min-width: 0;
   text-align: center;
   font-weight: 500;
   color: var(--color-text);
@@ -952,9 +986,23 @@ onMounted(() => {
 }
 
 .copilot-chat__scroll {
-  flex: 1;
-  min-height: 360px;
+  flex: 1 1 0;
+  min-height: 0;
+  height: 0;
   margin-block-end: var(--space-4);
+  overflow: hidden;
+}
+
+.copilot-chat__scroll :deep(.el-scrollbar) {
+  height: 100%;
+}
+
+.copilot-chat__scroll :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.copilot-chat__composer {
+  flex-shrink: 0;
 }
 
 .copilot-chat__welcome p {
@@ -1112,9 +1160,14 @@ onMounted(() => {
   --copilot-green-soft: #ecfff7;
   --copilot-line: rgba(72, 118, 169, 0.14);
   --copilot-shadow: 0 16px 42px rgba(49, 105, 171, 0.1);
+  display: flex;
+  flex-direction: column;
   max-width: 1180px;
-  min-height: calc(100dvh - 112px);
+  height: calc(100dvh - 112px);
+  max-height: calc(100dvh - 112px);
+  min-height: 0;
   padding: 10px;
+  overflow: hidden;
   border-radius: 24px;
   background:
     radial-gradient(circle at 18% 8%, rgba(47, 141, 247, 0.13), transparent 32%),
@@ -1123,9 +1176,22 @@ onMounted(() => {
 }
 
 .copilot-grid {
+  flex: 1;
+  display: grid;
   grid-template-columns: minmax(230px, 270px) minmax(0, 1fr);
   gap: 14px;
-  min-height: calc(100dvh - 132px);
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  align-items: stretch;
+}
+
+.copilot-context,
+.copilot-chat {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .copilot-context__card,
@@ -1140,12 +1206,19 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  min-width: 0;
   padding: 16px;
+  overflow: hidden;
   border-radius: 22px;
 }
 
 .copilot-context__head {
   margin-block-end: 0;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .copilot-context__head h3 {
@@ -1159,6 +1232,19 @@ onMounted(() => {
   border-radius: 18px;
   background: linear-gradient(135deg, #f9fcff 0%, #eef7ff 100%);
   box-shadow: inset 0 0 0 1px rgba(206, 226, 245, 0.78);
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.copilot-context__profile > div {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.copilot-context__profile p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .copilot-context__avatar {
@@ -1174,6 +1260,9 @@ onMounted(() => {
   padding: 0;
   background: transparent;
   box-shadow: none;
+  min-width: 0;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .copilot-sessions__head {
@@ -1184,12 +1273,16 @@ onMounted(() => {
   display: grid;
   gap: 8px;
   max-height: 196px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .copilot-sessions__item {
   border-radius: 14px;
   background: #f7fbff;
   box-shadow: inset 0 0 0 1px rgba(215, 231, 246, 0.86);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .copilot-sessions__item.is-active {
@@ -1201,6 +1294,11 @@ onMounted(() => {
   padding: 10px 12px;
 }
 
+.copilot-sessions__item :deep(.el-button) {
+  flex-shrink: 0;
+  align-self: center;
+}
+
 .copilot-context__summary {
   margin-block-end: 0;
 }
@@ -1209,6 +1307,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .copilot-context__tab {
@@ -1239,7 +1338,9 @@ onMounted(() => {
 }
 
 .copilot-context__panel {
-  max-height: min(420px, 42dvh);
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -1267,16 +1368,23 @@ onMounted(() => {
   border-radius: 16px;
   background: #f7fbff;
   box-shadow: inset 0 0 0 1px rgba(215, 231, 246, 0.86);
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
 }
 
 .copilot-chat__card {
-  min-height: calc(100dvh - 132px);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
   padding: 0;
   overflow: hidden;
   border-radius: 24px;
 }
 
 .copilot-chat__toolbar {
+  flex-shrink: 0;
   margin-block-end: 0;
   padding: 14px 18px;
   border-bottom: 1px solid var(--copilot-line);
@@ -1319,8 +1427,13 @@ onMounted(() => {
 }
 
 .copilot-chat__session {
+  flex: 1;
+  min-width: 0;
   color: #243c55;
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .copilot-chat__doctor {
@@ -1331,12 +1444,23 @@ onMounted(() => {
 }
 
 .copilot-chat__scroll {
+  flex: 1 1 0;
   min-height: 0;
+  height: 0;
   margin-block-end: 0;
   padding: 16px 18px 8px;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(247, 251, 255, 0.62), rgba(255, 255, 255, 0.9)),
     repeating-linear-gradient(0deg, transparent 0 31px, rgba(224, 238, 250, 0.32) 32px);
+}
+
+.copilot-chat__scroll :deep(.el-scrollbar) {
+  height: 100%;
+}
+
+.copilot-chat__scroll :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
 }
 
 .copilot-chat__welcome {
@@ -1348,6 +1472,8 @@ onMounted(() => {
 
 .copilot-chat__welcome p {
   margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.7;
 }
 
 .copilot-chat__quick-btn {
@@ -1358,12 +1484,13 @@ onMounted(() => {
 
 .copilot-chat__bubble {
   position: relative;
-  max-width: min(680px, 92%);
+  max-width: min(680px, 100%);
   margin-block-end: 14px;
   padding: 12px 16px;
   border-radius: 18px;
   line-height: 1.75;
   box-shadow: 0 8px 22px rgba(54, 96, 143, 0.06);
+  overflow-wrap: anywhere;
 }
 
 .copilot-chat__bubble.is-user {
@@ -1418,13 +1545,67 @@ onMounted(() => {
   background: #f8fbff;
 }
 
+.copilot-chat__composer-area {
+  flex-shrink: 0;
+  border-top: 1px solid var(--copilot-line);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.copilot-chat__suggestions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 18px 0;
+}
+
+.copilot-chat__suggestions-label {
+  flex-shrink: 0;
+  padding-top: 6px;
+  color: #8ba0b6;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.copilot-chat__suggestions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.copilot-chat__suggestion-btn {
+  padding: 6px 12px;
+  border: 1px solid #d5e8fb;
+  border-radius: 999px;
+  background: #f6fbff;
+  color: #2a5f91;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.copilot-chat__suggestion-btn:hover:not(:disabled) {
+  border-color: #8ec5fa;
+  background: #e9f4ff;
+  color: #0b7cdf;
+}
+
+.copilot-chat__suggestion-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .copilot-chat__composer {
+  flex-shrink: 0;
+  display: grid;
   grid-template-columns: 1fr auto auto;
   gap: 10px;
   align-items: end;
-  padding: 12px 18px 16px;
-  border-top: 1px solid var(--copilot-line);
-  background: rgba(255, 255, 255, 0.92);
+  padding: 10px 18px 16px;
 }
 
 .copilot-chat__composer :deep(.el-textarea__inner) {
@@ -1442,16 +1623,27 @@ onMounted(() => {
 
 @media (max-width: 960px) {
   .copilot-page {
-    min-height: auto;
+    height: auto;
+    max-height: none;
+    overflow: visible;
   }
 
-  .copilot-grid,
-  .copilot-chat__card {
+  .copilot-grid {
+    height: auto;
+    max-height: none;
     min-height: 720px;
   }
 
-  .copilot-context__card {
+  .copilot-context__card,
+  .copilot-chat__card {
     height: auto;
+    max-height: none;
+  }
+
+  .copilot-chat__scroll {
+    flex: 1;
+    height: auto;
+    min-height: 360px;
   }
 }
 
@@ -1468,7 +1660,7 @@ onMounted(() => {
     text-align: left;
   }
 
-  .copilot-chat__composer {
+  .copilot-chat__composer-area .copilot-chat__composer {
     grid-template-columns: 1fr;
   }
 }
