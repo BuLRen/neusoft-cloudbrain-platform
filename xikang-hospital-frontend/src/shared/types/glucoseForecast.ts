@@ -16,6 +16,8 @@ export interface GlucoseForecastResult {
   observationCount?: number
   message?: string
   glucoseCohort?: boolean
+  revisitRecommended?: boolean
+  adviceText?: string
 }
 
 export const GLUCOSE_RISK_LABELS: Record<string, string> = {

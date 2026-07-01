@@ -3,10 +3,11 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { ElButton, ElEmpty, ElMessage } from 'element-plus'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import GlucoseRevisitAdviceBlock from '@/modules/medtech/follow-up/components/GlucoseRevisitAdviceBlock.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { buildGlucoseTrendOption } from '@/shared/composables/useECharts'
 import { beijingTodayYmd, beijingYmdAddDays, formatBeijingDateTime } from '@/shared/utils/beijingDate'
-import type { FollowUpHealthMetric } from '@/shared/types/medtechFollowUp'
+import type { FollowUpHealthMetric, GlucoseAdvice } from '@/shared/types/medtechFollowUp'
 import {
   GLUCOSE_RISK_LABELS,
   GLUCOSE_RISK_TONES,
@@ -28,9 +29,15 @@ const props = withDefaults(
   },
 )
 
+defineEmits<{
+  revisit: []
+}>()
+
 const loading = ref(false)
 const refreshing = ref(false)
+const adviceLoading = ref(false)
 const forecast = ref<GlucoseForecastResult | null>(null)
+const advice = ref<GlucoseAdvice | null>(null)
 const glucoseMetrics = ref<FollowUpHealthMetric[]>([])
 const chartEl = ref<HTMLElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -46,13 +53,28 @@ const actualSeries = computed(() => {
   const rows = source
     .filter((item) => item.metricKey === 'blood_glucose')
     .sort((a, b) => String(a.recordedAt ?? a.recordDate).localeCompare(String(b.recordedAt ?? b.recordDate)))
-  const recent = rows.slice(-72)
+  const patientRows = rows.filter((item) => item.source !== 'uci_import')
+  const recent = (patientRows.length ? patientRows : rows).slice(-72)
   return {
     points: recent.map((item) => ({
       time: String(item.recordedAt ?? item.recordDate),
       value: Number(item.metricValue),
     })),
     unit: recent[0]?.unit ?? 'mmol/L',
+  }
+})
+
+const baselineSeries = computed(() => {
+  const source = glucoseMetrics.value.length ? glucoseMetrics.value : props.metrics
+  const rows = source
+    .filter((item) => item.metricKey === 'blood_glucose' && item.source === 'uci_import')
+    .sort((a, b) => String(a.recordedAt ?? a.recordDate).localeCompare(String(b.recordedAt ?? b.recordDate)))
+    .slice(-72)
+  return {
+    points: rows.map((item) => ({
+      time: String(item.recordedAt ?? item.recordDate),
+      value: Number(item.metricValue),
+    })),
   }
 })
 
@@ -80,6 +102,7 @@ async function renderChart() {
     buildGlucoseTrendOption({
       title: props.compact ? '血糖趋势与预测' : '血糖监测与 24h 预测',
       actualPoints: actual.points,
+      baselinePoints: baselineSeries.value.points,
       forecastPoints: predicted.points,
       formatTime: (value) => formatBeijingDateTime(value),
       unit: actual.unit,
@@ -92,13 +115,100 @@ async function loadGlucoseMetrics() {
   const to = beijingTodayYmd()
   const from = beijingYmdAddDays(-7, to)
   try {
-    glucoseMetrics.value = await medtechFollowUpApi.getMetrics(props.registerId, {
-      from,
-      to,
-      metricKeys: ['blood_glucose'],
-    })
+    if (props.mode === 'patient') {
+      glucoseMetrics.value = await medtechFollowUpApi.listPatientObservations({
+        patientId: props.patientId,
+        registerId: props.registerId,
+        from,
+      })
+    } else {
+      glucoseMetrics.value = await medtechFollowUpApi.getMetrics(props.registerId, {
+        from,
+        to,
+        metricKeys: ['blood_glucose'],
+        sourceType: 'patient_report',
+      })
+    }
   } catch {
     glucoseMetrics.value = []
+  }
+}
+
+async function loadAdvice() {
+  if (!props.registerId) return
+  adviceLoading.value = true
+  const adviceUrl =
+    props.mode === 'patient'
+      ? `/api/medtech/follow-up/patient/glucose-advice?registerId=${props.registerId}`
+      : `/api/medtech/follow-up/outcome/glucose-advice/${props.registerId}`
+  // #region agent log
+  fetch('http://127.0.0.1:7723/ingest/3c270b7b-7b14-401b-89fb-a81f2dfb5895', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '02d871' },
+    body: JSON.stringify({
+      sessionId: '02d871',
+      hypothesisId: 'C',
+      location: 'GlucoseForecastPanel.vue:loadAdvice:start',
+      message: 'loading glucose advice',
+      data: { mode: props.mode, registerId: props.registerId, adviceUrl },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
+  try {
+    if (props.mode === 'patient') {
+      advice.value = await medtechFollowUpApi.getPatientGlucoseAdvice({
+        patientId: props.patientId,
+        registerId: props.registerId,
+      })
+    } else {
+      advice.value = await medtechFollowUpApi.getGlucoseAdvice(props.registerId)
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7723/ingest/3c270b7b-7b14-401b-89fb-a81f2dfb5895', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '02d871' },
+      body: JSON.stringify({
+        sessionId: '02d871',
+        hypothesisId: 'A',
+        location: 'GlucoseForecastPanel.vue:loadAdvice:success',
+        message: 'glucose advice loaded',
+        data: {
+          mode: props.mode,
+          registerId: props.registerId,
+          revisitRecommended: advice.value?.revisitRecommended,
+          riskLevel: advice.value?.riskLevel,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
+  } catch (error: unknown) {
+    advice.value = null
+    const err = error as { response?: { status?: number; data?: unknown }; message?: string }
+    // #region agent log
+    fetch('http://127.0.0.1:7723/ingest/3c270b7b-7b14-401b-89fb-a81f2dfb5895', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '02d871' },
+      body: JSON.stringify({
+        sessionId: '02d871',
+        hypothesisId: 'B',
+        location: 'GlucoseForecastPanel.vue:loadAdvice:error',
+        message: 'glucose advice request failed',
+        data: {
+          mode: props.mode,
+          registerId: props.registerId,
+          adviceUrl,
+          status: err.response?.status,
+          responseData: err.response?.data,
+          errorMessage: err.message,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
+  } finally {
+    adviceLoading.value = false
   }
 }
 
@@ -122,6 +232,7 @@ async function loadForecast() {
   } finally {
     loading.value = false
     await renderChart()
+    void loadAdvice()
   }
 }
 
@@ -133,6 +244,7 @@ async function refreshForecast() {
     await loadGlucoseMetrics()
     ElMessage.success('血糖预测已更新')
     await renderChart()
+    await loadAdvice()
   } catch {
     ElMessage.error('刷新预测失败，请确认推理服务已启动')
   } finally {
@@ -166,7 +278,7 @@ onUnmounted(disposeChart)
     <div class="glucose-forecast__head">
       <div>
         <h3>{{ compact ? '血糖预测' : 'AI 血糖预测' }}</h3>
-        <p v-if="!compact">展示最近 72 小时实测与 LSTM 未来 24 小时预测</p>
+        <p v-if="!compact">展示最近 72 小时实测与 LSTM+GRU 未来 24 小时预测；下方根据模型输出判断是否需要复诊</p>
       </div>
       <div class="glucose-forecast__actions">
         <StatusTag :tone="riskTone">{{ riskLabel }}</StatusTag>
@@ -186,6 +298,15 @@ onUnmounted(disposeChart)
     <div v-if="forecast?.message && !(forecast.forecasts?.length)" class="glucose-forecast__hint">
       {{ forecast.message }}
     </div>
+
+    <GlucoseRevisitAdviceBlock
+      v-if="registerId"
+      :advice="advice"
+      :loading="adviceLoading"
+      :compact="compact"
+      :show-apply-button="mode === 'patient'"
+      @revisit="$emit('revisit')"
+    />
 
     <div v-if="actualSeries.points.length || forecastSeries.points.length" ref="chartEl" class="glucose-forecast__chart" />
     <ElEmpty v-else description="暂无血糖观测数据，请先导入或刷新预测" />

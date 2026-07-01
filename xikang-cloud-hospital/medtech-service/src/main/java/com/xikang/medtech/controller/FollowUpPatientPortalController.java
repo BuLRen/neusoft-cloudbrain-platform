@@ -3,8 +3,10 @@ package com.xikang.medtech.controller;
 import com.xikang.common.result.Result;
 import com.xikang.medtech.service.FollowUpPatientPortalService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -37,6 +39,49 @@ public class FollowUpPatientPortalController {
         @RequestParam(required = false) List<Long> registerIds
     ) {
         return Result.success(patientPortalService.listMedications(patientId, registerIds));
+    }
+
+    @GetMapping("/last-visit")
+    public Result<Map<String, Object>> getLastVisit(
+        @RequestParam(required = false) Long patientId,
+        @RequestParam(required = false) Long registerId
+    ) {
+        return Result.success(patientPortalService.getLastVisit(patientId, registerId));
+    }
+
+    @GetMapping("/observations")
+    public Result<List<Map<String, Object>>> listObservations(
+        @RequestParam(required = false) Long patientId,
+        @RequestParam(required = false) Long registerId,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+        @RequestParam(required = false) String sourceType
+    ) {
+        return Result.success(patientPortalService.listObservations(patientId, registerId, from, to, sourceType));
+    }
+
+    @PostMapping("/observations")
+    public Result<Map<String, Object>> createObservation(
+        @RequestParam(required = false) Long patientId,
+        @RequestBody Map<String, Object> request
+    ) {
+        return Result.success("血糖已记录", patientPortalService.createObservation(patientId, request));
+    }
+
+    @PostMapping("/revisit-requests")
+    public Result<Map<String, Object>> createRevisitRequest(
+        @RequestParam(required = false) Long patientId,
+        @RequestBody Map<String, Object> request
+    ) {
+        return Result.success("复诊申请已提交", patientPortalService.createRevisitRequest(patientId, request));
+    }
+
+    @GetMapping("/glucose-advice")
+    public Result<Map<String, Object>> getGlucoseAdvice(
+        @RequestParam(required = false) Long patientId,
+        @RequestParam(required = false) Long registerId
+    ) {
+        return Result.success(patientPortalService.getGlucoseAdvice(patientId, registerId));
     }
 
     @PatchMapping("/plans/{id}/complete")

@@ -24,9 +24,12 @@ public class GlucoseForecastService {
 
     private static final String METRIC_CODE = "blood_glucose";
     private static final DateTimeFormatter ISO = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+    private static final double HYPO_MMOL = 3.9;
+    private static final double HYPER_MMOL = 10.0;
 
     private final GlucoseForecastMapper glucoseForecastMapper;
     private final GlucosePredictionClient glucosePredictionClient;
+    private final HealthObservationService healthObservationService;
 
     public boolean isGlucosePatient(Long registerId) {
         return registerId != null && glucoseForecastMapper.isGlucoseCohortPatient(registerId);
@@ -45,6 +48,82 @@ public class GlucoseForecastService {
             result.putAll(meta);
         }
         return result;
+    }
+
+    public Map<String, Object> buildAdvice(Long registerId) {
+        if (!isGlucosePatient(registerId)) {
+            throw new BusinessException("该患者不属于血糖监测队列");
+        }
+
+        Map<String, Object> advice = new LinkedHashMap<>();
+        advice.put("registerId", registerId);
+
+        int recentReports = healthObservationService.countRecentGlucoseReports(registerId, 48);
+        advice.put("recentReportCount", recentReports);
+
+        if (recentReports < 2) {
+            advice.put("riskLevel", "unknown");
+            advice.put("revisitRecommended", false);
+            advice.put("adviceText", "请继续录入居家血糖（建议 48 小时内至少 2 次），以便生成可靠预测与复诊建议。");
+            return advice;
+        }
+
+        Map<String, Object> forecast;
+        try {
+            forecast = getForecast(registerId, null, null);
+        } catch (BusinessException ex) {
+            advice.put("riskLevel", "unknown");
+            advice.put("revisitRecommended", false);
+            advice.put("adviceText", ex.getMessage());
+            return advice;
+        }
+
+        String riskLevel = forecast.get("riskLevel") != null
+            ? String.valueOf(forecast.get("riskLevel"))
+            : "unknown";
+        advice.put("riskLevel", riskLevel);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> points = (List<Map<String, Object>>) forecast.get("forecasts");
+        double min = Double.MAX_VALUE;
+        double max = Double.MIN_VALUE;
+        if (points != null) {
+            for (Map<String, Object> point : points) {
+                double value = toDouble(point.get("forecastValue"));
+                min = Math.min(min, value);
+                max = Math.max(max, value);
+            }
+        }
+
+        boolean revisitRecommended = "high".equalsIgnoreCase(riskLevel)
+            || (points != null && !points.isEmpty() && (min < HYPO_MMOL || max > HYPER_MMOL));
+        advice.put("revisitRecommended", revisitRecommended);
+        if (points != null && !points.isEmpty()) {
+            advice.put("forecastMin", min);
+            advice.put("forecastMax", max);
+        }
+        if (forecast.get("modelId") != null) {
+            advice.put("modelId", forecast.get("modelId"));
+        }
+        if (forecast.get("confidence") != null) {
+            advice.put("confidence", forecast.get("confidence"));
+        }
+
+        if (revisitRecommended) {
+            if (min < HYPO_MMOL) {
+                advice.put("adviceText", "预测血糖可能偏低（<3.9 mmol/L），建议尽快联系医生或申请复诊。");
+            } else if (max > HYPER_MMOL) {
+                advice.put("adviceText", "预测血糖可能偏高（>10 mmol/L），建议申请复诊并调整治疗方案。");
+            } else {
+                advice.put("adviceText", "模型评估为高风险，建议申请复诊并由医生跟进。");
+            }
+        } else if ("medium".equalsIgnoreCase(riskLevel)) {
+            advice.put("adviceText", "血糖波动需关注，请保持规律监测；如持续异常可申请复诊。");
+        } else {
+            advice.put("adviceText", "当前预测风险较低，请继续按时录入血糖并遵循随访计划。");
+        }
+
+        return advice;
     }
 
     @Transactional
@@ -108,6 +187,14 @@ public class GlucoseForecastService {
         result.put("confidence", confidence);
         result.put("forecasts", glucoseForecastMapper.selectForecasts(registerId, METRIC_CODE, null, null));
         return result;
+    }
+
+    public void refreshForecastAsync(Long registerId) {
+        try {
+            refreshForecast(registerId);
+        } catch (Exception ex) {
+            log.warn("异步刷新血糖预测失败 registerId={}: {}", registerId, ex.getMessage());
+        }
     }
 
     private static double toDouble(Object value) {

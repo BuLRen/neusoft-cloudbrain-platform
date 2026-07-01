@@ -18,13 +18,17 @@ import type {
   FollowUpPatientOption,
   FollowUpPatientProfile,
   FollowUpSchedulePayload,
+  GlucoseAdvice,
   InterviewScheduleItem,
   InterviewSchedulePayload,
   InterviewScheduleStatus,
+  LastVisitSnapshot,
   PatientFollowUpFeedbackPayload,
   PatientFollowUpPlanItem,
   PatientFollowUpRecordItem,
   PatientMedicationItem,
+  PatientObservationPayload,
+  RevisitRequest,
 } from '@/shared/types/medtechFollowUp'
 import type { GlucoseForecastResult } from '@/shared/types/glucoseForecast'
 
@@ -56,11 +60,36 @@ export const medtechFollowUpApi = {
     })
   },
 
-  getMetrics(registerId: number, params?: { from?: string; to?: string; metricKeys?: string[] }) {
+  getMetrics(
+    registerId: number,
+    params?: { from?: string; to?: string; metricKeys?: string[]; sourceType?: string },
+  ) {
     return http<FollowUpHealthMetric[]>({
       url: `${outcomeBase}/metrics/${registerId}`,
       method: 'GET',
       params,
+    })
+  },
+
+  getLastVisit(registerId: number) {
+    return http<LastVisitSnapshot>({
+      url: `${outcomeBase}/last-visit/${registerId}`,
+      method: 'GET',
+    })
+  },
+
+  listRevisitRequests(params?: { departmentId?: number }) {
+    return http<RevisitRequest[]>({
+      url: `${outcomeBase}/revisit-requests`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  getGlucoseAdvice(registerId: number) {
+    return http<GlucoseAdvice>({
+      url: `${outcomeBase}/glucose-advice/${registerId}`,
+      method: 'GET',
     })
   },
 
@@ -343,6 +372,57 @@ export const medtechFollowUpApi = {
   getPatientGlucoseForecast(params: { patientId?: number; registerId?: number }) {
     return http<GlucoseForecastResult>({
       url: `${patientPortalBase}/glucose-forecast`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  getPatientLastVisit(params: { patientId?: number; registerId?: number }) {
+    return http<LastVisitSnapshot>({
+      url: `${patientPortalBase}/last-visit`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  listPatientObservations(params: {
+    patientId?: number
+    registerId?: number
+    from?: string
+    to?: string
+    sourceType?: string
+  }) {
+    return http<FollowUpHealthMetric[]>({
+      url: `${patientPortalBase}/observations`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  submitPatientObservation(payload: PatientObservationPayload, params?: { patientId?: number }) {
+    return http<FollowUpHealthMetric>({
+      url: `${patientPortalBase}/observations`,
+      method: 'POST',
+      params,
+      data: payload,
+    })
+  },
+
+  submitRevisitRequest(
+    payload: Pick<RevisitRequest, 'registerId' | 'reason' | 'urgency'>,
+    params?: { patientId?: number },
+  ) {
+    return http<RevisitRequest>({
+      url: `${patientPortalBase}/revisit-requests`,
+      method: 'POST',
+      params,
+      data: payload,
+    })
+  },
+
+  getPatientGlucoseAdvice(params: { patientId?: number; registerId?: number }) {
+    return http<GlucoseAdvice>({
+      url: `${patientPortalBase}/glucose-advice`,
       method: 'GET',
       params,
     })

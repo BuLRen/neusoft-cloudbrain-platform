@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import sys
 import tarfile
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -51,13 +52,15 @@ def _download_with_resume(
     chunk_size: int = 8 * 1024 * 1024,
     expected_size: int | None = None,
     max_attempts: int = 8,
+    require_zip: bool = False,
 ) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     for attempt in range(1, max_attempts + 1):
         current = dest.stat().st_size if dest.exists() else 0
-        if expected_size is not None and current == expected_size and zipfile.is_zipfile(dest):
-            return
+        if expected_size is not None and current == expected_size:
+            if not require_zip or zipfile.is_zipfile(dest):
+                return
 
         if expected_size is not None and current > expected_size:
             dest.unlink(missing_ok=True)
@@ -83,10 +86,17 @@ def _download_with_resume(
                             break
                         fh.write(chunk)
         except urllib.error.HTTPError as ex:
-            if ex.code == 416 and dest.exists() and zipfile.is_zipfile(dest):
+            if ex.code == 416 and dest.exists() and (not require_zip or zipfile.is_zipfile(dest)):
                 return
             if attempt == max_attempts:
                 raise
+            time.sleep(min(2**attempt, 20))
+            continue
+        except Exception as ex:
+            if attempt == max_attempts:
+                raise
+            print(f"download error {dest.name} attempt {attempt}: {ex}")
+            time.sleep(min(2**attempt, 20))
             continue
 
         status_after = _archive_status(dest, expected_size)
@@ -96,7 +106,7 @@ def _download_with_resume(
                 f"(attempt {attempt}/{max_attempts}), resuming..."
             )
             continue
-        if not status_after["is_zip"]:
+        if require_zip and not status_after["is_zip"]:
             if attempt == max_attempts:
                 break
             print(f"invalid zip {dest.name} after attempt {attempt}, retrying...")
@@ -109,6 +119,82 @@ def _download_with_resume(
         f"downloaded file is invalid: {dest.name} "
         f"({final.get('size', 0)} bytes, expected {expected_size})"
     )
+
+
+def _download_plain_file(url: str, dest: Path, *, min_size: int = 500, max_attempts: int = 6) -> None:
+    """Download a small plain-text file (UCI patient records) with retries."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and dest.stat().st_size >= min_size:
+        return
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            headers = {"User-Agent": USER_AGENT}
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=90) as response:
+                data = response.read()
+            if len(data) < min_size:
+                raise RuntimeError(f"too small ({len(data)} bytes)")
+            dest.write_bytes(data)
+            return
+        except Exception as ex:
+            last_error = ex
+            if dest.exists():
+                dest.unlink(missing_ok=True)
+            if attempt < max_attempts:
+                wait = min(2**attempt, 30)
+                print(f"retry {dest.name} ({attempt}/{max_attempts}) after {wait}s: {ex}")
+                time.sleep(wait)
+    raise RuntimeError(f"failed after {max_attempts} attempts: {last_error}") from last_error
+
+
+def _try_uci_tar_bundle(out_dir: Path) -> None:
+    """Download and extract the official UCI diabetes tar (most reliable, ~39 patients)."""
+    archive = DATA_RAW / "diabetes-data.tar.Z"
+    if not archive.exists() or archive.stat().st_size < 10_000:
+        print("downloading UCI official bundle (diabetes-data.tar.Z)...")
+        try:
+            _download_with_resume(UCI_URL, archive, max_attempts=5)
+        except Exception as ex:
+            print(f"uci tar download failed ({ex}), will use GitHub mirror for missing files")
+            return
+
+    try:
+        print("extracting UCI tar bundle...")
+        with tarfile.open(archive, "r:") as tar:
+            tar.extractall(DATA_RAW)
+    except Exception as ex:
+        print(f"uci tar extract failed ({ex})")
+
+
+def download_uci() -> None:
+    out_dir = DATA_RAW / "Diabetes-Data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = len(list(out_dir.glob("data-*")))
+    if existing < 55:
+        _try_uci_tar_bundle(out_dir)
+
+    missing = [
+        i
+        for i in range(1, 71)
+        if not (out_dir / f"data-{i:02d}").exists()
+        or (out_dir / f"data-{i:02d}").stat().st_size < 500
+    ]
+    if missing:
+        print(f"complementing {len(missing)} UCI files from GitHub mirror (slow, may skip some)...")
+
+    for i in missing:
+        name = f"data-{i:02d}"
+        dest = out_dir / name
+        try:
+            _download_plain_file(f"{UCI_GITHUB}/{name}", dest)
+            time.sleep(1.0)
+        except Exception as file_ex:
+            print(f"skip {name}: {file_ex}")
+
+    print(f"uci ready: {len(list(out_dir.glob('data-*')))} files")
 
 
 def download(
@@ -131,7 +217,7 @@ def download(
     print(f"downloading {url}")
     if expected_size is not None:
         print(f"expected size: {expected_size} bytes")
-    _download_with_resume(url, dest, expected_size=expected_size)
+    _download_with_resume(url, dest, expected_size=expected_size, require_zip=valid is zipfile.is_zipfile)
     if valid is not None and dest.exists() and not valid(dest):
         size = dest.stat().st_size
         dest.unlink(missing_ok=True)
@@ -153,35 +239,6 @@ def _d1namo_glucose_ready() -> bool:
         if nested.exists() and any(nested.rglob("glucose.csv")):
             return True
     return False
-
-
-def download_uci() -> None:
-    out_dir = DATA_RAW / "Diabetes-Data"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    if len(list(out_dir.glob("data-*"))) < 10:
-        archive = DATA_RAW / "diabetes-data.tar.Z"
-        try:
-            if archive.exists() and archive.stat().st_size < 1000:
-                archive.unlink(missing_ok=True)
-            if not archive.exists():
-                download(UCI_URL, archive)
-            with tarfile.open(archive, "r:") as tar:
-                tar.extractall(DATA_RAW)
-        except Exception as ex:
-            print(f"uci tar failed ({ex}), using github mirror")
-
-    for i in range(1, 71):
-        name = f"data-{i:02d}"
-        dest = out_dir / name
-        if dest.exists() and dest.stat().st_size > 100:
-            continue
-        try:
-            _download_with_resume(f"{UCI_GITHUB}/{name}", dest)
-        except Exception as file_ex:
-            print(f"skip {name}: {file_ex}")
-
-    print(f"uci ready: {len(list(out_dir.glob('data-*')))} files")
 
 
 def download_uchtt1dm() -> None:

@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+
+
+def _ensure_save_parent(save_path) -> Path:
+    path = Path(save_path)
+    parent = path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def train_model(
@@ -55,7 +63,8 @@ def train_model(
         if val_loss < best_val:
             best_val = val_loss
             bad = 0
-            torch.save(model.state_dict(), save_path)
+            resolved = _ensure_save_parent(save_path)
+            torch.save(model.state_dict(), resolved)
         else:
             bad += 1
             if bad >= patience:

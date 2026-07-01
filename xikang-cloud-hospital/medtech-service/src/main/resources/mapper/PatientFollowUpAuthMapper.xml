@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.PatientFollowUpAuthMapper">
+
+    <select id="selectPatientIdsByUserId" resultType="long">
+        SELECT DISTINCT pid FROM (
+            SELECT u.patient_id AS pid
+            FROM users u
+            WHERE u.id = #{userId} AND u.patient_id IS NOT NULL
+            UNION
+            SELECT upm.patient_id AS pid
+            FROM user_patient_managed upm
+            WHERE upm.user_id = #{userId}
+        ) t
+        WHERE pid IS NOT NULL
+        ORDER BY pid
+    </select>
+
+    <select id="isRegisterAccessible" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM register r
+            WHERE r.id = #{registerId}
+              AND (
+                  r.patient_id IN
+                  <foreach collection="patientIds" item="pid" open="(" separator="," close=")">
+                      #{pid}
+                  </foreach>
+                  OR EXISTS (
+                      SELECT 1
+                      FROM patient p
+                      WHERE p.id IN
+                      <foreach collection="patientIds" item="pid" open="(" separator="," close=")">
+                          #{pid}
+                      </foreach>
+                        AND p.delmark = 0
+                        AND p.real_name = r.real_name
+                        AND p.birthdate = r.birthdate
+                  )
+              )
+        )
+    </select>
+
+</mapper>
