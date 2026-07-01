@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  *
  * expense_record: id, register_id, patient_id, patient_name, category_id, category_name,
  *                item_id, item_name, item_code, quantity, unit_price, total_amount,
- *                status, pay_time, refund_time, operator_id, operator_name, remark, create_time
+ *                status, pay_time, refund_time, operator_id, operator_name, remark, source_id, create_time
  *
  * status: 0待缴费 / 1已缴费 / 2已退款 / 3已作废
  */
@@ -38,5 +38,7 @@ public class ExpenseRecord implements Serializable {
     private Long operatorId;
     private String operatorName;
     private String remark;
+    /** 业务来源 ID（医技申请单 id） */
+    private Long sourceId;
     private LocalDateTime createTime;
 }

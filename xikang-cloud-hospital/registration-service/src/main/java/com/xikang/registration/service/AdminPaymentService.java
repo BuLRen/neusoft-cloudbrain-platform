@@ -1,13 +1,20 @@
 package com.xikang.registration.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
+import com.xikang.registration.entity.Register;
 import com.xikang.registration.feign.AuthPatientFeignClient;
 import com.xikang.registration.feign.PaymentFeignClient;
+import com.xikang.registration.mapper.RegistrationMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -21,10 +28,14 @@ import java.util.Map;
 public class AdminPaymentService {
 
     private static final String COUNTER_OPERATOR = "现场收费窗口";
+    private static final ObjectMapper DEBUG_OBJECT_MAPPER = new ObjectMapper();
+    private static final Path DEBUG_LOG_PATH = Path.of("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-02f0a8.log");
 
     private final PaymentFeignClient paymentFeignClient;
     private final AuthPatientFeignClient authPatientFeignClient;
     private final ChargeService chargeService;
+    private final RegistrationMapper registrationMapper;
+    private final Environment environment;
 
     public Map<String, Object> listPaymentOrders(
         String keyword,
@@ -46,7 +57,97 @@ public class AdminPaymentService {
         if (registerId == null) {
             throw new BusinessException(400, "挂号号不能为空");
         }
-        return unwrapData(paymentFeignClient.getAdminOrderDetail(registerId));
+        Map<String, Object> detail = unwrapData(paymentFeignClient.getAdminOrderDetail(registerId));
+        applyRegisterPatientInfo(detail, registerId);
+        enrichWithPatientBalance(detail);
+        return detail;
+    }
+
+    /** 以挂号表 patient_id 为准，避免 payment 侧误用挂号号作为患者 ID。 */
+    private void applyRegisterPatientInfo(Map<String, Object> detail, Long registerId) {
+        Object detailPatientIdBefore = detail.get("patientId");
+        Register register = registrationMapper.selectById(registerId);
+        // region agent log
+        debugLog("initial", "H1,H3,H4", "AdminPaymentService.java:applyRegisterPatientInfo",
+            "registration resolved patient id from register", debugData(
+                "registerId", registerId,
+                "registerFound", register != null,
+                "registerPatientId", register != null ? register.getPatientId() : null,
+                "detailPatientIdBefore", detailPatientIdBefore
+            ));
+        // endregion
+        if (register == null) {
+            return;
+        }
+        if (register.getPatientId() != null) {
+            detail.put("patientId", register.getPatientId());
+        }
+        if (register.getRealName() != null && !register.getRealName().isBlank()) {
+            detail.put("patientName", register.getRealName());
+        }
+    }
+
+    private Integer requirePatientIdFromRegister(Long registerId) {
+        Register register = registrationMapper.selectById(registerId);
+        if (register == null) {
+            throw new BusinessException(404, "挂号记录不存在");
+        }
+        if (register.getPatientId() == null) {
+            throw new BusinessException(400, "挂号记录未关联患者档案，无法充值");
+        }
+        return register.getPatientId().intValue();
+    }
+
+    public Map<String, Object> getPatientBalance(Integer patientId) {
+        if (patientId == null) {
+            throw new BusinessException(400, "患者 ID 不能为空");
+        }
+        return fetchPatientBalanceOrZero(patientId);
+    }
+
+    private void enrichWithPatientBalance(Map<String, Object> detail) {
+        Object pid = detail.get("patientId");
+        if (pid == null) {
+            detail.put("accountBalance", 0);
+            return;
+        }
+        int patientId = pid instanceof Number n ? n.intValue() : Integer.parseInt(pid.toString());
+        Map<String, Object> balance = fetchPatientBalanceOrZero(patientId);
+        detail.put("accountBalance", balance.get("accountBalance"));
+        if (Boolean.TRUE.equals(balance.get("balanceUnavailable"))) {
+            detail.put("balanceUnavailable", true);
+        }
+    }
+
+    private Map<String, Object> fetchPatientBalanceOrZero(Integer patientId) {
+        try {
+            return unwrapData(authPatientFeignClient.getBalance(patientId));
+        } catch (BusinessException e) {
+            if (e.getCode() == 404) {
+                // region agent log
+                debugLog("initial", "H1,H2,H3", "AdminPaymentService.java:fetchPatientBalanceOrZero",
+                    "registration auth balance returned patient missing", debugData(
+                        "patientId", patientId,
+                        "code", e.getCode(),
+                        "authServiceUrl", environment.getProperty("auth.service.url", "http://localhost:8081")
+                    ));
+                // endregion
+                log.warn("患者余额查询失败（患者档案不存在）| patientId={}", patientId);
+                Map<String, Object> fallback = new LinkedHashMap<>();
+                fallback.put("patientId", patientId);
+                fallback.put("accountBalance", 0);
+                fallback.put("balanceUnavailable", true);
+                return fallback;
+            }
+            throw e;
+        } catch (Exception e) {
+            log.warn("患者余额查询失败 | patientId={}, err={}", patientId, e.getMessage());
+            Map<String, Object> fallback = new LinkedHashMap<>();
+            fallback.put("patientId", patientId);
+            fallback.put("accountBalance", 0);
+            fallback.put("balanceUnavailable", true);
+            return fallback;
+        }
     }
 
     public List<Map<String, Object>> searchPatients(String keyword, Integer limit) {
@@ -58,11 +159,24 @@ public class AdminPaymentService {
         return unwrapList(resp);
     }
 
-    public Map<String, Object> getPatientBalance(Integer patientId) {
-        if (patientId == null) {
-            throw new BusinessException(400, "患者 ID 不能为空");
-        }
-        return unwrapData(authPatientFeignClient.getBalance(patientId));
+    public Map<String, Object> rechargeByRegister(
+        Long registerId,
+        BigDecimal amount,
+        String remark,
+        Long operatorId,
+        String operatorName
+    ) {
+        Integer patientId = requirePatientIdFromRegister(registerId);
+        // region agent log
+        debugLog("initial", "H1,H2,H3,H4", "AdminPaymentService.java:rechargeByRegister",
+            "registration recharge will call auth", debugData(
+                "registerId", registerId,
+                "patientId", patientId,
+                "authServiceUrl", environment.getProperty("auth.service.url", "http://localhost:8081"),
+                "activeProfiles", String.join(",", environment.getActiveProfiles())
+            ));
+        // endregion
+        return rechargePatient(patientId, amount, remark, operatorId, operatorName);
     }
 
     public Map<String, Object> rechargePatient(
@@ -214,9 +328,33 @@ public class AdminPaymentService {
         }
         Object data = resp.get("data");
         if (data instanceof List<?> list) {
-            return (List<Map<String, Object>>) (List) list;
+            return (List<Map<String, Object>>) (List<?>) list;
         }
         return List.of();
+    }
+
+    private static Map<String, Object> debugData(Object... values) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < values.length; i += 2) {
+            data.put(String.valueOf(values[i]), values[i + 1]);
+        }
+        return data;
+    }
+
+    private static void debugLog(String runId, String hypothesisId, String location, String message, Map<String, Object> data) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("sessionId", "02f0a8");
+            payload.put("runId", runId);
+            payload.put("hypothesisId", hypothesisId);
+            payload.put("location", location);
+            payload.put("message", message);
+            payload.put("data", data);
+            payload.put("timestamp", System.currentTimeMillis());
+            Files.writeString(DEBUG_LOG_PATH, DEBUG_OBJECT_MAPPER.writeValueAsString(payload) + System.lineSeparator(),
+                StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+        }
     }
 
     @SuppressWarnings("unchecked")

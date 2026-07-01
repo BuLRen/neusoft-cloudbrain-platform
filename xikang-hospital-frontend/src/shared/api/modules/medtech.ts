@@ -17,6 +17,10 @@ export interface MedtechApplication {
   info?: string
   statusText?: string
   creationTime?: string
+  paid?: boolean
+  payStatus?: number
+  payStatusText?: string
+  feeAmount?: number
 }
 
 export interface CheckApplication extends MedtechApplication {

@@ -54,6 +54,8 @@ const eyebrow = computed(() =>
 <style scoped>
 .step-layout__panel {
   padding: var(--space-5);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .step-layout__panel :deep(.el-steps) {

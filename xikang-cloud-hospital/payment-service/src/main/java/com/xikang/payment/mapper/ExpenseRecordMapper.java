@@ -38,6 +38,12 @@ public interface ExpenseRecordMapper {
      */
     ExpenseRecord selectRegistrationFeeByRegisterId(Long registerId);
 
+    ExpenseRecord selectByRegisterSourceAndItemCode(@Param("registerId") Long registerId,
+                                                    @Param("sourceId") Long sourceId,
+                                                    @Param("itemCode") String itemCode);
+
+    List<ExpenseRecord> selectPendingByRegisterIdAll(Long registerId);
+
     /**
      * 多条件查询（v3.2 §4.2 internal/records）：patientId/registerId/status/timeRange 任选。
      */

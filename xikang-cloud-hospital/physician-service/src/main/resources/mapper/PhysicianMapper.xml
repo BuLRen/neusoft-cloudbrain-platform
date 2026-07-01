@@ -504,6 +504,7 @@
     <select id="selectRegisterById" resultType="map">
         SELECT
             r.id AS "registerId",
+            r.patient_id AS "patientId",
             r.case_number AS "caseNumber",
             r.real_name AS "realName",
             r.gender AS "gender",
@@ -515,6 +516,16 @@
         FROM register r
         LEFT JOIN department d ON d.id = r.deptment_id
         WHERE r.id = #{registerId}
+    </select>
+
+    <select id="selectMedicalTechnologyById" resultType="map">
+        SELECT
+            mt.id AS "id",
+            mt.tech_name AS "techName",
+            mt.tech_type AS "techType",
+            COALESCE(mt.tech_price, 0) AS "techPrice"
+        FROM medical_technology mt
+        WHERE mt.id = #{id}
     </select>
 
     <select id="selectRegisterEmployeeId" resultType="long">

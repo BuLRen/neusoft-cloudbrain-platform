@@ -176,14 +176,15 @@ async function submitTechnologyRequest() {
   requestBasket.value = []
 
   const submittedExam = checkItems.length > 0 || inspectionItems.length > 0
+  const paymentHint = '请提醒患者前往支付中心完成缴费，缴费后医技科室方可执行。'
   if (!submittedExam) {
-    ElMessage.success('申请已提交')
+    ElMessage.success(`申请已提交。${paymentHint}`)
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      '检查/检验申请已提交。结果返回前可接诊其他患者。',
+      `检查/检验/处置申请已提交。${paymentHint}结果返回前可接诊其他患者。`,
       '申请成功',
       {
         confirmButtonText: '返回待诊接诊',
@@ -195,7 +196,7 @@ async function submitTechnologyRequest() {
     encounterStore.clearEncounter()
     await router.push('/physician/queue')
   } catch {
-    ElMessage.success('申请已提交')
+    ElMessage.success(`申请已提交。${paymentHint}`)
   }
 }
 

@@ -8,6 +8,7 @@ export const ITEM_CODE_LABELS: Record<string, string> = {
   EXAMINATION_FEE: '检查检验费',
   DISPOSAL_FEE: '处置费',
   CHECK_FEE: '检查费',
+  INSPECTION_FEE: '检验费',
 }
 
 export function itemCodeLabel(code?: string): string {

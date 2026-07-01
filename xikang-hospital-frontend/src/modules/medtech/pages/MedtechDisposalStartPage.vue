@@ -26,7 +26,7 @@ const remark = ref('')
 const started = ref(false)
 
 const id = computed(() => Number(route.query.id || 0))
-const canSubmit = computed(() => started.value && !!resultText.value.trim() && !loading.value)
+const canSubmit = computed(() => started.value && !!resultText.value.trim() && !loading.value && report.value?.paid !== false)
 
 async function loadPage() {
   if (!id.value) return
@@ -37,14 +37,21 @@ async function loadPage() {
     resultText.value = report.value.disposalResult ?? ''
     remark.value = report.value.disposalRemark ?? ''
 
+    if (report.value.paid === false) {
+      errorMessage.value = '患者尚未支付处置费，请提醒患者先完成缴费后再执行'
+      started.value = false
+      return
+    }
+
     if (report.value.disposalState === '待处置') {
       await medtechApi.startDisposal(id.value)
       report.value = { ...report.value, disposalState: '处置中', statusText: '处置中' }
     }
     started.value = report.value.disposalState === '处置中'
-  } catch {
+  } catch (err) {
     report.value = null
-    errorMessage.value = '处置申请加载失败，请返回列表重试'
+    const msg = err instanceof Error ? err.message : ''
+    errorMessage.value = msg || '处置申请加载失败，请返回列表重试'
   } finally {
     loading.value = false
   }

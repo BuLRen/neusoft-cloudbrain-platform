@@ -44,6 +44,9 @@ export interface PaymentOrder {
   status: number // 0 待缴 / 1 已付清 / 2 含已退
   statusName: string
   payTime?: string
+  /** 管理端收费页：后端附带的患者余额 */
+  accountBalance?: number
+  balanceUnavailable?: boolean
 }
 
 /** 订单列表响应 */

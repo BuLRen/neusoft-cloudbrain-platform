@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.agent.AgentToolExecutionContext;
+import com.xikang.physician.client.PaymentClient;
 import com.xikang.physician.context.PhysicianAuthContext;
 import com.xikang.physician.mapper.PhysicianMapper;
 import org.springframework.stereotype.Service;
@@ -32,9 +33,11 @@ public class PhysicianService {
     private static final int VISIT_EXAM_COMPLETED = 6;
 
     private final PhysicianMapper physicianMapper;
+    private final PaymentClient paymentClient;
 
-    public PhysicianService(PhysicianMapper physicianMapper) {
+    public PhysicianService(PhysicianMapper physicianMapper, PaymentClient paymentClient) {
         this.physicianMapper = physicianMapper;
+        this.paymentClient = paymentClient;
     }
 
     public Map<String, Object> getPatients(String keyword, Integer page, Integer size) {
@@ -90,6 +93,7 @@ public class PhysicianService {
     @Transactional
     public Map<String, Object> endVisit(Long registerId) {
         assertRegisterAccess(registerId);
+        paymentClient.assertAllPaid(registerId);
         int current = currentVisitState(registerId);
         if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_PENDING || current == VISIT_EXAM_COMPLETED) {
             physicianMapper.updateVisitState(registerId, VISIT_ENDED);
@@ -235,6 +239,7 @@ public class PhysicianService {
     public void submitDiagnosis(Map<String, Object> request) {
         Long registerId = physicianMapper.selectRegisterIdByMedicalRecordId(toLong(request.get("medicalRecordId")));
         assertRegisterAccess(registerId);
+        paymentClient.assertAllPaid(registerId);
         physicianMapper.updateDiagnosis(request);
         Long medicalRecordId = toLong(request.get("medicalRecordId"));
         syncRecordDiseases(medicalRecordId, diseaseIds(request));
@@ -573,9 +578,23 @@ public class PhysicianService {
 
     private Map<String, Object> createTechnologyRequest(Map<String, Object> request, String type) {
         Long registerId = toLong(request.get("registerId"));
+        Map<String, Object> register = physicianMapper.selectRegisterById(registerId);
+        if (register == null) {
+            throw new BusinessException(404, "挂号记录不存在");
+        }
+        Long patientId = toLong(register.get("patientId"));
+        String patientName = register.get("realName") != null ? register.get("realName").toString() : null;
+        String itemCode = itemCodeForTechType(type);
+
         List<Long> requestIds = requestItems(request).stream().map(item -> {
             Map<String, Object> row = new HashMap<>(item);
             row.put("registerId", registerId);
+            Long techId = toLong(row.get("medicalTechnologyId"));
+            Map<String, Object> tech = techId != null ? physicianMapper.selectMedicalTechnologyById(techId) : null;
+            if (tech == null) {
+                throw new BusinessException(400, "医技项目不存在: " + techId);
+            }
+
             if ("check".equals(type)) {
                 physicianMapper.insertCheckRequest(row);
             } else if ("inspection".equals(type)) {
@@ -583,11 +602,42 @@ public class PhysicianService {
             } else {
                 physicianMapper.insertDisposalRequest(row);
             }
-            return toLong(row.get("id"));
+            Long requestId = toLong(row.get("id"));
+            BigDecimal unitPrice = toBigDecimal(tech.get("techPrice"));
+            String techName = tech.get("techName") != null ? tech.get("techName").toString() : itemCode;
+            paymentClient.createTechFee(
+                    registerId, patientId, patientName, itemCode, requestId, techId, techName, unitPrice);
+            return requestId;
         }).toList();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("requestIds", requestIds);
         return result;
+    }
+
+    private static String itemCodeForTechType(String type) {
+        return switch (type) {
+            case "check" -> "CHECK_FEE";
+            case "inspection" -> "INSPECTION_FEE";
+            case "disposal" -> "DISPOSAL_FEE";
+            default -> throw new BusinessException(400, "不支持的医技类型: " + type);
+        };
+    }
+
+    private static BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal bd) {
+            return bd;
+        }
+        if (value instanceof Number n) {
+            return BigDecimal.valueOf(n.doubleValue());
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
     }
 
     @SuppressWarnings("unchecked")

@@ -34,8 +34,8 @@ const isCt = computed(() => {
   const code = report.value?.aiCategoryCode ?? ''
   return code.startsWith('imaging_ct')
 })
-const canSimulate = computed(() => started.value && !loading.value && !simulating.value)
-const canSubmit = computed(() => started.value && !!schema.value && !loading.value && !simulating.value)
+const canSimulate = computed(() => started.value && !loading.value && !simulating.value && report.value?.paid !== false)
+const canSubmit = computed(() => started.value && !!schema.value && !loading.value && !simulating.value && report.value?.paid !== false)
 function hasDisplayableStructuredOutput(data: SimulatedCheckStructuredOutput | null): boolean {
   if (!data) return false
   if ((data.resultItems?.length ?? 0) > 0) return true
@@ -56,15 +56,22 @@ async function loadPage() {
     schema.value = await resultFormApi.resolveCheckForm({ checkRequestId: id.value })
     formValues.value = { ...(schema.value.existingValues ?? {}) }
 
+    if (report.value.paid === false) {
+      errorMessage.value = '患者尚未支付检查费，请提醒患者先完成缴费后再执行'
+      started.value = false
+      return
+    }
+
     if (report.value.checkState === '待检查') {
       await medtechApi.startCheck(id.value)
       report.value = { ...report.value, checkState: '检查中', statusText: '检查中' }
     }
     started.value = report.value.checkState === '检查中'
-  } catch {
+  } catch (err) {
     report.value = null
     schema.value = null
-    errorMessage.value = '检查记录加载失败，请返回列表重试'
+    const msg = err instanceof Error ? err.message : ''
+    errorMessage.value = msg || '检查记录加载失败，请返回列表重试'
   } finally {
     loading.value = false
   }
