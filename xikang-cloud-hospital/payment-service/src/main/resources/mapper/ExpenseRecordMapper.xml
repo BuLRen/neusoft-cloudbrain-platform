@@ -118,6 +118,23 @@
         ORDER BY create_time DESC
     </select>
 
+    <select id="selectForAdminOrderList" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        <where>
+            <if test="patientId != null">AND patient_id = #{patientId}</if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    patient_name ILIKE CONCAT('%', #{keyword}, '%')
+                    OR CAST(register_id AS TEXT) LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+            <if test="startTime != null">AND create_time &gt;= #{startTime}</if>
+            <if test="endTime != null">AND create_time &lt; #{endTime}</if>
+        </where>
+        ORDER BY create_time DESC
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO expense_record (
             register_id, patient_id, patient_name, category_id, category_name, item_id, item_name,

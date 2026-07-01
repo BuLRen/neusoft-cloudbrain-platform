@@ -48,6 +48,14 @@ public interface ExpenseRecordMapper {
                                      @Param("endTime") LocalDateTime endTime);
 
     /**
+     * 管理员订单列表：按 create_time 过滤与关键词搜索（患者姓名 / 挂号号）。
+     */
+    List<ExpenseRecord> selectForAdminOrderList(@Param("keyword") String keyword,
+                                                @Param("patientId") Long patientId,
+                                                @Param("startTime") LocalDateTime startTime,
+                                                @Param("endTime") LocalDateTime endTime);
+
+    /**
      * 幂等 INSERT：
      * - MEDICATION_FEE：依赖既有 partial unique index uq_expense_record_medication_fee
      *                   ON CONFLICT DO NOTHING（v3.2 §3.1.1）

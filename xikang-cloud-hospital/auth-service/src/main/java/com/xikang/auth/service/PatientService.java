@@ -106,6 +106,14 @@ public class PatientService {
         return patient.getAccountBalance();
     }
 
+    public List<Patient> searchPatients(String keyword, int limit) {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+        int size = limit < 1 ? 20 : Math.min(limit, 50);
+        return patientMapper.searchByKeyword(keyword.trim(), size);
+    }
+
     /**
      * 充值：原子更新余额并写入真实钱包流水
      */

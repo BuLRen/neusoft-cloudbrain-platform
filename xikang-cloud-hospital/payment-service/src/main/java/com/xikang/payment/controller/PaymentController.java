@@ -139,6 +139,24 @@ public class PaymentController {
         return Result.success(paymentService.dailyCharges(startDate, endDate));
     }
 
+    @GetMapping("/internal/admin/orders")
+    public Result<Map<String, Object>> listAdminOrders(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long patientId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return Result.success(paymentService.listAdminOrders(
+            keyword, patientId, status, startDate, endDate, page, size));
+    }
+
+    @GetMapping("/internal/admin/orders/{registerId}")
+    public Result<Map<String, Object>> getAdminOrderDetail(@PathVariable Long registerId) {
+        return Result.success(paymentService.getOrderDetail(registerId));
+    }
+
     // ============================================================
     // write-token（v3.2 §4.2 防双写）
     // ============================================================

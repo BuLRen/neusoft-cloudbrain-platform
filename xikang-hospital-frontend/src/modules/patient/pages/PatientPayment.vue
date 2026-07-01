@@ -16,6 +16,14 @@ import StatusTag from '@/shared/components/StatusTag.vue'
 import { useAuthStore } from '@/app/stores/auth'
 import { paymentApi } from '@/shared/api/modules/payment'
 import type { OrderStatusFilter, PaymentOrder } from '@/shared/types/payment'
+import {
+  formatPaymentTime,
+  itemCodeLabel,
+  itemStatusText,
+  itemStatusTone,
+  orderStatusText,
+  orderStatusTone,
+} from '@/shared/utils/paymentStatus'
 
 const authStore = useAuthStore()
 
@@ -165,58 +173,18 @@ async function payAll(o: PaymentOrder) {
   }
 }
 
-function orderStatusTone(o: PaymentOrder) {
-  if (o.status === 1) return 'success'
-  if (o.status === 2) return 'neutral'
-  return 'warning'
-}
-
-function orderStatusText(o: PaymentOrder) {
-  return o.statusName || '—'
-}
-
-function itemStatusTone(status?: number) {
-  if (status === 1) return 'success'
-  if (status === 2) return 'neutral'
-  if (status === 3) return 'neutral'
-  return 'warning'
-}
-
-function itemStatusText(status?: number) {
-  switch (status) {
-    case 0: return '待缴费'
-    case 1: return '已缴费'
-    case 2: return '已退款'
-    case 3: return '已作废'
-    default: return '—'
-  }
-}
-
-function formatTime(value?: string | null): string {
-  if (!value) return ''
-  return String(value).replace('T', ' ').slice(0, 16)
-}
-
 // 元数据行：科室 / 医生 / 就诊日期 任意非空才显示，避免出现 "— · — · —"
 function orderMetaParts(o: PaymentOrder): string[] {
   const parts: string[] = []
   if (o.departmentName) parts.push(o.departmentName)
   if (o.doctorName) parts.push(o.doctorName)
-  const vd = formatTime(o.visitDate)
+  const vd = formatPaymentTime(o.visitDate)
   if (vd) parts.push(vd)
   return parts
 }
 
-// itemCode → 中文展示。底层是英文枚举，前端不该直接露给患者。
-const ITEM_CODE_LABELS: Record<string, string> = {
-  REGISTRATION_FEE: '挂号费',
-  MEDICATION_FEE: '药品费',
-  EXAMINATION_FEE: '检查检验费',
-  DISPOSAL_FEE: '处置费',
-}
 function itemCodeName(code?: string): string {
-  if (!code) return ''
-  return ITEM_CODE_LABELS[code] || code
+  return itemCodeLabel(code)
 }
 
 watch(() => authStore.currentPatientId, (cur, prev) => {
@@ -353,8 +321,8 @@ onMounted(load)
             <ElDescriptions :column="2" border size="small" class="detail-head">
               <ElDescriptionsItem v-if="detail.departmentName" label="科室">{{ detail.departmentName }}</ElDescriptionsItem>
               <ElDescriptionsItem v-if="detail.doctorName" label="医生">{{ detail.doctorName }}</ElDescriptionsItem>
-              <ElDescriptionsItem v-if="formatTime(detail.visitDate)" label="就诊日期">{{ formatTime(detail.visitDate) }}</ElDescriptionsItem>
-              <ElDescriptionsItem v-if="formatTime(detail.payTime)" label="支付时间">{{ formatTime(detail.payTime) }}</ElDescriptionsItem>
+              <ElDescriptionsItem v-if="formatPaymentTime(detail.visitDate)" label="就诊日期">{{ formatPaymentTime(detail.visitDate) }}</ElDescriptionsItem>
+              <ElDescriptionsItem v-if="formatPaymentTime(detail.payTime)" label="支付时间">{{ formatPaymentTime(detail.payTime) }}</ElDescriptionsItem>
               <ElDescriptionsItem label="合计金额">
                 <span class="amount-value">¥ {{ (detail.totalAmount ?? 0).toFixed(2) }}</span>
               </ElDescriptionsItem>
