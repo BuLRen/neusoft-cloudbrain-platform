@@ -256,6 +256,13 @@ public class ChargeService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> unwrapMapData(Map<String, Object> response, String errorMessage) {
+        if (response != null) {
+            Object codeObj = response.get("code");
+            if (codeObj instanceof Number num && num.intValue() != 200) {
+                String msg = String.valueOf(response.getOrDefault("message", errorMessage));
+                throw new BusinessException(num.intValue(), msg);
+            }
+        }
         Object data = response != null ? response.get("data") : null;
         if (!(data instanceof Map<?, ?> dataMap)) {
             throw new BusinessException(500, errorMessage);

@@ -10,7 +10,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 /**
  * Registration Service Application
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "com.xikang")
 @MapperScan("com.xikang.registration.mapper")
 @EnableFeignClients
 @EnableScheduling
