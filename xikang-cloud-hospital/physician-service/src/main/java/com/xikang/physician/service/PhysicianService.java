@@ -465,6 +465,11 @@ public class PhysicianService {
             if (ownerEmployeeId == null) {
                 throw new BusinessException(400, "挂号记录不存在");
             }
+            Long contextDoctorId = AgentToolExecutionContext.getDoctorId();
+            if (contextDoctorId != null && !PhysicianAuthContext.isAdminAllAccess()
+                && !ownerEmployeeId.equals(contextDoctorId)) {
+                throw new BusinessException(403, "无权访问该患者");
+            }
             return;
         }
         if (PhysicianAuthContext.isAdminAllAccess()) {

@@ -35,6 +35,21 @@ public final class PhysicianAuthContext {
         return ctx.employeeId();
     }
 
+    /**
+     * 确认卡 prepare/consume 的发起人标识：医生用 employeeId，管理员用 userId。
+     * （管理员 employeeIdOrNull 恒为 null，不能用于待确认令牌归属。）
+     */
+    public static Long confirmationActorIdOrNull() {
+        Context ctx = get();
+        if (ctx == null) {
+            return null;
+        }
+        if (ctx.adminAllAccess()) {
+            return ctx.userId();
+        }
+        return ctx.employeeId();
+    }
+
     public record Context(
         Long userId,
         String role,

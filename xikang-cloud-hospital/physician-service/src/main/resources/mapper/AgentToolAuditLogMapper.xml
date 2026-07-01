@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.physician.agent.mapper.AgentToolAuditLogMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO agent_tool_audit_log (
+            register_id, doctor_id, session_id, request_id, tool_name, risk_level,
+            request_payload, response_payload, before_snapshot, after_snapshot,
+            confirm_source, confirmation_token, success, error_message, created_at
+        ) VALUES (
+            #{registerId}, #{doctorId}, #{sessionId}, #{requestId}, #{toolName}, #{riskLevel},
+            #{requestPayload}, #{responsePayload}, #{beforeSnapshot}, #{afterSnapshot},
+            #{confirmSource}, #{confirmationToken}, #{success}, #{errorMessage},
+            COALESCE(#{createdAt}, NOW())
+        )
+    </insert>
+
+    <select id="selectCopilotConfirmCompletions" resultType="com.xikang.physician.agent.entity.AgentToolAuditLog">
+        SELECT id, register_id AS registerId, session_id AS sessionId, tool_name AS toolName,
+               success, created_at AS createdAt
+        FROM agent_tool_audit_log
+        WHERE register_id = #{registerId}
+          AND session_id = #{sessionId}
+          AND success = TRUE
+          AND tool_name LIKE 'copilot_confirm_%'
+        ORDER BY created_at ASC, id ASC
+    </select>
+</mapper>

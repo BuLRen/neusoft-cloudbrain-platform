@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.physician.agent.mapper.AgentPendingConfirmationMapper">
+
+    <resultMap id="AgentPendingConfirmationMap" type="com.xikang.physician.agent.entity.AgentPendingConfirmation">
+        <id property="id" column="id"/>
+        <result property="token" column="token"/>
+        <result property="registerId" column="register_id"/>
+        <result property="doctorId" column="doctor_id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="actionType" column="action_type"/>
+        <result property="payloadJson" column="payload_json"/>
+        <result property="expiresAt" column="expires_at"/>
+        <result property="consumedAt" column="consumed_at"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO agent_pending_confirmation (
+            token, register_id, doctor_id, session_id, action_type, payload_json, expires_at, created_at
+        ) VALUES (
+            #{token}, #{registerId}, #{doctorId}, #{sessionId}, #{actionType}, #{payloadJson},
+            #{expiresAt}, COALESCE(#{createdAt}, NOW())
+        )
+    </insert>
+
+    <select id="selectByToken" resultMap="AgentPendingConfirmationMap">
+        SELECT id, token, register_id, doctor_id, session_id, action_type, payload_json,
+               expires_at, consumed_at, created_at
+        FROM agent_pending_confirmation
+        WHERE token = #{token}
+    </select>
+
+    <update id="markConsumed">
+        UPDATE agent_pending_confirmation
+        SET consumed_at = NOW()
+        WHERE token = #{token}
+          AND consumed_at IS NULL
+    </update>
+</mapper>

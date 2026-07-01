@@ -138,23 +138,60 @@ public class DifyAgentClient {
         if ("agent_thought".equals(event)) {
             Map<String, Object> thought = new LinkedHashMap<>();
             putIfPresent(thought, "event", event);
+            putIfPresent(thought, "id", text(node, "id"));
+            putIfPresent(thought, "position", text(node, "position"));
             putIfPresent(thought, "thought", text(node, "thought"));
             putIfPresent(thought, "tool", text(node, "tool"));
             putIfPresent(thought, "toolInput", text(node, "tool_input"));
             putIfPresent(thought, "observation", text(node, "observation"));
-            result.addThought(thought);
-            if (thoughtConsumer != null) {
-                thoughtConsumer.accept(thought);
+            Map<String, Object> merged = result.mergeThought(thought);
+            if (thoughtConsumer != null && !merged.isEmpty()) {
+                thoughtConsumer.accept(merged);
             }
             return;
         }
 
-        String answerChunk = text(node, "answer");
-        if (answerChunk != null && !answerChunk.isEmpty()) {
-            result.appendAnswer(answerChunk);
-            if (tokenConsumer != null) {
-                tokenConsumer.accept(answerChunk);
-            }
+        if (isAnswerStreamEvent(event)) {
+            emitAnswerChunk(text(node, "answer"), result, tokenConsumer);
+            return;
+        }
+
+        // 部分 Dify 版本 event 字段缺失，但携带 answer 增量
+        String fallbackAnswer = text(node, "answer");
+        if (fallbackAnswer != null && !fallbackAnswer.isEmpty()) {
+            emitAnswerChunk(fallbackAnswer, result, tokenConsumer);
+        }
+    }
+
+    private boolean isAnswerStreamEvent(String event) {
+        if (event == null || event.isBlank()) {
+            return false;
+        }
+        return switch (event) {
+            case "message", "agent_message", "message_replace" -> true;
+            default -> false;
+        };
+    }
+
+    private void emitAnswerChunk(
+        String incoming,
+        DifyAgentChatResult.Builder result,
+        Consumer<String> tokenConsumer
+    ) {
+        if (incoming == null || incoming.isEmpty()) {
+            return;
+        }
+        String delta = result.resolveAnswerDelta(incoming);
+        if (delta.isEmpty()) {
+            return;
+        }
+        String sanitized = DifyAgentAnswerSanitizer.sanitizeChunk(delta);
+        if (sanitized.isEmpty()) {
+            return;
+        }
+        result.appendAnswer(sanitized);
+        if (tokenConsumer != null) {
+            tokenConsumer.accept(sanitized);
         }
     }
 

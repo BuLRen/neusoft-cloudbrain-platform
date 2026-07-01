@@ -1,4 +1,12 @@
-import type { CopilotAgentThought, CopilotMessage, CopilotRunActionResponse, CopilotSession } from '@/shared/types/copilot'
+import type {
+  CopilotAgentThought,
+  CopilotConfirmActionResponse,
+  CopilotConfirmCompletion,
+  CopilotMessage,
+  CopilotPrepareActionResponse,
+  CopilotRunActionResponse,
+  CopilotSession,
+} from '@/shared/types/copilot'
 
 async function callCopilotSSE(
   url: string,
@@ -40,7 +48,9 @@ async function callCopilotSSE(
       else if (line.startsWith('data:')) dataLines.push(line.slice(5))
     }
     const data = dataLines.join('\n')
-    if (eventName === 'token') onToken(data)
+    if (eventName === 'token') {
+      if (data) onToken(data)
+    }
     else if (eventName === 'thought' && data && onThought) {
       try { onThought(JSON.parse(data) as CopilotAgentThought) } catch { /* ignore */ }
     }
@@ -127,6 +137,13 @@ export const copilotApi = {
     ).then((res) => parseJsonResponse<CopilotMessage[]>(res))
   },
 
+  confirmCompletions(registerId: number, sessionId: number) {
+    return fetch(
+      `/api/physician/ai/copilot/confirm-completions?registerId=${registerId}&sessionId=${sessionId}`,
+      { headers: authHeaders(), credentials: 'include' },
+    ).then((res) => parseJsonResponse<CopilotConfirmCompletion[]>(res))
+  },
+
   clearHistory(registerId: number, sessionId: number) {
     return fetch(
       `/api/physician/ai/copilot/history?registerId=${registerId}&sessionId=${sessionId}`,
@@ -164,5 +181,35 @@ export const copilotApi = {
       credentials: 'include',
     })
     return parseJsonResponse<CopilotRunActionResponse>(response)
+  },
+
+  async prepareAction(
+    registerId: number,
+    sessionId: number,
+    actionType: string,
+    payload: Record<string, unknown>,
+  ): Promise<CopilotPrepareActionResponse> {
+    const response = await fetch('/api/physician/ai/copilot/prepare-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ registerId, sessionId, actionType, payload }),
+      credentials: 'include',
+    })
+    return parseJsonResponse<CopilotPrepareActionResponse>(response)
+  },
+
+  async confirmAction(
+    registerId: number,
+    sessionId: number,
+    confirmationToken: string,
+    payloadOverride?: Record<string, unknown>,
+  ): Promise<CopilotConfirmActionResponse> {
+    const response = await fetch('/api/physician/ai/copilot/confirm-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ registerId, sessionId, confirmationToken, payloadOverride }),
+      credentials: 'include',
+    })
+    return parseJsonResponse<CopilotConfirmActionResponse>(response)
   },
 }

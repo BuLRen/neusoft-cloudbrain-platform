@@ -1,0 +1,237 @@
+openapi: 3.1.0
+info:
+  title: Xikang Physician Agent Draft Tools for Dify
+  description: Dify 导入专用草案工具集。仅包含 draft_* 工具，全部使用 query parameters，避免完整工具集过大导致参数解析丢失。
+  version: 3.1.0-draft
+servers:
+  - url: http://172.17.0.1:8092
+paths:
+  /api/physician/agent/tools/draft-medical-record:
+    post:
+      operationId: tool_draft_medical_record
+      summary: 生成病历修改草案
+      description: 只生成草案，不写库。医生要求补充预问诊到病历时，传 merge_from_preconsultation=true。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          description: 就诊号。调用工具时必须传入 Agent 输入变量 register_id。
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          description: 当前医生 ID。可传入 Agent 输入变量 doctor_id。
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          description: Copilot 会话 ID。可传入 Agent 输入变量 session_id。
+          schema:
+            type: string
+        - name: merge_from_preconsultation
+          in: query
+          required: false
+          description: 是否自动从 AI 预问诊摘要合并病历字段。需要合并预问诊时传 true。
+          schema:
+            type: string
+            enum: ['true', 'false']
+        - name: readme
+          in: query
+          required: false
+          description: 主诉。
+          schema:
+            type: string
+        - name: present
+          in: query
+          required: false
+          description: 现病史。
+          schema:
+            type: string
+        - name: present_treat
+          in: query
+          required: false
+          description: 现病治疗情况。
+          schema:
+            type: string
+        - name: history
+          in: query
+          required: false
+          description: 既往史。
+          schema:
+            type: string
+        - name: allergy
+          in: query
+          required: false
+          description: 过敏史。
+          schema:
+            type: string
+        - name: physique
+          in: query
+          required: false
+          description: 体格检查。
+          schema:
+            type: string
+        - name: proposal
+          in: query
+          required: false
+          description: 检查检验建议。
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-order-basket:
+    post:
+      operationId: tool_draft_order_basket
+      summary: 生成检查检验申请篮草案
+      description: 推荐优先用 use_w2=true 从 W2 结果生成，避免直接传复杂 items。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: order_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [check, inspection, disposal]
+          description: 申请类型，默认 check。
+        - name: use_w2
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true', 'false']
+          description: 是否使用 W2 推荐结果生成申请篮。
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-diagnosis:
+    post:
+      operationId: tool_draft_diagnosis
+      summary: 生成确诊草案
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: use_w4
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true', 'false']
+          description: 是否使用 W4 诊断推理结果生成确诊草案。
+        - name: diagnosis
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 确诊病名。
+        - name: cure
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 治疗方案。
+        - name: careful
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 注意事项。
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-prescription:
+    post:
+      operationId: tool_draft_prescription
+      summary: 生成处方草案
+      description: 推荐优先用 use_w5=true 从 W5 荐药结果生成，避免直接传复杂 items。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: use_w5
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true', 'false']
+          description: 是否使用 W5 荐药结果生成处方草案。
+        - name: confirmed_diagnosis
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 已确认诊断。
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-preliminary-diagnosis:
+    post:
+      operationId: tool_draft_preliminary_diagnosis
+      summary: 生成初步诊断保存草案
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          description: 就诊号。调用工具时必须传入 Agent 输入变量 register_id。
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: preliminary_diagnosis
+          in: query
+          required: false
+          description: 待保存的初步诊断文本。
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
