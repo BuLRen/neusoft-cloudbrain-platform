@@ -52,4 +52,9 @@ public interface PatientMapper {
      * 删除患者
      */
     int deleteById(@Param("id") Integer id);
+
+    /**
+     * 按姓名/手机号/档案号模糊搜索（现场收费窗口用）
+     */
+    List<Patient> searchByKeyword(@Param("keyword") String keyword, @Param("limit") int limit);
 }

@@ -39,6 +39,8 @@ export interface PaymentOrder {
   totalAmount: number
   paidAmount: number
   pendingAmount: number
+  paidItemCount?: number
+  pendingItemCount?: number
   status: number // 0 待缴 / 1 已付清 / 2 含已退
   statusName: string
   payTime?: string

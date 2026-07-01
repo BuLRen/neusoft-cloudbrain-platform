@@ -30,6 +30,8 @@ import UserPermissionManagement from '@/modules/admin/pages/UserPermissionManage
 import PersonnelManagement from '@/modules/admin/pages/PersonnelManagement.vue'
 import MedtechItemsManagement from '@/modules/admin/pages/MedtechItemsManagement.vue'
 import OperationsCenter from '@/modules/admin/pages/OperationsCenter.vue'
+import PaymentBillManagement from '@/modules/admin/pages/PaymentBillManagement.vue'
+import PaymentBillChargePage from '@/modules/admin/pages/PaymentBillChargePage.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
 import PhysicianAiAssistantPage from '@/modules/physician/pages/PhysicianAiAssistantPage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
@@ -392,6 +394,18 @@ export const routes: RouteRecordRaw[] = [
             name: 'OperationsCenter',
             component: OperationsCenter,
             meta: { title: '运营中心', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'payment-bills',
+            name: 'PaymentBillManagement',
+            component: PaymentBillManagement,
+            meta: { title: '支付账单', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'payment-bills/:registerId',
+            name: 'PaymentBillCharge',
+            component: PaymentBillChargePage,
+            meta: { title: '现场收费', roles: ['admin'], requiresAuth: true, owner: 'B', hidden: true },
           },
           {
             path: 'users',

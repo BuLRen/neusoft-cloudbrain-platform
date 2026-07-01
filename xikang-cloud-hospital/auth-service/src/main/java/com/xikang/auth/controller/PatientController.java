@@ -30,6 +30,13 @@ public class PatientController {
         return Result.success(patients);
     }
 
+    @GetMapping("/search")
+    public Result<List<Patient>> searchPatients(
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "20") int limit) {
+        return Result.success(patientService.searchPatients(keyword, limit));
+    }
+
     /**
      * 获取指定患者信息
      */

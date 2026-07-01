@@ -391,19 +391,34 @@ public class PaymentService {
     public Map<String, Object> listOrders(Long patientId, Integer statusFilter, int page, int size) {
         List<ExpenseRecord> all = expenseRecordMapper.selectByPatientId(patientId);
         if (all == null) all = List.of();
+        return paginateOrders(groupOrders(all, statusFilter), page, size);
+    }
 
-        // 按 registerId 分组
+    /**
+     * 管理员账单列表（全平台，按挂号号聚合）。
+     */
+    public Map<String, Object> listAdminOrders(String keyword, Long patientId, Integer statusFilter,
+                                               LocalDate startDate, LocalDate endDate,
+                                               int page, int size) {
+        LocalDateTime startTime = startDate != null ? startDate.atStartOfDay() : null;
+        LocalDateTime endTime = endDate != null ? endDate.plusDays(1).atStartOfDay() : null;
+        String trimmedKeyword = keyword != null && !keyword.isBlank() ? keyword.trim() : null;
+        List<ExpenseRecord> all = expenseRecordMapper.selectForAdminOrderList(
+            trimmedKeyword, patientId, startTime, endTime);
+        if (all == null) all = List.of();
+        return paginateOrders(groupOrders(all, statusFilter), page, size);
+    }
+
+    private List<Map<String, Object>> groupOrders(List<ExpenseRecord> all, Integer statusFilter) {
         Map<Long, List<ExpenseRecord>> grouped = all.stream()
                 .filter(r -> r.getRegisterId() != null)
                 .collect(Collectors.groupingBy(ExpenseRecord::getRegisterId));
 
-        // 批量预加载所有挂号的科室/医生/就诊日期（一次 SQL，避免 N+1）
         Map<Long, Map<String, Object>> registerInfoMap = loadRegisterInfo(new ArrayList<>(grouped.keySet()));
 
         List<Map<String, Object>> orders = new ArrayList<>();
         for (Map.Entry<Long, List<ExpenseRecord>> entry : grouped.entrySet()) {
             Map<String, Object> order = buildOrder(entry.getKey(), entry.getValue(), registerInfoMap.get(entry.getKey()));
-            // status 过滤：0 含待缴 / 1 全付清 / 2 已退
             if (statusFilter != null) {
                 Integer s = (Integer) order.get("status");
                 if (s == null || !s.equals(statusFilter)) continue;
@@ -411,7 +426,6 @@ public class PaymentService {
             orders.add(order);
         }
 
-        // 按最近 create_time 倒序
         orders.sort((a, b) -> {
             Comparable ta = (Comparable) a.get("createTime");
             Comparable tb = (Comparable) b.get("createTime");
@@ -420,7 +434,10 @@ public class PaymentService {
             if (tb == null) return -1;
             return tb.compareTo(ta);
         });
+        return orders;
+    }
 
+    private Map<String, Object> paginateOrders(List<Map<String, Object>> orders, int page, int size) {
         int total = orders.size();
         int fromIndex = Math.min((page - 1) * size, total);
         int toIndex = Math.min(fromIndex + size, total);

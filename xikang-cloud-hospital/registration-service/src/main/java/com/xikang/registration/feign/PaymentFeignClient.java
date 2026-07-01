@@ -55,6 +55,18 @@ public interface PaymentFeignClient {
     Map<String, Object> dailyCharges(@RequestParam("startDate") LocalDate startDate,
                                      @RequestParam("endDate") LocalDate endDate);
 
+    @GetMapping("/api/payment/internal/admin/orders")
+    Map<String, Object> listAdminOrders(@RequestParam(value = "keyword", required = false) String keyword,
+                                        @RequestParam(value = "patientId", required = false) Long patientId,
+                                        @RequestParam(value = "status", required = false) Integer status,
+                                        @RequestParam(value = "startDate", required = false) LocalDate startDate,
+                                        @RequestParam(value = "endDate", required = false) LocalDate endDate,
+                                        @RequestParam(value = "page", defaultValue = "1") int page,
+                                        @RequestParam(value = "size", defaultValue = "20") int size);
+
+    @GetMapping("/api/payment/internal/admin/orders/{registerId}")
+    Map<String, Object> getAdminOrderDetail(@PathVariable("registerId") Long registerId);
+
     // ============== pay / refund ==============
 
     @PostMapping("/api/payment/internal/items/{itemId}/pay")
