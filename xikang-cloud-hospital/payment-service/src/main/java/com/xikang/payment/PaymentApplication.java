@@ -13,7 +13,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * v3.2 设计：接管 expense_record 表的读写主职责。
  * 调用 auth-service 扣余额/退款；回调 registration-service 更新 register 状态。
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "com.xikang")
 @MapperScan("com.xikang.payment.mapper")
 @EnableFeignClients
 @EnableScheduling
