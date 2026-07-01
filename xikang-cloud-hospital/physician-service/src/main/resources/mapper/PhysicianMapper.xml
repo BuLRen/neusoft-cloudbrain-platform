@@ -219,14 +219,16 @@
 
     <update id="updateMedicalRecord" parameterType="map">
         UPDATE medical_record
-        SET readme = #{readme},
-            present = #{present},
-            present_treat = #{presentTreat},
-            history = #{history},
-            allergy = #{allergy},
-            physique = #{physique},
-            proposal = #{proposal},
-            preliminary_diagnosis = #{preliminaryDiagnosis}
+        <set>
+            <if test="readme != null">readme = #{readme},</if>
+            <if test="present != null">present = #{present},</if>
+            <if test="presentTreat != null">present_treat = #{presentTreat},</if>
+            <if test="history != null">history = #{history},</if>
+            <if test="allergy != null">allergy = #{allergy},</if>
+            <if test="physique != null">physique = #{physique},</if>
+            <if test="proposal != null">proposal = #{proposal},</if>
+            <if test="preliminaryDiagnosis != null">preliminary_diagnosis = #{preliminaryDiagnosis},</if>
+        </set>
         WHERE id = #{id}
     </update>
 

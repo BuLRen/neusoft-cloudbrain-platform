@@ -1,15 +1,21 @@
 package com.xikang.physician.copilot;
 
-import com.xikang.physician.ai.DifyAgentChatResult;
+import com.xikang.physician.agent.AgentCommitExecutor;
+import com.xikang.physician.agent.AgentConfirmationService;
+import com.xikang.physician.agent.AgentToolAuditService;
+import com.xikang.physician.agent.AgentToolExecutionContext;
 import com.xikang.physician.ai.DifyAgentClient;
-import com.xikang.physician.ai.DifyWorkflowException;
+import com.xikang.physician.ai.DifyAgentAnswerSanitizer;
+import com.xikang.physician.ai.DifyAgentChatResult;
 import com.xikang.physician.ai.PhysicianAiPipelineService;
 import com.xikang.physician.context.PhysicianAuthContext;
 import com.xikang.physician.copilot.entity.PhysicianAiChatMessage;
 import com.xikang.physician.copilot.entity.PhysicianAiChatSession;
 import com.xikang.physician.copilot.mapper.PhysicianAiChatMessageMapper;
 import com.xikang.physician.copilot.mapper.PhysicianAiChatSessionMapper;
-import com.xikang.physician.service.PhysicianService;
+import com.xikang.physician.ai.DifyWorkflowException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -19,6 +25,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.xikang.physician.service.PhysicianService;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -48,6 +55,10 @@ public class PhysicianCopilotService {
     private final PhysicianAiChatSessionMapper chatSessionMapper;
     private final PhysicianService physicianService;
     private final PhysicianAiPipelineService pipelineService;
+    private final AgentConfirmationService confirmationService;
+    private final AgentCommitExecutor commitExecutor;
+    private final AgentToolAuditService auditService;
+    private final ObjectMapper objectMapper;
 
     public PhysicianCopilotService(
         @Qualifier("physicianCopilotChatClient") ChatClient copilotChatClient,
@@ -56,7 +67,11 @@ public class PhysicianCopilotService {
         PhysicianAiChatMessageMapper chatMessageMapper,
         PhysicianAiChatSessionMapper chatSessionMapper,
         PhysicianService physicianService,
-        PhysicianAiPipelineService pipelineService
+        PhysicianAiPipelineService pipelineService,
+        AgentConfirmationService confirmationService,
+        AgentCommitExecutor commitExecutor,
+        AgentToolAuditService auditService,
+        ObjectMapper objectMapper
     ) {
         this.copilotChatClient = copilotChatClient;
         this.difyAgentClient = difyAgentClient;
@@ -65,6 +80,10 @@ public class PhysicianCopilotService {
         this.chatSessionMapper = chatSessionMapper;
         this.physicianService = physicianService;
         this.pipelineService = pipelineService;
+        this.confirmationService = confirmationService;
+        this.commitExecutor = commitExecutor;
+        this.auditService = auditService;
+        this.objectMapper = objectMapper;
     }
 
     public List<Map<String, Object>> listSessions(Long registerId) {
@@ -119,6 +138,11 @@ public class PhysicianCopilotService {
             .toList();
     }
 
+    public List<Map<String, Object>> listConfirmCompletions(Long registerId, Long sessionId) {
+        assertSessionAccess(registerId, sessionId);
+        return auditService.listCopilotConfirmCompletions(registerId, sessionId);
+    }
+
     @Transactional
     public void clearHistory(Long registerId, Long sessionId) {
         assertSessionAccess(registerId, sessionId);
@@ -156,7 +180,7 @@ public class PhysicianCopilotService {
         Consumer<Map<String, Object>> thoughtConsumer
     ) {
         PhysicianAiChatSession session = chatSessionMapper.selectById(sessionId);
-        Map<String, String> inputs = contextBuilder.buildAgentInputs(registerId);
+        Map<String, String> inputs = contextBuilder.buildAgentInputs(registerId, sessionId);
         String user = buildDifyUser(registerId);
 
         DifyAgentChatResult result = difyAgentClient.streamChat(
@@ -168,7 +192,7 @@ public class PhysicianCopilotService {
             thoughtConsumer
         );
 
-        String response = result.getAnswer();
+        String response = DifyAgentAnswerSanitizer.sanitizeFull(result.getAnswer());
         if (response == null || response.isBlank()) {
             response = "抱歉，我暂时无法生成有效回答，请稍后重试。";
             if (tokenConsumer != null) {
@@ -206,18 +230,31 @@ public class PhysicianCopilotService {
 
         PhysicianCopilotTools.bindRegisterId(registerId);
         try {
-            String response = copilotChatClient.prompt()
+            StringBuilder responseBuilder = new StringBuilder();
+            copilotChatClient.prompt()
                 .system(systemPrompt)
                 .messages(historyMessages)
                 .user(trimmed)
-                .call()
-                .content();
+                .stream()
+                .content()
+                .doOnNext(chunk -> {
+                    if (chunk == null || chunk.isEmpty()) {
+                        return;
+                    }
+                    responseBuilder.append(chunk);
+                    if (tokenConsumer != null) {
+                        tokenConsumer.accept(chunk);
+                    }
+                })
+                .blockLast();
 
-            if (response == null || response.isBlank()) {
+            String response = responseBuilder.toString();
+            if (response.isBlank()) {
                 response = "抱歉，我暂时无法生成有效回答，请稍后重试。";
+                if (tokenConsumer != null) {
+                    tokenConsumer.accept(response);
+                }
             }
-
-            streamText(response, tokenConsumer);
             List<Map<String, Object>> toolCalls = PhysicianCopilotTools.drainToolCalls();
             String toolCallsJson = toolCalls.isEmpty() ? null : contextBuilder.toJsonSafe(toolCalls);
             saveMessage(registerId, sessionId, "assistant", response, toolCallsJson);
@@ -243,6 +280,63 @@ public class PhysicianCopilotService {
             return "doctor-" + doctorId + "-reg-" + registerId;
         }
         return "physician-reg-" + registerId;
+    }
+
+    public Map<String, Object> prepareCopilotAction(
+        Long registerId,
+        Long sessionId,
+        String actionType,
+        Map<String, Object> payload
+    ) {
+        assertSessionAccess(registerId, sessionId);
+        confirmationService.validateActionType(actionType);
+        return confirmationService.prepare(registerId, sessionId, actionType, payload == null ? Map.of() : payload);
+    }
+
+    @Transactional
+    public Map<String, Object> confirmCopilotAction(
+        Long registerId,
+        Long sessionId,
+        String confirmationToken,
+        Map<String, Object> payloadOverride
+    ) {
+        assertSessionAccess(registerId, sessionId);
+        Map<String, Object> consumed = confirmationService.consume(
+            confirmationToken,
+            registerId,
+            payloadOverride == null ? Map.of() : payloadOverride
+        );
+        String actionType = String.valueOf(consumed.get("actionType"));
+        Map<String, Object> payload = castMap(consumed.get("payload"));
+
+        String beforeSnapshot = snapshotForAction(actionType, registerId);
+        Map<String, Object> data = commitExecutor.execute(actionType, registerId, payload);
+        String afterSnapshot = snapshotForAction(actionType, registerId);
+
+        Map<String, Object> auditBody = new LinkedHashMap<>();
+        auditBody.put("registerId", registerId);
+        auditBody.put("sessionId", sessionId);
+        auditBody.put("actionType", actionType);
+        auditBody.put("confirmationToken", confirmationToken);
+        auditService.logCopilotConfirmSuccess(
+            actionType,
+            registerId,
+            sessionId,
+            auditBody,
+            data,
+            beforeSnapshot,
+            afterSnapshot,
+            confirmationToken
+        );
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("actionType", actionType);
+        response.put("registerId", registerId);
+        response.put("sessionId", sessionId);
+        response.put("success", true);
+        response.put("summary", buildCommitSummary(actionType, data));
+        response.put("data", data);
+        return response;
     }
 
     public Map<String, Object> runCopilotAction(Long registerId, String actionType) {
@@ -280,6 +374,48 @@ public class PhysicianCopilotService {
             log.error("Copilot action failed registerId={} actionType={}", registerId, normalized, ex);
             throw new IllegalStateException("操作执行失败，请稍后重试");
         }
+    }
+
+    private String buildCommitSummary(String actionType, Map<String, Object> data) {
+        return switch (actionType) {
+            case "commit_medical_record" -> "病历已保存";
+            case "commit_preliminary_diagnosis" -> "初步诊断已保存";
+            case "commit_check_requests" -> "检查申请已提交（" + data.getOrDefault("itemCount", "?") + " 项）";
+            case "commit_inspection_requests" -> "检验申请已提交（" + data.getOrDefault("itemCount", "?") + " 项）";
+            case "commit_disposal_requests" -> "处置申请已提交（" + data.getOrDefault("itemCount", "?") + " 项）";
+            case "commit_diagnosis" -> "确诊已保存：" + textOrDefault(data.get("diagnosis"), "完成");
+            case "commit_prescription" -> "处方已开立（" + data.getOrDefault("itemCount", "?") + " 种药品）";
+            case "commit_archive_visit" -> "病历已归档并发布给患者";
+            default -> "操作已完成";
+        };
+    }
+
+    private String snapshotForAction(String actionType, Long registerId) {
+        try {
+            return switch (actionType) {
+                case "commit_medical_record", "commit_preliminary_diagnosis", "commit_diagnosis" ->
+                    objectMapper.writeValueAsString(physicianService.getMedicalRecord(registerId));
+                case "commit_prescription" ->
+                    objectMapper.writeValueAsString(physicianService.getPrescriptionList(registerId));
+                case "commit_check_requests", "commit_inspection_requests" -> {
+                    Map<String, Object> lab = new LinkedHashMap<>();
+                    lab.put("checks", physicianService.getCheckResults(registerId));
+                    lab.put("inspections", physicianService.getInspectionResults(registerId));
+                    yield objectMapper.writeValueAsString(lab);
+                }
+                default -> null;
+            };
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return Map.of();
     }
 
     private Map<String, Object> runPreliminaryDiagnosisAction(Long registerId) {

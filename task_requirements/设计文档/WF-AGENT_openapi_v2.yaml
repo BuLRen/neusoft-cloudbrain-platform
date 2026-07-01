@@ -1,0 +1,490 @@
+openapi: 3.0.0
+info:
+  title: Xikang Physician Agent Tools v2
+  description: 门诊临床 Copilot 扩展工具网关（读 / 草案 / 提交）
+  version: 2.0.0
+servers:
+  - url: http://172.17.0.1:8092
+paths:
+  /api/physician/agent/tools/run-preliminary-diagnosis:
+    post:
+      operationId: tool_run_preliminary_diagnosis
+      summary: 运行 AI 初步诊断
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w1:
+    post:
+      operationId: tool_run_w1
+      summary: 病历结构化 W1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w2:
+    post:
+      operationId: tool_run_w2
+      summary: W2 检查检验推荐
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w3:
+    post:
+      operationId: tool_run_w3
+      summary: W3 结果解读
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w4:
+    post:
+      operationId: tool_run_w4
+      summary: W4 门诊确诊
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w5:
+    post:
+      operationId: tool_run_w5
+      summary: W5 智能荐药
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-medical-record:
+    post:
+      operationId: tool_get_medical_record
+      summary: 读取病历
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-lab-results:
+    post:
+      operationId: tool_get_lab_results
+      summary: 读取检查检验结果
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-patient:
+    post:
+      operationId: tool_get_patient
+      summary: 读取患者详情与预问诊
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-medical-technologies:
+    post:
+      operationId: tool_get_medical_technologies
+      summary: 查询医技项目目录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AgentContextRequest'
+                - type: object
+                  properties:
+                    tech_type:
+                      type: string
+                      description: check / inspection / disposal
+                    keyword:
+                      type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-diseases:
+    post:
+      operationId: tool_get_diseases
+      summary: 查询疾病库
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AgentContextRequest'
+                - type: object
+                  properties:
+                    keyword:
+                      type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-drugs:
+    post:
+      operationId: tool_get_drugs
+      summary: 查询药品与库存
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AgentContextRequest'
+                - type: object
+                  properties:
+                    keyword:
+                      type: string
+                    page:
+                      type: integer
+                    page_size:
+                      type: integer
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-prescriptions:
+    post:
+      operationId: tool_get_prescriptions
+      summary: 读取当前就诊处方
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-visit-timeline:
+    post:
+      operationId: tool_get_visit_timeline
+      summary: 读取就诊时间线
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-exam-suggestions:
+    post:
+      operationId: tool_get_exam_suggestions
+      summary: 读取 W2 检查推荐记录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-diagnosis-suggestions:
+    post:
+      operationId: tool_get_diagnosis_suggestions
+      summary: 读取 W4 诊断建议记录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentContextRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-medical-record:
+    post:
+      operationId: tool_draft_medical_record
+      summary: 生成病历修改草案（不写库）
+      description: 合并当前病历与建议字段，返回 diff 与 confirmPayload。设置 merge_from_preconsultation=true 可自动从预问诊摘要合并过敏史、既往史等字段。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AgentContextRequest'
+                - type: object
+                  properties:
+                    merge_from_preconsultation:
+                      type: boolean
+                      description: 为 true 时自动从 AI 预问诊摘要合并字段（推荐用于「补充预问诊到病历」）
+                    readme:
+                      type: string
+                    present:
+                      type: string
+                    history:
+                      type: string
+                    allergy:
+                      type: string
+                    physique:
+                      type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-order-basket:
+    post:
+      operationId: tool_draft_order_basket
+      summary: 生成检查检验申请篮草案
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AgentContextRequest'
+                - type: object
+                  properties:
+                    order_type:
+                      type: string
+                      enum: [check, inspection, disposal]
+                    use_w2:
+                      type: boolean
+                    items:
+                      type: array
+                      items:
+                        type: object
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-diagnosis:
+    post:
+      operationId: tool_draft_diagnosis
+      summary: 生成确诊草案
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AgentContextRequest'
+                - type: object
+                  properties:
+                    use_w4:
+                      type: boolean
+                    diagnosis:
+                      type: string
+                    cure:
+                      type: string
+                    careful:
+                      type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-prescription:
+    post:
+      operationId: tool_draft_prescription
+      summary: 生成处方草案
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AgentContextRequest'
+                - type: object
+                  properties:
+                    use_w5:
+                      type: boolean
+                    confirmed_diagnosis:
+                      type: string
+                    items:
+                      type: array
+                      items:
+                        type: object
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-preliminary-diagnosis:
+    post:
+      operationId: tool_draft_preliminary_diagnosis
+      summary: 生成初步诊断保存草案
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AgentContextRequest'
+                - type: object
+                  properties:
+                    preliminary_diagnosis:
+                      type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/save-preliminary-diagnosis:
+    post:
+      operationId: tool_save_preliminary_diagnosis
+      summary: 提交初步诊断（需 confirmation_token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-medical-record:
+    post:
+      operationId: tool_commit_medical_record
+      summary: 提交病历（需 confirmation_token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-check-requests:
+    post:
+      operationId: tool_commit_check_requests
+      summary: 提交检查申请（需 confirmation_token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-inspection-requests:
+    post:
+      operationId: tool_commit_inspection_requests
+      summary: 提交检验申请（需 confirmation_token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-disposal-requests:
+    post:
+      operationId: tool_commit_disposal_requests
+      summary: 提交处置申请（需 confirmation_token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-diagnosis:
+    post:
+      operationId: tool_commit_diagnosis
+      summary: 提交确诊（需 confirmation_token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-prescription:
+    post:
+      operationId: tool_commit_prescription
+      summary: 提交处方（需 confirmation_token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitRequest'
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-archive-visit:
+    post:
+      operationId: tool_commit_archive_visit
+      summary: 归档病历（需 confirmation_token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitRequest'
+      responses:
+        '200':
+          description: OK
+components:
+  schemas:
+    AgentContextRequest:
+      type: object
+      required: [register_id]
+      properties:
+        register_id:
+          type: string
+          description: 就诊号（Fixed 绑定 {{register_id}}）
+        doctor_id:
+          type: string
+          description: 医生 ID（Fixed 绑定 {{doctor_id}}）
+        session_id:
+          type: string
+          description: 会话 ID（Fixed 绑定 {{session_id}}）
+    CommitRequest:
+      allOf:
+        - $ref: '#/components/schemas/AgentContextRequest'
+        - type: object
+          required: [confirmation_token]
+          properties:
+            confirmation_token:
+              type: string
+              description: 医生在前端确认后获得的一次性令牌
+            payload:
+              type: object
+              description: 可选覆盖载荷

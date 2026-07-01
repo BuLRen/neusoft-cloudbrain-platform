@@ -1,0 +1,120 @@
+openapi: 3.1.0
+info:
+  title: Xikang Physician Agent Tools Minimal for Dify
+  description: Dify 参数解析排障专用。仅保留读取患者、读取病历、病历草案三个工具，全部使用 query parameters。
+  version: 3.1.0-minimal
+servers:
+  - url: http://172.17.0.1:8092
+paths:
+  /api/physician/agent/tools/get-patient:
+    post:
+      operationId: tool_get_patient
+      summary: 读取患者详情与预问诊
+      description: 读取当前患者基本信息、AI 预问诊摘要、过敏史与既往史摘要。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          description: 就诊号。调用工具时必须传入 Agent 输入变量 register_id。
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          description: 当前医生 ID。可传入 Agent 输入变量 doctor_id。
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          description: Copilot 会话 ID。可传入 Agent 输入变量 session_id。
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-medical-record:
+    post:
+      operationId: tool_get_medical_record
+      summary: 读取病历
+      description: 读取当前就诊病历字段，如主诉、现病史、既往史、过敏史等。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          description: 就诊号。调用工具时必须传入 Agent 输入变量 register_id。
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          description: 当前医生 ID。可传入 Agent 输入变量 doctor_id。
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          description: Copilot 会话 ID。可传入 Agent 输入变量 session_id。
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-medical-record:
+    post:
+      operationId: tool_draft_medical_record
+      summary: 生成病历修改草案
+      description: 只生成草案，不写库。医生要求补充预问诊到病历时，传 merge_from_preconsultation=true。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          description: 就诊号。调用工具时必须传入 Agent 输入变量 register_id。
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          description: 当前医生 ID。可传入 Agent 输入变量 doctor_id。
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          description: Copilot 会话 ID。可传入 Agent 输入变量 session_id。
+          schema:
+            type: string
+        - name: merge_from_preconsultation
+          in: query
+          required: false
+          description: 是否自动从 AI 预问诊摘要合并病历字段。需要合并预问诊时传 true。
+          schema:
+            type: string
+            enum: ['true', 'false']
+        - name: readme
+          in: query
+          required: false
+          description: 主诉。
+          schema:
+            type: string
+        - name: present
+          in: query
+          required: false
+          description: 现病史。
+          schema:
+            type: string
+        - name: history
+          in: query
+          required: false
+          description: 既往史。
+          schema:
+            type: string
+        - name: allergy
+          in: query
+          required: false
+          description: 过敏史。
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK

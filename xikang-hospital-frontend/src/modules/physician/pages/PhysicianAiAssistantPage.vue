@@ -13,14 +13,16 @@ import {
   ElScrollbar,
 } from 'element-plus'
 import { CircleCheck, CircleClose, Delete, MagicStick, Plus, Promotion, User } from '@element-plus/icons-vue'
-import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import MarkdownContent from '../components/MarkdownContent.vue'
 import AiConsultSummaryCard from '../components/AiConsultSummaryCard.vue'
+import MedicalRecordSummaryCard from '../components/MedicalRecordSummaryCard.vue'
 import AgentActionCard from '../components/AgentActionCard.vue'
+import AgentConfirmCard from '../components/AgentConfirmCard.vue'
+import { applyConfirmCompletions, enrichAssistantMessage, parseStoredThoughts, sanitizeAgentContent, stripBlocksForDisplay } from '../utils/copilotConfirm'
 import { copilotApi } from '@/shared/api/modules/copilot'
-import { physicianApi, type PhysicianPatient } from '@/shared/api/modules/physician'
+import { physicianApi, type MedicalRecord, type PhysicianPatient } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import { useAuthStore } from '@/app/stores/auth'
 import { PHYSICIAN_ASSISTANT, PHYSICIAN_QUEUE, visitStateLabel } from '../constants/visitState'
@@ -28,7 +30,7 @@ import { usePhysicianPatientSelectStore } from '@/app/stores/physicianPatientSel
 import type {
   AgentAction,
   AgentActionStatus,
-  AgentActionType,
+  AgentConfirmAction,
   CopilotAgentThought,
   CopilotMessage,
   CopilotSession,
@@ -49,20 +51,15 @@ const historyLoading = ref(false)
 const sessionsLoading = ref(false)
 const chatScrollRef = ref<InstanceType<typeof ElScrollbar> | null>(null)
 const patient = ref<PhysicianPatient | null>(null)
+const medicalRecord = ref<MedicalRecord | null>(null)
+const medicalRecordLoading = ref(false)
+type ContextPanel = 'ai-consult' | 'medical-record'
+const contextPanel = ref<ContextPanel | null>(null)
 const actionStates = reactive<Record<string, AgentActionStatus>>({})
+const confirmStates = reactive<Record<string, AgentActionStatus>>({})
 const rawContentMap = new Map<number, string>()
 let abortController: AbortController | null = null
-
-const ACTION_BLOCK_RE = /```action\r?\n([\s\S]*?)\r?\n```/g
-const INCOMPLETE_ACTION_RE = /```action\r?\n[\s\S]*$/
-
-const VALID_ACTION_TYPES = new Set<AgentActionType>([
-  'trigger_preliminary_diagnosis',
-  'trigger_w2',
-  'trigger_w3',
-  'trigger_w4',
-  'trigger_w5',
-])
+let medicalRecordLoadSeq = 0
 
 const registerId = computed(() => {
   const raw = route.query.registerId ?? encounterStore.registerId
@@ -86,84 +83,93 @@ function actionStateKey(messageIndex: number, actionIndex: number) {
   return `${messageIndex}-${actionIndex}`
 }
 
-function stripCompletedActionBlocks(content: string) {
-  return content.replace(ACTION_BLOCK_RE, '').trim()
+function confirmStateKey(messageIndex: number, confirmIndex: number) {
+  return `confirm-${messageIndex}-${confirmIndex}`
 }
 
-function stripActionBlocksForDisplay(content: string) {
-  let text = stripCompletedActionBlocks(content)
-  const incompleteMatch = text.match(INCOMPLETE_ACTION_RE)
-  if (incompleteMatch && incompleteMatch.index !== undefined) {
-    text = text.slice(0, incompleteMatch.index).trim()
-  }
-  return text
+function syncAssistantMessage(index: number, options?: { display?: boolean }) {
+  const current = messages.value[index]
+  if (!current || current.role !== 'assistant') return
+  const raw = rawContentMap.get(index) ?? current.content
+  messages.value[index] = enrichAssistantMessage(current, raw, options)
 }
 
-function parseActionBlocks(content: string) {
-  const actions: AgentAction[] = []
-  const normalized = content.replace(/\r\n/g, '\n')
-  const text = normalized.replace(ACTION_BLOCK_RE, (_, json: string) => {
-    try {
-      const parsed = JSON.parse(json.trim()) as Partial<AgentAction>
-      if (parsed.type && VALID_ACTION_TYPES.has(parsed.type) && parsed.label) {
-        actions.push({
-          type: parsed.type,
-          label: parsed.label,
-          description: parsed.description,
-          reason: parsed.reason,
-        })
-      }
-    } catch {
-      /* ignore malformed action block */
-    }
-    return ''
-  })
-  return { text: text.trim(), actions }
+const TOOL_LABELS: Record<string, string> = {
+  tool_get_medical_record: '读取病历',
+  tool_get_lab_results: '读取检查检验结果',
+  tool_get_patient: '读取患者信息',
+  tool_get_medical_technologies: '检索检查检验项目',
+  tool_get_diseases: '检索疾病',
+  tool_get_drugs: '检索药品',
+  tool_get_prescriptions: '读取处方',
+  tool_get_visit_timeline: '读取就诊时间线',
+  tool_get_exam_suggestions: '读取检查建议',
+  tool_get_diagnosis_suggestions: '读取诊断建议',
+  tool_run_preliminary_diagnosis: '运行初步诊断',
+  tool_run_w1: '运行病历结构化',
+  tool_run_w2: '运行检查推荐',
+  tool_run_w3: '运行结果解读',
+  tool_run_w4: '运行确诊推理',
+  tool_run_w5: '运行智能荐药',
+  tool_draft_medical_record: '生成病历草案',
+  tool_draft_order_basket: '生成检查检验草案',
+  tool_draft_diagnosis: '生成确诊草案',
+  tool_draft_prescription: '生成处方草案',
+  tool_draft_preliminary_diagnosis: '生成初步诊断草案',
+}
+
+function friendlyToolName(tool: string) {
+  return TOOL_LABELS[tool] ?? tool.replace(/^tool_/, '').replace(/_/g, ' ')
+}
+
+function formatThoughtPreview(thought: string) {
+  return stripBlocksForDisplay(sanitizeAgentContent(thought))
 }
 
 function formatAgentThought(thought: CopilotAgentThought) {
   if (thought.tool) {
-    return `正在调用 ${thought.tool}…`
+    return thought.observation
+      ? `已完成「${friendlyToolName(thought.tool)}」`
+      : `正在${friendlyToolName(thought.tool)}…`
   }
-  if (thought.thought) {
-    return thought.thought
-  }
-  return '思考中…'
+  // 无工具的 thought 通常是模型的推理/最终答复本身（含 <think> 与 confirm 块），
+  // 不能原样塞进状态条，否则会泄露思考过程与 JSON；答复正文由 content 渲染。
+  return '正在整理回复…'
 }
 
-function applyAgentThought(msg: CopilotMessage, thought: CopilotAgentThought) {
-  const thoughts = msg.agentThoughts ? [...msg.agentThoughts, thought] : [thought]
-  msg.agentThoughts = thoughts
-  msg.agentStatus = formatAgentThought(thought)
+function thoughtKey(thought: CopilotAgentThought) {
+  if (thought.id != null && String(thought.id).trim()) return `id:${thought.id}`
+  if (thought.position != null && String(thought.position).trim()) return `pos:${thought.position}`
+  return null
 }
 
-function parseStoredThoughts(msg: CopilotMessage): CopilotMessage {
-  if (msg.role !== 'assistant' || !msg.toolCallsJson) return msg
-  try {
-    const parsed = JSON.parse(msg.toolCallsJson) as CopilotAgentThought[]
-    if (Array.isArray(parsed) && parsed.length) {
-      return { ...msg, agentThoughts: parsed }
-    }
-  } catch {
-    /* ignore */
+function applyAgentThought(msg: CopilotMessage, thought: CopilotAgentThought): CopilotMessage {
+  const thoughts = msg.agentThoughts ? [...msg.agentThoughts] : []
+  const key = thoughtKey(thought)
+  const existingIndex = key
+    ? thoughts.findIndex((t) => thoughtKey(t) === key)
+    : -1
+  if (existingIndex >= 0) {
+    thoughts[existingIndex] = { ...thoughts[existingIndex], ...thought }
+  } else {
+    thoughts.push(thought)
   }
-  return msg
+  return {
+    ...msg,
+    agentThoughts: thoughts,
+    agentStatus: formatAgentThought(thought),
+  }
 }
 
 function normalizeAssistantMessage(msg: CopilotMessage): CopilotMessage {
   if (msg.role !== 'assistant') return msg
-  const withThoughts = parseStoredThoughts(msg)
-  const { text, actions } = parseActionBlocks(withThoughts.content)
-  return {
-    ...withThoughts,
-    content: text || withThoughts.content,
-    actions: actions.length ? actions : withThoughts.actions,
-  }
+  return enrichAssistantMessage({ ...msg, agentThoughts: parseStoredThoughts(msg) })
 }
 
 function resetChatState() {
   messages.value = []
   Object.keys(actionStates).forEach((key) => delete actionStates[key])
+  Object.keys(confirmStates).forEach((key) => delete confirmStates[key])
   rawContentMap.clear()
 }
 
@@ -180,8 +186,32 @@ async function loadPatient(id: number) {
     if (!encounterStore.registerId) {
       encounterStore.applyPatient(patient.value)
     }
+    await loadMedicalRecord(id)
   } catch {
     patient.value = null
+    medicalRecord.value = null
+  }
+}
+
+async function loadMedicalRecord(id: number) {
+  medicalRecordLoading.value = true
+  const seq = ++medicalRecordLoadSeq
+  try {
+    const record = await physicianApi.medicalRecord(id)
+    if (seq !== medicalRecordLoadSeq) return
+    medicalRecord.value = record
+  } catch {
+    if (seq !== medicalRecordLoadSeq) return
+    medicalRecord.value = null
+  } finally {
+    if (seq === medicalRecordLoadSeq) medicalRecordLoading.value = false
+  }
+}
+
+function toggleContextPanel(panel: ContextPanel) {
+  contextPanel.value = contextPanel.value === panel ? null : panel
+  if (contextPanel.value === 'medical-record' && registerId.value) {
+    void loadMedicalRecord(registerId.value)
   }
 }
 
@@ -214,9 +244,14 @@ async function loadHistory(regId: number, sessionId: number) {
   historyLoading.value = true
   try {
     const localResults = messages.value.filter((msg) => msg.role === 'action_result')
-    const history = (await copilotApi.history(regId, sessionId)).map(normalizeAssistantMessage)
+    const [history, completions] = await Promise.all([
+      copilotApi.history(regId, sessionId),
+      copilotApi.confirmCompletions(regId, sessionId).catch(() => []),
+    ])
+    const normalized = history.map(normalizeAssistantMessage)
     resetChatState()
-    messages.value = [...history, ...localResults]
+    messages.value = [...normalized, ...localResults]
+    Object.assign(confirmStates, applyConfirmCompletions(messages.value, completions))
     await scrollToBottom()
   } finally {
     historyLoading.value = false
@@ -315,14 +350,19 @@ async function sendMessage(text?: string) {
         if (!assistant) return
         const raw = (rawContentMap.get(assistantIndex) ?? '') + chunk
         rawContentMap.set(assistantIndex, raw)
-        assistant.content = stripActionBlocksForDisplay(raw)
-        assistant.agentStatus = undefined
+        messages.value[assistantIndex] = enrichAssistantMessage(
+          { ...assistant, agentStatus: undefined },
+          raw,
+          { display: true },
+        )
         void scrollToBottom()
       },
       (thought) => {
         const assistant = messages.value[assistantIndex]
         if (!assistant) return
-        applyAgentThought(assistant, thought)
+        const withThought = applyAgentThought(assistant, thought)
+        const raw = rawContentMap.get(assistantIndex) ?? withThought.content
+        messages.value[assistantIndex] = enrichAssistantMessage(withThought, raw, { display: true })
         void scrollToBottom()
       },
       abortController.signal,
@@ -330,11 +370,15 @@ async function sendMessage(text?: string) {
 
     const assistant = messages.value[assistantIndex]
     if (assistant?.role === 'assistant') {
-      const raw = rawContentMap.get(assistantIndex) ?? assistant.content
-      const parsed = parseActionBlocks(raw)
-      assistant.content = parsed.text || assistant.content
-      assistant.actions = parsed.actions.length ? parsed.actions : undefined
-      assistant.agentStatus = undefined
+      syncAssistantMessage(assistantIndex)
+      const finalized = messages.value[assistantIndex]
+      if (finalized?.role === 'assistant') {
+        messages.value[assistantIndex] = { ...finalized, agentStatus: undefined }
+        // 若流式阶段未挂上 confirms（极少见），从服务端历史重载并重新解析
+        if (!messages.value[assistantIndex]?.confirms?.length && registerId.value && currentSessionId.value) {
+          await loadHistory(registerId.value, currentSessionId.value)
+        }
+      }
       rawContentMap.delete(assistantIndex)
     }
 
@@ -346,16 +390,35 @@ async function sendMessage(text?: string) {
       }
     }
   } catch (error) {
-    const msg = error instanceof Error ? error.message : '发送失败'
     const assistant = messages.value[assistantIndex]
-    if (assistant && !assistant.content) assistant.content = msg
-    rawContentMap.delete(assistantIndex)
-    ElMessage.error(msg)
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      if (assistant?.role === 'assistant') {
+        syncAssistantMessage(assistantIndex)
+        const finalized = messages.value[assistantIndex]
+        if (finalized?.role === 'assistant') {
+          messages.value[assistantIndex] = { ...finalized, agentStatus: undefined }
+        }
+        rawContentMap.delete(assistantIndex)
+      }
+    } else {
+      const msg = error instanceof Error ? error.message : '发送失败'
+      if (assistant && !assistant.content) assistant.content = msg
+      rawContentMap.delete(assistantIndex)
+      ElMessage.error(msg)
+    }
   } finally {
     loading.value = false
     abortController = null
     await scrollToBottom()
   }
+}
+
+function stopGeneration() {
+  abortController?.abort()
+}
+
+function isStreaming(index: number) {
+  return loading.value && index === messages.value.length - 1
 }
 
 async function handleActionConfirm(messageIndex: number, actionIndex: number, action: AgentAction) {
@@ -392,6 +455,48 @@ function handleActionDismiss(messageIndex: number, actionIndex: number) {
   actionStates[actionStateKey(messageIndex, actionIndex)] = 'dismissed'
 }
 
+async function handleConfirmSubmit(
+  messageIndex: number,
+  confirmIndex: number,
+  action: AgentConfirmAction,
+  payload: Record<string, unknown>,
+) {
+  if (!registerId.value || !currentSessionId.value) return
+  const key = confirmStateKey(messageIndex, confirmIndex)
+  if (confirmStates[key] === 'loading' || confirmStates[key] === 'done') return
+
+  confirmStates[key] = 'loading'
+  try {
+    const prepared = await copilotApi.prepareAction(
+      registerId.value,
+      currentSessionId.value,
+      action.type,
+      payload,
+    )
+    await copilotApi.confirmAction(
+      registerId.value,
+      currentSessionId.value,
+      prepared.confirmationToken,
+      payload,
+    )
+    confirmStates[key] = 'done'
+
+    await loadPatient(registerId.value)
+    await scrollToBottom()
+  } catch (error) {
+    confirmStates[key] = 'pending'
+    ElMessage.error(error instanceof Error ? error.message : '确认提交失败')
+  }
+}
+
+function handleConfirmDismiss(messageIndex: number, confirmIndex: number) {
+  confirmStates[confirmStateKey(messageIndex, confirmIndex)] = 'dismissed'
+}
+
+function getConfirmStatus(messageIndex: number, confirmIndex: number): AgentActionStatus {
+  return confirmStates[confirmStateKey(messageIndex, confirmIndex)] ?? 'pending'
+}
+
 function getActionStatus(messageIndex: number, actionIndex: number): AgentActionStatus {
   return actionStates[actionStateKey(messageIndex, actionIndex)] ?? 'pending'
 }
@@ -414,12 +519,15 @@ function goQueue() {
 watch(registerId, (id, prevId) => {
   if (!id) {
     patient.value = null
+    medicalRecord.value = null
+    contextPanel.value = null
     sessions.value = []
     currentSessionId.value = null
     resetChatState()
     return
   }
   if (id !== prevId) {
+    contextPanel.value = null
     void loadPatient(id)
     void loadSessions(id)
   }
@@ -437,16 +545,6 @@ onMounted(() => {
 
 <template>
   <div class="copilot-page u-page-grid">
-    <PageHeader
-      :title="patient ? `AI 助手 · ${patient.realName}` : 'AI 助手'"
-      eyebrow="门诊诊疗"
-    >
-      <template #actions>
-        <ElButton @click="goQueue">待诊接诊</ElButton>
-        <ElButton :disabled="!registerId || !currentSessionId" @click="clearHistory">清空对话</ElButton>
-      </template>
-    </PageHeader>
-
     <div v-if="!registerId" class="copilot-empty">
       <GlassCard>
         <ElEmpty description="请先选择患者后再使用 AI 助手">
@@ -501,14 +599,47 @@ onMounted(() => {
             <p v-else class="copilot-sessions__empty">暂无对话，点击新建开始</p>
           </div>
 
-          <AiConsultSummaryCard
-            v-if="patient?.aiConsultSummary"
-            :summary="patient.aiConsultSummary"
-            class="copilot-context__summary"
-          />
-          <p v-else class="copilot-context__hint">暂无 AI 预问诊摘要，仍可基于病历与检验结果问答。</p>
+          <div class="copilot-context__tabs" role="tablist" aria-label="患者资料">
+            <button
+              type="button"
+              role="tab"
+              class="copilot-context__tab"
+              :class="{ 'is-active': contextPanel === 'ai-consult' }"
+              :aria-selected="contextPanel === 'ai-consult'"
+              @click="toggleContextPanel('ai-consult')"
+            >
+              AI 预问诊
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="copilot-context__tab"
+              :class="{ 'is-active': contextPanel === 'medical-record' }"
+              :aria-selected="contextPanel === 'medical-record'"
+              @click="toggleContextPanel('medical-record')"
+            >
+              患者病历
+            </button>
+          </div>
+
+          <div v-if="contextPanel" class="copilot-context__panel">
+            <AiConsultSummaryCard
+              v-if="contextPanel === 'ai-consult'"
+              :summary="patient?.aiConsultSummary"
+              :has-ai-consultation="patient?.hasAiConsultation"
+              class="copilot-context__summary"
+            />
+            <MedicalRecordSummaryCard
+              v-else
+              :record="medicalRecord"
+              :loading="medicalRecordLoading"
+              class="copilot-context__summary"
+            />
+          </div>
+          <p v-else class="copilot-context__hint">点击上方按钮查看 AI 预问诊或患者病历</p>
+
           <p class="copilot-context__note">
-            助手可提议运行初步诊断、W2/W3/W4/W5 等工作流；执行前需你确认。回答仅供临床参考，请结合实际情况决策。
+            助手可提议运行工作流或提交病历/检查/确诊/处方；所有写操作需你确认后才会保存。
           </p>
         </GlassCard>
       </aside>
@@ -516,9 +647,19 @@ onMounted(() => {
       <section class="copilot-chat">
         <GlassCard class="copilot-chat__card">
           <div class="copilot-chat__toolbar">
-            <span><ElIcon><MagicStick /></ElIcon> 临床 Agent</span>
+            <div class="copilot-chat__brand">
+              <span class="copilot-chat__brand-icon"><ElIcon><MagicStick /></ElIcon></span>
+              <div>
+                <strong>临床 Agent</strong>
+                <small>门诊诊疗 Copilot</small>
+              </div>
+            </div>
             <span class="copilot-chat__session">{{ currentSession?.title || '新对话' }}</span>
-            <span class="copilot-chat__doctor">{{ authStore.realName || '医生' }}</span>
+            <div class="copilot-chat__ops">
+              <span class="copilot-chat__doctor"><ElIcon><User /></ElIcon>{{ authStore.realName || '医生' }}</span>
+              <ElButton size="small" @click="goQueue">待诊接诊</ElButton>
+              <ElButton size="small" :disabled="!registerId || !currentSessionId" @click="clearHistory">清空</ElButton>
+            </div>
           </div>
 
           <ElScrollbar ref="chatScrollRef" class="copilot-chat__scroll" v-loading="historyLoading">
@@ -544,21 +685,18 @@ onMounted(() => {
               :class="`is-${msg.role}`"
             >
               <template v-if="msg.role === 'assistant'">
-                <p v-if="msg.agentStatus" class="copilot-chat__agent-status">{{ msg.agentStatus }}</p>
+                <p v-if="msg.agentStatus" class="copilot-chat__agent-status">
+                  <span class="copilot-chat__spinner" aria-hidden="true" />
+                  {{ msg.agentStatus }}
+                </p>
                 <MarkdownContent v-if="msg.content" :source="msg.content" />
-                <ElCollapse
-                  v-if="msg.agentThoughts?.length"
-                  class="copilot-agent-thoughts"
+                <p
+                  v-else-if="!msg.agentStatus && isStreaming(index)"
+                  class="copilot-chat__agent-status"
                 >
-                  <ElCollapseItem title="工具调用记录" name="thoughts">
-                    <ul>
-                      <li v-for="(thought, ti) in msg.agentThoughts" :key="ti">
-                        <strong v-if="thought.tool">{{ thought.tool }}</strong>
-                        <span v-if="thought.thought">{{ thought.thought }}</span>
-                      </li>
-                    </ul>
-                  </ElCollapseItem>
-                </ElCollapse>
+                  <span class="copilot-chat__spinner" aria-hidden="true" />
+                  正在生成…
+                </p>
                 <AgentActionCard
                   v-for="(action, actionIndex) in msg.actions"
                   :key="`${index}-${actionIndex}`"
@@ -567,6 +705,27 @@ onMounted(() => {
                   @confirm="handleActionConfirm(index, actionIndex, action)"
                   @dismiss="handleActionDismiss(index, actionIndex)"
                 />
+                <AgentConfirmCard
+                  v-for="(confirm, confirmIndex) in msg.confirms"
+                  :key="`confirm-${index}-${confirmIndex}`"
+                  :action="confirm"
+                  :status="getConfirmStatus(index, confirmIndex)"
+                  @confirm="(payload) => handleConfirmSubmit(index, confirmIndex, confirm, payload)"
+                  @dismiss="handleConfirmDismiss(index, confirmIndex)"
+                />
+                <ElCollapse
+                  v-if="msg.agentThoughts?.length"
+                  class="copilot-agent-thoughts"
+                >
+                  <ElCollapseItem title="工具调用记录" name="thoughts">
+                    <ul>
+                      <li v-for="(thought, ti) in msg.agentThoughts" :key="ti">
+                        <strong v-if="thought.tool">{{ friendlyToolName(thought.tool) }}</strong>
+                        <span v-if="thought.thought">{{ formatThoughtPreview(thought.thought) }}</span>
+                      </li>
+                    </ul>
+                  </ElCollapseItem>
+                </ElCollapse>
               </template>
 
               <template v-else-if="msg.role === 'action_result'">
@@ -599,14 +758,22 @@ onMounted(() => {
               type="textarea"
               :rows="3"
               resize="none"
-              :disabled="!currentSessionId"
+              :disabled="!currentSessionId || loading"
               placeholder="输入临床问题，例如：帮我生成初步诊断"
               @keydown.enter.exact.prevent="sendMessage()"
             />
             <ElButton
+              v-if="loading"
+              type="danger"
+              plain
+              @click="stopGeneration"
+            >
+              停止
+            </ElButton>
+            <ElButton
               type="primary"
               :loading="loading"
-              :disabled="!currentSessionId"
+              :disabled="!currentSessionId || loading"
               :icon="Promotion"
               @click="sendMessage()"
             >
@@ -838,9 +1005,28 @@ onMounted(() => {
 }
 
 .copilot-chat__agent-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 8px;
   font-size: 12px;
   color: var(--el-color-primary);
+}
+
+.copilot-chat__spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--el-color-primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: copilot-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes copilot-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .copilot-agent-thoughts {
@@ -914,6 +1100,375 @@ onMounted(() => {
 
 @media (max-width: 960px) {
   .copilot-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.copilot-page {
+  --copilot-blue: #2f8df7;
+  --copilot-blue-soft: #e8f3ff;
+  --copilot-blue-softer: #f5faff;
+  --copilot-green: #14a978;
+  --copilot-green-soft: #ecfff7;
+  --copilot-line: rgba(72, 118, 169, 0.14);
+  --copilot-shadow: 0 16px 42px rgba(49, 105, 171, 0.1);
+  max-width: 1180px;
+  min-height: calc(100dvh - 112px);
+  padding: 10px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(47, 141, 247, 0.13), transparent 32%),
+    linear-gradient(180deg, #f7fbff 0%, #eef7ff 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.copilot-grid {
+  grid-template-columns: minmax(230px, 270px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: calc(100dvh - 132px);
+}
+
+.copilot-context__card,
+.copilot-chat__card {
+  border: 1px solid rgba(214, 231, 247, 0.92);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--copilot-shadow);
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.copilot-context__card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 22px;
+}
+
+.copilot-context__head {
+  margin-block-end: 0;
+}
+
+.copilot-context__head h3 {
+  font-size: 15px;
+  color: #23415f;
+}
+
+.copilot-context__profile {
+  margin-block-end: 0;
+  padding: 12px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f9fcff 0%, #eef7ff 100%);
+  box-shadow: inset 0 0 0 1px rgba(206, 226, 245, 0.78);
+}
+
+.copilot-context__avatar {
+  width: 42px;
+  height: 42px;
+  color: #0b7cdf;
+  background: #dff0ff;
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.9);
+}
+
+.copilot-sessions {
+  margin-block-end: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.copilot-sessions__head {
+  padding-inline: 2px;
+}
+
+.copilot-sessions__list {
+  display: grid;
+  gap: 8px;
+  max-height: 196px;
+}
+
+.copilot-sessions__item {
+  border-radius: 14px;
+  background: #f7fbff;
+  box-shadow: inset 0 0 0 1px rgba(215, 231, 246, 0.86);
+}
+
+.copilot-sessions__item.is-active {
+  background: #e9f4ff;
+  box-shadow: inset 0 0 0 1px rgba(91, 164, 243, 0.28);
+}
+
+.copilot-sessions__btn {
+  padding: 10px 12px;
+}
+
+.copilot-context__summary {
+  margin-block-end: 0;
+}
+
+.copilot-context__tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.copilot-context__tab {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 12px;
+  background: #f7fbff;
+  box-shadow: inset 0 0 0 1px rgba(215, 231, 246, 0.86);
+  color: #5a728a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.copilot-context__tab:hover {
+  color: #2a5f91;
+  background: #eef7ff;
+}
+
+.copilot-context__tab.is-active {
+  color: #0b7cdf;
+  background: #e9f4ff;
+  box-shadow: inset 0 0 0 1px rgba(91, 164, 243, 0.32);
+}
+
+.copilot-context__panel {
+  max-height: min(420px, 42dvh);
+  overflow-y: auto;
+}
+
+.copilot-context__panel :deep(.ai-consult-card),
+.copilot-context__panel :deep(.record-card) {
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.copilot-context__panel :deep(.ai-consult-grid),
+.copilot-context__panel :deep(.record-card__grid) {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.copilot-context__panel :deep(.ai-consult-item),
+.copilot-context__panel :deep(.record-card__item) {
+  padding: 10px 12px;
+}
+
+.copilot-context__note,
+.copilot-context__hint {
+  margin: 0;
+  padding: 12px;
+  border-radius: 16px;
+  background: #f7fbff;
+  box-shadow: inset 0 0 0 1px rgba(215, 231, 246, 0.86);
+}
+
+.copilot-chat__card {
+  min-height: calc(100dvh - 132px);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+.copilot-chat__toolbar {
+  margin-block-end: 0;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--copilot-line);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.copilot-chat__brand,
+.copilot-chat__ops,
+.copilot-chat__doctor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copilot-chat__brand {
+  min-width: 190px;
+  color: #21476c;
+}
+
+.copilot-chat__brand-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--copilot-blue);
+  background: #e5f2ff;
+}
+
+.copilot-chat__brand strong {
+  display: block;
+  font-size: 14px;
+}
+
+.copilot-chat__brand small {
+  display: block;
+  margin-top: 2px;
+  color: #8ba0b6;
+  font-size: 11px;
+}
+
+.copilot-chat__session {
+  color: #243c55;
+  font-size: 13px;
+}
+
+.copilot-chat__doctor {
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #5a728a;
+  background: #f3f8fe;
+}
+
+.copilot-chat__scroll {
+  min-height: 0;
+  margin-block-end: 0;
+  padding: 16px 18px 8px;
+  background:
+    linear-gradient(180deg, rgba(247, 251, 255, 0.62), rgba(255, 255, 255, 0.9)),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(224, 238, 250, 0.32) 32px);
+}
+
+.copilot-chat__welcome {
+  padding: 18px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--copilot-line);
+}
+
+.copilot-chat__welcome p {
+  margin: 0;
+}
+
+.copilot-chat__quick-btn {
+  border-color: #d5e8fb;
+  background: #f6fbff;
+  color: #2a5f91;
+}
+
+.copilot-chat__bubble {
+  position: relative;
+  max-width: min(680px, 92%);
+  margin-block-end: 14px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  line-height: 1.75;
+  box-shadow: 0 8px 22px rgba(54, 96, 143, 0.06);
+}
+
+.copilot-chat__bubble.is-user {
+  margin-inline: auto 0;
+  padding: 10px 16px 10px 42px;
+  color: #1f5c91;
+  background: #dceeff;
+  box-shadow: inset 0 0 0 1px rgba(119, 183, 246, 0.28);
+}
+
+.copilot-chat__bubble.is-user::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 9px;
+  inset-inline-start: 14px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 36%, #2f8df7 0 4px, transparent 4.5px),
+    radial-gradient(circle at 50% 78%, #2f8df7 0 7px, transparent 7.5px),
+    rgba(255, 255, 255, 0.86);
+}
+
+.copilot-chat__bubble.is-assistant {
+  max-width: min(760px, 96%);
+  background: #fff;
+  box-shadow:
+    0 10px 28px rgba(54, 96, 143, 0.07),
+    inset 0 0 0 1px rgba(216, 231, 247, 0.9);
+}
+
+.copilot-chat__bubble.is-action_result {
+  max-width: min(760px, 96%);
+  background: var(--copilot-green-soft);
+  box-shadow: inset 0 0 0 1px rgba(40, 186, 132, 0.26);
+}
+
+.copilot-chat__agent-status {
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #2777c9;
+  background: #edf7ff;
+}
+
+.copilot-agent-thoughts {
+  margin-top: 12px;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.copilot-chat__composer {
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--copilot-line);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.copilot-chat__composer :deep(.el-textarea__inner) {
+  min-height: 44px !important;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fbfdff;
+  box-shadow: inset 0 0 0 1px #d7e8f7;
+}
+
+.copilot-chat__composer .el-button {
+  min-height: 44px;
+  border-radius: 14px;
+}
+
+@media (max-width: 960px) {
+  .copilot-page {
+    min-height: auto;
+  }
+
+  .copilot-grid,
+  .copilot-chat__card {
+    min-height: 720px;
+  }
+
+  .copilot-context__card {
+    height: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .copilot-chat__toolbar,
+  .copilot-chat__ops {
+    flex-wrap: wrap;
+  }
+
+  .copilot-chat__brand,
+  .copilot-chat__session {
+    min-width: 0;
+    flex: 1 1 100%;
+    text-align: left;
+  }
+
+  .copilot-chat__composer {
     grid-template-columns: 1fr;
   }
 }

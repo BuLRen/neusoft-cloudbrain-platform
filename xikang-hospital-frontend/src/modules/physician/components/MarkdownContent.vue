@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { normalizeMarkdownTables } from '@/shared/utils/markdownTables'
 
 const props = withDefaults(
   defineProps<{
@@ -18,8 +19,12 @@ marked.setOptions({
 const sanitizedHtml = computed(() => {
   const text = props.source?.trim()
   if (!text) return ''
-  const raw = marked.parse(text, { async: false }) as string
-  return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } })
+  const normalized = normalizeMarkdownTables(text)
+  const raw = marked.parse(normalized, { async: false }) as string
+  return DOMPurify.sanitize(raw, {
+    USE_PROFILES: { html: true },
+    ADD_TAGS: ['table', 'thead', 'tbody', 'tr', 'th', 'td'],
+  })
 })
 </script>
 
@@ -95,6 +100,37 @@ const sanitizedHtml = computed(() => {
   padding-inline-start: var(--space-3);
   border-inline-start: 3px solid var(--color-border);
   color: var(--color-text-muted);
+}
+
+.markdown-content :deep(table) {
+  width: 100%;
+  margin-block: var(--space-3);
+  border-collapse: collapse;
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 13px;
+  box-shadow: inset 0 0 0 1px rgba(172, 201, 222, 0.72);
+}
+
+.markdown-content :deep(thead th) {
+  padding: 9px 10px;
+  text-align: left;
+  font-weight: 700;
+  color: #607890;
+  background: #f5f9fd;
+  border-bottom: 1px solid rgba(172, 201, 222, 0.45);
+}
+
+.markdown-content :deep(tbody td) {
+  padding: 9px 10px;
+  color: #38516a;
+  line-height: 1.55;
+  vertical-align: top;
+  border-top: 1px solid rgba(172, 201, 222, 0.32);
+}
+
+.markdown-content :deep(tbody tr:nth-child(even) td) {
+  background: rgba(248, 251, 255, 0.72);
 }
 
 .markdown-content__empty {

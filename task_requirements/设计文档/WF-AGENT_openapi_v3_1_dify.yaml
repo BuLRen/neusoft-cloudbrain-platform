@@ -1,0 +1,783 @@
+openapi: 3.1.0
+info:
+  title: Xikang Physician Agent Tools v3.1 for Dify
+  description: Dify 导入专用版本。使用 query parameters 暴露工具参数，避免部分 Dify 版本无法解析 requestBody 参数。
+  version: 3.1.0
+servers:
+  - url: http://172.17.0.1:8092
+paths:
+  /api/physician/agent/tools/run-preliminary-diagnosis:
+    post:
+      operationId: tool_run_preliminary_diagnosis
+      summary: 运行 AI 初步诊断
+      description: 读取当前就诊病历与预问诊，调用初步诊断工作流。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 就诊号，必须使用 Agent 输入变量 register_id
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 当前医生 ID
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Copilot 会话 ID
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w1:
+    post:
+      operationId: tool_run_w1
+      summary: 病历结构化 W1
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w2:
+    post:
+      operationId: tool_run_w2
+      summary: W2 检查检验推荐
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w3:
+    post:
+      operationId: tool_run_w3
+      summary: W3 结果解读
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w4:
+    post:
+      operationId: tool_run_w4
+      summary: W4 门诊确诊
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/run-w5:
+    post:
+      operationId: tool_run_w5
+      summary: W5 智能荐药
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-medical-record:
+    post:
+      operationId: tool_get_medical_record
+      summary: 读取病历
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 就诊号，必须使用 Agent 输入变量 register_id
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-lab-results:
+    post:
+      operationId: tool_get_lab_results
+      summary: 读取检查检验结果
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-patient:
+    post:
+      operationId: tool_get_patient
+      summary: 读取患者详情与预问诊
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-medical-technologies:
+    post:
+      operationId: tool_get_medical_technologies
+      summary: 查询医技项目目录
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: tech_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [check, inspection, disposal]
+          description: 医技类型
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 搜索关键词
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-diseases:
+    post:
+      operationId: tool_get_diseases
+      summary: 查询疾病库
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-drugs:
+    post:
+      operationId: tool_get_drugs
+      summary: 查询药品与库存
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-prescriptions:
+    post:
+      operationId: tool_get_prescriptions
+      summary: 读取当前就诊处方
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-visit-timeline:
+    post:
+      operationId: tool_get_visit_timeline
+      summary: 读取就诊时间线
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-exam-suggestions:
+    post:
+      operationId: tool_get_exam_suggestions
+      summary: 读取 W2 检查推荐记录
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/get-diagnosis-suggestions:
+    post:
+      operationId: tool_get_diagnosis_suggestions
+      summary: 读取 W4 诊断建议记录
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-medical-record:
+    post:
+      operationId: tool_draft_medical_record
+      summary: 生成病历修改草案（不写库）
+      description: 生成病历草案并返回 diff 与 confirmPayload。补充预问诊到病历时，merge_from_preconsultation 必须为 true。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 就诊号，必须使用 Agent 输入变量 register_id
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: merge_from_preconsultation
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: 为 true 时自动从 AI 预问诊摘要合并字段
+        - name: readme
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 主诉
+        - name: present
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 现病史
+        - name: present_treat
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 现病治疗情况
+        - name: history
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 既往史
+        - name: allergy
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 过敏史
+        - name: physique
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 体格检查
+        - name: proposal
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 检查检验建议
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-order-basket:
+    post:
+      operationId: tool_draft_order_basket
+      summary: 生成检查检验申请篮草案
+      description: 推荐优先用 use_w2=true 从 W2 结果生成，避免直接传复杂 items。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: order_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [check, inspection, disposal]
+        - name: use_w2
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-diagnosis:
+    post:
+      operationId: tool_draft_diagnosis
+      summary: 生成确诊草案
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: use_w4
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: diagnosis
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: cure
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: careful
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-prescription:
+    post:
+      operationId: tool_draft_prescription
+      summary: 生成处方草案
+      description: 推荐优先用 use_w5=true 从 W5 荐药结果生成，避免直接传复杂 items。
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: use_w5
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: confirmed_diagnosis
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/draft-preliminary-diagnosis:
+    post:
+      operationId: tool_draft_preliminary_diagnosis
+      summary: 生成初步诊断保存草案
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 就诊号，必须使用 Agent 输入变量 register_id
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: preliminary_diagnosis
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 待保存的初步诊断文本
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/save-preliminary-diagnosis:
+    post:
+      operationId: tool_save_preliminary_diagnosis
+      summary: 提交初步诊断（需 confirmation_token）
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: doctor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: confirmation_token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-medical-record:
+    post:
+      operationId: tool_commit_medical_record
+      summary: 提交病历（需 confirmation_token，不建议挂载给 Agent）
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: confirmation_token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-check-requests:
+    post:
+      operationId: tool_commit_check_requests
+      summary: 提交检查申请（需 confirmation_token，不建议挂载给 Agent）
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: confirmation_token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-inspection-requests:
+    post:
+      operationId: tool_commit_inspection_requests
+      summary: 提交检验申请（需 confirmation_token，不建议挂载给 Agent）
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: confirmation_token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-disposal-requests:
+    post:
+      operationId: tool_commit_disposal_requests
+      summary: 提交处置申请（需 confirmation_token，不建议挂载给 Agent）
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: confirmation_token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-diagnosis:
+    post:
+      operationId: tool_commit_diagnosis
+      summary: 提交确诊（需 confirmation_token，不建议挂载给 Agent）
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: confirmation_token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-prescription:
+    post:
+      operationId: tool_commit_prescription
+      summary: 提交处方（需 confirmation_token，不建议挂载给 Agent）
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: confirmation_token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /api/physician/agent/tools/commit-archive-visit:
+    post:
+      operationId: tool_commit_archive_visit
+      summary: 归档病历（需 confirmation_token，不建议挂载给 Agent）
+      parameters:
+        - name: register_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: confirmation_token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK

@@ -36,6 +36,10 @@ public class PhysicianCopilotContextBuilder {
      * Dify Agent 应用输入变量（与编排指南一致，值均为 String）。
      */
     public Map<String, String> buildAgentInputs(Long registerId) {
+        return buildAgentInputs(registerId, null);
+    }
+
+    public Map<String, String> buildAgentInputs(Long registerId, Long sessionId) {
         Map<String, Object> patient = physicianService.getPatient(registerId);
         Map<String, Object> record = physicianService.getMedicalRecord(registerId);
 
@@ -44,6 +48,13 @@ public class PhysicianCopilotContextBuilder {
         inputs.put("clinical_context_text", buildClinicalContextText(record, patient));
         inputs.put("patient_name", valueOrEmpty(patient, "realName"));
         inputs.put("visit_state", formatVisitState(patient));
+        Long doctorId = com.xikang.physician.context.PhysicianAuthContext.employeeIdOrNull();
+        if (doctorId != null) {
+            inputs.put("doctor_id", String.valueOf(doctorId));
+        }
+        if (sessionId != null) {
+            inputs.put("session_id", String.valueOf(sessionId));
+        }
         try {
             Map<String, Object> w2Context = w2ClinicalContextBuilder.build(registerId);
             inputs.put("clinical_context_json", JSON.writeValueAsString(w2Context));
@@ -133,19 +144,27 @@ public class PhysicianCopilotContextBuilder {
             你是临床 Agent 助手。除回答问题外，可在必要时向医生提议执行以下工作流操作。
             医生需在界面上点击确认后才会真正执行，你不得声称已自动执行。
 
-            可用操作类型（type 字段）：
-            - trigger_preliminary_diagnosis：运行初步诊断工作流（需已有病历或预问诊文本）
+            可用工作流操作（type 字段，只读推理）：
+            - trigger_preliminary_diagnosis：运行初步诊断工作流
             - trigger_w2：运行检查检验推荐
             - trigger_w3：运行检查检验结果 AI 解读
             - trigger_w4：运行门诊确诊推理
             - trigger_w5：运行智能荐药（需已保存确诊病名）
 
+            可用确认提交操作（type 字段，写库，需医生在界面确认）：
+            - commit_medical_record：保存病历字段
+            - commit_preliminary_diagnosis：保存初步诊断
+            - commit_check_requests / commit_inspection_requests / commit_disposal_requests：提交医技申请
+            - commit_diagnosis：提交门诊确诊
+            - commit_prescription：开立处方
+            - commit_archive_visit：归档病历给患者
+
             触发时机：
             - 仅在医生明确请求或上下文明显缺失且操作能补足信息时提议
             - 每次回复最多附加 2 个操作卡片
-            - 若上下文已足够回答问题，不要附加操作卡片
+            - 写库操作必须先给出草案说明，再用确认卡片等待医生点击
 
-            操作卡片格式（放在回复正文末尾，每个操作单独一个代码块）：
+            工作流操作卡片格式（放在回复正文末尾）：
             ```action
             {
               "type": "trigger_preliminary_diagnosis",
@@ -155,7 +174,18 @@ public class PhysicianCopilotContextBuilder {
             }
             ```
 
-            只读数据可通过内置工具获取（病历摘要、检验结果、W3 状态），无需操作卡片。
+            确认提交卡片格式（写库，需含 payload）：
+            ```confirm
+            {
+              "type": "commit_medical_record",
+              "label": "保存病历",
+              "description": "将以下修改写入病历",
+              "reason": "医生已审核草案",
+              "payload": { "readme": "...", "present": "..." }
+            }
+            ```
+
+            只读数据可通过内置工具获取（病历、患者、检验结果、医技目录等），无需操作卡片。
             """;
     }
 
