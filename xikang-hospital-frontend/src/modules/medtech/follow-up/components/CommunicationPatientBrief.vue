@@ -16,6 +16,7 @@ const emit = defineEmits<{
   generateSummary: []
   openOutcome: []
   toggleAi: [enabled: boolean]
+  sendRevisitReminder: []
 }>()
 
 const patientDetailVisible = ref(false)
@@ -60,6 +61,9 @@ function formatMetricLine(metric: FollowUpHealthMetric) {
         </ul>
       </div>
       <div class="comm-brief__actions">
+        <ElButton type="warning" plain @click="emit('sendRevisitReminder')">
+          发送复诊提醒
+        </ElButton>
         <ElButton type="primary" :loading="generatingSummary" @click="emit('generateSummary')">
           生成 AI 病例总结
         </ElButton>

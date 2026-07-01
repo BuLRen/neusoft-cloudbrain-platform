@@ -68,14 +68,6 @@ public class FollowUpPatientPortalController {
         return Result.success("血糖已记录", patientPortalService.createObservation(patientId, request));
     }
 
-    @PostMapping("/revisit-requests")
-    public Result<Map<String, Object>> createRevisitRequest(
-        @RequestParam(required = false) Long patientId,
-        @RequestBody Map<String, Object> request
-    ) {
-        return Result.success("复诊申请已提交", patientPortalService.createRevisitRequest(patientId, request));
-    }
-
     @GetMapping("/glucose-advice")
     public Result<Map<String, Object>> getGlucoseAdvice(
         @RequestParam(required = false) Long patientId,
@@ -100,5 +92,31 @@ public class FollowUpPatientPortalController {
         @RequestParam(required = false) Long registerId
     ) {
         return Result.success(patientPortalService.getGlucoseForecast(patientId, registerId));
+    }
+
+    @GetMapping("/communication/sessions/{registerId}")
+    public Result<Map<String, Object>> getCommunicationSession(
+        @RequestParam(required = false) Long patientId,
+        @PathVariable Long registerId
+    ) {
+        return Result.success(patientPortalService.getCommunicationSession(patientId, registerId));
+    }
+
+    @GetMapping("/communication/sessions/{registerId}/messages")
+    public Result<Map<String, Object>> listCommunicationMessages(
+        @RequestParam(required = false) Long patientId,
+        @PathVariable Long registerId,
+        @RequestParam(required = false) Integer limit,
+        @RequestParam(required = false) Integer offset
+    ) {
+        return Result.success(patientPortalService.listCommunicationMessages(patientId, registerId, limit, offset));
+    }
+
+    @GetMapping("/communication/case-summary/{registerId}")
+    public Result<Map<String, Object>> getSharedCaseSummary(
+        @RequestParam(required = false) Long patientId,
+        @PathVariable Long registerId
+    ) {
+        return Result.success(patientPortalService.getSharedCaseSummary(patientId, registerId));
     }
 }

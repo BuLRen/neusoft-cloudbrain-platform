@@ -156,6 +156,10 @@ async function handleApproveSummary(payload: { doctorContent: string; sharedToPa
   }
 }
 
+async function handleSendRevisitReminder() {
+  await handleSend('【复诊提醒】建议您近期到院复诊，请通过患者端「我的挂号」自行预约。')
+}
+
 async function handleToggleAi(enabled: boolean) {
   if (!activeSession.value) return
   try {
@@ -262,6 +266,7 @@ onActivated(() => {
         @generate-summary="handleGenerateSummary"
         @open-outcome="openOutcome"
         @toggle-ai="handleToggleAi"
+        @send-revisit-reminder="handleSendRevisitReminder"
       />
     </div>
 

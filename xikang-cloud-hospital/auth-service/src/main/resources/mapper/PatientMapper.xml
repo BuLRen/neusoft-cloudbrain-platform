@@ -24,32 +24,37 @@
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
                account_balance, delmark, create_time, update_time
         FROM patient
-        WHERE id = #{id} AND delmark = 1
+        WHERE id = #{id} AND delmark = 0
     </select>
 
     <select id="selectByIdCard" resultMap="BaseResultMap">
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
                account_balance, delmark, create_time, update_time
         FROM patient
-        WHERE id_card = #{idCard} AND delmark = 1
+        WHERE id_card = #{idCard} AND delmark = 0
     </select>
 
     <select id="selectByUserId" resultMap="BaseResultMap">
-        SELECT p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
+        SELECT DISTINCT ON (p.id)
+               p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
                p.allergy_history, p.account_balance, p.delmark, p.create_time, p.update_time,
-               upm.relation as relation,
-               CASE WHEN upm.relation = '本人' THEN 1 ELSE 0 END as is_primary
+               COALESCE(upm.relation, '本人') AS relation,
+               CASE WHEN COALESCE(upm.relation, '本人') = '本人' THEN 1 ELSE 0 END AS is_primary
         FROM patient p
-        INNER JOIN user_patient_managed upm ON p.id = upm.patient_id
-        WHERE upm.user_id = #{userId} AND p.delmark = 1
-        ORDER BY CASE WHEN upm.relation = '本人' THEN 0 ELSE 1 END, p.create_time ASC
+        LEFT JOIN user_patient_managed upm ON p.id = upm.patient_id AND upm.user_id = #{userId}
+        LEFT JOIN users u ON u.id = #{userId}
+        WHERE p.delmark = 0
+          AND (upm.user_id IS NOT NULL OR p.id = u.patient_id)
+        ORDER BY p.id,
+                 CASE WHEN COALESCE(upm.relation, '本人') = '本人' THEN 0 ELSE 1 END,
+                 p.create_time ASC
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO patient (real_name, id_card, gender, birthdate, phone, avatar, home_address,
                            allergy_history, delmark, create_time, update_time)
         VALUES (#{realName}, #{idCard}, #{gender}, #{birthdate}, #{phone}, #{avatar}, #{homeAddress},
-                #{allergyHistory}, 1, NOW(), NOW())
+                #{allergyHistory}, 0, NOW(), NOW())
     </insert>
 
     <update id="update">
@@ -82,7 +87,7 @@
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
                account_balance, delmark, create_time, update_time
         FROM patient
-        WHERE id = #{id} AND delmark = 1
+        WHERE id = #{id} AND delmark = 0
         FOR UPDATE
     </select>
 
@@ -90,11 +95,11 @@
         UPDATE patient
         SET account_balance = #{accountBalance},
             update_time = NOW()
-        WHERE id = #{id} AND delmark = 1
+        WHERE id = #{id} AND delmark = 0
     </update>
 
     <delete id="deleteById">
-        UPDATE patient SET delmark = 0, update_time = NOW() WHERE id = #{id}
+        UPDATE patient SET delmark = 1, update_time = NOW() WHERE id = #{id}
     </delete>
 
 </mapper>

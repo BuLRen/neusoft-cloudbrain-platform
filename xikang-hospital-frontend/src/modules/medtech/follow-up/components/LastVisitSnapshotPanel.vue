@@ -26,7 +26,17 @@ const snapshot = ref<LastVisitSnapshot | null>(null)
 const PRIORITY_METRIC_KEYS = ['hba1c', 'fasting_glucose', 'postprandial_glucose']
 
 const metricEntries = computed(() => {
-  const metrics = snapshot.value?.professionalMetrics ?? {}
+  const raw = snapshot.value?.professionalMetrics
+  let metrics: Record<string, ProfessionalMetricItem> = {}
+  if (typeof raw === 'string') {
+    try {
+      metrics = JSON.parse(raw) as Record<string, ProfessionalMetricItem>
+    } catch {
+      metrics = {}
+    }
+  } else if (raw && typeof raw === 'object') {
+    metrics = raw as Record<string, ProfessionalMetricItem>
+  }
   const all = Object.entries(metrics).map(([key, item]) => ({
     key,
     ...(item as ProfessionalMetricItem),
@@ -75,7 +85,7 @@ onMounted(() => {
     <div class="panel-head">
       <div>
         <h3 class="panel-title">上次看诊</h3>
-        <p class="panel-desc">院内检验数据（演示）</p>
+        <p class="panel-desc">{{ mode === 'patient' ? '查看您上次在院看诊时的检验与诊断摘要' : '院内检验数据（演示）' }}</p>
       </div>
       <StatusTag tone="neutral">只读</StatusTag>
     </div>

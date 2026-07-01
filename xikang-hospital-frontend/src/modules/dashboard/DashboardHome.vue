@@ -13,7 +13,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.role === 'admin')
 const isPhysician = computed(() => authStore.role === 'physician')
-const isMedtech = computed(() => authStore.role === 'medtech')
+const isFollowup = computed(() => authStore.role === 'followup')
 const modules = [
   { title: '诊疗流程', owner: '人员A', path: '/physician/queue', description: '医生接诊、病历、申请、确诊、开方。' },
   { title: '入口与支撑流程', owner: '人员B', path: '/registration', description: '导诊、挂号、收费、执行、发药、随访。' },
@@ -25,6 +25,18 @@ const modules = [
   <AdminDashboard v-if="isAdmin" />
   <PhysicianDashboard v-else-if="isPhysician" />
   <MedtechDashboard v-else-if="isMedtech" />
+  <div v-else-if="isFollowup" class="dashboard u-page-grid">
+    <PageHeader
+      title="随访工作台"
+      description="您已登录为随访人员，请进入随访系统管理在管患者。"
+      eyebrow="随访系统"
+    />
+    <GlassCard class="dashboard__card" @click="router.push('/follow-up/dashboard')">
+      <StatusTag tone="primary">随访</StatusTag>
+      <h2>进入随访系统</h2>
+      <p>工作台、疗效评估、医患沟通与随访记录。</p>
+    </GlassCard>
+  </div>
   <div v-else class="dashboard u-page-grid">
     <PageHeader
       title="前端框架仪表盘"

@@ -33,6 +33,7 @@ function switchPatient(patientId: number) {
 // 快捷功能菜单
 const quickActions = [
   { key: 'registration', label: '我的挂号', icon: '📋', path: '/patient/registration' },
+  { key: 'followup', label: '随访管理', icon: '🩺', path: '/patient/followup' },
   { key: 'records', label: '电子病历', icon: '📄', path: '/patient/records' },
   { key: 'prescription', label: '我的处方', icon: '💊', path: '/patient/prescription' },
   { key: 'profile', label: '个人中心', icon: '👤', path: '/patient/profile' },

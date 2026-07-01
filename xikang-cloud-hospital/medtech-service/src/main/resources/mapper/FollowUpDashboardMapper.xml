@@ -47,6 +47,38 @@
         )
     </sql>
 
+    <!-- 在管科室：优先 follow_up_enrollment.managing_department_id，兼容 profile；未纳入仅展示挂号科室一致者 -->
+    <sql id="departmentPatientScope">
+        <if test="departmentId != null">
+            AND (
+                EXISTS (
+                    SELECT 1 FROM follow_up_enrollment fe_s
+                    WHERE fe_s.register_id = r.id
+                      AND fe_s.status = 'active'
+                      AND fe_s.managing_department_id = #{departmentId}
+                )
+                OR EXISTS (
+                    SELECT 1 FROM follow_up_patient_profile fp_s
+                    WHERE fp_s.register_id = r.id
+                      AND fp_s.department_id = #{departmentId}
+                )
+                <if test="includeUnenrolledEligible">
+                OR (
+                    NOT EXISTS (
+                        SELECT 1 FROM follow_up_enrollment fe_n
+                        WHERE fe_n.register_id = r.id AND fe_n.status = 'active'
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM follow_up_patient_profile fp_n
+                        WHERE fp_n.register_id = r.id
+                    )
+                    AND r.deptment_id = #{departmentId}
+                )
+                </if>
+            )
+        </if>
+    </sql>
+
     <select id="selectDashboardPatients" resultType="map">
         SELECT
             r.id AS "registerId",
@@ -58,7 +90,13 @@
             COALESCE(fp.priority_level, 'normal') AS "priorityLevel",
             COALESCE(fp.interview_interval_days, 7) AS "interviewIntervalDays",
             COALESCE(fp.observation_interval_days, 1) AS "observationIntervalDays",
-            (fp.register_id IS NOT NULL AND fp.department_id = #{departmentId}) AS "enrolled",
+            (
+                EXISTS (
+                    SELECT 1 FROM follow_up_enrollment fe0
+                    WHERE fe0.register_id = r.id AND fe0.status = 'active'
+                )
+                OR fp.register_id IS NOT NULL
+            ) AS "enrolled",
             (
                 SELECT MAX(s.schedule_date)
                 FROM follow_up_day_schedule s
@@ -91,15 +129,13 @@
         <include refid="eligibleRegisterCondition"/>
         <choose>
             <when test="demoOnlyProfile">
-                AND fp.department_id = #{departmentId}
+                AND EXISTS (
+                    SELECT 1 FROM follow_up_patient_profile fp_demo
+                    WHERE fp_demo.register_id = r.id AND fp_demo.department_id = #{departmentId}
+                )
             </when>
             <otherwise>
-                AND (
-                    fp.department_id = #{departmentId}
-                    <if test="includeUnenrolledEligible">
-                        OR fp.register_id IS NULL
-                    </if>
-                )
+                <include refid="departmentPatientScope"/>
             </otherwise>
         </choose>
         ORDER BY
@@ -233,15 +269,13 @@
                 <include refid="eligibleRegisterCondition"/>
                 <choose>
                     <when test="demoOnlyProfile">
-                        AND fp.department_id = #{departmentId}
+                        AND EXISTS (
+                            SELECT 1 FROM follow_up_patient_profile fp_demo
+                            WHERE fp_demo.register_id = r.id AND fp_demo.department_id = #{departmentId}
+                        )
                     </when>
                     <otherwise>
-                        AND (
-                            fp.department_id = #{departmentId}
-                            <if test="includeUnenrolledEligible">
-                                OR fp.register_id IS NULL
-                            </if>
-                        )
+                        <include refid="departmentPatientScope"/>
                     </otherwise>
                 </choose>
             ) AS "totalPatients",
@@ -259,27 +293,16 @@
                 LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
                 WHERE
                 <include refid="eligibleRegisterCondition"/>
-                AND (
-                    fp.department_id = #{departmentId}
-                    <if test="includeUnenrolledEligible">
-                        OR fp.register_id IS NULL
-                    </if>
-                )
+                <include refid="departmentPatientScope"/>
             ) - (
                 SELECT COUNT(*)
                 FROM follow_up_daily_observation o
                 WHERE o.observation_date = #{targetDate}
                   AND o.register_id IN (
                     SELECT r.id FROM register r
-                    LEFT JOIN follow_up_patient_profile fp2 ON fp2.register_id = r.id
                     WHERE
                     <include refid="eligibleRegisterCondition"/>
-                      AND (
-                          fp2.department_id = #{departmentId}
-                          <if test="includeUnenrolledEligible">
-                              OR fp2.register_id IS NULL
-                          </if>
-                      )
+                    <include refid="departmentPatientScope"/>
                   )
             ) AS "todayObservationPending"
     </select>

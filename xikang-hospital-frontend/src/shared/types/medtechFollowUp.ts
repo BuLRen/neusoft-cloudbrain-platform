@@ -358,6 +358,7 @@ export interface PatientObservationPayload {
   note?: string
 }
 
+/** @deprecated 复诊申请已下线，随访仅提供复诊提醒 */
 export interface RevisitRequest {
   id?: number
   registerId: number

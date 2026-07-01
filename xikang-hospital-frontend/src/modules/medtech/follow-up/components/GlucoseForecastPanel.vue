@@ -30,7 +30,7 @@ const props = withDefaults(
 )
 
 defineEmits<{
-  revisit: []
+  goRegistration: []
 }>()
 
 const loading = ref(false)
@@ -137,24 +137,6 @@ async function loadGlucoseMetrics() {
 async function loadAdvice() {
   if (!props.registerId) return
   adviceLoading.value = true
-  const adviceUrl =
-    props.mode === 'patient'
-      ? `/api/medtech/follow-up/patient/glucose-advice?registerId=${props.registerId}`
-      : `/api/medtech/follow-up/outcome/glucose-advice/${props.registerId}`
-  // #region agent log
-  fetch('http://127.0.0.1:7723/ingest/3c270b7b-7b14-401b-89fb-a81f2dfb5895', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '02d871' },
-    body: JSON.stringify({
-      sessionId: '02d871',
-      hypothesisId: 'C',
-      location: 'GlucoseForecastPanel.vue:loadAdvice:start',
-      message: 'loading glucose advice',
-      data: { mode: props.mode, registerId: props.registerId, adviceUrl },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-  // #endregion
   try {
     if (props.mode === 'patient') {
       advice.value = await medtechFollowUpApi.getPatientGlucoseAdvice({
@@ -164,49 +146,8 @@ async function loadAdvice() {
     } else {
       advice.value = await medtechFollowUpApi.getGlucoseAdvice(props.registerId)
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7723/ingest/3c270b7b-7b14-401b-89fb-a81f2dfb5895', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '02d871' },
-      body: JSON.stringify({
-        sessionId: '02d871',
-        hypothesisId: 'A',
-        location: 'GlucoseForecastPanel.vue:loadAdvice:success',
-        message: 'glucose advice loaded',
-        data: {
-          mode: props.mode,
-          registerId: props.registerId,
-          revisitRecommended: advice.value?.revisitRecommended,
-          riskLevel: advice.value?.riskLevel,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-    // #endregion
-  } catch (error: unknown) {
+  } catch {
     advice.value = null
-    const err = error as { response?: { status?: number; data?: unknown }; message?: string }
-    // #region agent log
-    fetch('http://127.0.0.1:7723/ingest/3c270b7b-7b14-401b-89fb-a81f2dfb5895', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '02d871' },
-      body: JSON.stringify({
-        sessionId: '02d871',
-        hypothesisId: 'B',
-        location: 'GlucoseForecastPanel.vue:loadAdvice:error',
-        message: 'glucose advice request failed',
-        data: {
-          mode: props.mode,
-          registerId: props.registerId,
-          adviceUrl,
-          status: err.response?.status,
-          responseData: err.response?.data,
-          errorMessage: err.message,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-    // #endregion
   } finally {
     adviceLoading.value = false
   }
@@ -252,6 +193,25 @@ async function refreshForecast() {
   }
 }
 
+async function reloadForecast() {
+  if (!props.registerId) return
+  refreshing.value = true
+  try {
+    await loadGlucoseMetrics()
+    forecast.value = await medtechFollowUpApi.getPatientGlucoseForecast({
+      patientId: props.patientId,
+      registerId: props.registerId,
+    })
+    ElMessage.success('血糖预测已更新')
+    await renderChart()
+    await loadAdvice()
+  } catch {
+    ElMessage.error('刷新预测失败')
+  } finally {
+    refreshing.value = false
+  }
+}
+
 watch(
   () => [props.registerId, props.patientId],
   () => {
@@ -278,17 +238,17 @@ onUnmounted(disposeChart)
     <div class="glucose-forecast__head">
       <div>
         <h3>{{ compact ? '血糖预测' : 'AI 血糖预测' }}</h3>
-        <p v-if="!compact">展示最近 72 小时实测与 LSTM+GRU 未来 24 小时预测；下方根据模型输出判断是否需要复诊</p>
+        <p v-if="!compact">展示最近 72 小时实测与 LSTM+GRU 未来 24 小时预测；下方根据模型输出给出复诊提醒</p>
       </div>
       <div class="glucose-forecast__actions">
         <StatusTag :tone="riskTone">{{ riskLabel }}</StatusTag>
         <ElButton
-          v-if="mode === 'doctor' && registerId"
+          v-if="registerId"
           type="primary"
           plain
           size="small"
           :loading="refreshing"
-          @click="refreshForecast"
+          @click="mode === 'doctor' ? refreshForecast() : reloadForecast()"
         >
           刷新预测
         </ElButton>
@@ -304,8 +264,8 @@ onUnmounted(disposeChart)
       :advice="advice"
       :loading="adviceLoading"
       :compact="compact"
-      :show-apply-button="mode === 'patient'"
-      @revisit="$emit('revisit')"
+      :show-registration-link="mode === 'patient'"
+      @go-registration="$emit('goRegistration')"
     />
 
     <div v-if="actualSeries.points.length || forecastSeries.points.length" ref="chartEl" class="glucose-forecast__chart" />

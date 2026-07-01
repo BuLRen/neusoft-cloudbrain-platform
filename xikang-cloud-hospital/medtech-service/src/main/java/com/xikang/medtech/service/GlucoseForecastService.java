@@ -111,14 +111,14 @@ public class GlucoseForecastService {
 
         if (revisitRecommended) {
             if (min < HYPO_MMOL) {
-                advice.put("adviceText", "预测血糖可能偏低（<3.9 mmol/L），建议尽快联系医生或申请复诊。");
+                advice.put("adviceText", "预测血糖可能偏低（<3.9 mmol/L），建议尽快到院复诊，请通过患者端「我的挂号」自行预约。");
             } else if (max > HYPER_MMOL) {
-                advice.put("adviceText", "预测血糖可能偏高（>10 mmol/L），建议申请复诊并调整治疗方案。");
+                advice.put("adviceText", "预测血糖可能偏高（>10 mmol/L），建议尽快到院复诊，请通过患者端「我的挂号」自行预约。");
             } else {
-                advice.put("adviceText", "模型评估为高风险，建议申请复诊并由医生跟进。");
+                advice.put("adviceText", "模型评估为高风险，建议尽快到院复诊，请通过患者端「我的挂号」自行预约。");
             }
         } else if ("medium".equalsIgnoreCase(riskLevel)) {
-            advice.put("adviceText", "血糖波动需关注，请保持规律监测；如持续异常可申请复诊。");
+            advice.put("adviceText", "血糖波动需关注，请保持规律监测；如持续异常请到「我的挂号」自行预约复诊。");
         } else {
             advice.put("adviceText", "当前预测风险较低，请继续按时录入血糖并遵循随访计划。");
         }

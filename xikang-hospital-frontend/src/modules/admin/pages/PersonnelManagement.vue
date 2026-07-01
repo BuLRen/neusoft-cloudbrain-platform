@@ -6,15 +6,18 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import PhysicianManagement from '@/modules/admin/pages/PhysicianManagement.vue'
 import AdminMedtechEmployeePage from '@/modules/admin/pages/AdminMedtechEmployeePage.vue'
+import AdminFollowUpEmployeePage from '@/modules/admin/pages/AdminFollowUpEmployeePage.vue'
 
 const route = useRoute()
 const router = useRouter()
 
-type PersonnelTab = 'physicians' | 'medtech'
+type PersonnelTab = 'physicians' | 'medtech' | 'followup'
 
 const activeTab = computed<PersonnelTab>({
   get() {
-    return route.query.tab === 'medtech' ? 'medtech' : 'physicians'
+    if (route.query.tab === 'medtech') return 'medtech'
+    if (route.query.tab === 'followup') return 'followup'
+    return 'physicians'
   },
   set(tab) {
     void router.replace({ path: route.path, query: { tab } })
@@ -26,7 +29,7 @@ const activeTab = computed<PersonnelTab>({
   <div class="personnel-page u-page-grid">
     <PageHeader
       title="人员管理"
-      description="统一维护诊疗医生与医技人员档案，并管理其登录账号。"
+      description="统一维护诊疗医生、医技人员与随访人员档案，并管理其登录账号。"
       eyebrow="管理员"
     />
 
@@ -37,6 +40,9 @@ const activeTab = computed<PersonnelTab>({
         </ElTabPane>
         <ElTabPane label="医技人员" name="medtech">
           <AdminMedtechEmployeePage embedded />
+        </ElTabPane>
+        <ElTabPane label="随访人员" name="followup">
+          <AdminFollowUpEmployeePage embedded />
         </ElTabPane>
       </ElTabs>
     </GlassCard>

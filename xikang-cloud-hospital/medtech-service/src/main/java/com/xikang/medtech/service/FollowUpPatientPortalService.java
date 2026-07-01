@@ -5,7 +5,6 @@ import com.xikang.medtech.context.PatientFollowUpAuthContext;
 import com.xikang.medtech.mapper.FollowUpLastVisitMapper;
 import com.xikang.medtech.mapper.FollowUpPatientMapper;
 import com.xikang.medtech.mapper.PatientFollowUpAuthMapper;
-import com.xikang.medtech.mapper.RevisitRequestMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +24,6 @@ public class FollowUpPatientPortalService {
     private final GlucoseForecastService glucoseForecastService;
     private final HealthObservationService healthObservationService;
     private final FollowUpLastVisitMapper followUpLastVisitMapper;
-    private final RevisitRequestMapper revisitRequestMapper;
     private final PatientFollowUpAuthMapper patientFollowUpAuthMapper;
     private final FollowUpCommunicationService followUpCommunicationService;
 
@@ -112,50 +110,6 @@ public class FollowUpPatientPortalService {
         return created;
     }
 
-    @Transactional
-    public Map<String, Object> createRevisitRequest(Long patientId, Map<String, Object> request) {
-        Long registerId = toLong(request.get("registerId"));
-        Long resolvedPatientId = resolvePatientId(patientId);
-        Long targetRegisterId = requireAccessibleRegister(resolvedPatientId, registerId);
-
-        String reason = request.get("reason") != null ? String.valueOf(request.get("reason")).trim() : "";
-        if (reason.isEmpty()) {
-            throw new BusinessException("请填写复诊原因");
-        }
-        String urgency = request.get("urgency") != null ? String.valueOf(request.get("urgency")) : "normal";
-        if (!"normal".equals(urgency) && !"urgent".equals(urgency)) {
-            urgency = "normal";
-        }
-
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("registerId", targetRegisterId);
-        payload.put("patientId", resolvedPatientId);
-        payload.put("reason", reason);
-        payload.put("urgency", urgency);
-        payload.put("status", "pending");
-        revisitRequestMapper.insertRequest(payload);
-
-        try {
-            Map<String, Object> session = followUpCommunicationService.getPatientSession(targetRegisterId);
-            if (session != null && session.get("id") != null) {
-                Long sessionId = toLong(session.get("id"));
-                String prefix = "urgent".equals(urgency) ? "【紧急复诊申请】" : "【复诊申请】";
-                followUpCommunicationService.sendPatientMessage(sessionId, prefix + " " + reason, false);
-            }
-        } catch (Exception ignored) {
-            // 沟通会话可选
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("id", payload.get("id"));
-        result.put("registerId", targetRegisterId);
-        result.put("patientId", resolvedPatientId);
-        result.put("reason", reason);
-        result.put("urgency", urgency);
-        result.put("status", "pending");
-        return result;
-    }
-
     public Map<String, Object> getGlucoseAdvice(Long patientId, Long registerId) {
         Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
         return glucoseForecastService.buildAdvice(targetRegisterId);
@@ -227,6 +181,31 @@ public class FollowUpPatientPortalService {
     public Map<String, Object> getGlucoseForecast(Long patientId, Long registerId) {
         Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
         return glucoseForecastService.getForecast(targetRegisterId, null, null);
+    }
+
+    public Map<String, Object> getCommunicationSession(Long patientId, Long registerId) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        return followUpCommunicationService.getPatientSession(targetRegisterId);
+    }
+
+    public Map<String, Object> listCommunicationMessages(
+        Long patientId,
+        Long registerId,
+        Integer limit,
+        Integer offset
+    ) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        Map<String, Object> session = followUpCommunicationService.getPatientSession(targetRegisterId);
+        Long sessionId = toLong(session.get("id"));
+        if (sessionId == null) {
+            throw new BusinessException("沟通会话不存在");
+        }
+        return followUpCommunicationService.listMessages(sessionId, limit, offset);
+    }
+
+    public Map<String, Object> getSharedCaseSummary(Long patientId, Long registerId) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        return followUpCommunicationService.getSharedCaseSummary(targetRegisterId);
     }
 
     private Long resolvePatientId(Long patientId) {

@@ -28,7 +28,6 @@ import type {
   PatientFollowUpRecordItem,
   PatientMedicationItem,
   PatientObservationPayload,
-  RevisitRequest,
 } from '@/shared/types/medtechFollowUp'
 import type { GlucoseForecastResult } from '@/shared/types/glucoseForecast'
 
@@ -75,14 +74,6 @@ export const medtechFollowUpApi = {
     return http<LastVisitSnapshot>({
       url: `${outcomeBase}/last-visit/${registerId}`,
       method: 'GET',
-    })
-  },
-
-  listRevisitRequests(params?: { departmentId?: number }) {
-    return http<RevisitRequest[]>({
-      url: `${outcomeBase}/revisit-requests`,
-      method: 'GET',
-      params,
     })
   },
 
@@ -301,10 +292,30 @@ export const medtechFollowUpApi = {
     })
   },
 
-  getPatientCommunicationSession(registerId: number) {
+  getPatientCommunicationSession(registerId: number, params?: { patientId?: number }) {
     return http<FollowUpCommunicationSession>({
-      url: `${communicationBase}/patient/session/${registerId}`,
+      url: `${patientPortalBase}/communication/sessions/${registerId}`,
       method: 'GET',
+      params,
+    })
+  },
+
+  listPatientCommunicationMessages(
+    registerId: number,
+    params?: { patientId?: number; limit?: number; offset?: number },
+  ) {
+    return http<FollowUpCommunicationMessagesPage>({
+      url: `${patientPortalBase}/communication/sessions/${registerId}/messages`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  getPatientSharedCaseSummary(registerId: number, params?: { patientId?: number }) {
+    return http<FollowUpCaseSummary>({
+      url: `${patientPortalBase}/communication/case-summary/${registerId}`,
+      method: 'GET',
+      params,
     })
   },
 
@@ -402,18 +413,6 @@ export const medtechFollowUpApi = {
   submitPatientObservation(payload: PatientObservationPayload, params?: { patientId?: number }) {
     return http<FollowUpHealthMetric>({
       url: `${patientPortalBase}/observations`,
-      method: 'POST',
-      params,
-      data: payload,
-    })
-  },
-
-  submitRevisitRequest(
-    payload: Pick<RevisitRequest, 'registerId' | 'reason' | 'urgency'>,
-    params?: { patientId?: number },
-  ) {
-    return http<RevisitRequest>({
-      url: `${patientPortalBase}/revisit-requests`,
       method: 'POST',
       params,
       data: payload,

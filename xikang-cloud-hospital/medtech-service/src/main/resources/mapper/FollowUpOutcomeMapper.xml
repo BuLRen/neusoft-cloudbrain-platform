@@ -70,6 +70,21 @@
                 AND r.id NOT BETWEEN 1001 AND 1005
             </otherwise>
         </choose>
+        <if test="departmentId != null">
+            AND (
+                EXISTS (
+                    SELECT 1 FROM follow_up_enrollment fe_d
+                    WHERE fe_d.register_id = r.id
+                      AND fe_d.status = 'active'
+                      AND fe_d.managing_department_id = #{departmentId}
+                )
+                OR EXISTS (
+                    SELECT 1 FROM follow_up_patient_profile fp_d
+                    WHERE fp_d.register_id = r.id
+                      AND fp_d.department_id = #{departmentId}
+                )
+            )
+        </if>
         ORDER BY r.visit_date DESC NULLS LAST, r.id DESC
     </select>
 

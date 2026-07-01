@@ -48,6 +48,8 @@ async function handleLogin() {
       router.push(redirect)
     } else if (authStore.role === 'patient') {
       router.push('/patient/overview')
+    } else if (authStore.role === 'followup') {
+      router.push('/follow-up/dashboard')
     } else {
       router.push('/dashboard')
     }

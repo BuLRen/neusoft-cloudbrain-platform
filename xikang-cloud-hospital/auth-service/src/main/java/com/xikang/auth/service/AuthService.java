@@ -309,7 +309,7 @@ public class AuthService {
 
     /**
      * Convert userType to role string
-     * 1: admin, 2: physician, 3: registration, 4: medtech, 5: pharmacy, 6: patient
+     * 1: admin, 2: physician, 3: registration, 4: medtech, 5: pharmacy, 6: patient, 7: followup
      */
     private String convertUserTypeToRole(Integer userType) {
         if (userType == null) {
@@ -321,6 +321,7 @@ public class AuthService {
             case 3 -> "registration";
             case 4 -> "medtech";
             case 5 -> "pharmacy";
+            case 7 -> "followup";
             default -> "patient";
         };
     }

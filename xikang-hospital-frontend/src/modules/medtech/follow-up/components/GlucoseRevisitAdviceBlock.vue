@@ -9,26 +9,26 @@ const props = withDefaults(
   defineProps<{
     advice?: GlucoseAdvice | null
     loading?: boolean
-    showApplyButton?: boolean
+    showRegistrationLink?: boolean
     compact?: boolean
   }>(),
   {
     advice: null,
     loading: false,
-    showApplyButton: false,
+    showRegistrationLink: false,
     compact: false,
   },
 )
 
 const emit = defineEmits<{
-  revisit: []
+  goRegistration: []
 }>()
 
 const riskTone = computed(() => GLUCOSE_RISK_TONES[props.advice?.riskLevel ?? 'unknown'] ?? 'neutral')
 const riskLabel = computed(() => GLUCOSE_RISK_LABELS[props.advice?.riskLevel ?? 'unknown'] ?? '未知')
 
 const verdictLabel = computed(() => {
-  if (props.advice?.revisitRecommended) return '建议复诊'
+  if (props.advice?.revisitRecommended) return '建议到院复诊'
   if (props.advice?.riskLevel === 'medium') return '需关注'
   if (props.advice?.recentReportCount != null && props.advice.recentReportCount < 2) return '数据不足'
   return '暂无需复诊'
@@ -52,7 +52,7 @@ const forecastRangeText = computed(() => {
 <template>
   <div class="glucose-revisit-advice" :class="{ compact }" v-loading="loading">
     <div class="advice-head">
-      <h4>{{ compact ? '复诊判断' : '模型复诊建议' }}</h4>
+      <h4>{{ compact ? '复诊提醒' : '模型复诊提醒' }}</h4>
       <div class="advice-badges">
         <StatusTag v-if="advice?.riskLevel" :tone="riskTone">风险：{{ riskLabel }}</StatusTag>
         <StatusTag :tone="verdictTone">{{ verdictLabel }}</StatusTag>
@@ -60,17 +60,22 @@ const forecastRangeText = computed(() => {
     </div>
 
     <p class="advice-main">
-      {{ advice?.adviceText ?? '录入足够居家血糖并刷新预测后，将在此显示是否需要复诊。' }}
+      {{ advice?.adviceText ?? '录入足够居家血糖并刷新预测后，将在此显示复诊提醒。' }}
+    </p>
+
+    <p v-if="showRegistrationLink" class="advice-registration-hint">
+      随访系统仅提供复诊提醒，请前往「我的挂号」自行预约，勿通过医患沟通申请复诊。
     </p>
 
     <p v-if="compact" class="advice-criteria-compact">
-      判断规则：模型风险为「高」，或预测最低 &lt; 3.9 / 最高 &gt; 10.0 mmol/L 时建议复诊；48h 内录入不足 2 次则暂不判定。
+      判断规则：模型风险为「高」，或预测最低 &lt; 3.9 / 最高 &gt; 10.0 mmol/L 时建议到院复诊；48h 内录入不足 2 次则暂不判定。
     </p>
 
     <ul v-if="!compact" class="advice-criteria">
       <li>依据 LSTM+GRU 集成模型对未来 24 小时血糖的预测结果与风险等级综合判断。</li>
-      <li>满足以下任一条件时，系统判定<strong>建议复诊</strong>：模型风险等级为「高」；或预测最低值 &lt; 3.9 mmol/L（低血糖风险）；或预测最高值 &gt; 10.0 mmol/L（高血糖风险）。</li>
+      <li>满足以下任一条件时，系统判定<strong>建议到院复诊</strong>：模型风险等级为「高」；或预测最低值 &lt; 3.9 mmol/L（低血糖风险）；或预测最高值 &gt; 10.0 mmol/L（高血糖风险）。</li>
       <li>48 小时内居家自录血糖不足 2 次时，仅提示继续录入，暂不给出复诊结论。</li>
+      <li>如需复诊，请通过患者端「我的挂号」自行预约，随访系统不参与挂号流程。</li>
     </ul>
 
     <div v-if="forecastRangeText || advice?.modelId" class="advice-meta">
@@ -84,8 +89,8 @@ const forecastRangeText = computed(() => {
       </span>
     </div>
 
-    <div v-if="showApplyButton && advice?.revisitRecommended" class="advice-actions">
-      <ElButton type="primary" @click="emit('revisit')">申请复诊</ElButton>
+    <div v-if="showRegistrationLink && advice?.revisitRecommended" class="advice-actions">
+      <ElButton type="primary" @click="emit('goRegistration')">前往预约挂号</ElButton>
     </div>
   </div>
 </template>
@@ -128,6 +133,16 @@ const forecastRangeText = computed(() => {
   margin: 0;
   line-height: 1.65;
   font-size: 14px;
+}
+
+.advice-registration-hint {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .advice-criteria-compact {

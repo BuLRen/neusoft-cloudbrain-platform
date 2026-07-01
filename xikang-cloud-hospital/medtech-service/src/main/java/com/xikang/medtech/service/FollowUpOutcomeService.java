@@ -4,7 +4,6 @@ import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.mapper.FollowUpLastVisitMapper;
 import com.xikang.medtech.mapper.FollowUpOutcomeMapper;
-import com.xikang.medtech.mapper.RevisitRequestMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,11 +22,11 @@ public class FollowUpOutcomeService {
     private final FollowUpOutcomeMapper followUpOutcomeMapper;
     private final HealthObservationService healthObservationService;
     private final FollowUpLastVisitMapper followUpLastVisitMapper;
-    private final RevisitRequestMapper revisitRequestMapper;
     private final GlucoseForecastService glucoseForecastService;
 
     public List<Map<String, Object>> listPatients(Integer visitState) {
-        List<Map<String, Object>> patients = followUpOutcomeMapper.selectFollowUpPatients(visitState);
+        Long departmentId = resolveDepartmentId();
+        List<Map<String, Object>> patients = followUpOutcomeMapper.selectFollowUpPatients(visitState, departmentId);
         for (Map<String, Object> patient : patients) {
             Long registerId = toLong(patient.get("registerId"));
             if (registerId != null) {
@@ -82,14 +81,6 @@ public class FollowUpOutcomeService {
             throw new BusinessException("暂无上次看诊快照");
         }
         return snapshot;
-    }
-
-    public List<Map<String, Object>> listRevisitRequests(Long departmentId) {
-        return revisitRequestMapper.selectPending(departmentId);
-    }
-
-    public int countPendingRevisitRequests(Long registerId) {
-        return revisitRequestMapper.countPendingByRegisterId(registerId);
     }
 
     public Map<String, Object> getGlucoseAdvice(Long registerId) {
@@ -188,6 +179,17 @@ public class FollowUpOutcomeService {
             return null;
         }
         return LocalDate.parse(text);
+    }
+
+    private Long resolveDepartmentId() {
+        if (MedtechAuthContext.isAdminAllAccess()) {
+            return null;
+        }
+        Long departmentId = MedtechAuthContext.departmentIdOrNull();
+        if (departmentId == null) {
+            throw new BusinessException(403, "当前账号未绑定科室");
+        }
+        return departmentId;
     }
 
     private Long toLong(Object value) {

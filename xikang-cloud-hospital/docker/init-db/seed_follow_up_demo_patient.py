@@ -172,7 +172,7 @@ def main() -> None:
         INSERT INTO follow_up_patient_profile (
             register_id, department_id, priority_level, interview_interval_days, observation_interval_days
         )
-        SELECT 9001, 35, 'high', 7, 1
+        SELECT 9001, 7, 'high', 7, 1
         WHERE NOT EXISTS (SELECT 1 FROM follow_up_patient_profile WHERE register_id = 9001)
         """,
         """
@@ -180,7 +180,7 @@ def main() -> None:
             register_id, managing_department_id, priority_level,
             interview_interval_days, observation_interval_days, status
         )
-        SELECT 9001, 35, 'high', 7, 1, 'active'
+        SELECT 9001, 7, 'high', 7, 1, 'active'
         WHERE NOT EXISTS (SELECT 1 FROM follow_up_enrollment WHERE register_id = 9001)
         """,
         """

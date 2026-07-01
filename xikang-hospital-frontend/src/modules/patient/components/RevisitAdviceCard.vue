@@ -10,7 +10,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  revisit: []
+  goRegistration: []
 }>()
 
 const loading = ref(false)
@@ -50,7 +50,7 @@ defineExpose({ reload: loadAdvice })
     :advice="advice"
     :loading="loading"
     compact
-    show-apply-button
-    @revisit="emit('revisit')"
+    show-registration-link
+    @go-registration="emit('goRegistration')"
   />
 </template>
