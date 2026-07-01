@@ -7,18 +7,15 @@ import {
   ElDescriptionsItem,
   ElEmpty,
   ElMessage,
-  ElMessageBox,
   ElPagination,
   ElTable,
   ElTableColumn,
 } from 'element-plus'
-import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import MedicationGuidePrintSheet from '@/shared/components/MedicationGuidePrintSheet.vue'
 import { useMedicationGuideExport } from '@/shared/composables/useMedicationGuideExport'
 import { useAuthStore } from '@/app/stores/auth'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
-import { registrationApi } from '@/shared/api/modules/registration'
 import { dispensationStatusName } from '@/shared/constants/pharmacy'
 import type { MedicationGuideRecord, PrescriptionDetailResponse, PrescriptionSummary } from '@/shared/types/pharmacy'
 
@@ -26,7 +23,6 @@ const authStore = useAuthStore()
 
 const loading = ref(false)
 const prescriptions = ref<PrescriptionSummary[]>([])
-const payingRegisterId = ref<number | null>(null)
 
 // 分页（本地切片，数据已全量拉取）
 const PAGE_SIZE = 10
@@ -156,32 +152,6 @@ async function switchTo(patientIdToSwitch: number) {
   await load()
 }
 
-async function pay(rx: PrescriptionSummary) {
-  if (!rx.registerId) return
-  const amount = rx.totalAmount ?? 0
-  try {
-    await ElMessageBox.confirm(
-      `确认支付药品费 ${amount.toFixed(2)} 元？支付成功后可前往药房取药。`,
-      '药品费支付确认',
-      { type: 'warning', confirmButtonText: '确认支付', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  payingRegisterId.value = rx.registerId
-  try {
-    const result = await registrationApi.payMedication(rx.registerId)
-    if (result && (result as { payStatus?: number }).payStatus === 1) {
-      ElMessage.success(`支付成功，剩余余额 ${(result as { accountBalance?: number }).accountBalance ?? '-'} 元`)
-      await load()
-    } else {
-      ElMessage.error((result as { paymentMessage?: string }).paymentMessage || '支付失败')
-    }
-  } finally {
-    payingRegisterId.value = null
-  }
-}
-
 function statusTone(rx: PrescriptionSummary) {
   if (rx.dispensationStatus === 1) return 'success'
   if (rx.dispensationStatus === 2) return 'neutral'
@@ -192,16 +162,6 @@ function statusText(rx: PrescriptionSummary) {
   if (rx.dispensationStatus === 1) return '已发药'
   if (rx.dispensationStatus === 2) return '已退药'
   return rx.paid ? '已缴费/待取药' : '待缴费'
-}
-
-function payButtonLabel(rx: PrescriptionSummary) {
-  if (rx.dispensationStatus === 1) return '已发药'
-  if (rx.dispensationStatus === 2) return '已退药'
-  return rx.paid ? '已支付' : '支付药品费'
-}
-
-function payButtonDisabled(rx: PrescriptionSummary) {
-  return rx.paid || (rx.dispensationStatus ?? 0) !== 0
 }
 
 // 诊断摘要：列表卡片上截断显示
@@ -226,15 +186,14 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="patient-prescription">
-    <GlassCard class="prescription-shell">
-      <div class="shell-header">
-        <div class="shell-header__text">
-          <h2>我的处方</h2>
-          <p>医生开药完成后在此查看药费，支付后前往药房取药</p>
-        </div>
-        <ElButton size="small" :loading="loading" @click="load">刷新</ElButton>
+  <div class="prescription-page">
+    <div class="list-toolbar">
+      <div>
+        <h2>我的处方</h2>
+        <p>医生开药完成后在此查看药费，支付后前往药房取药</p>
       </div>
+      <ElButton type="primary" :loading="loading" @click="load">刷新</ElButton>
+    </div>
 
       <!-- 家属切换 Tab：仅当存在多个就诊人时显示 -->
       <div v-if="showFamilyTabs" class="family-tabs">
@@ -354,16 +313,6 @@ onMounted(load)
             </div>
 
             <div class="detail-actions">
-              <ElButton
-                v-if="(detail.prescription.dispensationStatus ?? 0) === 0"
-                type="primary"
-                :disabled="payButtonDisabled(detail.prescription as unknown as PrescriptionSummary)"
-                :loading="payingRegisterId === detail.prescription.registerId"
-                @click="pay(detail.prescription as unknown as PrescriptionSummary)"
-              >
-                {{ payButtonLabel(detail.prescription as unknown as PrescriptionSummary) }}
-              </ElButton>
-
               <!-- 已发药处方：下载用药指导单 PDF -->
               <ElButton
                 v-if="detail.prescription.dispensationStatus === 1"
@@ -378,7 +327,6 @@ onMounted(load)
           </template>
         </div>
       </div>
-    </GlassCard>
 
     <!-- 用药指导单 PDF 渲染容器：屏幕外，用户不可见；导出时 html2pdf 截图此 DOM -->
     <div class="mg-print-host" aria-hidden="true">
@@ -388,40 +336,41 @@ onMounted(load)
 </template>
 
 <style scoped>
-.patient-prescription {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  width: 90%;
-  margin: 0 5%;
+/* 与 PatientRegistration 同款大卡片容器 */
+.prescription-page {
+  width: 88%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-8);
+  background: var(--color-surface);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-md);
 }
 
-.prescription-shell {
-  padding: var(--space-5);
-}
-
-.shell-header {
+.list-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.shell-header__text {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.shell-header h2 {
-  font-size: 20px;
+.list-toolbar h2 {
+  font-size: 22px;
   font-weight: 600;
-  margin: 0;
+  margin: 0 0 var(--space-2);
+  color: var(--color-text);
 }
 
-.shell-header p {
+.list-toolbar p {
   color: var(--color-text-muted);
   margin: 0;
+  font-size: 13px;
 }
 
 /* 家属切换 Tab */
@@ -583,9 +532,9 @@ onMounted(load)
 }
 
 @media (max-width: 768px) {
-  .patient-prescription {
+  .prescription-page {
     width: 95%;
-    margin: 0 2.5%;
+    padding: var(--space-5);
   }
 
   .split-grid {

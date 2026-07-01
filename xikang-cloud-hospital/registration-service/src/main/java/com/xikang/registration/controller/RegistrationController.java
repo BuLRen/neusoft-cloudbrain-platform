@@ -196,6 +196,18 @@ public class RegistrationController {
         return Result.success(pendingCharges);
     }
 
+    // ==================== 内部回调（service-to-service，不经网关） ====================
+
+    /**
+     * v3.2 §4.2：payment-service.payItem 成功后回调，重算 payment.summary 并更新 register。
+     * 仅 Feign 内部调用，gateway 路由不暴露 /api/registration/internal/** 给前端。
+     */
+    @PostMapping("/internal/{registerId}/on-fee-paid")
+    public Result<Map<String, Object>> onFeePaid(@PathVariable Long registerId) {
+        Map<String, Object> result = registrationService.onFeePaid(registerId);
+        return Result.success(result);
+    }
+
     // ==================== 基础数据接口 ====================
 
     /**

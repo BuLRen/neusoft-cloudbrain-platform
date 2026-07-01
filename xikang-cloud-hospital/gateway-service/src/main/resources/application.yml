@@ -32,6 +32,11 @@ spring:
           uri: lb://pharmacy-service
           predicates:
             - Path=/api/pharmacy/**
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            # 仅暴露患者端 API；/api/payment/internal/** 供服务间 Feign 直连，不经网关
+            - Path=/api/payment/orders/**
         - id: schedule-service
           uri: lb://schedule-service
           predicates:

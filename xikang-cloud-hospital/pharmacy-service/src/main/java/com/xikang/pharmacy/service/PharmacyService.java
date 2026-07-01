@@ -41,6 +41,7 @@ public class PharmacyService {
     private final MedicationGuideMapper medicationGuideMapper;
     private final ExpenseRecordMapper expenseRecordMapper;
     private final AiPharmacyClient aiPharmacyClient;
+    private final PaymentClient paymentClient;
     private final ObjectMapper objectMapper;
 
     // ==================== 药品管理 ====================
@@ -624,7 +625,7 @@ public class PharmacyService {
     }
 
     /**
-     * 幂等出账：DB 部分唯一索引 + ON CONFLICT DO NOTHING 兜底并发。
+     * v3.2：药品费出账改走 payment-service.createItem（ON CONFLICT DO NOTHING 幂等）。
      * 金额 > 0：写 status=0（待缴费）；金额 = 0/null（数据异常）：写 status=1 直接视为已结清，
      *           否则 payMedication 会因 amount<=0 抛异常导致流程卡死。
      */
@@ -637,28 +638,47 @@ public class PharmacyService {
         int initialStatus = zeroAmount ? 1 : 0;
         BigDecimal safeAmount = zeroAmount ? BigDecimal.ZERO : amount;
 
-        int affected = expenseRecordMapper.insertMedicationFee(
-            registerId,
-            head.getPatientId(),
-            head.getPatientName(),
-            safeAmount,
-            initialStatus,
-            "医生开药后药房自动出账",
-            LocalDateTime.now()
-        );
-        if (affected > 0) {
-            log.info("药品费出账 | registerId={}, patientId={}, amount={}, initialStatus={}",
-                registerId, head.getPatientId(), safeAmount, initialStatus);
+        try {
+            Map<String, Object> data = paymentClient.createMedicationFee(
+                    registerId,
+                    head.getPatientId(),
+                    head.getPatientName(),
+                    safeAmount,
+                    initialStatus,
+                    "医生开药后药房自动出账"
+            );
+            boolean created = Boolean.TRUE.equals(data.get("created"));
+            if (created) {
+                log.info("药品费出账 | registerId={}, patientId={}, amount={}, initialStatus={}",
+                        registerId, head.getPatientId(), safeAmount, initialStatus);
+            }
+        } catch (Exception e) {
+            // payment-service 不可用时降级到本地直写（双写期兼容）
+            log.warn("payment.createItem 失败，降级本地直写 | registerId={}, err={}",
+                    registerId, e.getMessage());
+            int affected = expenseRecordMapper.insertMedicationFee(
+                    registerId,
+                    head.getPatientId(),
+                    head.getPatientName(),
+                    safeAmount,
+                    initialStatus,
+                    "医生开药后药房自动出账",
+                    LocalDateTime.now()
+            );
+            if (affected > 0) {
+                log.info("药品费出账（降级本地直写）| registerId={}, amount={}, initialStatus={}",
+                        registerId, safeAmount, initialStatus);
+            }
         }
     }
 
     /**
      * 该挂号的药品费是否已缴清（status=1）。
-     * 未出账、已退款、已作废都视为未缴清。
+     * v3.2：改 payment-service.items/by-register 查询；失败时降级本地。
      */
     private boolean isMedicationPaid(Long registerId) {
         if (registerId == null) return false;
-        Integer status = expenseRecordMapper.selectMedicationFeeStatus(registerId);
+        Integer status = readMedicationFeeStatus(registerId);
         return status != null && status == 1;
     }
 
@@ -666,12 +686,29 @@ public class PharmacyService {
      * 发药前置校验：药品费必须已缴清。
      */
     private void assertMedicationPaid(Long registerId) {
-        Integer status = expenseRecordMapper.selectMedicationFeeStatus(registerId);
+        Integer status = readMedicationFeeStatus(registerId);
         if (status == null) {
             throw new BusinessException(400, "该挂号尚未生成药品费账单，请患者在患者端查看处方后再发药");
         }
         if (status != 1) {
             throw new BusinessException(400, "患者尚未支付药品费，无法发药");
+        }
+    }
+
+    /**
+     * v3.2：优先走 payment-service 查药品费状态，失败降级本地 mapper。
+     */
+    private Integer readMedicationFeeStatus(Long registerId) {
+        try {
+            Map<String, Object> data = paymentClient.getMedicationFeeByRegister(registerId);
+            Object id = data.get("id");
+            if (id == null) return null;
+            Object status = data.get("status");
+            return status instanceof Number ? ((Number) status).intValue() : null;
+        } catch (Exception e) {
+            log.warn("payment.by-register 失败，降级本地读 | registerId={}, err={}",
+                    registerId, e.getMessage());
+            return expenseRecordMapper.selectMedicationFeeStatus(registerId);
         }
     }
 

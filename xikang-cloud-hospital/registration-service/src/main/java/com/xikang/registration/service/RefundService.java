@@ -2,7 +2,7 @@ package com.xikang.registration.service;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.registration.entity.ExpenseRecord;
-import com.xikang.registration.feign.AuthPatientFeignClient;
+import com.xikang.registration.feign.PaymentFeignClient;
 import com.xikang.registration.mapper.ExpenseRecordMapper;
 import com.xikang.registration.mapper.RegistrationMapper;
 import lombok.RequiredArgsConstructor;
@@ -17,16 +17,21 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Refund Service - 退费服务
+ * Refund Service - 退费服务（v3.2：全部改 Feign 调 payment-service）
+ *
+ * 边界确认（v3.2 R4）：本类不碰 register 表，无需回调 registration。
+ * 只有 cancelRegistration 自己动 register.visit_state=4。
+ *
+ * v3.2 BLOCKER 修复：读已缴项改 paymentFeignClient.records，避免本地表 stale。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class RefundService {
 
-    private final ExpenseRecordMapper expenseRecordMapper;
+    private final ExpenseRecordMapper expenseRecordMapper; // 仅 fallback 用
     private final RegistrationMapper registrationMapper;
-    private final AuthPatientFeignClient authPatientFeignClient;
+    private final PaymentFeignClient paymentFeignClient;
 
     /**
      * 单条费用退费
@@ -35,15 +40,12 @@ public class RefundService {
     public Map<String, Object> refund(Long expenseRecordId, Long operatorId, String operatorName, String reason) {
         log.info("退费操作 | expenseRecordId={}, operatorId={}, reason={}", expenseRecordId, operatorId, reason);
 
-        ExpenseRecord record = expenseRecordMapper.selectById(expenseRecordId);
-        if (record == null) {
-            throw new BusinessException(404, "费用记录不存在");
-        }
-        if (record.getStatus() == null || record.getStatus() != 1) {
-            throw new BusinessException(400, "该费用记录不可退费，当前状态：" + record.getStatus());
-        }
-
-        Map<String, Object> result = refundPaidRecords(List.of(record), operatorId, operatorName, reason);
+        Map<String, Object> body = new HashMap<>();
+        body.put("operatorId", operatorId);
+        body.put("operatorName", operatorName);
+        body.put("reason", reason);
+        Map<String, Object> resp = paymentFeignClient.refund(expenseRecordId, body);
+        Map<String, Object> result = unwrapMapData(resp, "退费失败");
         log.info("退费成功 | expenseRecordId={}", expenseRecordId);
         return result;
     }
@@ -55,17 +57,38 @@ public class RefundService {
     public Map<String, Object> refundByRegisterId(Long registerId, Long operatorId, String operatorName, String reason) {
         log.info("按挂号ID退费 | registerId={}, operatorId={}", registerId, operatorId);
 
-        List<ExpenseRecord> records = expenseRecordMapper.selectByRegisterId(registerId);
-        List<ExpenseRecord> paidRecords = records.stream()
-                .filter(record -> record.getStatus() != null && record.getStatus() == 1)
-                .toList();
-
-        if (paidRecords.isEmpty()) {
+        // v3.2：读已支付项改 paymentFeignClient.records（payment-service 拥有 expense_record）
+        List<Map<String, Object>> paidItems = fetchPaidItems(registerId, null);
+        if (paidItems.isEmpty()) {
             throw new BusinessException(400, "该挂号没有可退费的已缴费记录");
         }
 
-        Map<String, Object> result = refundPaidRecords(paidRecords, operatorId, operatorName, reason);
-        log.info("按挂号ID退费完成 | registerId={}, count={}", registerId, paidRecords.size());
+        BigDecimal totalRefunded = BigDecimal.ZERO;
+        int count = 0;
+        Object accountBalance = null;
+        for (Map<String, Object> item : paidItems) {
+            Long id = toLong(item.get("id"));
+            if (id == null) continue;
+            Map<String, Object> body = new HashMap<>();
+            body.put("operatorId", operatorId);
+            body.put("operatorName", operatorName);
+            body.put("reason", reason);
+            Map<String, Object> resp = paymentFeignClient.refund(id, body);
+            Map<String, Object> data = unwrapMapData(resp, "退费失败");
+            count++;
+            if (data.get("refundAmount") != null) {
+                totalRefunded = totalRefunded.add(new BigDecimal(data.get("refundAmount").toString()));
+            }
+            accountBalance = data.get("accountBalance");
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", true);
+        result.put("registerId", registerId);
+        result.put("refundAmount", totalRefunded);
+        result.put("refundedCount", count);
+        result.put("accountBalance", accountBalance);
+        log.info("按挂号ID退费完成 | registerId={}, count={}", registerId, paidItems.size());
         return result;
     }
 
@@ -75,11 +98,8 @@ public class RefundService {
      */
     @Transactional
     public Map<String, Object> refundRegistrationFee(Long registerId, Long operatorId, String operatorName, String reason) {
-        List<ExpenseRecord> records = expenseRecordMapper.selectByRegisterId(registerId);
-        List<ExpenseRecord> paidRegistrationFees = records.stream()
-                .filter(record -> "REGISTRATION_FEE".equals(record.getItemCode()))
-                .filter(record -> record.getStatus() != null && record.getStatus() == 1)
-                .toList();
+        // v3.2：查 REGISTRATION_FEE 已支付项，改用 paymentFeignClient.records
+        List<Map<String, Object>> paidRegistrationFees = fetchPaidItems(registerId, "REGISTRATION_FEE");
 
         if (paidRegistrationFees.isEmpty()) {
             Map<String, Object> result = new HashMap<>();
@@ -91,10 +111,11 @@ public class RefundService {
             return result;
         }
 
-        ExpenseRecord paidFee = paidRegistrationFees.stream()
+        // 取 payTime 最早的一条
+        Map<String, Object> paidFee = paidRegistrationFees.stream()
                 .min((a, b) -> {
-                    LocalDateTime ta = a.getPayTime();
-                    LocalDateTime tb = b.getPayTime();
+                    LocalDateTime ta = toLocalDateTime(a.get("payTime"));
+                    LocalDateTime tb = toLocalDateTime(b.get("payTime"));
                     if (ta == null && tb == null) return 0;
                     if (ta == null) return 1;
                     if (tb == null) return -1;
@@ -102,59 +123,77 @@ public class RefundService {
                 })
                 .orElse(paidRegistrationFees.get(0));
 
-        return refundPaidRecords(List.of(paidFee), operatorId, operatorName, reason);
-    }
-
-    private Map<String, Object> refundPaidRecords(List<ExpenseRecord> paidRecords, Long operatorId, String operatorName, String reason) {
-        BigDecimal totalAmount = paidRecords.stream()
-                .map(ExpenseRecord::getTotalAmount)
-                .filter(amount -> amount != null && amount.compareTo(BigDecimal.ZERO) > 0)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(400, "退款金额异常");
-        }
-
-        ExpenseRecord firstRecord = paidRecords.get(0);
-        if (firstRecord.getPatientId() == null) {
-            throw new BusinessException(400, "该费用记录缺少患者信息，无法退款到余额");
+        Long id = toLong(paidFee.get("id"));
+        if (id == null) {
+            throw new BusinessException(500, "已缴挂号费缺少 id 字段");
         }
 
         Map<String, Object> body = new HashMap<>();
-        body.put("amount", totalAmount);
-        body.put("businessType", "REGISTRATION");
-        body.put("businessId", firstRecord.getRegisterId());
-        if (operatorId != null) {
-            body.put("operatorId", operatorId);
-        }
-        body.put("operatorName", operatorName != null ? operatorName : "系统");
-        body.put("remark", reason != null ? reason : "挂号退费");
-        Map<String, Object> response = authPatientFeignClient.refundBalance(firstRecord.getPatientId().intValue(), body);
-        Map<String, Object> data = unwrapMapData(response, "余额退款失败");
-        if (!Boolean.TRUE.equals(data.get("success"))) {
-            throw new BusinessException(400, String.valueOf(data.getOrDefault("message", "余额退款失败")));
-        }
+        body.put("operatorId", operatorId);
+        body.put("operatorName", operatorName);
+        body.put("reason", reason != null ? reason : "挂号退费");
+        Map<String, Object> resp = paymentFeignClient.refund(id, body);
+        return unwrapMapData(resp, "退费失败");
+    }
 
-        LocalDateTime now = LocalDateTime.now();
-        for (ExpenseRecord record : paidRecords) {
-            record.setStatus(2);
-            record.setRefundTime(now);
-            record.setOperatorId(operatorId);
-            record.setOperatorName(operatorName);
-            record.setRemark(reason);
-            expenseRecordMapper.update(record);
+    // ============================================================
+    // 辅助：通过 Feign 读已支付项（v3.2 BLOCKER-4 修复）
+    // ============================================================
+
+    /**
+     * 通过 paymentFeignClient.records 读取已支付项。
+     * @param itemCode null 表示不限
+     * Feign 失败时降级读本地 mapper（双写期兼容，但会 stale）。
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> fetchPaidItems(Long registerId, String itemCode) {
+        try {
+            Map<String, Object> resp = paymentFeignClient.records(null, registerId, 1, null, null);
+            Object data = resp.get("data");
+            if (!(data instanceof List<?> list)) return List.of();
+            List<Map<String, Object>> all = (List<Map<String, Object>>) (List) list;
+            if (itemCode != null) {
+                return all.stream()
+                        .filter(m -> itemCode.equals(m.get("itemCode")))
+                        .toList();
+            }
+            return all;
+        } catch (Exception e) {
+            log.warn("Feign 调 payment.records 失败，降级读本地 | registerId={}, err={}", registerId, e.getMessage());
+            return fallbackReadPaidLocal(registerId, itemCode);
         }
+    }
 
+    private List<Map<String, Object>> fallbackReadPaidLocal(Long registerId, String itemCode) {
+        List<ExpenseRecord> records = expenseRecordMapper.selectByRegisterId(registerId);
+        return records.stream()
+                .filter(r -> r.getStatus() != null && r.getStatus() == 1)
+                .filter(r -> itemCode == null || itemCode.equals(r.getItemCode()))
+                .map(r -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("id", r.getId());
+                    m.put("itemCode", r.getItemCode());
+                    m.put("payTime", r.getPayTime());
+                    return m;
+                })
+                .toList();
+    }
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("registerId", firstRecord.getRegisterId());
-        result.put("patientId", firstRecord.getPatientId());
-        result.put("refundAmount", totalAmount);
-        result.put("refundedCount", paidRecords.size());
-        result.put("refundTime", now);
-        result.put("accountBalance", data.get("accountBalance"));
-        result.put("message", data.getOrDefault("message", "退款成功"));
-        return result;
+    private Long toLong(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number n) return n.longValue();
+        try { return Long.valueOf(o.toString()); } catch (Exception e) { return null; }
+    }
+
+    private LocalDateTime toLocalDateTime(Object o) {
+        if (o == null) return null;
+        if (o instanceof LocalDateTime ldt) return ldt;
+        if (o instanceof java.time.Instant instant) return LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
+        if (o instanceof java.util.Date d) return LocalDateTime.ofInstant(d.toInstant(), java.time.ZoneId.systemDefault());
+        if (o instanceof String s) {
+            try { return LocalDateTime.parse(s.replace(' ', 'T')); } catch (Exception e) { return null; }
+        }
+        return null;
     }
 
     @SuppressWarnings("unchecked")
