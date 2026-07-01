@@ -21,10 +21,10 @@ mybatis:
     map-underscore-to-camel-case: true
     # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 关闭 SQL 打印，调试时取消注释
 
-# Dify 配置（替代原 Coze）
+# Dify 配置（智能排班专用，替代原 Coze）
 dify:
-  api-key: ${DIFY_API_KEY:}                              # 必填，格式 app-xxxx
-  base-url: ${DIFY_BASE_URL:http://43.139.102.203}       # Dify 部署地址
+  api-key: ${DIFY_API_KEY_SCHEDULE:}                     # 必填，格式 app-xxxx；读 .env 中的排班专用 key
+  base-url: ${DIFY_BASE_URL_SCHEDULE:http://43.139.102.203}  # Dify 部署地址（勿带 /v1，代码会自动拼）
   timeout-ms: ${DIFY_TIMEOUT_MS:660000}                  # blocking 模式下要够长（11 分钟，覆盖月度排班 10 分钟上限）
 
 # 号源预警阈值

@@ -1,12 +1,13 @@
 # WF-01: AI生成月度排班 工作流设计文档
 
-> 版本：v4.3（Dify 适配版，节点5 改为 String 输出绕开 30 元素限制）
-> 日期：2026-06-26
+> 版本：v4.4（节点4 全面 String 化：missingDays/errors/warnings 绕开 30 元素限制）
+> 日期：2026-07-01
 > 状态：双LLM节点+条件分支（初始生成+冲突修正+缺失检测），适配 Dify 工作流
 > 变更说明（相对 v3.2）：从 Coze 迁移到 Dify，开始节点复合类型改用 String(JSON) 传递，所有代码节点由 JavaScript 改为 Python
 > 变更说明（相对 v4.0）：将节点2（节假日处理）拆分为两个节点 —— 2a 统一解析 JSON 字符串、2b 专注日期计算；同步消除 physicians_format 与节点5 中的重复解析逻辑；将原本只作为代码片段出现的 physicians_format 独立成"节点2c"，补充完整的类型设计/代码/输入输出示例
 > 变更说明（相对 v4.1）：新增节点2d（LLM输入聚合），把喂给 LLM 的 6 个上下文变量聚合成单个 String 变量 `llm_context`，节点3/3' 用户提示词从"挨个插 6 处 `{{#...#}}`"简化为"只引用一处"；LLM 结构化输出由 yaml 改为标准 JSON Schema 源码模式，明确禁止 `additionalProperties: false`
 > 变更说明（相对 v4.2）：**节点5 修复 + 输出字段改造**——① 修复排班数据丢失（Dify 把上游 LLM 输出的 `{"schedules": [...]}` 整体作为 dict 传入，原代码按"直接 list"假设遍历 dict 拿到 key 字符串全部 continue，新增 `_extract_schedules_list()` 识别三种形态统一抽出 list）；② 绕开 Dify Code 节点 Array 输出 30 元素硬限制，把 `validated_schedules` 改为 `validated_schedules_json`（String），后端 `JSON.parse` 还原；新增 `debug_log` 输出字段替代 `print()`
+> 变更说明（相对 v4.3）：**节点4（冲突检测）全面 String 化**——把 `missingDays` / `errors` / `warnings` 三个 Array 输出全部改成 `_json` 后缀的 String，绕开 Dify Code 节点 30 元素硬限制。原因：实际运行中 LLM 漏排大量日期时 `missingDays` 轻松超过 30 条（一个月最多 50~62 条），触发 `The length of output variable 'missingDays' must be less than 30 elements` 导致整个工作流失败。节点3' 提示词里的 `{{#冲突检测.missingDays#}}` 同步改为 `{{#冲突检测.missingDays_json#}}`（LLM 读 JSON 字符串更清晰）。同时新增 `missingDaysCount` / `errorsCount` 数值字段方便排障
 
 ---
 
@@ -874,11 +875,23 @@ reducedDays        = ["2026-07-04"]
 | | month | String | 是 | 节点1 | 月份（用于检测缺失日期） |
 | | weekends | Array&lt;String&gt; | 是 | 节点2b | 周六列表 |
 | | reducedDays | Array&lt;String&gt; | 是 | 节点2b | 法定节假日 |
-| **输出** | errors | Array&lt;String&gt; | - | - | 冲突错误列表（格式：DUPLICATE:医生ID:日期:时段:次数） |
-| | missingDays | Array&lt;String&gt; | - | - | 缺失出诊的日期时段（格式：YYYY-MM-DD:上午/下午） |
-| | warnings | Array&lt;String&gt; | - | - | 警告信息列表 |
+| **输出** | errors_json | **String**（JSON 序列化） | - | - | 冲突错误列表 JSON（格式：DUPLICATE:医生ID:日期:时段:次数） |
+| | missingDays_json | **String**（JSON 序列化） | - | - | 缺失出诊的日期时段 JSON（格式：YYYY-MM-DD:上午/下午） |
+| | warnings_json | **String**（JSON 序列化） | - | - | 警告信息列表 JSON |
 | | hasConflict | Boolean | - | - | 是否有冲突 |
 | | scheduleCount | Number | - | - | 排班总数 |
+| | missingDaysCount | Number | - | - | 缺失日期时段数（排障用） |
+| | errorsCount | Number | - | - | 错误数（排障用） |
+
+> ⚠️ **v4.4 关键变更：为什么 `missingDays` / `errors` / `warnings` 都改成 String？**
+>
+> Dify Code 节点对**单个 Array 输出变量有 30 元素的硬性限制**（平台层面，schema 改不了）。节点4 检测"缺失日期时段"时，最坏情况一个月能产出 50~62 条（普通工作日缺上午+下午 2 条/天 × 22 天 + 周六 4 条 + 节假日若干）。LLM 漏排较多时 `missingDays` 轻松超 30，触发：
+>
+> ```
+> The length of output variable `missingDays` must be less than 30 elements.
+> ```
+>
+> 工作流直接被平台判失败，连带 `validated_schedules` 也拿不到。v4.3 只把节点5 的 `validated_schedules` String 化了，**漏掉了节点4 的 `missingDays`**——v4.4 补齐这个口子，把节点4 所有 Array 输出统一 String 化，与节点5 同策略。节点3' 的 LLM 提示词读 JSON 字符串比读 Python repr 形式更清晰。
 
 ### 分支输出
 
@@ -892,6 +905,8 @@ reducedDays        = ["2026-07-04"]
 ```python
 from datetime import date
 from collections import defaultdict
+import json
+
 
 def get_week_number(date_str: str) -> int:
     d = date.fromisoformat(date_str)
@@ -980,12 +995,16 @@ def main(schedules: list, month: str, weekends: list, reducedDays: list) -> dict
 
     has_conflict = len(errors) > 0 or len(missing_days) > 0
 
+    # ⚠️ v4.4：所有 Array 输出统一 json.dumps 成 String，绕开 Dify Code 节点 30 元素硬限制
+    # missingDays 最坏情况 50~62 条/月，必触发平台限制
     return {
-        "errors": errors,
-        "missingDays": missing_days,
-        "warnings": warnings,
+        "errors_json": json.dumps(errors, ensure_ascii=False),
+        "missingDays_json": json.dumps(missing_days, ensure_ascii=False),
+        "warnings_json": json.dumps(warnings, ensure_ascii=False),
         "hasConflict": has_conflict,
         "scheduleCount": len(schedules),
+        "missingDaysCount": len(missing_days),
+        "errorsCount": len(errors),
     }
 ```
 
@@ -993,13 +1012,17 @@ def main(schedules: list, month: str, weekends: list, reducedDays: list) -> dict
 
 ```json
 {
-  "errors": ["DUPLICATE:5:2026-07-01:上午:2"],
-  "missingDays": ["2026-07-05:上午", "2026-07-05:下午"],
-  "warnings": ["医生5在第2周被安排5次，超过4次限制"],
+  "errors_json": "[\"DUPLICATE:5:2026-07-01:上午:2\"]",
+  "missingDays_json": "[\"2026-07-05:上午\",\"2026-07-05:下午\"]",
+  "warnings_json": "[\"医生5在第2周被安排5次，超过4次限制\"]",
   "hasConflict": true,
-  "scheduleCount": 120
+  "scheduleCount": 120,
+  "missingDaysCount": 2,
+  "errorsCount": 1
 }
 ```
+
+> 注：`errors_json` / `missingDays_json` / `warnings_json` 都是 JSON 字符串，下游节点3' 的 LLM 提示词直接引用并解析。`hasConflict` / `scheduleCount` / `missingDaysCount` / `errorsCount` 是 Number/Boolean，不受 30 元素限制。
 
 ---
 
@@ -1032,14 +1055,14 @@ def main(schedules: list, month: str, weekends: list, reducedDays: list) -> dict
 |--|-----------|---------|------|------|------|
 | **输入** | llm_context | String | 是 | 节点2d（LLM输入聚合） | 聚合后的基础上下文（科室+月份+医生+周末+节假日），与节点3 共用 |
 | | original_schedules | Array&lt;Object&gt; | 是 | 节点3（LLM生成排班） | 上轮生成的排班（动态，不预聚合） |
-| | errors | Array&lt;String&gt; | 是 | 节点4（冲突检测） | 上轮冲突错误（动态，不预聚合） |
-| | missingDays | Array&lt;String&gt; | 是 | 节点4（冲突检测） | 缺失出诊的日期时段（动态，不预聚合） |
+| | errors_json | **String**（JSON） | 是 | 节点4（冲突检测） | 上轮冲突错误 JSON（v4.4 改 String，绕开 30 元素限制） |
+| | missingDays_json | **String**（JSON） | 是 | 节点4（冲突检测） | 缺失出诊的日期时段 JSON（v4.4 改 String） |
 | **输出** | schedules | Array&lt;Object&gt; | - | - | 修正后的排班明细列表 |
 | | statistics | Object | - | - | 统计信息 |
 | | warnings | Array&lt;String&gt; | - | - | 警告信息列表 |
 | | quality_report | Object | - | - | 质量评估报告（可选，用于后续优化） |
 
-> 注：节点3' 与节点3 共用节点2d 的 `llm_context`（基础上下文一次性聚合好）。但 `original_schedules` / `errors` / `missingDays` 是上一轮 LLM + 冲突检测的**动态输出**，不能预先聚合，所以这三项仍然在提示词里单独引用。
+> 注：节点3' 与节点3 共用节点2d 的 `llm_context`（基础上下文一次性聚合好）。但 `original_schedules` / `errors_json` / `missingDays_json` 是上一轮 LLM + 冲突检测的**动态输出**，不能预先聚合，所以这三项仍然在提示词里单独引用。v4.4 起 `errors_json` / `missingDays_json` 是 JSON 字符串（绕开 Dify Code 节点 30 元素限制），LLM 直接读 JSON 字符串比读 Array 的 Python repr 形式更清晰。
 
 ### Dify LLM 节点结构化输出配置
 
@@ -1160,11 +1183,11 @@ def main(schedules: list, month: str, weekends: list, reducedDays: list) -> dict
 【上轮生成的排班】（保留其中正确的部分，只改有错误的）
 {{#LLM生成排班.schedules#}}
 
-【上轮冲突错误】（格式：DUPLICATE:医生ID:日期:时段:次数，需删除重复）
-{{#冲突检测.errors#}}
+【上轮冲突错误】（JSON 数组字符串，格式：DUPLICATE:医生ID:日期:时段:次数，需删除重复）
+{{#冲突检测.errors_json#}}
 
-【上轮缺失出诊的日期时段】（格式：YYYY-MM-DD:上午/下午，必须补充）
-{{#冲突检测.missingDays#}}
+【上轮缺失出诊的日期时段】（JSON 数组字符串，格式：YYYY-MM-DD:上午/下午，必须补充）
+{{#冲突检测.missingDays_json#}}
 
 修正要求：
 - 针对 DUPLICATE 错误：删除同一医生同一时段的重复记录
@@ -1545,11 +1568,13 @@ def main(schedules: list, physicians: list, **kwargs) -> dict:
 | | month（输入） | String | - |
 | | weekends（输入） | Array&lt;String&gt; | - |
 | | reducedDays（输入） | Array&lt;String&gt; | - |
-| | errors（输出） | Array&lt;String&gt; | - |
-| | missingDays（输出） | Array&lt;String&gt; | - |
-| | warnings（输出） | Array&lt;String&gt; | - |
+| | errors_json（输出） | **String**（JSON 序列化） | - |
+| | missingDays_json（输出） | **String**（JSON 序列化） | - |
+| | warnings_json（输出） | **String**（JSON 序列化） | - |
 | | hasConflict（输出） | Boolean | - |
 | | scheduleCount（输出） | Number | - |
+| | missingDaysCount（输出） | Number | - |
+| | errorsCount（输出） | Number | - |
 | **IF/ELSE 分支节点** | hasConflict（条件变量） | Boolean | - |
 | | true → 节点3' | - | - |
 | | false → 节点5 | - | - |
@@ -1559,8 +1584,8 @@ def main(schedules: list, physicians: list, **kwargs) -> dict:
 | | weekends（输入） | Array&lt;String&gt; | - |
 | | reducedDays（输入） | Array&lt;String&gt; | - |
 | | original_schedules（输入） | Array&lt;Object&gt; | - |
-| | errors（输入） | Array&lt;String&gt; | - |
-| | missingDays（输入） | Array&lt;String&gt; | - |
+| | errors_json（输入） | **String**（JSON） | - |
+| | missingDays_json（输入） | **String**（JSON） | - |
 | | schedules（输出） | Array&lt;Object&gt; | - |
 | | statistics（输出） | Object | - |
 | | warnings（输出） | Array&lt;String&gt; | - |
@@ -1666,8 +1691,15 @@ holidays_json        String    非必填（JSON 字符串）
   - `month` ← `{{#start.month#}}`
   - `weekends` ← `{{#node2b.weekends#}}`
   - `reducedDays` ← `{{#node2b.reducedDays#}}`
-- 代码：复制本文档"节点4"代码
-- 输出：`errors / missingDays / warnings / hasConflict / scheduleCount`
+- 代码：复制本文档"节点4"代码（v4.4 版，输出字段全部 `_json` 后缀）
+- 输出变量类型声明（**关键**，必须在 Dify 节点4 的输出表里逐个声明）：
+  - `errors_json` → **String**
+  - `missingDays_json` → **String**
+  - `warnings_json` → **String**
+  - `hasConflict` → Boolean
+  - `scheduleCount` → Number
+  - `missingDaysCount` → Number
+  - `errorsCount` → Number
 
 **步骤 8：IF/ELSE 节点（条件分支）**
 - IF 条件：`{{#node4.hasConflict#}}` 等于 `true`
@@ -1857,8 +1889,8 @@ public Map<String, Object> generateScheduleByDify(@RequestBody Map<String, Objec
 
 ## 迁移自 Coze 版的关键变化（变更摘要）
 
-| 维度 | Coze 版（v3.2） | Dify 版（v4.0） | Dify 版（v4.1） | Dify 版（v4.2） | Dify 版（v4.3，当前） |
-|------|----------------|-----------------|------------------|------------------|----------------------|
+| 维度 | Coze 版（v3.2） | Dify 版（v4.0） | Dify 版（v4.1） | Dify 版（v4.2） | Dify 版（v4.3） | Dify 版（v4.4，当前） |
+|------|----------------|-----------------|------------------|------------------|------------------|----------------------|
 | 代码节点语言 | JavaScript | Python | Python | Python | Python |
 | 开始节点复合类型 | 直接 Array/Object | String(JSON)，需后端 stringify | 同 v4.0（由节点2a 统一解析） | 同 v4.0 | 同 v4.0 |
 | Integer 类型 | 支持 | 改用 Number | 改用 Number | 改用 Number | 改用 Number |
@@ -1871,15 +1903,17 @@ public Map<String, Object> generateScheduleByDify(@RequestBody Map<String, Objec
 | **JSON 解析位置** | 散落在各节点 | 散落在 node2/node5/physicians_format | 集中在节点2a | 同 v4.1 | 同 v4.1 |
 | **LLM 输入聚合** | 无 | 无 | 无 | **新增节点2d**，6 个上下文 → 1 个 `llm_context` | 同 v4.2 |
 | **节点5 输入容错** | 无 | 无 | 无 | 无 | **`_extract_schedules_list()` 兼容包装对象 + `debug_log` 输出** |
-| **节点5 → End 输出形式** | Array | Array | Array | Array | **String（JSON 序列化），绕开 Dify 30 元素限制** |
-| **节点数量** | - | 9 个（含 Start/End） | 10 个（拆出 node2a） | 11 个（再拆出 node2d） | 同 v4.2（11 个） |
+| **节点5 → End 输出形式** | Array | Array | Array | Array | **String（JSON 序列化），绕开 Dify 30 元素限制** | 同 v4.3 |
+| **节点4 输出形式** | Array | Array | Array | Array | Array（**会爆 30 限制**） | **String（JSON 序列化），missingDays/errors/warnings 全部 `_json` 后缀** |
+| **节点数量** | - | 9 个（含 Start/End） | 10 个（拆出 node2a） | 11 个（再拆出 node2d） | 同 v4.2（11 个） | 同 v4.3（11 个，仅改输出字段类型） |
 
 ---
 
-> 文档版本：v4.3（Dify 适配版，节点5 改为 String 输出绕开 30 元素限制）
-> 最后更新：2026-06-26
+> 文档版本：v4.4（节点4 全面 String 化：missingDays/errors/warnings 绕开 30 元素限制）
+> 最后更新：2026-07-01
 > 维护人：Claude
 > 变更说明：
+> - v4.4：节点4（冲突检测）的 `missingDays` / `errors` / `warnings` 三个 Array 输出全部改为 `_json` 后缀的 String，绕开 Dify Code 节点 30 元素硬限制。原因：v4.3 只修了节点5 的 `validated_schedules`，漏掉了节点4。实际运行中 LLM 漏排大量日期时 `missingDays` 轻松超过 30 条（一个月最多 50~62 条），触发 `The length of output variable 'missingDays' must be less than 30 elements` 导致整个工作流失败。节点3' 提示词里的 `{{#冲突检测.missingDays#}}` 同步改为 `{{#冲突检测.missingDays_json#}}`，LLM 读 JSON 字符串更清晰。新增 `missingDaysCount` / `errorsCount` 数值字段方便排障
 > - v4.3：节点5 → End 输出字段从 `validated_schedules`（Array）改为 `validated_schedules_json`（String）。原因：Dify Code 节点对单个 Array 输出变量有 30 元素硬限制（平台层面，schema 改不了），月度排班 100+ 条会报 `The length of output variable must be less than 30 elements`。修复方案：节点5 内部用 `json.dumps` 把 list 序列化成 String 输出，后端 `JSON.parseArray` 还原。同时合并 v4.2.1 的两项修复（`_extract_schedules_list` 兼容包装对象输入 + `debug_log` 输出字段）
 > - v4.2：新增节点2d（LLM输入聚合），把 6 个 LLM 上下文变量（department_name/month/physicians_display/weekday_patterns/weekends/reducedDays）聚合成单个 String `llm_context`，节点3/3' 用户提示词简化为只引用一处；LLM 结构化输出由 yaml 改为标准 JSON Schema 源码模式；明确禁止在 schema 中使用 `additionalProperties: false`（否则 LLM 多输出字段会被判失败）
 > - v4.1：将节点2（节假日处理）拆分为节点2a（JSON解析，集中负责反序列化所有 `*_json` 字符串）与节点2b（节假日计算，专注日期推算）；将原本只作为代码片段出现的 physicians_format 独立为"节点2c"并补充完整章节（作用/类型设计/代码/输入输出示例）；同步消除 physicians_format 与节点5 中的重复 `json.loads` 逻辑；更新架构图、变量类型汇总表、搭建步骤、节点连线
