@@ -1,0 +1,4 @@
+numpy>=1.24
+SimpleITK>=2.3
+PyQt5>=5.15
+vtk>=9.2
