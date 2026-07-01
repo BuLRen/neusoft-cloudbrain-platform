@@ -35,6 +35,12 @@ public interface RegistrationMapper {
      */
     int markMissed(@Param("deadline") java.time.LocalDateTime deadline);
 
+    /**
+     * 按 ID 单条标记爽约（visit_state = 7）
+     * 配合 Java 侧按时段判定逻辑：定时任务逐条算截止时间，过期的调本方法
+     */
+    int markMissedById(@Param("id") Long id);
+
     List<Register> selectByStatus(Integer status);
 
     List<Register> selectByDate(LocalDate date);

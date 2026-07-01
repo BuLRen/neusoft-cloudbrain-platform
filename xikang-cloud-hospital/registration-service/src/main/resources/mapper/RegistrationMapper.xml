@@ -75,10 +75,14 @@
         ORDER BY visit_date DESC
     </select>
 
+    <!--
+        爽约候选：仅按状态和报到时间过滤，日期判定已挪到 Java 侧 computeMissedeDeadline。
+        deadline 参数仅用于日志参考，不再参与 SQL 过滤。
+    -->
     <select id="selectMissedCandidates" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM register
-        WHERE visit_state = 1 AND visit_date &lt; #{deadline} AND check_in_time IS NULL
+        WHERE visit_state = 1 AND check_in_time IS NULL
         ORDER BY visit_date ASC
     </select>
 
@@ -86,6 +90,20 @@
         UPDATE register
         SET visit_state = 7
         WHERE visit_state = 1 AND visit_date &lt; #{deadline} AND check_in_time IS NULL
+    </update>
+
+    <!--
+        按 ID 单条标记爽约（visit_state = 7）
+        与 markMissed 不同：不依赖 visit_date < deadline 的时间比较，
+        而是由 Java 侧按时段（noon）算出截止时间逐条判定，过期才调本方法。
+        保留 visit_state = 1 与 check_in_time IS NULL 防御性条件，避免误伤。
+    -->
+    <update id="markMissedById">
+        UPDATE register
+        SET visit_state = 7
+        WHERE id = #{id}
+          AND visit_state = 1
+          AND check_in_time IS NULL
     </update>
 
     <select id="selectByDate" resultMap="BaseResultMap">
