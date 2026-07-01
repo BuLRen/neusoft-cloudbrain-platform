@@ -2,6 +2,7 @@ package com.xikang.medtech.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
+import com.xikang.medtech.client.PaymentClient;
 import com.xikang.medtech.client.PhysicianW3Client;
 import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.entity.*;
@@ -35,6 +36,7 @@ public class MedtechService {
     private final ResultFormService resultFormService;
     private final ObjectMapper objectMapper;
     private final PhysicianW3Client physicianW3Client;
+    private final PaymentClient paymentClient;
 
     // ==================== 检查相关 ====================
 
@@ -51,7 +53,7 @@ public class MedtechService {
         } else {
             requests = checkRequestMapper.selectPending(departmentId);
         }
-        return requests.stream().map(this::toCheckMap).toList();
+        return enrichWithPayment(requests.stream().map(this::toCheckMap).toList(), "CHECK_FEE");
     }
 
     /**
@@ -68,6 +70,7 @@ public class MedtechService {
             throw new BusinessException(400, "当前状态不允许开始检查");
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        paymentClient.assertItemPaid(request.getRegisterId(), "CHECK_FEE", id, "检查费");
         Long checkEmployeeId = resolveOperatorEmployeeId(operatorInfo, "checkEmployeeId");
         if (checkEmployeeId != null) {
             checkRequestMapper.updateCheckStateWithEmployee(id, "检查中", checkEmployeeId);
@@ -119,7 +122,9 @@ public class MedtechService {
             throw new BusinessException(404, "检查申请不存在");
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
-        return toCheckDetailMap(request);
+        Map<String, Object> detail = toCheckDetailMap(request);
+        enrichSingleWithPayment(detail, "CHECK_FEE");
+        return detail;
     }
 
     /**
@@ -155,7 +160,7 @@ public class MedtechService {
         } else {
             requests = inspectionRequestMapper.selectPending(departmentId);
         }
-        return requests.stream().map(this::toInspectionMap).toList();
+        return enrichWithPayment(requests.stream().map(this::toInspectionMap).toList(), "INSPECTION_FEE");
     }
 
     /**
@@ -172,6 +177,7 @@ public class MedtechService {
             throw new BusinessException(400, "当前状态不允许开始检验");
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        paymentClient.assertItemPaid(request.getRegisterId(), "INSPECTION_FEE", id, "检验费");
         Long inspectionEmployeeId = resolveOperatorEmployeeId(operatorInfo, "inspectionEmployeeId");
         if (inspectionEmployeeId != null) {
             inspectionRequestMapper.updateInspectionStateWithEmployee(id, "检验中", inspectionEmployeeId);
@@ -257,7 +263,9 @@ public class MedtechService {
             throw new BusinessException(404, "检验申请不存在");
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
-        return toInspectionDetailMap(request);
+        Map<String, Object> detail = toInspectionDetailMap(request);
+        enrichSingleWithPayment(detail, "INSPECTION_FEE");
+        return detail;
     }
 
     /**
@@ -293,7 +301,7 @@ public class MedtechService {
         } else {
             requests = disposalRequestMapper.selectPending(departmentId);
         }
-        return requests.stream().map(this::toDisposalMap).toList();
+        return enrichWithPayment(requests.stream().map(this::toDisposalMap).toList(), "DISPOSAL_FEE");
     }
 
     /**
@@ -310,6 +318,7 @@ public class MedtechService {
             throw new BusinessException(400, "当前状态不允许开始处置");
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        paymentClient.assertItemPaid(request.getRegisterId(), "DISPOSAL_FEE", id, "处置费");
         Long disposalEmployeeId = resolveOperatorEmployeeId(operatorInfo, "disposalEmployeeId");
         if (disposalEmployeeId != null) {
             disposalRequestMapper.updateDisposalStateWithEmployee(id, "处置中", disposalEmployeeId);
@@ -359,7 +368,9 @@ public class MedtechService {
             throw new BusinessException(404, "处置申请不存在");
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
-        return toDisposalDetailMap(request);
+        Map<String, Object> detail = toDisposalDetailMap(request);
+        enrichSingleWithPayment(detail, "DISPOSAL_FEE");
+        return detail;
     }
 
     /**
@@ -732,5 +743,36 @@ public class MedtechService {
             return fromRequest;
         }
         return MedtechAuthContext.employeeIdOrNull();
+    }
+
+    private List<Map<String, Object>> enrichWithPayment(List<Map<String, Object>> items, String itemCode) {
+        if (items == null || items.isEmpty()) {
+            return items;
+        }
+        List<Long> registerIds = items.stream()
+                .map(row -> row.get("registerId"))
+                .map(MedtechService::toLong)
+                .filter(id -> id > 0)
+                .distinct()
+                .toList();
+        Map<String, Map<String, Object>> expenseIndex = paymentClient.loadExpenseIndex(registerIds);
+        for (Map<String, Object> item : items) {
+            Long registerId = toLong(item.get("registerId"));
+            Long sourceId = toLong(item.get("id"));
+            String key = PaymentClient.expenseKey(registerId, itemCode, sourceId);
+            PaymentClient.applyPaymentFields(item, expenseIndex.get(key));
+        }
+        return items;
+    }
+
+    private void enrichSingleWithPayment(Map<String, Object> item, String itemCode) {
+        if (item == null) {
+            return;
+        }
+        Long registerId = toLong(item.get("registerId"));
+        Long sourceId = toLong(item.get("id"));
+        Map<String, Map<String, Object>> expenseIndex = paymentClient.loadExpenseIndex(List.of(registerId));
+        String key = PaymentClient.expenseKey(registerId, itemCode, sourceId);
+        PaymentClient.applyPaymentFields(item, expenseIndex.get(key));
     }
 }

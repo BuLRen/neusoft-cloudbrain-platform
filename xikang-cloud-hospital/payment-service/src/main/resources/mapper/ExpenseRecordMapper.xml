@@ -21,13 +21,14 @@
         <result column="operator_id" property="operatorId"/>
         <result column="operator_name" property="operatorName"/>
         <result column="remark" property="remark"/>
+        <result column="source_id" property="sourceId"/>
         <result column="create_time" property="createTime"/>
     </resultMap>
 
     <sql id="Base_Column_List">
         id, register_id, patient_id, patient_name, category_id, category_name, item_id, item_name,
         item_code, quantity, unit_price, total_amount, status, pay_time, refund_time,
-        operator_id, operator_name, remark, create_time
+        operator_id, operator_name, remark, source_id, create_time
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
@@ -105,6 +106,24 @@
         LIMIT 1
     </select>
 
+    <select id="selectByRegisterSourceAndItemCode" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE register_id = #{registerId}
+          AND source_id = #{sourceId}
+          AND item_code = #{itemCode}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectPendingByRegisterIdAll" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE register_id = #{registerId}
+          AND status = 0
+        ORDER BY create_time ASC
+    </select>
+
     <select id="queryRecords" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM expense_record
@@ -138,11 +157,11 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO expense_record (
             register_id, patient_id, patient_name, category_id, category_name, item_id, item_name,
-            item_code, quantity, unit_price, total_amount, status, pay_time, operator_id, operator_name, remark
+            item_code, quantity, unit_price, total_amount, status, pay_time, operator_id, operator_name, remark, source_id
         ) VALUES (
             #{registerId}, #{patientId}, #{patientName}, #{categoryId}, #{categoryName}, #{itemId}, #{itemName},
             #{itemCode}, #{quantity}, #{unitPrice}, #{totalAmount}, #{status}, #{payTime},
-            #{operatorId}, #{operatorName}, #{remark}
+            #{operatorId}, #{operatorName}, #{remark}, #{sourceId}
         )
     </insert>
 

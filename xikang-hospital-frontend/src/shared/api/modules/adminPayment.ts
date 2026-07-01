@@ -40,15 +40,30 @@ export const adminPaymentApi = {
   },
 
   getPatientBalance(patientId: number) {
-    return http<{ patientId: number; accountBalance: number }>({
+    return http<{ patientId: number; accountBalance: number; balanceUnavailable?: boolean }>({
       url: `/registration/admin/payment-orders/patients/${patientId}/balance`,
       method: 'GET',
+      skipErrorMessage: true,
     })
   },
 
   rechargePatient(patientId: number, amount: number, remark?: string, operator?: { operatorId?: number; operatorName?: string }) {
     return http<AdminRechargeResult>({
       url: `/registration/admin/payment-orders/patients/${patientId}/recharge`,
+      method: 'POST',
+      data: {
+        amount,
+        remark,
+        operatorId: operator?.operatorId,
+        operatorName: operator?.operatorName,
+      },
+    })
+  },
+
+  /** 按挂号号充值：后端从挂号表解析真实 patient_id，避免误用挂号号 */
+  rechargeByRegister(registerId: number, amount: number, remark?: string, operator?: { operatorId?: number; operatorName?: string }) {
+    return http<AdminRechargeResult>({
+      url: `/registration/admin/payment-orders/${registerId}/recharge`,
       method: 'POST',
       data: {
         amount,

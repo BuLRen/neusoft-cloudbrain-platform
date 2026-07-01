@@ -45,7 +45,9 @@ export function useAdminPaymentCharge(operator: ComputedRef<PaymentOperator>) {
     loadError.value = null
     try {
       detail.value = await adminPaymentApi.getDetail(registerId)
-      if (detail.value.patientId) {
+      if (detail.value.accountBalance != null) {
+        patientBalance.value = Number(detail.value.accountBalance)
+      } else if (detail.value.patientId) {
         await refreshPatientBalance(detail.value.patientId)
       } else {
         patientBalance.value = 0
@@ -64,8 +66,8 @@ export function useAdminPaymentCharge(operator: ComputedRef<PaymentOperator>) {
   }
 
   function openRechargeDialog() {
-    if (!detail.value?.patientId) {
-      ElMessage.warning('未找到患者信息，无法充值')
+    if (!detail.value?.registerId) {
+      ElMessage.warning('未找到挂号信息，无法充值')
       return
     }
     rechargeAmount.value = Math.max(100, detail.value.pendingAmount ?? 100)
@@ -74,16 +76,16 @@ export function useAdminPaymentCharge(operator: ComputedRef<PaymentOperator>) {
   }
 
   async function submitRecharge() {
-    const patientId = detail.value?.patientId
-    if (!patientId) return
+    const registerId = detail.value?.registerId
+    if (!registerId) return
     if (!rechargeAmount.value || rechargeAmount.value <= 0) {
       ElMessage.warning('请输入有效充值金额')
       return
     }
     rechargeLoading.value = true
     try {
-      const result = await adminPaymentApi.rechargePatient(
-        patientId,
+      const result = await adminPaymentApi.rechargeByRegister(
+        registerId,
         rechargeAmount.value,
         rechargeRemark.value,
         operator.value,

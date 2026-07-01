@@ -13,6 +13,7 @@ import {
   ElTable,
   ElTableColumn,
   ElTag,
+  ElTooltip,
 } from 'element-plus'
 import { medtechApi, type MedtechApplication, type MedtechProfile, type MedtechTechType } from '@/shared/api/modules/medtech'
 import MedtechApplicationDetailDialog from '../components/MedtechApplicationDetailDialog.vue'
@@ -101,8 +102,8 @@ function isArchived(row: MedtechApplication) {
 
 function executeLabel(row: MedtechApplication) {
   if (statusTab.value === 'finished') return '查看结果'
-  const prefix = statusTab.value === 'pending' ? '执行' : '继续'
-  return `${prefix}${TECH_TYPE_LABEL[row.techType]}`
+  if (statusTab.value === 'pending') return '执行'
+  return `继续${TECH_TYPE_LABEL[row.techType]}`
 }
 
 function typesToLoad(): MedtechTechType[] {
@@ -154,6 +155,16 @@ async function loadApplications() {
   } finally {
     loading.value = false
   }
+}
+
+function isUnpaid(row: MedtechApplication) {
+  return row.paid === false
+}
+
+function canExecute(row: MedtechApplication) {
+  if (statusTab.value === 'finished') return true
+  if (statusTab.value === 'pending' && isUnpaid(row)) return false
+  return true
 }
 
 function goExecute(row: MedtechApplication) {
@@ -244,54 +255,78 @@ onMounted(() => {
     />
 
     <ElEmpty v-if="!loading && !errorMessage && !applications.length" :description="emptyDescription" />
-    <ElTable
-      v-else-if="!errorMessage"
-      v-loading="loading"
-      :data="applications"
-      :row-key="rowKey"
-    >
-      <ElTableColumn label="类型" width="80">
-        <template #default="{ row }">
-          <ElTag :type="techTypeTagType(row.techType)" size="small">
-            {{ TECH_TYPE_LABEL[row.techType as MedtechTechType] }}
-          </ElTag>
-        </template>
-      </ElTableColumn>
-      <ElTableColumn prop="caseNumber" label="病历号" width="140" />
-      <ElTableColumn prop="patientName" label="患者" width="100" />
-      <ElTableColumn prop="techName" label="项目名称" min-width="120" />
-      <ElTableColumn prop="position" label="部位" width="100" />
-      <ElTableColumn prop="info" label="目的要求" min-width="160" show-overflow-tooltip />
-      <ElTableColumn label="开立时间" width="150">
-        <template #default="{ row }">{{ formatTime(row.creationTime) }}</template>
-      </ElTableColumn>
-      <ElTableColumn prop="statusText" label="状态" width="90" />
-      <ElTableColumn label="操作" width="220" fixed="right">
-        <template #default="{ row }">
-          <div class="ops-cell">
-            <ElButton
-              v-if="!(statusTab === 'finished' && isArchived(row))"
-              link
-              type="primary"
-              @click="goExecute(row)"
-            >
-              {{ executeLabel(row) }}
-            </ElButton>
-            <ElButton link type="primary" @click="openDetail(row, statusTab === 'finished' && !isArchived(row))">
-              详情
-            </ElButton>
-            <ElButton
-              v-if="statusTab !== 'finished'"
-              link
-              type="warning"
-              @click="openArchive(row)"
-            >
-              归档
-            </ElButton>
-          </div>
-        </template>
-      </ElTableColumn>
-    </ElTable>
+    <div v-else-if="!errorMessage" class="queue-table-wrap">
+      <ElTable
+        v-loading="loading"
+        class="queue-table"
+        :data="applications"
+        :row-key="rowKey"
+      >
+        <ElTableColumn label="类型" width="72" align="center">
+          <template #default="{ row }">
+            <ElTag :type="techTypeTagType(row.techType)" size="small">
+              {{ TECH_TYPE_LABEL[row.techType as MedtechTechType] }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="caseNumber" label="病历号" min-width="128" show-overflow-tooltip />
+        <ElTableColumn prop="patientName" label="患者" min-width="88" show-overflow-tooltip />
+        <ElTableColumn prop="techName" label="项目名称" min-width="108" show-overflow-tooltip />
+        <ElTableColumn prop="position" label="部位" min-width="72" show-overflow-tooltip />
+        <ElTableColumn prop="info" label="目的要求" min-width="120" show-overflow-tooltip />
+        <ElTableColumn label="开立时间" min-width="136" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatTime(row.creationTime) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="状态" min-width="108">
+          <template #default="{ row }">
+            <div class="status-cell">
+              <span class="status-cell__exec">{{ row.statusText || '—' }}</span>
+              <ElTag v-if="row.paid === true" type="success" size="small">已缴费</ElTag>
+              <ElTag v-else-if="row.paid === false" type="warning" size="small">未缴费</ElTag>
+            </div>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="168" fixed="right" align="center">
+          <template #default="{ row }">
+            <div class="ops-cell">
+              <ElTooltip
+                v-if="!canExecute(row)"
+                content="请患者先完成缴费"
+                placement="top"
+              >
+                <ElButton
+                  v-if="!(statusTab === 'finished' && isArchived(row))"
+                  link
+                  type="primary"
+                  disabled
+                >
+                  {{ executeLabel(row) }}
+                </ElButton>
+              </ElTooltip>
+              <ElButton
+                v-else-if="!(statusTab === 'finished' && isArchived(row))"
+                link
+                type="primary"
+                @click="goExecute(row)"
+              >
+                {{ executeLabel(row) }}
+              </ElButton>
+              <ElButton link type="primary" @click="openDetail(row, statusTab === 'finished' && !isArchived(row))">
+                详情
+              </ElButton>
+              <ElButton
+                v-if="statusTab !== 'finished'"
+                link
+                type="warning"
+                @click="openArchive(row)"
+              >
+                归档
+              </ElButton>
+            </div>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+    </div>
 
     <MedtechApplicationDetailDialog
       v-model:visible="detailVisible"
@@ -339,9 +374,44 @@ onMounted(() => {
   margin-block-end: var(--space-4);
 }
 
-.ops-cell {
+.queue-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.queue-table {
+  width: 100%;
+}
+
+.queue-table :deep(.el-table__cell) {
+  padding-block: 8px;
+}
+
+.status-cell {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.status-cell__exec {
+  font-size: 13px;
+  color: var(--color-text-secondary, #64748b);
+  line-height: 1.3;
+}
+
+.ops-cell {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.ops-cell :deep(.el-button.is-link) {
+  padding-inline: 4px;
 }
 </style>

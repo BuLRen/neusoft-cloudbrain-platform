@@ -73,9 +73,9 @@
         WHERE register_id = #{registerId}
         AND status = 0
         <if test="itemIds != null and itemIds.size() > 0">
-            AND item_id IN
-            <foreach collection="itemIds" item="itemId" open="(" separator="," close=")">
-                #{itemId}
+            AND id IN
+            <foreach collection="itemIds" item="expenseId" open="(" separator="," close=")">
+                #{expenseId}
             </foreach>
         </if>
         ORDER BY create_time DESC

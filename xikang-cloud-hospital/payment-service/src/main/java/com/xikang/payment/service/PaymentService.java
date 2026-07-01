@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -96,11 +97,98 @@ public class PaymentService {
             return createdResult(inserted.getId(), true);
         }
 
-        // 检查费 / 其他 — 直接 INSERT，业务层保证不重复调
+        if (isTechFeeItemCode(itemCode)) {
+            Long sourceId = lng(body, "sourceId");
+            if (sourceId == null) {
+                throw new BusinessException(400, itemCode + " 出账必须提供 sourceId（医技申请单 ID）");
+            }
+            ExpenseRecord existing = expenseRecordMapper.selectByRegisterSourceAndItemCode(registerId, sourceId, itemCode);
+            if (existing != null) {
+                log.info("createItem 命中既有 {} | registerId={}, sourceId={}, id={}",
+                        itemCode, registerId, sourceId, existing.getId());
+                return createdResult(existing.getId(), false);
+            }
+            ExpenseRecord inserted = buildFromRequest(body, itemCode, 0);
+            expenseRecordMapper.insert(inserted);
+            log.info("createItem 新建 {} | registerId={}, sourceId={}, id={}",
+                    itemCode, registerId, sourceId, inserted.getId());
+            return createdResult(inserted.getId(), true);
+        }
+
+        // 其他 item_code — 直接 INSERT
         ExpenseRecord inserted = buildFromRequest(body, itemCode, 0);
         expenseRecordMapper.insert(inserted);
         log.info("createItem 新建 {} | registerId={}, id={}", itemCode, registerId, inserted.getId());
         return createdResult(inserted.getId(), true);
+    }
+
+    // ============================================================
+    // 内部 API：check-paid（医技/确诊卡点）
+    // ============================================================
+
+    /**
+     * 校验挂号下是否全部费用已付清（扫描所有 status=0 行）。
+     */
+    public Map<String, Object> checkPaidByRegister(Long registerId) {
+        List<ExpenseRecord> pending = expenseRecordMapper.selectPendingByRegisterIdAll(registerId);
+        BigDecimal pendingAmount = pending.stream()
+                .map(ExpenseRecord::getTotalAmount)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<String> pendingItemCodes = pending.stream()
+                .map(ExpenseRecord::getItemCode)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+        result.put("allPaid", pending.isEmpty());
+        result.put("pendingAmount", pendingAmount);
+        result.put("pendingItems", pending.size());
+        result.put("pendingItemCodes", pendingItemCodes);
+        return result;
+    }
+
+    /**
+     * 校验单条费用是否已缴（医技执行前按 sourceId 粒度校验）。
+     */
+    public Map<String, Object> checkPaidByItem(Long registerId, String itemCode, Long sourceId) {
+        if (registerId == null || itemCode == null || sourceId == null) {
+            throw new BusinessException(400, "registerId、itemCode、sourceId 必填");
+        }
+        ExpenseRecord record = expenseRecordMapper.selectByRegisterSourceAndItemCode(registerId, sourceId, itemCode);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+        result.put("itemCode", itemCode);
+        result.put("sourceId", sourceId);
+        if (record == null) {
+            result.put("exists", false);
+            result.put("paid", false);
+            result.put("status", null);
+            return result;
+        }
+        result.put("exists", true);
+        result.put("paid", record.getStatus() != null && record.getStatus() == 1);
+        result.put("status", record.getStatus());
+        result.put("expenseId", record.getId());
+        result.put("totalAmount", record.getTotalAmount());
+        return result;
+    }
+
+    /**
+     * 按挂号 + itemCode + sourceId 查单条费用（供 medtech 列表 join）。
+     */
+    public Map<String, Object> getItemByRegisterAndSource(Long registerId, String itemCode, Long sourceId) {
+        if (sourceId != null) {
+            ExpenseRecord record = expenseRecordMapper.selectByRegisterSourceAndItemCode(registerId, sourceId, itemCode);
+            return record != null ? toMap(record) : null;
+        }
+        List<Map<String, Object>> all = queryRecords(null, registerId, null, null, null);
+        return all.stream()
+                .filter(m -> itemCode.equals(m.get("itemCode")))
+                .reduce((a, b) -> b)
+                .orElse(null);
     }
 
     // ============================================================
@@ -535,11 +623,22 @@ public class PaymentService {
 
         Map<String, Object> order = new LinkedHashMap<>();
         order.put("registerId", registerId);
-        if (!records.isEmpty()) {
-            order.put("patientId", records.get(0).getPatientId());
-            order.put("patientName", records.get(0).getPatientName());
+        // 患者信息：优先 register 表（权威），费用行仅作兜底
+        Long patientId = null;
+        String patientName = null;
+        if (registerInfo != null) {
+            patientId = lng(registerInfo, "patientId");
+            patientName = str(registerInfo, "patientName");
         }
-        // 挂号基础信息（科室 / 医生 / 就诊日期）：registerInfo 为 null 时优雅降级为 null
+        if (patientId == null && !records.isEmpty()) {
+            patientId = records.get(0).getPatientId();
+        }
+        if (patientName == null && !records.isEmpty()) {
+            patientName = records.get(0).getPatientName();
+        }
+        order.put("patientId", patientId);
+        order.put("patientName", patientName);
+        // 挂号基础信息（科室 / 医生 / 就诊日期）
         if (registerInfo != null) {
             order.put("departmentName", registerInfo.get("departmentName"));
             order.put("doctorName", registerInfo.get("doctorName"));
@@ -580,6 +679,7 @@ public class PaymentService {
         m.put("status", r.getStatus());
         m.put("statusName", statusName(r.getStatus()));
         m.put("payTime", r.getPayTime());
+        m.put("sourceId", r.getSourceId());
         m.put("createTime", r.getCreateTime());
         return m;
     }
@@ -605,8 +705,15 @@ public class PaymentService {
         m.put("operatorId", r.getOperatorId());
         m.put("operatorName", r.getOperatorName());
         m.put("remark", r.getRemark());
+        m.put("sourceId", r.getSourceId());
         m.put("createTime", r.getCreateTime());
         return m;
+    }
+
+    private boolean isTechFeeItemCode(String itemCode) {
+        return "CHECK_FEE".equals(itemCode)
+                || "INSPECTION_FEE".equals(itemCode)
+                || "DISPOSAL_FEE".equals(itemCode);
     }
 
     private String statusName(Integer status) {
@@ -623,6 +730,8 @@ public class PaymentService {
     private String businessTypeFor(String itemCode) {
         if ("REGISTRATION_FEE".equals(itemCode)) return "REGISTRATION";
         if ("MEDICATION_FEE".equals(itemCode)) return "MEDICATION";
+        if ("CHECK_FEE".equals(itemCode) || "INSPECTION_FEE".equals(itemCode)) return "EXAMINATION";
+        if ("DISPOSAL_FEE".equals(itemCode)) return "DISPOSAL";
         if ("EXAMINATION_FEE".equals(itemCode)) return "EXAMINATION";
         return "OTHER";
     }
@@ -661,6 +770,7 @@ public class PaymentService {
         r.setOperatorId(lng(body, "operatorId"));
         r.setOperatorName(str(body, "operatorName"));
         r.setRemark(str(body, "remark"));
+        r.setSourceId(lng(body, "sourceId"));
         return r;
     }
 
@@ -668,6 +778,9 @@ public class PaymentService {
         return switch (itemCode) {
             case "REGISTRATION_FEE" -> "挂号费";
             case "MEDICATION_FEE" -> "药品费";
+            case "CHECK_FEE" -> "检查费";
+            case "INSPECTION_FEE" -> "检验费";
+            case "DISPOSAL_FEE" -> "处置费";
             case "EXAMINATION_FEE" -> "检查费";
             default -> itemCode;
         };

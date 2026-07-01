@@ -82,6 +82,22 @@ public class AdminPaymentController {
         ));
     }
 
+    @PostMapping("/{registerId}/recharge")
+    public Result<Map<String, Object>> rechargeByRegister(
+        @PathVariable Long registerId,
+        @RequestBody Map<String, Object> body
+    ) {
+        BigDecimal amount = new BigDecimal(String.valueOf(body.get("amount")));
+        String remark = body.get("remark") != null ? String.valueOf(body.get("remark")) : null;
+        Long operatorId = body.get("operatorId") != null
+            ? Long.valueOf(body.get("operatorId").toString()) : null;
+        String operatorName = body.get("operatorName") != null
+            ? String.valueOf(body.get("operatorName")) : null;
+        return Result.success(adminPaymentService.rechargeByRegister(
+            registerId, amount, remark, operatorId, operatorName
+        ));
+    }
+
     @PostMapping("/{registerId}/items/{itemId}/pay")
     public Result<Map<String, Object>> payItemByBalance(
         @PathVariable Long registerId,

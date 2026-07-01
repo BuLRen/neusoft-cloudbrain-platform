@@ -51,9 +51,9 @@ const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
 const { exportContext, exporting, exportPdf } = useLabReportExport()
 
 const id = computed(() => Number(route.query.id || 0))
-const canRecordSpecimen = computed(() => started.value && !specimenLoading.value && !specimenRecorded.value)
-const canSimulate = computed(() => started.value && !loading.value && !simulating.value)
-const canSubmit = computed(() => started.value && !!schema.value && !loading.value && !simulating.value)
+const canRecordSpecimen = computed(() => started.value && !specimenLoading.value && !specimenRecorded.value && report.value?.paid !== false)
+const canSimulate = computed(() => started.value && !loading.value && !simulating.value && report.value?.paid !== false)
+const canSubmit = computed(() => started.value && !!schema.value && !loading.value && !simulating.value && report.value?.paid !== false)
 
 const statusTone = computed(() => {
   const state = report.value?.statusText || report.value?.inspectionState || ''
@@ -84,15 +84,22 @@ async function loadPage() {
     formValues.value = { ...(schema.value.existingValues ?? {}) }
     specimenRecorded.value = !!report.value.inspectionTime
 
+    if (report.value.paid === false) {
+      errorMessage.value = '患者尚未支付检验费，请提醒患者先完成缴费后再执行'
+      started.value = false
+      return
+    }
+
     if (report.value.inspectionState === '待检验') {
       await medtechApi.startInspection(id.value)
       report.value = { ...report.value, inspectionState: '检验中', statusText: '检验中' }
     }
     started.value = report.value.inspectionState === '检验中'
-  } catch {
+  } catch (err) {
     report.value = null
     schema.value = null
-    errorMessage.value = '检验申请加载失败，请返回列表重试'
+    const msg = err instanceof Error ? err.message : ''
+    errorMessage.value = msg || '检验申请加载失败，请返回列表重试'
   } finally {
     loading.value = false
   }

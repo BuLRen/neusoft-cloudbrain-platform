@@ -1,5 +1,6 @@
 package com.xikang.auth.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.auth.entity.Patient;
 import com.xikang.auth.entity.PatientBalanceTransaction;
 import com.xikang.auth.mapper.PatientBalanceTransactionMapper;
@@ -7,12 +8,18 @@ import com.xikang.auth.mapper.PatientMapper;
 import com.xikang.auth.mapper.UserPatientManagedMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.sql.DataSource;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,9 +32,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PatientService {
 
+    private static final ObjectMapper DEBUG_OBJECT_MAPPER = new ObjectMapper();
+    private static final Path DEBUG_LOG_PATH = Path.of("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-02f0a8.log");
+
     private final PatientMapper patientMapper;
     private final UserPatientManagedMapper userPatientManagedMapper;
     private final PatientBalanceTransactionMapper balanceTransactionMapper;
+    private final Environment environment;
+    private final DataSource dataSource;
 
     /**
      * 根据用户ID获取该用户管理的患者列表（本人+家人）
@@ -100,6 +112,16 @@ public class PatientService {
 
     public BigDecimal getBalance(Integer patientId) {
         Patient patient = patientMapper.selectById(patientId);
+        // region agent log
+        debugLog("initial", "H1,H2,H3,H5", "PatientService.java:getBalance",
+                "auth balance lookup result", debugData(
+                        "patientId", patientId,
+                        "found", patient != null,
+                        "delmark", patient != null ? patient.getDelmark() : null,
+                        "activeProfiles", String.join(",", environment.getActiveProfiles()),
+                        "dataSource", describeDataSource()
+                ));
+        // endregion
         if (patient == null) {
             throw new com.xikang.common.exception.BusinessException(404, "患者不存在");
         }
@@ -222,6 +244,16 @@ public class PatientService {
 
     private Patient lockPatient(Integer patientId) {
         Patient patient = patientMapper.selectByIdForUpdate(patientId);
+        // region agent log
+        debugLog("initial", "H1,H2,H3,H5", "PatientService.java:lockPatient",
+                "auth lock patient result before balance mutation", debugData(
+                        "patientId", patientId,
+                        "found", patient != null,
+                        "delmark", patient != null ? patient.getDelmark() : null,
+                        "activeProfiles", String.join(",", environment.getActiveProfiles()),
+                        "dataSource", describeDataSource()
+                ));
+        // endregion
         if (patient == null) {
             throw new com.xikang.common.exception.BusinessException(404, "患者不存在");
         }
@@ -230,6 +262,44 @@ public class PatientService {
 
     private BigDecimal safeBalance(Patient patient) {
         return patient.getAccountBalance() == null ? BigDecimal.ZERO : patient.getAccountBalance();
+    }
+
+    private String describeDataSource() {
+        if (dataSource instanceof com.zaxxer.hikari.HikariDataSource hikariDataSource) {
+            return redactJdbcUrl(hikariDataSource.getJdbcUrl());
+        }
+        return dataSource.getClass().getName();
+    }
+
+    private static String redactJdbcUrl(String jdbcUrl) {
+        if (jdbcUrl == null) {
+            return null;
+        }
+        return jdbcUrl.replaceAll("(?i)(password=)[^&;]+", "$1***");
+    }
+
+    private static Map<String, Object> debugData(Object... values) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < values.length; i += 2) {
+            data.put(String.valueOf(values[i]), values[i + 1]);
+        }
+        return data;
+    }
+
+    private static void debugLog(String runId, String hypothesisId, String location, String message, Map<String, Object> data) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("sessionId", "02f0a8");
+            payload.put("runId", runId);
+            payload.put("hypothesisId", hypothesisId);
+            payload.put("location", location);
+            payload.put("message", message);
+            payload.put("data", data);
+            payload.put("timestamp", System.currentTimeMillis());
+            Files.writeString(DEBUG_LOG_PATH, DEBUG_OBJECT_MAPPER.writeValueAsString(payload) + System.lineSeparator(),
+                    StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+        }
     }
 
     private PatientBalanceTransaction findExistingTransaction(Integer patientId,
