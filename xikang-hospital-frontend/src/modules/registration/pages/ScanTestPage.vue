@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
+import { parseQrPayload, type QrParseResult } from '@/shared/utils/qrProtocol'
 
 interface ScanRecord {
   raw: string
-  prefix: string | null
-  id: number | null
-  ok: boolean
-  message: string
+  result: QrParseResult
   time: string
 }
 
@@ -15,40 +13,14 @@ const inputEl = ref<HTMLInputElement | null>(null)
 const lastScan = ref<ScanRecord | null>(null)
 const history = ref<ScanRecord[]>([])
 
-// 已知二维码协议前缀：将来扩展 PAY- / RPT- 等都在这里加
-const KNOWN_PREFIXES = ['REG'] as const
-
-function parse(raw: string): ScanRecord {
-  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-  const trimmed = raw.trim()
-
-  if (!trimmed) {
-    return { raw, prefix: null, id: null, ok: false, message: '空内容', time }
-  }
-
-  // 协议：PREFIX-{id}，前缀全大写字母，id 为正整数
-  const m = trimmed.match(/^([A-Z]+)-(\d+)$/)
-  if (!m) {
-    return { raw: trimmed, prefix: null, id: null, ok: false, message: '格式不符 PREFIX-{id}', time }
-  }
-  const [, prefix, idStr] = m
-  const id = Number(idStr)
-
-  if (!(KNOWN_PREFIXES as readonly string[]).includes(prefix)) {
-    return { raw: trimmed, prefix, id, ok: false, message: `未知前缀 ${prefix}`, time }
-  }
-
-  return { raw: trimmed, prefix, id, ok: true, message: `解析成功：挂号号 ${id}`, time }
-}
-
 function handleScanned() {
   const raw = input.value
   if (!raw) return
-  lastScan.value = parse(raw)
+  const result = parseQrPayload(raw)
+  lastScan.value = { raw, result, time: new Date().toLocaleTimeString('zh-CN', { hour12: false }) }
   history.value.unshift(lastScan.value)
   if (history.value.length > 20) history.value.pop()
   input.value = ''
-  // 自动回到输入框，报到机常态挂着等下一次扫码
   void nextTick(() => inputEl.value?.focus())
 }
 
@@ -65,7 +37,7 @@ onMounted(focusInput)
       <h1>扫码联调测试页</h1>
       <p class="desc">
         把光标点进下方输入框，然后用扫码枪扫二维码。
-        扫码枪会把 <code>REG-1023</code> 这样的字符敲进来，并自动按回车。
+        协议格式：<code>XK-REG-{挂号ID}-{4位校验码}</code>，例如 <code>XK-REG-1023-A7B3</code>。
         也可以手动输入后按回车。
       </p>
 
@@ -79,20 +51,30 @@ onMounted(focusInput)
         @click.stop
       />
 
-      <div v-if="lastScan" class="last-result" :class="{ ok: lastScan.ok, fail: !lastScan.ok }">
+      <div v-if="lastScan" class="last-result" :class="{ ok: lastScan.result.ok, fail: !lastScan.result.ok }">
         <div class="raw">原始内容：<span>{{ lastScan.raw }}</span></div>
-        <div v-if="lastScan.prefix">前缀：<span>{{ lastScan.prefix }}</span></div>
-        <div v-if="lastScan.id !== null">挂号号 ID：<span>{{ lastScan.id }}</span></div>
-        <div class="msg">{{ lastScan.message }}</div>
+        <template v-if="lastScan.result.ok">
+          <div>医院前缀：<span>{{ lastScan.result.hospital }}</span></div>
+          <div>业务类型：<span>{{ lastScan.result.type }}</span></div>
+          <div>挂号ID：<span>{{ lastScan.result.id }}</span></div>
+          <div>校验码：<span>{{ lastScan.result.checkCode }}</span> ✓</div>
+          <div class="msg">解析成功，可发起 /check-in</div>
+        </template>
+        <template v-else>
+          <div class="msg">{{ lastScan.result.message }}</div>
+        </template>
       </div>
 
       <div class="history-block">
         <h3>扫描历史（最多 20 条）</h3>
         <ul v-if="history.length" class="history-list">
-          <li v-for="(r, i) in history" :key="i" :class="{ ok: r.ok, fail: !r.ok }">
+          <li v-for="(r, i) in history" :key="i" :class="{ ok: r.result.ok, fail: !r.result.ok }">
             <span class="time">{{ r.time }}</span>
             <span class="raw">{{ r.raw }}</span>
-            <span class="msg">{{ r.message }}</span>
+            <span class="msg">
+              <template v-if="r.result.ok">ID={{ r.result.id }} ✓</template>
+              <template v-else>{{ r.result.message }}</template>
+            </span>
           </li>
         </ul>
         <p v-else class="empty">暂无记录</p>
@@ -171,7 +153,6 @@ h1 {
   color: #f56c6c;
 }
 .last-result .raw span,
-.last-result .prefix span,
 .last-result span {
   font-weight: 600;
   color: #1f2d3d;

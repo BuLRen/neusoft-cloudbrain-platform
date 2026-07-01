@@ -20,7 +20,11 @@ import reactor.core.publisher.Mono;
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
     private static final String ACCESS_COOKIE_NAME = "access_token";
-    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/ws/voice,/api/voice/";
+    // 注意：isWhitelisted 用的是 path.contains(pattern) 子串匹配
+    // 因此每个模式都必须足够"独特"，避免误伤其他接口
+    // - /check-in：报到机扫码报到接口，路径形如 /api/registration/{id}/check-in
+    //   含 check-in 子串的本系统路径只有报到接口，无安全风险
+    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/ws/voice,/api/voice/,/check-in";
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {

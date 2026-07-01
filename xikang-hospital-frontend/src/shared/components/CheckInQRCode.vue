@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import QRCode from 'qrcode'
+import { buildRegQrPayload } from '@/shared/utils/qrProtocol'
 
 const props = withDefaults(defineProps<{
   registerId: number
@@ -19,8 +20,9 @@ async function render() {
     return
   }
   try {
-    // 二维码内容：REG-{registerId} 带前缀，前端扫码时校验前缀
-    dataUrl.value = await QRCode.toDataURL(`REG-${props.registerId}`, {
+    // 二维码内容：XK-REG-{registerId}-{校验码}
+    // 由 qrProtocol 工具统一生成，扫码端用 parseQrPayload 解析
+    dataUrl.value = await QRCode.toDataURL(buildRegQrPayload(props.registerId), {
       width: props.size,
       margin: 1,
       errorCorrectionLevel: 'M',
