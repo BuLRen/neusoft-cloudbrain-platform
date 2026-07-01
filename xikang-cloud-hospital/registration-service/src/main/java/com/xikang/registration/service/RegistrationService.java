@@ -460,6 +460,8 @@ public class RegistrationService {
         // 关联字段：科室名 / 医生名 / 就诊日期 / 时段 / 挂号级别
         // 复用 toMap 私有方法，内部用 selectById 关联 department/employee/regist_level 表
         Map<String, Object> detail = toMap(register);
+        result.put("departmentId", register.getDeptmentId());
+        result.put("doctorId", register.getEmployeeId());
         result.put("departmentName", detail.get("departmentName"));
         result.put("doctorName", detail.get("physicianName"));
         result.put("visitDate", detail.get("visitDate"));

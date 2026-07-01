@@ -49,8 +49,8 @@ import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
 import NotFoundPage from '@/modules/error/NotFoundPage.vue'
-import ScanTestPage from '@/modules/registration/pages/ScanTestPage.vue'
 import ScanCheckinPage from '@/modules/registration/pages/ScanCheckinPage.vue'
+import CallingBoardPage from '@/modules/registration/pages/CallingBoardPage.vue'
 
 // 患者端独立布局路由（不经过 AppShell）
 const patientRoutes: RouteRecordRaw[] = [
@@ -139,19 +139,19 @@ const patientRoutes: RouteRecordRaw[] = [
 const placeholder = RoutePlaceholder
 
 export const routes: RouteRecordRaw[] = [
-  // 扫码联调测试页：不挂布局、不要登录、不加权限，纯前端
-  {
-    path: '/test',
-    name: 'ScanTest',
-    component: ScanTestPage,
-    meta: { title: '扫码测试', hidden: true },
-  },
-  // 报到机测试页：解析 + 调 /check-in 接口 + 渲染报到卡片
+  // 报到机：扫码 → /check-in → 渲染报到卡片 + SSE 实时叫号
   {
     path: '/test-checkin',
     name: 'ScanCheckin',
     component: ScanCheckinPage,
-    meta: { title: '报到机测试', hidden: true },
+    meta: { title: '报到机', hidden: true },
+  },
+  // 候诊叫号大屏：一科室一屏，免登录，订阅 SSE
+  {
+    path: '/calling-board/:departmentId',
+    name: 'CallingBoard',
+    component: CallingBoardPage,
+    meta: { title: '候诊大屏', hidden: true },
   },
   ...patientRoutes,
   {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElCheckbox, ElCheckboxGroup, ElEmpty, ElIcon, ElInput, ElPopover, ElTag } from 'element-plus'
+import { ElAlert, ElButton, ElCheckbox, ElCheckboxGroup, ElEmpty, ElIcon, ElInput, ElMessage, ElPopover, ElTag } from 'element-plus'
 import {
   ArrowRight,
   Calendar,
@@ -14,7 +14,7 @@ import {
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
-import { physicianApi, type MedicalRecord, type PhysicianPatient } from '@/shared/api/modules/physician'
+import { physicianApi, callingApi, type MedicalRecord, type PhysicianPatient, type CallingResult } from '@/shared/api/modules/physician'
 import { useAuthStore } from '@/app/stores/auth'
 import { useEncounterStore } from '@/app/stores/encounter'
 import ClinicalRecordDrawer from '../components/ClinicalRecordDrawer.vue'
@@ -216,6 +216,79 @@ async function enterEncounter() {
   await router.push(physicianRoute(path, patient.registerId))
 }
 
+// ====== 叫号系统（设计文档 §6.2）======
+const currentCalling = ref<CallingResult | null>(null)
+const callingBusy = ref(false)
+let callingRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+async function refreshCurrentCalling() {
+  try {
+    currentCalling.value = await callingApi.currentCalling()
+  } catch {
+    // 静默失败
+  }
+}
+
+async function callNext() {
+  if (callingBusy.value) return
+  callingBusy.value = true
+  try {
+    const result = await callingApi.callNext()
+    currentCalling.value = result
+    ElMessage.success(`已叫：${result.patientName || ''}（${result.queueNumber ?? '-'}号）`)
+    await loadPatients()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '叫号失败')
+  } finally {
+    callingBusy.value = false
+  }
+}
+
+async function callSpecific(registerId: number) {
+  if (callingBusy.value) return
+  callingBusy.value = true
+  try {
+    const result = await callingApi.callSpecific(registerId)
+    currentCalling.value = result
+    ElMessage.success(`已叫：${result.patientName || ''}`)
+    await loadPatients()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '叫号失败')
+  } finally {
+    callingBusy.value = false
+  }
+}
+
+async function answerCurrent(registerId: number) {
+  if (callingBusy.value) return
+  callingBusy.value = true
+  try {
+    await callingApi.answer(registerId)
+    currentCalling.value = null
+    ElMessage.success('已应答，进入接诊')
+    await loadPatients()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '应答失败')
+  } finally {
+    callingBusy.value = false
+  }
+}
+
+async function passCurrent(registerId: number) {
+  if (callingBusy.value) return
+  callingBusy.value = true
+  try {
+    await callingApi.pass(registerId)
+    currentCalling.value = null
+    ElMessage.info('已标记过号')
+    await loadPatients()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '过号失败')
+  } finally {
+    callingBusy.value = false
+  }
+}
+
 function openNotebookDrawer() {
   if (!selectedRegisterId.value) return
   notebookDrawerVisible.value = true
@@ -247,6 +320,13 @@ watch(
 
 onMounted(() => {
   void loadPatients()
+  void refreshCurrentCalling()
+  // 每 15 秒刷一次当前叫号（兜底，SSE 没接 workstation）
+  callingRefreshTimer = setInterval(refreshCurrentCalling, 15_000)
+})
+
+onUnmounted(() => {
+  if (callingRefreshTimer) clearInterval(callingRefreshTimer)
 })
 </script>
 
@@ -482,6 +562,42 @@ onMounted(() => {
                 <ElIcon><ArrowRight /></ElIcon>
               </ElButton>
             </div>
+
+            <!-- 叫号操作区（设计文档 §6.2） -->
+            <GlassCard class="calling-card">
+              <div class="calling-card__head">
+                <span class="calling-card__title">叫号</span>
+                <span v-if="currentCalling?.hasCalling" class="calling-card__current">
+                  当前叫号：<strong>{{ currentCalling.patientName }}</strong>
+                  （{{ currentCalling.queueNumber ?? '-' }}号 · 第{{ currentCalling.callRound }}次）
+                </span>
+                <span v-else class="calling-card__current calling-card__current--idle">暂无在叫号</span>
+              </div>
+              <div class="calling-card__actions">
+                <ElButton type="primary" :loading="callingBusy" @click="callNext">
+                  叫下一个
+                </ElButton>
+                <ElButton :loading="callingBusy" @click="callSpecific(selectedRegisterId!)">
+                  重叫当前
+                </ElButton>
+                <ElButton
+                  v-if="currentCalling?.hasCalling"
+                  type="success"
+                  :loading="callingBusy"
+                  @click="answerCurrent(currentCalling.registerId!)"
+                >
+                  患者应答
+                </ElButton>
+                <ElButton
+                  v-if="currentCalling?.hasCalling"
+                  type="warning"
+                  :loading="callingBusy"
+                  @click="passCurrent(currentCalling.registerId!)"
+                >
+                  标记过号
+                </ElButton>
+              </div>
+            </GlassCard>
           </div>
         </template>
 
@@ -887,5 +1003,31 @@ onMounted(() => {
   .patient-panel__footer {
     margin-block-start: var(--space-3);
   }
+}
+
+/* 叫号卡片（设计文档 §6.2） */
+.calling-card {
+  margin-block-start: var(--space-3);
+}
+.calling-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-3);
+}
+.calling-card__title {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+.calling-card__current {
+  color: var(--color-text-regular);
+}
+.calling-card__current--idle {
+  color: var(--color-text-secondary);
+}
+.calling-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 </style>

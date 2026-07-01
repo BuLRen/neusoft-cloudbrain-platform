@@ -320,8 +320,12 @@ export interface TriageDeskConfirmPayload {
 export interface CheckInResult {
   registerId: number
   patientName?: string
+  /** 关联字段：就诊科室 ID */
+  departmentId?: number
   /** 关联字段：就诊科室名 */
   departmentName?: string
+  /** 关联字段：接诊医生 ID */
+  doctorId?: number
   /** 关联字段：接诊医生名 */
   doctorName?: string
   /** 关联字段：就诊日期（YYYY-MM-DD） */

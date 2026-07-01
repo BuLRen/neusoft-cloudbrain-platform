@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import { parseQrPayload } from '@/shared/utils/qrProtocol'
 import { http } from '@/shared/api/request'
 import type { CheckInResult } from '@/shared/types/registration'
@@ -23,6 +23,73 @@ interface HistoryItem {
   summary: string
 }
 const history = ref<HistoryItem[]>([])
+
+// ===== 叫号实时推送 =====
+// 当前医生叫到的号（CALLED 事件来时更新；ANSWERED/PASSED 时清空）
+const currentCalling = ref<{ registerId?: number; patientName?: string; queueNumber?: number } | null>(null)
+// 自己是否被叫到（高亮用）
+const callingMe = computed(() => {
+  if (!currentCalling.value || !successResult.value) return false
+  return currentCalling.value.registerId === successResult.value.registerId
+})
+// 语音播放：浏览器自动播放限制，需用户首次点击后才能播
+const voiceReady = ref(false)
+let es: EventSource | null = null
+
+function startCallingSubscription() {
+  // 订阅需要 doctorId（报到结果带的）
+  const doctorId = successResult.value?.doctorId
+  if (!doctorId) return
+  // 关闭旧的连接
+  es?.close()
+  const url = `/api/registration/calling/stream/doctor/${doctorId}`
+  es = new EventSource(url)
+  es.addEventListener('CALLED', (e: any) => {
+    try {
+      const payload = JSON.parse(e.data)
+      currentCalling.value = payload
+      if (payload.registerId === successResult.value?.registerId) {
+        speak(`请${payload.patientName || ''}到${payload.doctorName || ''}医生处就诊`)
+      }
+    } catch {}
+  })
+  es.addEventListener('ANSWERED', (e: any) => {
+    try {
+      const payload = JSON.parse(e.data)
+      if (payload.registerId === successResult.value?.registerId) {
+        currentCalling.value = null
+      }
+    } catch {}
+  })
+  es.addEventListener('PASSED', () => {
+    // 过号：保持显示但可加视觉提示
+  })
+  // onerror 不处理，EventSource 自动重连
+}
+
+function stopCallingSubscription() {
+  es?.close()
+  es = null
+  currentCalling.value = null
+}
+
+function speak(text: string) {
+  if (!voiceReady.value) return
+  if (!('speechSynthesis' in window)) return
+  const u = new SpeechSynthesisUtterance(text)
+  u.lang = 'zh-CN'
+  window.speechSynthesis.speak(u)
+}
+
+function enableVoice() {
+  voiceReady.value = true
+  // 试播一句确认开启
+  if ('speechSynthesis' in window) {
+    const u = new SpeechSynthesisUtterance('语音已开启')
+    u.lang = 'zh-CN'
+    window.speechSynthesis.speak(u)
+  }
+}
 
 function currentTime() {
   return new Date().toLocaleTimeString('zh-CN', { hour12: false })
@@ -68,6 +135,8 @@ async function handleScanned() {
     successResult.value = result
     status.value = 'success'
     pushHistory(raw, true, `${result.patientName ?? ''} 第${result.queueNumber}号`)
+    // 报到成功 → 订阅 SSE 实时叫号
+    startCallingSubscription()
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : '请求失败'
     status.value = 'fail'
@@ -77,6 +146,7 @@ async function handleScanned() {
 
 /** 点击"继续扫码"按钮：清空状态，回到扫码态 */
 function resetToIdle() {
+  stopCallingSubscription()
   status.value = 'idle'
   successResult.value = null
   errorMessage.value = ''
@@ -88,6 +158,7 @@ function focusInput() {
 }
 
 onMounted(focusInput)
+onUnmounted(stopCallingSubscription)
 
 /** 把 "2026-07-01T09:30:00.123" 美化成 "09:30" */
 function formatClock(iso: string): string {
@@ -175,6 +246,25 @@ function formatClock(iso: string): string {
         </div>
 
         <p class="notice">请到候诊区等待叫号</p>
+
+        <!-- 当前叫号实时显示（SSE 推送） -->
+        <div v-if="currentCalling" class="calling-now" :class="{ 'calling-me': callingMe }">
+          <div class="calling-now__label">现在叫号</div>
+          <div class="calling-now__num">{{ currentCalling.queueNumber ?? '—' }} 号</div>
+          <div class="calling-now__name">{{ currentCalling.patientName || '—' }}</div>
+          <div v-if="callingMe" class="calling-now__me">★ 请您就诊 ★</div>
+        </div>
+        <div v-else class="calling-now calling-now--idle">
+          <div class="calling-now__label">当前叫号</div>
+          <div class="calling-now__idle-text">等待医生叫号中…</div>
+        </div>
+
+        <!-- 语音开启入口（绕过浏览器自动播放限制） -->
+        <div class="voice-bar">
+          语音提示：
+          <button v-if="!voiceReady" class="voice-btn" @click.stop="enableVoice">点击开启</button>
+          <span v-else class="voice-on">已开启</span>
+        </div>
 
         <button class="action-btn" @click.stop="resetToIdle">继续扫码</button>
       </div>
@@ -492,5 +582,86 @@ function formatClock(iso: string): string {
   color: #909399;
   text-align: center;
   padding: 8px;
+}
+
+/* 当前叫号显示 */
+.calling-now {
+  margin: 16px 0 8px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f0f9ff;
+  border: 2px solid #409eff;
+  text-align: center;
+}
+.calling-now--idle {
+  background: #f4f4f5;
+  border-color: #dcdfe6;
+}
+.calling-now__label {
+  font-size: 14px;
+  color: #606266;
+  margin-bottom: 4px;
+}
+.calling-now__num {
+  font-size: 40px;
+  font-weight: 900;
+  color: #409eff;
+  line-height: 1.2;
+}
+.calling-now__name {
+  font-size: 18px;
+  color: #303133;
+  margin-top: 4px;
+}
+.calling-now__idle-text {
+  font-size: 16px;
+  color: #909399;
+  padding: 8px 0;
+}
+.calling-now.calling-me {
+  background: #fef0f0;
+  border-color: #f56c6c;
+  animation: callingMeFlash 1s ease-in-out 3;
+}
+.calling-now.calling-me .calling-now__num,
+.calling-now.calling-me .calling-now__name {
+  color: #f56c6c;
+}
+.calling-now__me {
+  margin-top: 8px;
+  font-size: 22px;
+  font-weight: 900;
+  color: #f56c6c;
+  letter-spacing: 4px;
+}
+@keyframes callingMeFlash {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.05); }
+}
+
+.voice-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #909399;
+  margin: 8px 0 12px;
+}
+.voice-btn {
+  padding: 4px 12px;
+  border: 1px solid #dcdfe6;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.voice-btn:hover {
+  border-color: #409eff;
+  color: #409eff;
+}
+.voice-on {
+  color: #67c23a;
+  font-weight: 600;
 }
 </style>
