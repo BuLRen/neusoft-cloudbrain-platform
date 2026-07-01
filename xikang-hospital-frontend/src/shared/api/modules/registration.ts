@@ -3,6 +3,7 @@ import type { TriageAnalysisDetail, TriageAnalysisResult } from '@/shared/types/
 import type {
   ChargePayload,
   ChargeResult,
+  CheckInResult,
   DepartmentOption,
   ExpenseRecord,
   ExpenseRecordQuery,
@@ -166,7 +167,7 @@ export const registrationApi = {
     return http<ChargeResult>({ url: `/registration/${id}/cancel`, method: 'PUT' })
   },
   checkIn(id: number) {
-    return http<{ registerId: number; patientName?: string; checkInTime: string; alreadyCheckedIn: boolean; queueNumber: number; waitingAhead: number; message: string }>({
+    return http<CheckInResult>({
       url: `/registration/${id}/check-in`,
       method: 'POST',
     })

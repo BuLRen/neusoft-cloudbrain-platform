@@ -312,3 +312,32 @@ export interface TriageDeskConfirmPayload {
   operatorName?: string
   remark?: string
 }
+
+/**
+ * 患者扫码报到接口返回结果
+ * 报到机扫到合法二维码后调 POST /registration/{id}/check-in
+ */
+export interface CheckInResult {
+  registerId: number
+  patientName?: string
+  /** 关联字段：就诊科室名 */
+  departmentName?: string
+  /** 关联字段：接诊医生名 */
+  doctorName?: string
+  /** 关联字段：就诊日期（YYYY-MM-DD） */
+  visitDate?: string
+  /** 关联字段：上午/下午 */
+  noon?: string
+  /** 关联字段：挂号级别（普通/专家/特需） */
+  registLevelName?: string
+  /** 报到时间戳 */
+  checkInTime: string
+  /** 是否已报到过（幂等返回时为 true） */
+  alreadyCheckedIn: boolean
+  /** 号序：当前患者在队列中的位置 */
+  queueNumber: number
+  /** 前面等待人数 */
+  waitingAhead: number
+  /** 提示文案 */
+  message: string
+}

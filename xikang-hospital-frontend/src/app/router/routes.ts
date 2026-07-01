@@ -50,6 +50,7 @@ import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
 import NotFoundPage from '@/modules/error/NotFoundPage.vue'
 import ScanTestPage from '@/modules/registration/pages/ScanTestPage.vue'
+import ScanCheckinPage from '@/modules/registration/pages/ScanCheckinPage.vue'
 
 // 患者端独立布局路由（不经过 AppShell）
 const patientRoutes: RouteRecordRaw[] = [
@@ -144,6 +145,13 @@ export const routes: RouteRecordRaw[] = [
     name: 'ScanTest',
     component: ScanTestPage,
     meta: { title: '扫码测试', hidden: true },
+  },
+  // 报到机测试页：解析 + 调 /check-in 接口 + 渲染报到卡片
+  {
+    path: '/test-checkin',
+    name: 'ScanCheckin',
+    component: ScanCheckinPage,
+    meta: { title: '报到机测试', hidden: true },
   },
   ...patientRoutes,
   {
