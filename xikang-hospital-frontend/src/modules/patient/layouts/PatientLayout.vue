@@ -33,6 +33,7 @@ function switchPatient(patientId: number) {
 // 快捷功能菜单
 const quickActions = [
   { key: 'registration', label: '我的挂号', icon: '📋', path: '/patient/registration' },
+  { key: 'payment', label: '我的账单', icon: '💳', path: '/patient/payment' },
   { key: 'records', label: '电子病历', icon: '📄', path: '/patient/records' },
   { key: 'prescription', label: '我的处方', icon: '💊', path: '/patient/prescription' },
   { key: 'profile', label: '个人中心', icon: '👤', path: '/patient/profile' },
@@ -57,6 +58,7 @@ const currentPageTitle = computed(() => {
     overview: '就诊概览',
     triage: 'AI导诊',
     registration: '我的挂号',
+    payment: '我的账单',
     previsit: 'AI预问诊',
     records: '就诊记录',
     followup: '随访管理',
@@ -91,7 +93,7 @@ const currentPageTitle = computed(() => {
           </div>
         </div>
         <div class="patient-header__right">
-          <button class="balance-pill" @click="navigateTo('/patient/profile')">
+          <button class="balance-pill" @click="navigateTo('/patient/payment')">
             <span class="balance-pill__label">账户余额</span>
             <span class="balance-pill__amount">¥{{ currentBalance.toFixed(2) }}</span>
           </button>

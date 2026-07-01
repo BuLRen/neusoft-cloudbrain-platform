@@ -179,6 +179,9 @@
             <if test="patientId != null">
                 r.patient_id = #{patientId}
             </if>
+            <if test="registerId != null">
+                AND r.id = #{registerId}
+            </if>
             <if test="startDate != null">
                 AND p.creation_time &gt;= #{startDate}
             </if>

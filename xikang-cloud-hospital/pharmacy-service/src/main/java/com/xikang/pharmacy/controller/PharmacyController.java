@@ -276,15 +276,16 @@ public class PharmacyController {
     }
 
     /**
-     * 历史处方组合查询（处方追溯）：按 patientId / 状态 / 日期范围。
+     * 历史处方组合查询（处方追溯）：按 patientId / 状态 / 日期范围 / 挂号号。
      */
     @GetMapping("/prescriptions")
     public Result<List<Map<String, Object>>> queryPrescriptions(
             @RequestParam(required = false) Long patientId,
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
-        return Result.success(pharmacyService.queryPrescriptions(patientId, status, startDate, endDate));
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
+            @RequestParam(required = false) Long registerId) {
+        return Result.success(pharmacyService.queryPrescriptions(patientId, status, startDate, endDate, registerId));
     }
 
     /**

@@ -68,7 +68,7 @@
         每日趋势
         - 使用 generate_series 保证没有挂号的日期也出现 0
         - reg：当日有效挂号量
-        - charge：当日已缴费 expense_record 金额合计
+        - charges：v3.2 起改由 StatsService 调 payment-service.dailyCharges 后合并，SQL 返回 0 占位
         - triage：截止当日 ai_triage_record 未关联 register（仍待确认）的数量
     -->
     <select id="dailyTrend" resultType="java.util.LinkedHashMap">
@@ -85,23 +85,15 @@
             WHERE visit_state NOT IN (4, 7)
               AND visit_date::date BETWEEN #{startDate} AND #{endDate}
             GROUP BY visit_date::date
-        ),
-        charge AS (
-            SELECT pay_time::date AS d, COALESCE(SUM(total_amount), 0) AS amt
-            FROM expense_record
-            WHERE status = 1
-              AND pay_time::date BETWEEN #{startDate} AND #{endDate}
-            GROUP BY pay_time::date
         )
         SELECT
             TO_CHAR(days.d, 'YYYY-MM-DD') AS "label",
             days.d                         AS "date",
             COALESCE(reg.cnt, 0)           AS "registrations",
-            COALESCE(charge.amt, 0)        AS "charges",
+            0                              AS "charges",
             0                              AS "triagePending"
         FROM days
         LEFT JOIN reg ON reg.d = days.d
-        LEFT JOIN charge ON charge.d = days.d
         ORDER BY days.d
     </select>
 

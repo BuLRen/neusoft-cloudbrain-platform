@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.payment.mapper.RegisterInfoMapper">
+
+    <!--
+        v3.2：payment-service 只读 register + department + employee
+        用于 buildOrder 填充订单的 departmentName / doctorName / visitDate
+        注意：列名 deptment_id 是历史拼写（既有表），不要改成 department_id
+    -->
+    <select id="selectBasicByIds" resultType="java.util.LinkedHashMap">
+        SELECT
+            r.id AS "registerId",
+            d.dept_name AS "departmentName",
+            e.realname AS "doctorName",
+            r.visit_date AS "visitDate"
+        FROM register r
+        LEFT JOIN department d ON d.id = r.deptment_id
+        LEFT JOIN employee e ON e.id = r.employee_id
+        WHERE r.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+</mapper>

@@ -14,6 +14,7 @@ import PatientClinicalProfile from '@/modules/patient/pages/PatientClinicalProfi
 import PatientFollowup from '@/modules/patient/pages/PatientFollowup.vue'
 import PatientProfile from '@/modules/patient/pages/PatientProfile.vue'
 import PatientPrescription from '@/modules/patient/pages/PatientPrescription.vue'
+import PatientPayment from '@/modules/patient/pages/PatientPayment.vue'
 import PatientDepartmentDetail from '@/modules/patient/pages/PatientDepartmentDetail.vue'
 import RegistrationWorkspace from '@/modules/registration/RegistrationWorkspace.vue'
 import PharmacyDispensingPage from '@/modules/pharmacy/pages/DispensingPage.vue'
@@ -116,6 +117,12 @@ const patientRoutes: RouteRecordRaw[] = [
         name: 'PatientPrescription',
         component: PatientPrescription,
         meta: { title: '我的处方', requiresAuth: true, roles: ['patient', 'admin'] },
+      },
+      {
+        path: 'payment',
+        name: 'PatientPayment',
+        component: PatientPayment,
+        meta: { title: '我的账单', requiresAuth: true, roles: ['patient', 'admin'] },
       },
       {
         path: 'profile',
