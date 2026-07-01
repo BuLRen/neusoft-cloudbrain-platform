@@ -1,65 +1,65 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import {
   ElButton,
   ElDatePicker,
-  ElDialog,
-  ElDrawer,
   ElEmpty,
+  ElIcon,
   ElInput,
-  ElInputNumber,
   ElMessage,
-  ElMessageBox,
   ElPagination,
   ElTable,
   ElTableColumn,
 } from 'element-plus'
-import PageHeader from '@/shared/components/PageHeader.vue'
-import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
-import { useAuthStore } from '@/app/stores/auth'
-import { adminPaymentApi, type AdminPatientOption } from '@/shared/api/modules/adminPayment'
-import type { OrderStatusFilter, PaymentItem, PaymentOrder } from '@/shared/types/payment'
+import { adminPaymentApi } from '@/shared/api/modules/adminPayment'
+import type { OrderStatusFilter, PaymentOrder } from '@/shared/types/payment'
 import {
   formatMoney,
   formatPaymentTime,
-  itemCodeLabel,
-  itemStatusText,
-  itemStatusTone,
   orderStatusText,
   orderStatusTone,
 } from '@/shared/utils/paymentStatus'
+import {
+  loadStoredFilters,
+  saveFilters,
+  useAdminPaymentBillSearch,
+} from '@/modules/admin/composables/useAdminPaymentBillSearch'
 
-const authStore = useAuthStore()
+const router = useRouter()
+const stored = loadStoredFilters()
 
 const loading = ref(false)
-const detailLoading = ref(false)
-const patientSearchLoading = ref(false)
+const statsLoading = ref(false)
 const orders = ref<PaymentOrder[]>([])
 const total = ref(0)
-const detailVisible = ref(false)
-const detail = ref<PaymentOrder | null>(null)
 
-const patientKeyword = ref('')
-const patientOptions = ref<AdminPatientOption[]>([])
-const selectedPatient = ref<AdminPatientOption | null>(null)
-const patientBalance = ref(0)
+const stats = reactive({
+  total: 0,
+  pending: 0,
+  paid: 0,
+  refunded: 0,
+})
 
-const rechargeVisible = ref(false)
-const rechargeAmount = ref(100)
-const rechargeRemark = ref('现场窗口现金充值')
-const rechargeLoading = ref(false)
-
-const payingItemId = ref<number | null>(null)
-const payingAll = ref(false)
-const markingPaid = ref(false)
+const {
+  searchLoading,
+  patientOptions,
+  selectedPatient,
+  listKeyword,
+  resolveSearch,
+  selectPatient,
+  clearPatientSelection,
+  listQueryParams,
+} = useAdminPaymentBillSearch()
 
 const filters = reactive({
-  keyword: '',
-  status: undefined as OrderStatusFilter | undefined,
-  dateRange: [] as string[],
-  page: 1,
-  size: 20,
+  searchInput: stored.searchInput ?? '',
+  status: stored.status as OrderStatusFilter | undefined,
+  dateRange: (stored.dateRange ?? []) as string[],
+  page: stored.page ?? 1,
+  size: stored.size ?? 10,
 })
 
 const statusTabs: { label: string; value: OrderStatusFilter | undefined }[] = [
@@ -69,36 +69,63 @@ const statusTabs: { label: string; value: OrderStatusFilter | undefined }[] = [
   { label: '含已退', value: 2 },
 ]
 
-const operator = computed(() => ({
-  operatorId: authStore.employeeId ?? undefined,
-  operatorName: authStore.realName || '现场收费窗口',
-}))
+const statCards = [
+  { key: 'total' as const, label: '账单总数', tone: 'primary', icon: 'bill' },
+  { key: 'pending' as const, label: '待缴费', tone: 'warning', icon: 'pending' },
+  { key: 'paid' as const, label: '已付清', tone: 'success', icon: 'paid' },
+  { key: 'refunded' as const, label: '含已退', tone: 'neutral', icon: 'refund' },
+]
 
-const pendingItems = computed(() =>
-  (detail.value?.items ?? []).filter((item) => item.status === 0 || item.status == null),
-)
-
-function listParams() {
-  const [startDate, endDate] = filters.dateRange.length === 2 ? filters.dateRange : [undefined, undefined]
-  return {
-    keyword: filters.keyword.trim() || undefined,
+function persistFilters() {
+  saveFilters({
+    searchInput: filters.searchInput,
     patientId: selectedPatient.value?.id,
+    patientName: selectedPatient.value?.realName,
+    listKeyword: listKeyword.value,
     status: filters.status,
-    startDate,
-    endDate,
+    dateRange: filters.dateRange,
     page: filters.page,
     size: filters.size,
+  })
+}
+
+function baseListParams() {
+  const params = listQueryParams(filters)
+  const { page: _page, size: _size, status: _status, ...rest } = params
+  return rest
+}
+
+async function loadStats() {
+  statsLoading.value = true
+  try {
+    const base = baseListParams()
+    const [all, pending, paid, refunded] = await Promise.all([
+      adminPaymentApi.list({ ...base, status: undefined, page: 1, size: 1 }),
+      adminPaymentApi.list({ ...base, status: 0, page: 1, size: 1 }),
+      adminPaymentApi.list({ ...base, status: 1, page: 1, size: 1 }),
+      adminPaymentApi.list({ ...base, status: 2, page: 1, size: 1 }),
+    ])
+    stats.total = all?.total ?? 0
+    stats.pending = pending?.total ?? 0
+    stats.paid = paid?.total ?? 0
+    stats.refunded = refunded?.total ?? 0
+  } catch {
+    // stats are supplementary; ignore failures
+  } finally {
+    statsLoading.value = false
   }
 }
 
 async function loadRecords() {
   loading.value = true
+  persistFilters()
   try {
-    const result = await adminPaymentApi.list(listParams())
+    const result = await adminPaymentApi.list(listQueryParams(filters))
     orders.value = result?.orders ?? []
     total.value = result?.total ?? 0
     if (result?.page) filters.page = result.page
     if (result?.size) filters.size = result.size
+    void loadStats()
   } catch (e) {
     orders.value = []
     total.value = 0
@@ -108,93 +135,24 @@ async function loadRecords() {
   }
 }
 
-async function searchPatients() {
-  const keyword = patientKeyword.value.trim()
-  if (!keyword) {
-    ElMessage.warning('请输入患者姓名、手机号或档案号')
+async function searchRecords() {
+  filters.page = 1
+  const params = await resolveSearch(filters.searchInput)
+  if (!params.patientId && !params.keyword && filters.searchInput.trim()) {
     return
   }
-  patientSearchLoading.value = true
-  try {
-    patientOptions.value = await adminPaymentApi.searchPatients(keyword)
-    if (!patientOptions.value.length) {
-      ElMessage.info('未找到匹配患者')
-    }
-  } catch (e) {
-    patientOptions.value = []
-    ElMessage.error(e instanceof Error ? e.message : '患者查询失败')
-  } finally {
-    patientSearchLoading.value = false
-  }
-}
-
-async function selectPatient(patient: AdminPatientOption) {
-  selectedPatient.value = patient
-  filters.keyword = patient.realName
-  filters.page = 1
-  await refreshPatientBalance()
   await loadRecords()
 }
 
-function clearSelectedPatient() {
-  selectedPatient.value = null
-  patientOptions.value = []
-  patientKeyword.value = ''
-  patientBalance.value = 0
-  filters.keyword = ''
-  void loadRecords()
+async function selectPatientAndLoad(patient: Parameters<typeof selectPatient>[0]) {
+  selectPatient(patient)
+  filters.page = 1
+  await loadRecords()
 }
 
-async function refreshPatientBalance() {
-  if (!selectedPatient.value) return
-  try {
-    const balance = await adminPaymentApi.getPatientBalance(selectedPatient.value.id)
-    patientBalance.value = Number(balance.accountBalance ?? 0)
-    selectedPatient.value = {
-      ...selectedPatient.value,
-      accountBalance: patientBalance.value,
-    }
-  } catch {
-    patientBalance.value = Number(selectedPatient.value.accountBalance ?? 0)
-  }
-}
-
-function openRechargeDialog() {
-  if (!selectedPatient.value) {
-    ElMessage.warning('请先选择患者')
-    return
-  }
-  rechargeAmount.value = Math.max(100, detail.value?.pendingAmount ?? 100)
-  rechargeRemark.value = '现场窗口现金充值'
-  rechargeVisible.value = true
-}
-
-async function submitRecharge() {
-  if (!selectedPatient.value) return
-  if (!rechargeAmount.value || rechargeAmount.value <= 0) {
-    ElMessage.warning('请输入有效充值金额')
-    return
-  }
-  rechargeLoading.value = true
-  try {
-    const result = await adminPaymentApi.rechargePatient(
-      selectedPatient.value.id,
-      rechargeAmount.value,
-      rechargeRemark.value,
-      operator.value,
-    )
-    patientBalance.value = Number(result.accountBalance ?? 0)
-    selectedPatient.value = { ...selectedPatient.value, accountBalance: patientBalance.value }
-    ElMessage.success(result.message || '充值成功')
-    rechargeVisible.value = false
-  } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '充值失败')
-  } finally {
-    rechargeLoading.value = false
-  }
-}
-
-function searchRecords() {
+function clearSearch() {
+  filters.searchInput = ''
+  clearPatientSelection()
   filters.page = 1
   void loadRecords()
 }
@@ -212,152 +170,12 @@ function onPageSizeChange(size: number) {
 
 function setStatusFilter(status: OrderStatusFilter | undefined) {
   filters.status = status
-  searchRecords()
+  filters.page = 1
+  void loadRecords()
 }
 
-async function reloadDetail(registerId: number) {
-  detail.value = await adminPaymentApi.getDetail(registerId)
-  if (selectedPatient.value) {
-    await refreshPatientBalance()
-  }
-  await loadRecords()
-}
-
-async function openDetail(row: PaymentOrder) {
-  detailVisible.value = true
-  detail.value = row
-  detailLoading.value = true
-  try {
-    detail.value = await adminPaymentApi.getDetail(row.registerId)
-    if (!selectedPatient.value && detail.value.patientId) {
-      selectedPatient.value = {
-        id: detail.value.patientId,
-        realName: detail.value.patientName || `患者#${detail.value.patientId}`,
-        accountBalance: 0,
-      }
-      await refreshPatientBalance()
-    }
-  } catch (e) {
-    ElMessage.warning(e instanceof Error ? e.message : '加载明细失败')
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-async function confirmMarkItemPaid(item: PaymentItem) {
-  if (!detail.value) return
-  try {
-    await ElMessageBox.confirm(
-      `确认现场收取现金并标记「${item.itemName || itemCodeLabel(item.itemCode)}」为已支付？\n金额：${formatMoney(item.totalAmount)}`,
-      '现场收费确认',
-      { type: 'warning', confirmButtonText: '确认收费', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  markingPaid.value = true
-  try {
-    await adminPaymentApi.markPaid({
-      registerId: detail.value.registerId,
-      itemIds: [item.id],
-      ...operator.value,
-    })
-    ElMessage.success('已标记为已支付')
-    await reloadDetail(detail.value.registerId)
-  } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '收费失败')
-  } finally {
-    markingPaid.value = false
-  }
-}
-
-async function confirmPayItemByBalance(item: PaymentItem) {
-  if (!detail.value) return
-  try {
-    await ElMessageBox.confirm(
-      `确认从患者余额扣款支付「${item.itemName || itemCodeLabel(item.itemCode)}」？\n金额：${formatMoney(item.totalAmount)}\n当前余额：${formatMoney(patientBalance.value)}`,
-      '余额支付确认',
-      { type: 'warning', confirmButtonText: '确认扣款', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  payingItemId.value = item.id
-  try {
-    const result = await adminPaymentApi.payItemByBalance(
-      detail.value.registerId,
-      item.id,
-      operator.value,
-    )
-    if (result.accountBalance != null) {
-      patientBalance.value = Number(result.accountBalance)
-    }
-    ElMessage.success(result.paymentMessage || '支付成功')
-    await reloadDetail(detail.value.registerId)
-  } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '支付失败')
-  } finally {
-    payingItemId.value = null
-  }
-}
-
-async function confirmPayAllByBalance() {
-  if (!detail.value || pendingItems.value.length === 0) return
-  const totalPending = pendingItems.value.reduce((sum, item) => sum + (item.totalAmount ?? 0), 0)
-  try {
-    await ElMessageBox.confirm(
-      `确认从患者余额扣款支付全部待缴费用？\n待缴合计：${formatMoney(totalPending)}\n当前余额：${formatMoney(patientBalance.value)}`,
-      '一键余额支付',
-      { type: 'warning', confirmButtonText: '确认扣款', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  payingAll.value = true
-  try {
-    const result = await adminPaymentApi.payAllByBalance(detail.value.registerId, operator.value)
-    if (result.accountBalance != null) {
-      patientBalance.value = Number(result.accountBalance)
-    }
-    if (result.success) {
-      ElMessage.success(result.paymentMessage || '支付成功')
-    } else {
-      ElMessage.warning(result.paymentMessage || '部分费用支付失败')
-    }
-    await reloadDetail(detail.value.registerId)
-  } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '支付失败')
-  } finally {
-    payingAll.value = false
-  }
-}
-
-async function confirmMarkAllPaid() {
-  if (!detail.value || pendingItems.value.length === 0) return
-  const totalPending = pendingItems.value.reduce((sum, item) => sum + (item.totalAmount ?? 0), 0)
-  try {
-    await ElMessageBox.confirm(
-      `确认现场收取现金并标记全部待缴费用为已支付？\n待缴合计：${formatMoney(totalPending)}`,
-      '现场收费确认',
-      { type: 'warning', confirmButtonText: '确认收费', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  markingPaid.value = true
-  try {
-    await adminPaymentApi.markPaid({
-      registerId: detail.value.registerId,
-      itemIds: pendingItems.value.map((item) => item.id),
-      ...operator.value,
-    })
-    ElMessage.success('已全部标记为已支付')
-    await reloadDetail(detail.value.registerId)
-  } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '收费失败')
-  } finally {
-    markingPaid.value = false
-  }
+function openCharge(row: PaymentOrder) {
+  router.push({ name: 'PaymentBillCharge', params: { registerId: String(row.registerId) } })
 }
 
 function visitMeta(row: PaymentOrder): string {
@@ -369,75 +187,80 @@ function visitMeta(row: PaymentOrder): string {
   return parts.length ? parts.join(' · ') : '—'
 }
 
-onMounted(() => {
-  void loadRecords()
+onMounted(async () => {
+  if (stored.patientId && stored.patientName) {
+    selectPatient({ id: stored.patientId, realName: stored.patientName })
+  } else if (stored.listKeyword) {
+    listKeyword.value = stored.listKeyword
+  } else if (filters.searchInput.trim()) {
+    await resolveSearch(filters.searchInput)
+  }
+  await loadRecords()
 })
+
+watch(
+  () => filters.dateRange,
+  () => {
+    persistFilters()
+  },
+)
 </script>
 
 <template>
-  <div class="payment-bill-management u-page-grid">
-    <PageHeader
-      title="支付账单"
-      description="现场收费窗口：按患者姓名查询账单，支持现金充值、余额扣款与现场收费记账。"
-      eyebrow="管理员"
-    />
-
-    <GlassCard class="panel patient-panel">
-      <div class="patient-panel__head">
-        <h3>患者查询</h3>
-        <p>适用于一楼大厅现场收费，先定位患者再处理账单。</p>
+  <div class="bill-page">
+    <header class="bill-hero">
+      <div class="bill-hero__text">
+        <h1>门诊账单管理</h1>
+        <p>查询与处理患者就诊账单</p>
       </div>
-      <div class="toolbar__filters">
-        <ElInput
-          v-model="patientKeyword"
-          clearable
-          placeholder="患者姓名 / 手机号 / 档案号"
-          class="field field--keyword"
-          @keyup.enter="searchPatients"
-        />
-        <ElButton type="primary" :loading="patientSearchLoading" @click="searchPatients">查找患者</ElButton>
-        <ElButton v-if="selectedPatient" @click="clearSelectedPatient">清除选择</ElButton>
-      </div>
-
-      <div v-if="patientOptions.length" class="patient-options">
-        <button
-          v-for="patient in patientOptions"
-          :key="patient.id"
-          type="button"
-          class="patient-card"
-          :class="{ 'patient-card--active': selectedPatient?.id === patient.id }"
-          @click="selectPatient(patient)"
+      <div class="bill-stats" v-loading="statsLoading">
+        <div
+          v-for="card in statCards"
+          :key="card.key"
+          class="bill-stat"
+          :data-tone="card.tone"
         >
-          <strong>{{ patient.realName }}</strong>
-          <span>档案号 {{ patient.id }}</span>
-          <span v-if="patient.phone">{{ patient.phone }}</span>
-          <span>余额 {{ formatMoney(patient.accountBalance) }}</span>
-        </button>
-      </div>
-
-      <div v-if="selectedPatient" class="selected-patient">
-        <div>
-          <strong>当前患者：{{ selectedPatient.realName }}</strong>
-          <span class="selected-patient__meta">档案号 {{ selectedPatient.id }}</span>
+          <span class="bill-stat__icon" :data-icon="card.icon" aria-hidden="true">
+            <svg v-if="card.icon === 'bill'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+              <rect x="9" y="3" width="6" height="4" rx="1" />
+              <path d="M9 12h6M9 16h4" />
+            </svg>
+            <svg v-else-if="card.icon === 'pending'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+            <svg v-else-if="card.icon === 'paid'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M5 12l5 5L20 7" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 10h10a4 4 0 0 1 4 4v0a4 4 0 0 1-4 4H5" />
+              <path d="M7 6L3 10l4 4" />
+            </svg>
+          </span>
+          <div class="bill-stat__body">
+            <span class="bill-stat__label">{{ card.label }}</span>
+            <strong class="bill-stat__value">{{ stats[card.key] }} 条</strong>
+          </div>
         </div>
-        <div class="selected-patient__actions">
-          <StatusTag tone="primary">余额 {{ formatMoney(patientBalance) }}</StatusTag>
-          <ElButton type="primary" @click="openRechargeDialog">现金充值</ElButton>
-          <ElButton @click="refreshPatientBalance">刷新余额</ElButton>
-        </div>
       </div>
-    </GlassCard>
+    </header>
 
-    <GlassCard class="panel">
-      <div class="toolbar">
-        <div class="toolbar__filters">
+    <section class="bill-panel">
+      <div class="bill-toolbar">
+        <div class="bill-toolbar__row">
           <ElInput
-            v-model="filters.keyword"
+            v-model="filters.searchInput"
             clearable
-            placeholder="患者姓名 / 挂号号"
-            class="field field--keyword"
+            placeholder="患者姓名 / 手机号 / 档案号 / 挂号号"
+            class="bill-search"
             @keyup.enter="searchRecords"
-          />
+            @clear="clearSearch"
+          >
+            <template #prefix>
+              <ElIcon class="bill-search__icon"><Search /></ElIcon>
+            </template>
+          </ElInput>
           <ElDatePicker
             v-model="filters.dateRange"
             type="daterange"
@@ -445,217 +268,320 @@ onMounted(() => {
             start-placeholder="创建开始"
             end-placeholder="创建结束"
             value-format="YYYY-MM-DD"
-            class="field field--date"
+            class="bill-date"
             clearable
           />
-          <ElButton type="primary" @click="searchRecords">查询账单</ElButton>
-          <ElButton @click="loadRecords">刷新</ElButton>
-        </div>
-        <div class="status-tabs">
           <ElButton
+            type="primary"
+            class="bill-btn bill-btn--primary"
+            :loading="searchLoading || loading"
+            @click="searchRecords"
+          >
+            查询账单
+          </ElButton>
+          <ElButton class="bill-btn bill-btn--ghost" :icon="Refresh" @click="loadRecords">
+            刷新
+          </ElButton>
+        </div>
+
+        <div v-if="patientOptions.length" class="patient-options">
+          <p class="patient-options__hint">找到多位患者，请选择：</p>
+          <div class="patient-options__list">
+            <button
+              v-for="patient in patientOptions"
+              :key="patient.id"
+              type="button"
+              class="patient-card"
+              @click="selectPatientAndLoad(patient)"
+            >
+              <strong>{{ patient.realName }}</strong>
+              <span>档案号 {{ patient.id }}</span>
+              <span v-if="patient.phone">{{ patient.phone }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="selectedPatient" class="selected-patient">
+          <strong>当前筛选患者：{{ selectedPatient.realName }}</strong>
+          <span class="selected-patient__meta">档案号 {{ selectedPatient.id }}</span>
+          <button type="button" class="selected-patient__clear" @click="clearSearch">清除</button>
+        </div>
+
+        <div class="bill-tabs" role="tablist" aria-label="账单状态筛选">
+          <button
             v-for="tab in statusTabs"
             :key="String(tab.value)"
-            :type="filters.status === tab.value ? 'primary' : 'default'"
-            size="small"
+            type="button"
+            role="tab"
+            class="bill-tabs__item"
+            :class="{ 'bill-tabs__item--active': filters.status === tab.value }"
+            :aria-selected="filters.status === tab.value"
             @click="setStatusFilter(tab.value)"
           >
             {{ tab.label }}
-          </ElButton>
+          </button>
         </div>
       </div>
 
-      <ElTable v-loading="loading" :data="orders" stripe>
-        <ElTableColumn prop="registerId" label="挂号号" width="100" />
-        <ElTableColumn label="患者" min-width="120">
-          <template #default="{ row }">{{ row.patientName || '—' }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="就诊信息" min-width="200">
-          <template #default="{ row }">{{ visitMeta(row) }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="总金额" width="110" align="right">
-          <template #default="{ row }">{{ formatMoney(row.totalAmount) }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="已缴 / 待缴" width="160" align="right">
-          <template #default="{ row }">
-            {{ formatMoney(row.paidAmount) }} / {{ formatMoney(row.pendingAmount) }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="状态" width="110">
-          <template #default="{ row }">
-            <StatusTag :tone="orderStatusTone(row)">{{ orderStatusText(row) }}</StatusTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="创建时间" width="160">
-          <template #default="{ row }">{{ formatPaymentTime(row.createTime as string) || '—' }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="操作" width="90" fixed="right">
-          <template #default="{ row }">
-            <ElButton link type="primary" @click="openDetail(row)">处理</ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+      <div class="bill-table-wrap" v-loading="loading">
+        <ElTable v-if="orders.length" :data="orders" class="bill-table">
+          <ElTableColumn prop="registerId" label="挂号号" width="96" />
+          <ElTableColumn label="患者" min-width="100">
+            <template #default="{ row }">{{ row.patientName || '—' }}</template>
+          </ElTableColumn>
+          <ElTableColumn label="就诊信息" min-width="240">
+            <template #default="{ row }">
+              <span class="bill-table__visit">{{ visitMeta(row) }}</span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="总金额" width="120" align="right">
+            <template #default="{ row }">
+              <span class="bill-table__money">{{ formatMoney(row.totalAmount) }}</span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="已缴 / 待缴" width="170" align="right">
+            <template #default="{ row }">
+              <span class="bill-table__split">
+                {{ formatMoney(row.paidAmount) }} / {{ formatMoney(row.pendingAmount) }}
+              </span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="状态" width="108">
+            <template #default="{ row }">
+              <StatusTag :tone="orderStatusTone(row)">{{ orderStatusText(row) }}</StatusTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="创建时间" width="168">
+            <template #default="{ row }">
+              {{ formatPaymentTime(row.createTime as string) || '—' }}
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="操作" width="88" fixed="right" align="center">
+            <template #default="{ row }">
+              <button type="button" class="bill-action" @click="openCharge(row)">处理</button>
+            </template>
+          </ElTableColumn>
+        </ElTable>
 
-      <ElEmpty v-if="!loading && !orders.length" description="暂无支付账单" />
+        <ElEmpty v-else description="暂无支付账单" class="bill-empty" />
+      </div>
 
-      <div class="pagination-bar">
-        <p class="table-footer">共 {{ total }} 条账单</p>
+      <footer v-if="total > 0" class="bill-footer">
+        <p class="bill-footer__total">共 {{ total }} 条</p>
         <ElPagination
           v-model:current-page="filters.page"
           v-model:page-size="filters.size"
           :total="total"
           :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next, jumper"
+          layout="sizes, prev, pager, next, jumper"
           @current-change="onPageChange"
           @size-change="onPageSizeChange"
         />
-      </div>
-    </GlassCard>
-
-    <ElDrawer
-      v-model="detailVisible"
-      :title="detail ? `现场收费 · 挂号 ${detail.registerId}` : '现场收费'"
-      size="640px"
-      destroy-on-close
-    >
-      <div v-loading="detailLoading">
-        <template v-if="detail">
-          <div class="detail-summary">
-            <p><strong>患者：</strong>{{ detail.patientName || '—' }}</p>
-            <p><strong>就诊：</strong>{{ visitMeta(detail) }}</p>
-            <p>
-              <strong>状态：</strong>
-              <StatusTag :tone="orderStatusTone(detail)">{{ orderStatusText(detail) }}</StatusTag>
-            </p>
-            <p>
-              <strong>金额：</strong>
-              合计 {{ formatMoney(detail.totalAmount) }}，
-              已缴 {{ formatMoney(detail.paidAmount) }}，
-              待缴 {{ formatMoney(detail.pendingAmount) }}
-            </p>
-            <p v-if="selectedPatient">
-              <strong>账户余额：</strong>{{ formatMoney(patientBalance) }}
-            </p>
-          </div>
-
-          <div v-if="pendingItems.length" class="detail-actions">
-            <ElButton type="primary" :loading="payingAll" @click="confirmPayAllByBalance">
-              余额支付全部
-            </ElButton>
-            <ElButton :loading="markingPaid" @click="confirmMarkAllPaid">
-              现场收费（全部）
-            </ElButton>
-            <ElButton @click="openRechargeDialog">充值</ElButton>
-          </div>
-
-          <ElTable :data="detail.items" stripe size="small" class="detail-table">
-            <ElTableColumn label="费用项" min-width="120">
-              <template #default="{ row }">
-                {{ row.itemName || itemCodeLabel(row.itemCode) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn label="金额" width="100" align="right">
-              <template #default="{ row }">{{ formatMoney(row.totalAmount) }}</template>
-            </ElTableColumn>
-            <ElTableColumn label="状态" width="90">
-              <template #default="{ row }">
-                <StatusTag :tone="itemStatusTone(row.status)">{{ itemStatusText(row.status) }}</StatusTag>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn label="操作" min-width="220" fixed="right">
-              <template #default="{ row }">
-                <template v-if="row.status === 0 || row.status == null">
-                  <ElButton
-                    link
-                    type="primary"
-                    :loading="payingItemId === row.id"
-                    @click="confirmPayItemByBalance(row)"
-                  >
-                    余额支付
-                  </ElButton>
-                  <ElButton
-                    link
-                    type="warning"
-                    :loading="markingPaid"
-                    @click="confirmMarkItemPaid(row)"
-                  >
-                    现场收费
-                  </ElButton>
-                </template>
-                <span v-else class="muted">—</span>
-              </template>
-            </ElTableColumn>
-          </ElTable>
-        </template>
-      </div>
-    </ElDrawer>
-
-    <ElDialog v-model="rechargeVisible" title="现场现金充值" width="420px" destroy-on-close>
-      <p v-if="selectedPatient" class="recharge-tip">
-        为患者 <strong>{{ selectedPatient.realName }}</strong> 充值到院内账户，充值后可使用余额支付。
-      </p>
-      <div class="recharge-form">
-        <label>充值金额</label>
-        <ElInputNumber v-model="rechargeAmount" :min="0.01" :step="10" :precision="2" class="recharge-amount" />
-        <label>备注</label>
-        <ElInput v-model="rechargeRemark" placeholder="例如：一楼大厅现金充值" />
-      </div>
-      <template #footer>
-        <ElButton @click="rechargeVisible = false">取消</ElButton>
-        <ElButton type="primary" :loading="rechargeLoading" @click="submitRecharge">确认充值</ElButton>
-      </template>
-    </ElDialog>
+      </footer>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.panel {
+.bill-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
+  min-width: 0;
 }
 
-.patient-panel__head h3 {
-  margin: 0 0 4px;
-  font-size: 16px;
+.bill-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
 }
 
-.patient-panel__head p {
+.bill-hero__text h1 {
   margin: 0;
-  color: var(--text-secondary, #64748b);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text, #0f172a);
+  line-height: 1.2;
+}
+
+.bill-hero__text p {
+  margin: 6px 0 0;
   font-size: 14px;
+  color: var(--color-text-muted, #64748b);
 }
 
-.toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.toolbar__filters {
+.bill-stats {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+  min-width: 0;
+}
+
+.bill-stat {
+  display: flex;
   align-items: center;
+  gap: 12px;
+  min-width: 148px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--color-border, #e8edf3);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
-.field--keyword {
-  width: 240px;
+.bill-stat__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background: var(--stat-icon-bg, #eff6ff);
+  color: var(--stat-icon-color, #3b82f6);
 }
 
-.field--date {
+.bill-stat__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.bill-stat[data-tone='primary'] {
+  --stat-icon-bg: #eff6ff;
+  --stat-icon-color: #3b82f6;
+}
+
+.bill-stat[data-tone='warning'] {
+  --stat-icon-bg: #fff7ed;
+  --stat-icon-color: #f59e0b;
+}
+
+.bill-stat[data-tone='success'] {
+  --stat-icon-bg: #ecfdf5;
+  --stat-icon-color: #10b981;
+}
+
+.bill-stat[data-tone='neutral'] {
+  --stat-icon-bg: #f1f5f9;
+  --stat-icon-color: #64748b;
+}
+
+.bill-stat__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bill-stat__label {
+  font-size: 12px;
+  color: var(--color-text-muted, #64748b);
+}
+
+.bill-stat__value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text, #0f172a);
+  line-height: 1.2;
+}
+
+.bill-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid var(--color-border, #e8edf3);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.bill-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--color-border, #eef2f6);
+  background: #fff;
+}
+
+.bill-toolbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.bill-search {
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+
+.bill-search__icon {
+  color: #94a3b8;
+}
+
+.bill-date {
   width: 280px;
 }
 
-.status-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.bill-btn {
+  border-radius: 10px;
+  font-weight: 600;
+  padding-inline: 18px;
 }
 
-.patient-options {
+.bill-btn--ghost {
+  --el-button-bg-color: #fff;
+  --el-button-border-color: #dbe4ee;
+  --el-button-text-color: #334155;
+}
+
+.bill-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  width: fit-content;
+}
+
+.bill-tabs__item {
+  border: none;
+  background: transparent;
+  padding: 8px 18px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.bill-tabs__item:hover {
+  color: #334155;
+}
+
+.bill-tabs__item--active {
+  background: #fff;
+  color: #2563eb;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.patient-options__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted, #64748b);
+}
+
+.patient-options__list {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin-top: 8px;
 }
 
 .patient-card {
@@ -665,106 +591,175 @@ onMounted(() => {
   gap: 4px;
   min-width: 180px;
   padding: 12px 14px;
-  border: 1px solid var(--border-subtle, #e2e8f0);
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.7);
+  background: #f8fafc;
   cursor: pointer;
   text-align: left;
+  transition: border-color 0.15s, background 0.15s;
 }
 
-.patient-card--active {
-  border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 1px var(--el-color-primary-light-7);
+.patient-card:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
 }
 
 .patient-card strong {
   font-size: 15px;
+  color: #0f172a;
 }
 
 .patient-card span {
   font-size: 12px;
-  color: var(--text-secondary, #64748b);
+  color: #64748b;
 }
 
 .selected-patient {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(59, 130, 246, 0.06);
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  font-size: 14px;
+  color: #1e40af;
 }
 
 .selected-patient__meta {
-  margin-left: 8px;
-  color: var(--text-secondary, #64748b);
+  color: #64748b;
   font-size: 13px;
 }
 
-.selected-patient__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+.selected-patient__clear {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.pagination-bar {
+.bill-table-wrap {
+  min-height: 200px;
+  padding: 0 8px;
+}
+
+.bill-table {
+  width: 100%;
+}
+
+.bill-table__visit {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.bill-table__money {
+  font-weight: 600;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.bill-table__split {
+  font-size: 13px;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.bill-action {
+  border: none;
+  background: none;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.bill-action:hover {
+  background: #eff6ff;
+}
+
+.bill-empty {
+  padding: 48px 0;
+}
+
+.bill-footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--color-border, #eef2f6);
+  background: #fafbfc;
 }
 
-.table-footer {
+.bill-footer__total {
   margin: 0;
-  color: var(--text-secondary, #64748b);
   font-size: 14px;
+  color: #64748b;
 }
 
-.detail-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
+/* Table polish */
+.bill-table :deep(.el-table__header th) {
+  background: #f8fafc !important;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.bill-table :deep(.el-table__body td) {
   font-size: 14px;
-  line-height: 1.6;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+  padding-block: 14px;
 }
 
-.detail-summary p {
-  margin: 0;
+.bill-table :deep(.el-table__row:hover > td) {
+  background: #f8fbff !important;
 }
 
-.detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+.bill-table :deep(.el-table__inner-wrapper::before) {
+  display: none;
 }
 
-.detail-table {
-  width: 100%;
+.bill-search :deep(.el-input__wrapper) {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px #e2e8f0 inset;
 }
 
-.muted {
-  color: var(--text-secondary, #94a3b8);
+.bill-date :deep(.el-input__wrapper) {
+  border-radius: 10px;
 }
 
-.recharge-tip {
-  margin: 0 0 16px;
-  font-size: 14px;
-  line-height: 1.6;
-}
+@media (max-width: 900px) {
+  .bill-hero {
+    flex-direction: column;
+  }
 
-.recharge-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+  .bill-stats {
+    width: 100%;
+  }
 
-.recharge-amount {
-  width: 100%;
+  .bill-stat {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
+
+  .bill-search {
+    max-width: none;
+    width: 100%;
+  }
+
+  .bill-date {
+    width: 100%;
+  }
 }
 </style>
