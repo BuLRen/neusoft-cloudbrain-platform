@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.physician.mapper.PhysicianAiMapper">
+
+    <select id="selectExamSuggestions" resultType="map">
+        SELECT
+            id AS "id",
+            tech_id AS "techId",
+            tech_name AS "techName",
+            suggest_type AS "suggestType",
+            suggest_reason AS "suggestReason",
+            priority AS "priority",
+            is_adopted AS "isAdopted"
+        FROM ai_exam_suggestion
+        WHERE register_id = #{registerId}
+        ORDER BY priority ASC, id DESC
+    </select>
+
+    <select id="selectDiagnosisSuggestions" resultType="map">
+        SELECT
+            id AS "id",
+            disease_id AS "diseaseId",
+            disease_name AS "diseaseName",
+            recommend_icd AS "recommendIcd",
+            probability AS "probability",
+            risk_level AS "riskLevel",
+            treatment_direction AS "treatmentDirection",
+            diagnosis_basis AS "diagnosisBasis",
+            is_adopted AS "isAdopted",
+            sort_order AS "sortOrder"
+        FROM ai_diagnosis_suggestion
+        WHERE register_id = #{registerId}
+        ORDER BY sort_order ASC, probability DESC NULLS LAST
+    </select>
+
+    <delete id="deleteExamSuggestionsByRegisterId">
+        DELETE FROM ai_exam_suggestion WHERE register_id = #{registerId}
+    </delete>
+
+    <insert id="insertExamSuggestion" parameterType="map">
+        INSERT INTO ai_exam_suggestion (register_id, tech_id, tech_name, suggest_type, suggest_reason, priority, model_id)
+        VALUES (#{registerId}, #{techId}, #{techName}, #{suggestType}, #{suggestReason}, #{priority}, #{modelId})
+    </insert>
+
+    <delete id="deleteExamAnalysisByRegisterId">
+        DELETE FROM ai_exam_analysis WHERE register_id = #{registerId}
+    </delete>
+
+    <insert id="insertExamAnalysis" parameterType="map" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_exam_analysis (
+            register_id, check_request_id, inspection_request_id, analysis_type, original_result, abnormal_indicators,
+            risk_level, analysis_report, correlation_analysis, model_id
+        ) VALUES (
+            #{registerId}, #{checkRequestId}, #{inspectionRequestId}, #{analysisType}, #{originalResult}, #{abnormalIndicators},
+            #{riskLevel}, #{analysisReport}, #{correlationAnalysis}, #{modelId}
+        )
+    </insert>
+
+    <select id="selectExamAnalysisByRegisterId" resultType="map">
+        SELECT
+            id AS "id",
+            analysis_type AS "analysisType",
+            original_result AS "originalResult",
+            abnormal_indicators AS "abnormalIndicators",
+            risk_level AS "riskLevel",
+            analysis_report AS "analysisReport",
+            correlation_analysis AS "correlationAnalysis"
+        FROM ai_exam_analysis
+        WHERE register_id = #{registerId}
+        ORDER BY analysis_time DESC, id DESC
+    </select>
+
+    <delete id="deleteDiagnosisSuggestionsByRegisterId">
+        DELETE FROM ai_diagnosis_suggestion WHERE register_id = #{registerId}
+    </delete>
+
+    <insert id="insertDiagnosisSuggestion" parameterType="map">
+        INSERT INTO ai_diagnosis_suggestion (
+            register_id, disease_id, disease_name, recommend_icd, probability,
+            risk_level, treatment_direction, diagnosis_basis, sort_order, model_id
+        ) VALUES (
+            #{registerId}, #{diseaseId}, #{diseaseName}, #{recommendIcd}, #{probability},
+            #{riskLevel}, #{treatmentDirection}, #{diagnosisBasis}, #{sortOrder}, #{modelId}
+        )
+    </insert>
+
+    <delete id="deleteDrugSuggestionsByRegisterId">
+        DELETE FROM ai_drug_suggestion WHERE register_id = #{registerId}
+    </delete>
+
+    <insert id="insertDrugSuggestion" parameterType="map">
+        INSERT INTO ai_drug_suggestion (
+            register_id, drug_id, drug_name, recommend_usage, recommend_quantity,
+            confidence, recommendation_basis, caution_notes, sort_order, model_id
+        ) VALUES (
+            #{registerId}, #{drugId}, #{drugName}, #{recommendUsage}, #{recommendQuantity},
+            #{confidence}, #{recommendationBasis}, #{cautionNotes}, #{sortOrder}, #{modelId}
+        )
+    </insert>
+
+    <select id="selectDrugSuggestions" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            drug_id AS "drugId",
+            drug_name AS "drugName",
+            recommend_usage AS "recommendUsage",
+            recommend_quantity AS "recommendQuantity",
+            confidence AS "confidence",
+            recommendation_basis AS "recommendationBasis",
+            caution_notes AS "cautionNotes",
+            is_adopted AS "isAdopted",
+            sort_order AS "sortOrder",
+            model_id AS "modelId",
+            creation_time AS "creationTime"
+        FROM ai_drug_suggestion
+        WHERE register_id = #{registerId}
+        ORDER BY sort_order ASC, confidence DESC NULLS LAST
+    </select>
+
+    <update id="updateDrugSuggestionAdopted">
+        UPDATE ai_drug_suggestion
+        SET is_adopted = #{isAdopted}
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertAiMedicalRecordLog" parameterType="map">
+        INSERT INTO ai_medical_record_log (
+            register_id, source_type, ai_readme, ai_present, ai_history, ai_allergy, ai_physique, ai_diagnosis, model_id, doctor_modification
+        ) VALUES (
+            #{registerId}, #{sourceType}, #{aiReadme}, #{aiPresent}, #{aiHistory}, #{aiAllergy}, #{aiPhysique}, #{aiDiagnosis}, #{modelId}, #{doctorModification}
+        )
+    </insert>
+</mapper>

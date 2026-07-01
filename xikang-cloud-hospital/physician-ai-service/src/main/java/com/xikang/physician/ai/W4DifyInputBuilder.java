@@ -1,6 +1,7 @@
 package com.xikang.physician.ai;
 
-import com.xikang.physician.mapper.PhysicianMapper;
+import com.xikang.physician.client.PhysicianClinicalClient;
+import com.xikang.physician.mapper.PhysicianAiMapper;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -10,55 +11,38 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Builds Dify W5 workflow start-node inputs (all String fields, snake_case).
- */
 @Component
-public class W5DifyInputBuilder {
+public class W4DifyInputBuilder {
 
-    private final PhysicianMapper physicianMapper;
+    private final PhysicianClinicalClient physicianClinicalClient;
+    private final PhysicianAiMapper physicianAiMapper;
 
-    public W5DifyInputBuilder(PhysicianMapper physicianMapper) {
-        this.physicianMapper = physicianMapper;
+    public W4DifyInputBuilder(PhysicianClinicalClient physicianClinicalClient, PhysicianAiMapper physicianAiMapper) {
+        this.physicianClinicalClient = physicianClinicalClient;
+        this.physicianAiMapper = physicianAiMapper;
     }
 
     public Map<String, Object> build(Long registerId) {
-        Map<String, Object> register = physicianMapper.selectRegisterById(registerId);
-        Map<String, Object> record = physicianMapper.selectMedicalRecordByRegisterId(registerId);
+        Map<String, Object> register = physicianClinicalClient.getRegister(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
+        Map<String, Object> consult = physicianClinicalClient.getLatestAiConsultation(registerId);
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("register_id", String.valueOf(registerId));
         inputs.put("patient_info_text", buildPatientInfoText(register));
-        inputs.put("confirmed_diagnosis_text", record == null ? "" : textOrEmpty(record, "diagnosis"));
-        inputs.put("w4_suggestions_text", buildW4SuggestionsText(registerId));
-        inputs.put("allergy_history", record == null ? "" : textOrEmpty(record, "allergy"));
-        inputs.put("past_history", record == null ? "" : textOrEmpty(record, "history"));
-        inputs.put("chief_complaint", record == null ? "" : textOrEmpty(record, "readme"));
+        inputs.put("chief_complaint", textOrEmpty(record, "readme"));
+        inputs.put("present_illness", textOrEmpty(record, "present"));
+        inputs.put("past_history", textOrEmpty(record, "history"));
+        inputs.put("allergy_history", textOrEmpty(record, "allergy"));
+        inputs.put("preliminary_diagnosis_text", textOrEmpty(record, "preliminaryDiagnosis"));
+        inputs.put("preliminary_diseases_text", buildPreliminaryDiseasesText(record));
+        inputs.put("check_results_text", buildCheckResultsText(registerId));
+        inputs.put("inspection_results_text", buildInspectionResultsText(registerId));
         inputs.put("w3_analysis_text", buildW3AnalysisText(registerId));
         inputs.put("abnormal_indicators_text", buildAbnormalIndicatorsText(registerId));
-        inputs.put("preliminary_diagnosis_text", record == null ? "" : textOrEmpty(record, "preliminaryDiagnosis"));
-        inputs.put("doctor_notes", record == null ? "" : textOrEmpty(record, "physique"));
+        inputs.put("ai_previsit_summary", consult == null ? "" : textOrEmpty(consult, "aiSummary"));
+        inputs.put("doctor_notes", textOrEmpty(record, "physique"));
         return inputs;
-    }
-
-    private String buildW4SuggestionsText(Long registerId) {
-        List<Map<String, Object>> suggestions = physicianMapper.selectDiagnosisSuggestions(registerId);
-        if (suggestions == null || suggestions.isEmpty()) {
-            return "";
-        }
-        List<String> lines = new ArrayList<>();
-        for (Map<String, Object> item : suggestions) {
-            String icd = textOrEmpty(item, "recommendIcd");
-            String name = textOrEmpty(item, "diseaseName");
-            Object prob = item.get("probability");
-            String treatment = textOrEmpty(item, "treatmentDirection");
-            if (name.isEmpty()) {
-                continue;
-            }
-            String probText = prob == null ? "" : String.valueOf(prob);
-            lines.add(icd + "|" + name + "|" + probText + "|" + treatment);
-        }
-        return String.join("\n", lines);
     }
 
     private static String buildPatientInfoText(Map<String, Object> register) {
@@ -81,8 +65,58 @@ public class W5DifyInputBuilder {
         return String.join("，", parts);
     }
 
+    private String buildPreliminaryDiseasesText(Map<String, Object> record) {
+        if (record == null) {
+            return "";
+        }
+        Long medicalRecordId = toLong(record.get("id"));
+        if (medicalRecordId == null) {
+            return "";
+        }
+        List<Map<String, Object>> diseases = physicianClinicalClient.getDiseasesByMedicalRecordId(medicalRecordId);
+        if (diseases == null || diseases.isEmpty()) {
+            return "";
+        }
+        List<String> lines = new ArrayList<>();
+        for (Map<String, Object> disease : diseases) {
+            String icd = textOrEmpty(disease, "diseaseIcd");
+            String name = textOrEmpty(disease, "diseaseName");
+            String category = textOrEmpty(disease, "diseaseCategory");
+            if (icd.isEmpty() && name.isEmpty()) {
+                continue;
+            }
+            lines.add(icd + "|" + name + "|" + category);
+        }
+        return String.join("\n", lines);
+    }
+
+    private String buildCheckResultsText(Long registerId) {
+        return buildResultsText(physicianClinicalClient.getCheckResults(registerId), "checkResult");
+    }
+
+    private String buildInspectionResultsText(Long registerId) {
+        return buildResultsText(physicianClinicalClient.getInspectionResults(registerId), "inspectionResult");
+    }
+
+    private static String buildResultsText(List<Map<String, Object>> rows, String resultKey) {
+        if (rows == null || rows.isEmpty()) {
+            return "";
+        }
+        List<String> lines = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Object result = row.get(resultKey);
+            if (result == null || String.valueOf(result).trim().isEmpty()) {
+                continue;
+            }
+            String techName = textOrEmpty(row, "techName");
+            String prefix = techName.isEmpty() ? "" : techName + "：";
+            lines.add(prefix + String.valueOf(result).trim());
+        }
+        return String.join("\n", lines);
+    }
+
     private String buildW3AnalysisText(Long registerId) {
-        List<Map<String, Object>> analyses = physicianMapper.selectExamAnalysisByRegisterId(registerId);
+        List<Map<String, Object>> analyses = physicianAiMapper.selectExamAnalysisByRegisterId(registerId);
         if (analyses == null || analyses.isEmpty()) {
             return "";
         }
@@ -112,7 +146,7 @@ public class W5DifyInputBuilder {
     }
 
     private String buildAbnormalIndicatorsText(Long registerId) {
-        List<Map<String, Object>> analyses = physicianMapper.selectExamAnalysisByRegisterId(registerId);
+        List<Map<String, Object>> analyses = physicianAiMapper.selectExamAnalysisByRegisterId(registerId);
         if (analyses == null || analyses.isEmpty()) {
             return "";
         }
@@ -143,6 +177,11 @@ public class W5DifyInputBuilder {
                 note += "↑";
                 abnormalItems.add(note);
             }
+            for (String finding : listOfStrings(indicators.get("keyFindings"))) {
+                if (!finding.isBlank()) {
+                    abnormalItems.add(finding.trim());
+                }
+            }
         }
         return String.join("；", abnormalItems);
     }
@@ -154,7 +193,7 @@ public class W5DifyInputBuilder {
         }
         Map<String, Object> legacy = new LinkedHashMap<>();
         legacy.put("techName", "");
-        legacy.put("keyFindings", List.of());
+        legacy.put("keyFindings", listOfStrings(raw));
         legacy.put("indicatorRows", List.of());
         return legacy;
     }
@@ -172,11 +211,40 @@ public class W5DifyInputBuilder {
         return list.stream().filter(Map.class::isInstance).map(item -> (Map<String, Object>) item).toList();
     }
 
+    private static List<String> listOfStrings(Object value) {
+        if (value instanceof List<?> list) {
+            List<String> out = new ArrayList<>();
+            for (Object item : list) {
+                if (item != null) {
+                    String text = String.valueOf(item).trim();
+                    if (!text.isEmpty()) {
+                        out.add(text);
+                    }
+                }
+            }
+            return out;
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return List.of(text.trim());
+        }
+        return List.of();
+    }
+
     private static String textOrEmpty(Map<String, Object> map, String key) {
         if (map == null) {
             return "";
         }
         Object value = map.get(key);
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static Long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return Long.parseLong(text);
+        }
+        return null;
     }
 }

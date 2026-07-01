@@ -1,4 +1,5 @@
 package com.xikang.physician.agent;
+import com.xikang.common.agent.AgentToolExecutionContext;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
@@ -6,8 +7,9 @@ import com.xikang.physician.ai.DifyWorkflowException;
 import com.xikang.physician.ai.PhysicianAiPipelineService;
 import com.xikang.physician.copilot.entity.PhysicianAiChatSession;
 import com.xikang.physician.copilot.mapper.PhysicianAiChatSessionMapper;
-import com.xikang.physician.service.ClinicalRecordService;
-import com.xikang.physician.service.PhysicianService;
+
+import com.xikang.physician.client.PhysicianClinicalClient;
+import com.xikang.physician.mapper.PhysicianAiMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,8 +30,8 @@ import java.util.UUID;
 public class PhysicianAgentToolService {
 
     private final PhysicianAiPipelineService pipelineService;
-    private final PhysicianService physicianService;
-    private final ClinicalRecordService clinicalRecordService;
+    private final PhysicianClinicalClient physicianClinicalClient;
+    private final PhysicianAiMapper physicianAiMapper;
     private final AgentToolAuditService auditService;
     private final AgentConfirmationService confirmationService;
     private final AgentCommitExecutor commitExecutor;
@@ -40,8 +42,8 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> runPreliminaryDiagnosis(Map<String, Object> body) {
         return execute("tool_run_preliminary_diagnosis", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
-            Map<String, Object> record = physicianService.getMedicalRecord(registerId);
-            Map<String, Object> patient = physicianService.getPatient(registerId);
+            Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
+            Map<String, Object> patient = physicianClinicalClient.getPatient(registerId);
             String text = buildClinicalText(record, patient);
             if (text.isBlank()) {
                 throw new IllegalArgumentException("暂无病历或预问诊内容，无法运行初步诊断");
@@ -56,8 +58,8 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> runW1(Map<String, Object> body) {
         return execute("tool_run_w1", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
-            Map<String, Object> record = physicianService.getMedicalRecord(registerId);
-            Map<String, Object> patient = physicianService.getPatient(registerId);
+            Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
+            Map<String, Object> patient = physicianClinicalClient.getPatient(registerId);
             String longText = buildClinicalText(record, patient);
             if (longText.isBlank()) {
                 throw new IllegalArgumentException("暂无病历或预问诊内容，无法运行 W1");
@@ -90,7 +92,7 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> getMedicalRecord(Map<String, Object> body) {
         return execute("tool_get_medical_record", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
-            Map<String, Object> record = physicianService.getMedicalRecord(registerId);
+            Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
             if (record == null || record.isEmpty()) {
                 return Map.of("registerId", registerId, "empty", true, "message", "暂无病历记录");
             }
@@ -100,8 +102,8 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> getLabResults(Map<String, Object> body) {
         return execute("tool_get_lab_results", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
-            List<Map<String, Object>> checks = physicianService.getCheckResults(registerId);
-            List<Map<String, Object>> inspections = physicianService.getInspectionResults(registerId);
+            List<Map<String, Object>> checks = physicianClinicalClient.getCheckResults(registerId);
+            List<Map<String, Object>> inspections = physicianClinicalClient.getInspectionResults(registerId);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("registerId", registerId);
             result.put("checkResults", checks);
@@ -112,7 +114,7 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> getPatient(Map<String, Object> body) {
         return execute("tool_get_patient", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
-            Map<String, Object> patient = physicianService.getPatient(registerId);
+            Map<String, Object> patient = physicianClinicalClient.getPatient(registerId);
             if (patient == null) {
                 return Map.of("registerId", registerId, "empty", true);
             }
@@ -127,7 +129,7 @@ public class PhysicianAgentToolService {
                 techType = textValue(body.get("techType"));
             }
             String keyword = textValue(body.get("keyword"));
-            List<Map<String, Object>> list = physicianService.getMedicalTechnologies(techType, keyword);
+            List<Map<String, Object>> list = physicianClinicalClient.getMedicalTechnologies(techType, keyword);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("registerId", registerId);
             result.put("techType", techType);
@@ -140,7 +142,7 @@ public class PhysicianAgentToolService {
     public Map<String, Object> getDiseases(Map<String, Object> body) {
         return execute("tool_get_diseases", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
             String keyword = textValue(body.get("keyword"));
-            List<Map<String, Object>> list = physicianService.getDiseases(keyword);
+            List<Map<String, Object>> list = physicianClinicalClient.getDiseases(keyword);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("registerId", registerId);
             result.put("items", list);
@@ -157,7 +159,7 @@ public class PhysicianAgentToolService {
             if (pageSize == null) {
                 pageSize = toInt(body.get("pageSize"));
             }
-            Map<String, Object> pageResult = physicianService.getDrugsPage(keyword, page, pageSize);
+            Map<String, Object> pageResult = physicianClinicalClient.getDrugsPage(keyword, page, pageSize);
             pageResult.put("registerId", registerId);
             return pageResult;
         });
@@ -165,7 +167,7 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> getPrescriptions(Map<String, Object> body) {
         return execute("tool_get_prescriptions", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
-            List<Map<String, Object>> list = physicianService.getPrescriptionList(registerId);
+            List<Map<String, Object>> list = physicianClinicalClient.getPrescriptionList(registerId);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("registerId", registerId);
             result.put("items", list);
@@ -176,12 +178,12 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> getVisitTimeline(Map<String, Object> body) {
         return execute("tool_get_visit_timeline", AgentToolExecutionContext.RiskLevel.READ, body,
-            clinicalRecordService::getVisitTimeline);
+            physicianClinicalClient::getVisitTimeline);
     }
 
     public Map<String, Object> getExamSuggestions(Map<String, Object> body) {
         return execute("tool_get_exam_suggestions", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
-            List<Map<String, Object>> list = physicianService.getExamSuggestions(registerId);
+            List<Map<String, Object>> list = physicianAiMapper.selectExamSuggestions(registerId);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("registerId", registerId);
             result.put("items", list);
@@ -192,7 +194,7 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> getDiagnosisSuggestions(Map<String, Object> body) {
         return execute("tool_get_diagnosis_suggestions", AgentToolExecutionContext.RiskLevel.READ, body, registerId -> {
-            List<Map<String, Object>> list = physicianService.getDiagnosisSuggestions(registerId);
+            List<Map<String, Object>> list = physicianAiMapper.selectDiagnosisSuggestions(registerId);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("registerId", registerId);
             result.put("items", list);
@@ -205,7 +207,7 @@ public class PhysicianAgentToolService {
 
     public Map<String, Object> draftMedicalRecord(Map<String, Object> body) {
         return execute("tool_draft_medical_record", AgentToolExecutionContext.RiskLevel.DRAFT, body, registerId -> {
-            Map<String, Object> current = physicianService.getMedicalRecord(registerId);
+            Map<String, Object> current = physicianClinicalClient.getMedicalRecord(registerId);
             Map<String, Object> effectiveBody = new LinkedHashMap<>(body == null ? Map.of() : body);
             if (shouldMergeFromPreconsultation(body)) {
                 mergePreconsultationIntoBody(registerId, effectiveBody, explicitBodyKeys(body));
@@ -300,7 +302,7 @@ public class PhysicianAgentToolService {
             if (items.isEmpty()) {
                 throw new IllegalArgumentException("请提供 items 或设置 use_w5=true");
             }
-            Map<String, Object> record = physicianService.getMedicalRecord(registerId);
+            Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
             String confirmedDiagnosis = textValue(body.get("confirmed_diagnosis"));
             if (confirmedDiagnosis == null) {
                 confirmedDiagnosis = textValue(body.get("confirmedDiagnosis"));
@@ -564,13 +566,13 @@ public class PhysicianAgentToolService {
         try {
             return switch (actionType) {
                 case "commit_medical_record", "commit_preliminary_diagnosis", "commit_diagnosis" ->
-                    objectMapper.writeValueAsString(physicianService.getMedicalRecord(registerId));
+                    objectMapper.writeValueAsString(physicianClinicalClient.getMedicalRecord(registerId));
                 case "commit_prescription" ->
-                    objectMapper.writeValueAsString(physicianService.getPrescriptionList(registerId));
+                    objectMapper.writeValueAsString(physicianClinicalClient.getPrescriptionList(registerId));
                 case "commit_check_requests", "commit_inspection_requests" -> {
                     Map<String, Object> lab = new LinkedHashMap<>();
-                    lab.put("checkResults", physicianService.getCheckResults(registerId));
-                    lab.put("inspectionResults", physicianService.getInspectionResults(registerId));
+                    lab.put("checkResults", physicianClinicalClient.getCheckResults(registerId));
+                    lab.put("inspectionResults", physicianClinicalClient.getInspectionResults(registerId));
                     yield objectMapper.writeValueAsString(lab);
                 }
                 default -> null;
@@ -618,7 +620,7 @@ public class PhysicianAgentToolService {
         Map<String, Object> body,
         java.util.Set<String> explicitKeys
     ) {
-        Map<String, Object> patient = physicianService.getPatient(registerId);
+        Map<String, Object> patient = physicianClinicalClient.getPatient(registerId);
         if (patient == null) {
             return;
         }

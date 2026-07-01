@@ -4,7 +4,7 @@ import com.xikang.common.result.Result;
 import com.xikang.physician.ai.DifyWorkflowException;
 import com.xikang.physician.ai.PhysicianAiPipelineService;
 import com.xikang.physician.ai.W3AutoTriggerService;
-import com.xikang.physician.service.PhysicianService;
+import com.xikang.physician.client.PhysicianClinicalClient;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,16 +15,16 @@ import java.util.Map;
 public class PhysicianAiController {
 
     private final PhysicianAiPipelineService pipelineService;
-    private final PhysicianService physicianService;
+    private final PhysicianClinicalClient physicianClinicalClient;
     private final W3AutoTriggerService w3AutoTriggerService;
 
     public PhysicianAiController(
         PhysicianAiPipelineService pipelineService,
-        PhysicianService physicianService,
+        PhysicianClinicalClient physicianClinicalClient,
         W3AutoTriggerService w3AutoTriggerService
     ) {
         this.pipelineService = pipelineService;
-        this.physicianService = physicianService;
+        this.physicianClinicalClient = physicianClinicalClient;
         this.w3AutoTriggerService = w3AutoTriggerService;
     }
 
@@ -182,12 +182,12 @@ public class PhysicianAiController {
 
     @GetMapping("/dify-workflow-contracts")
     public Result<Map<String, Object>> contracts() {
-        return Result.success(physicianService.getDifyWorkflowContracts());
+        return Result.success(physicianClinicalClient.getDifyWorkflowContracts());
     }
 
     @GetMapping("/ct-model-contract")
     public Result<Map<String, Object>> ctContract() {
-        return Result.success(physicianService.getCtModelOutputContract());
+        return Result.success(physicianClinicalClient.getCtModelOutputContract());
     }
 
     private static Long toLong(Object value) {

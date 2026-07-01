@@ -3,7 +3,7 @@ package com.xikang.physician.copilot;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.physician.ai.PhysicianAiPipelineService;
 import com.xikang.physician.ai.W2ClinicalContextBuilder;
-import com.xikang.physician.service.PhysicianService;
+import com.xikang.physician.client.PhysicianClinicalClient;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -18,16 +18,16 @@ public class PhysicianCopilotContextBuilder {
     private static final int MAX_FIELD_CHARS = 2000;
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    private final PhysicianService physicianService;
+    private final PhysicianClinicalClient physicianClinicalClient;
     private final PhysicianAiPipelineService pipelineService;
     private final W2ClinicalContextBuilder w2ClinicalContextBuilder;
 
     public PhysicianCopilotContextBuilder(
-        PhysicianService physicianService,
+        PhysicianClinicalClient physicianClinicalClient,
         PhysicianAiPipelineService pipelineService,
         W2ClinicalContextBuilder w2ClinicalContextBuilder
     ) {
-        this.physicianService = physicianService;
+        this.physicianClinicalClient = physicianClinicalClient;
         this.pipelineService = pipelineService;
         this.w2ClinicalContextBuilder = w2ClinicalContextBuilder;
     }
@@ -40,8 +40,8 @@ public class PhysicianCopilotContextBuilder {
     }
 
     public Map<String, String> buildAgentInputs(Long registerId, Long sessionId) {
-        Map<String, Object> patient = physicianService.getPatient(registerId);
-        Map<String, Object> record = physicianService.getMedicalRecord(registerId);
+        Map<String, Object> patient = physicianClinicalClient.getPatient(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
 
         Map<String, String> inputs = new LinkedHashMap<>();
         inputs.put("register_id", String.valueOf(registerId));
@@ -115,8 +115,8 @@ public class PhysicianCopilotContextBuilder {
     }
 
     public String build(Long registerId) {
-        Map<String, Object> patient = physicianService.getPatient(registerId);
-        Map<String, Object> record = physicianService.getMedicalRecord(registerId);
+        Map<String, Object> patient = physicianClinicalClient.getPatient(registerId);
+        Map<String, Object> record = physicianClinicalClient.getMedicalRecord(registerId);
         Map<String, Object> w3Status = safeW3Status(registerId);
 
         StringJoiner joiner = new StringJoiner("\n\n");
@@ -296,8 +296,8 @@ public class PhysicianCopilotContextBuilder {
     }
 
     private String formatExamResults(Long registerId) {
-        List<Map<String, Object>> checks = physicianService.getCheckResults(registerId);
-        List<Map<String, Object>> inspections = physicianService.getInspectionResults(registerId);
+        List<Map<String, Object>> checks = physicianClinicalClient.getCheckResults(registerId);
+        List<Map<String, Object>> inspections = physicianClinicalClient.getInspectionResults(registerId);
         if (checks.isEmpty() && inspections.isEmpty()) {
             return "";
         }

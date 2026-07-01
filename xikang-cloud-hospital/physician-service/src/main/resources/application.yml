@@ -1,20 +1,11 @@
 # =============================================================================
 # physician-service 配置
-# 门诊医师微服务：病历、AI 流水线（初步诊断 / W1–W4）、检查检验开立等
-# =============================================================================
-# 数据源：连接参数与 local/remote 切换见 xikang-cloud-hospital/.env
-#   SPRING_PROFILES_ACTIVE=remote | local
+# 门诊医师微服务：病历、处方、检查检验开立等（纯业务，AI 已拆分至 physician-ai-service）
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# 服务端口
-# -----------------------------------------------------------------------------
 server:
   port: 8092
 
-# -----------------------------------------------------------------------------
-# Spring 基础
-# -----------------------------------------------------------------------------
 spring:
   application:
     name: physician-service
@@ -27,16 +18,7 @@ spring:
       - optional:file:./config/database.yml
       - optional:file:../config/database-secrets.yml
       - optional:file:./config/database-secrets.yml
-  ai:
-    openai:
-      api-key: ${DEEPSEEK_API_KEY:}
-      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
-      chat:
-        options:
-          model: ${DEEPSEEK_MODEL:deepseek-chat}
-          temperature: 0.3
   cloud:
-    # 单机部署 physician-service（无 Nacos）时保持 false；本地全栈 + Gateway 时在 .env 设 NACOS_DISCOVERY_ENABLED=true
     nacos:
       discovery:
         enabled: ${NACOS_DISCOVERY_ENABLED:false}
@@ -47,20 +29,12 @@ spring:
       auto-registration:
         enabled: ${NACOS_DISCOVERY_ENABLED:false}
 
-# -----------------------------------------------------------------------------
-# MyBatis（SQL 映射）
-# log-impl 开启后会在控制台打印 SQL，开发调试用，生产可关掉
-# -----------------------------------------------------------------------------
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml
   type-aliases-package: com.xikang.physician.entity
   configuration:
     map-underscore-to-camel-case: true
-    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 关闭 SQL 打印，调试时取消注释
 
-# -----------------------------------------------------------------------------
-# Actuator 健康检查（/actuator/health 等）
-# -----------------------------------------------------------------------------
 management:
   endpoints:
     web:
@@ -70,91 +44,11 @@ management:
     health:
       show-details: always
 
-# -----------------------------------------------------------------------------
-# 日志级别
-# -----------------------------------------------------------------------------
 logging:
   level:
-
     com.xikang.physician: DEBUG
 
-# =============================================================================
-# 业务配置：Dify AI 工作流
-# =============================================================================
-#
-# 调用方式：POST {base-url}/v1/workflows/run，Header: Authorization: Bearer {app-xxx}
-# 注意：base-url 只写到主机（和端口），不要带 /v1
-#
-# 地址分工（支持云端 + 本地混部）：
-#   - base-url-preliminary → 初步诊断（第 2 步，常走云端，因需知识库）
-#   - base-url             → W1 / W2 / W3 / W4 等（常走本地自托管 Dify）
-#
-# 开关说明：
-#   workflow-preliminary / workflow-w2 等填 true/1/yes/on 表示启用
-#   这些项是「开关」，不是 API Key，不要把 app-xxx 写进去
-#
-# 未启用或调用失败时，自动走内置 FallbackWorkflowEngine（规则/mock 数据）
-# 详细联调文档：xikang-hospital-frontend/src/modules/physician/README.md
-# =============================================================================
 xikang:
-  ai:
-    dify:
-
-      # ----- 总开关 -----
-      enabled: ${DIFY_ENABLED:true}
-
-      # ----- Dify 服务地址 -----
-      base-url: ${DIFY_BASE_URL:http://localhost}
-      base-url-preliminary: ${DIFY_BASE_URL_PRELIMINARY:https://api.dify.ai}
-
-      # ----- HTTP 超时（毫秒）-----
-      connect-timeout-ms: ${DIFY_CONNECT_TIMEOUT_MS:30000}
-      read-timeout-ms: ${DIFY_READ_TIMEOUT_MS:300000}
-
-      # ----- 初步诊断（第 2 步 · 走 base-url-preliminary）-----
-      # api-key-preliminary：官网 Dify 初步诊断 Workflow App 的 Key（与 W2/W3 独立，避免 DIFY_API_KEY 留空时误禁用）
-      api-key-preliminary: ${DIFY_API_KEY_PRELIMINARY:}
-      # api-key：W1 等遗留工作流；勿与 W2/W3 混用时可留空
-      api-key: ${DIFY_API_KEY:}
-      workflow-preliminary: ${DIFY_WORKFLOW_PRELIMINARY:true}
-      preliminary-output-keys:
-        # 映射 Dify 结束节点输出变量名 → 后端/前端字段，一般与 Dify 画布一致即可
-        output-structured: ${DIFY_PRELIM_OUTPUT_ROOT:output_structured}
-        diagnosis-text: ${DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT:answer}
-        suggested-diseases: ${DIFY_PRELIM_OUTPUT_SUGGESTED_DISEASES:diseaseDetail}
-        diagnosis-basis: ${DIFY_PRELIM_OUTPUT_BASIS:}
-        confidence: ${DIFY_PRELIM_OUTPUT_CONFIDENCE:}
-        parse-json-from-text: true
-
-      # ----- W2 开立检查检验推荐（第 3 步 · 走 base-url）-----
-      workflow-w2: ${DIFY_WORKFLOW_W2:true}
-      api-key-w2: ${DIFY_API_KEY_W2:}
-      w2-output-keys:
-        output-root: ${DIFY_W2_OUTPUT_ROOT:}
-
-      # ----- W1 / W2b / W3 / W4（走 base-url，非空即尝试 Dify，慎用）-----
-      # W1  长文本 → 标准病历字段
-      workflow-w1: ${DIFY_WORKFLOW_W1:}
-      # W2b 常规检验模拟 + CT 推理
-      workflow-w2b: ${DIFY_WORKFLOW_W2B:}
-      # W3  检查检验结果解读（查看结果页）
-      workflow-w3: ${DIFY_WORKFLOW_W3:}
-      api-key-w3: ${DIFY_API_KEY_W3:}
-      # W4  门诊确诊与概率
-      workflow-w4: ${DIFY_WORKFLOW_W4:true}
-      api-key-w4: ${DIFY_API_KEY_W4:}
-      # W5  智能荐药（开立处方页）
-      workflow-w5: ${DIFY_WORKFLOW_W5:true}
-      api-key-w5: ${DIFY_API_KEY_W5:}
-
-      # ----- 门诊临床 Copilot Agent（AI 助手页 · chat-messages）-----
-      agent-api-key: ${DIFY_AGENT_API_KEY:}
-      agent-base-url: ${DIFY_AGENT_BASE_URL:${DIFY_BASE_URL:http://localhost}}
-
-      # ----- 外部 CT 推理服务（W2b 用，未配置则用内置模拟）-----
-      ct-inference-url: ${CT_INFERENCE_URL:}
-
-  # Dify Agent Custom Tool 回调鉴权（与 Dify 自定义工具 Authorization Header 一致）
   internal:
     ai:
       token: ${INTERNAL_AI_TOKEN:}
