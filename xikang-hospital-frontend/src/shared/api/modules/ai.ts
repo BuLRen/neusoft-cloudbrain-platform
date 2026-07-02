@@ -1,4 +1,5 @@
 import { http } from '../request'
+import { getAccessToken } from '@/shared/auth/tokenStorage'
 import type {
   ExamAnalyzePayload,
   ExamAnalyzeResult,
@@ -149,7 +150,7 @@ export const aiApi = {
     onToken: (chunk: string) => void,
     signal?: AbortSignal,
   ): Promise<PrevisitChatMeta> {
-    const token = localStorage.getItem('access_token') || ''
+    const token = getAccessToken()
     const response = await fetch(`/api${url}`, {
       method: 'POST',
       headers: {

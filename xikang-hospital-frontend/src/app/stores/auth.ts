@@ -3,6 +3,12 @@ import { defineStore } from 'pinia'
 import type { UserRole } from '@/shared/types/role'
 import { authApi } from '@/shared/api/modules/auth'
 import { canRefreshSession, refreshAccessToken } from '@/shared/api/authRefresh'
+import {
+  clearTokens,
+  getAccessToken,
+  saveRememberedUsername,
+  setTokens,
+} from '@/shared/auth/tokenStorage'
 
 export interface PatientInfo {
   patientId: number
@@ -48,7 +54,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function loadSession() {
     try {
       // 先从 localStorage 恢复 token 状态，保证 isAuthenticated 立即生效
-      const storedToken = localStorage.getItem('access_token') || ''
+      const storedToken = getAccessToken()
       if (storedToken) {
         token.value = storedToken
       }
@@ -113,7 +119,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(loginUsername: string, password: string) {
+  async function login(
+    loginUsername: string,
+    password: string,
+    captchaId: string,
+    captchaCode: string,
+    rememberMe = false,
+  ) {
     const data = await authApi.post<{
       userId: string
       username: string
@@ -123,7 +135,12 @@ export const useAuthStore = defineStore('auth', () => {
       realName: string
       employeeId?: number
       patients?: PatientInfo[]
-    }>('/auth/login', { username: loginUsername, password })
+    }>('/auth/login', {
+      username: loginUsername,
+      password,
+      captchaId,
+      captchaCode,
+    })
 
     if (data) {
       userId.value = String(data.userId)
@@ -137,11 +154,9 @@ export const useAuthStore = defineStore('auth', () => {
       const primaryPatient = patients.value.find(p => p.isPrimary === 1)
       currentPatientId.value = primaryPatient?.patientId || null
       if (data.token) {
-        localStorage.setItem('access_token', data.token)
+        setTokens(data.token, data.refreshToken || '', rememberMe)
       }
-      if (data.refreshToken) {
-        localStorage.setItem('refresh_token', data.refreshToken)
-      }
+      saveRememberedUsername(loginUsername, rememberMe)
     }
     sessionChecked.value = true
   }
@@ -155,8 +170,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     patients.value = []
     currentPatientId.value = null
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
+    clearTokens()
     sessionChecked.value = true
   }
 
@@ -185,7 +199,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function getToken() {
     if (!token.value) {
-      token.value = localStorage.getItem('access_token') || ''
+      token.value = getAccessToken()
     }
     return token.value
   }

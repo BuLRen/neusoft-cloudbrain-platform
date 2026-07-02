@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/app/stores/auth'
 import { loginRoutePath } from '@/shared/constants/app'
 import { canRefreshSession, refreshAccessToken } from '@/shared/api/authRefresh'
+import { getAccessToken } from '@/shared/auth/tokenStorage'
 import type { ApiResult, RequestOptions } from './result'
 
 const request = axios.create({
@@ -15,7 +16,7 @@ const request = axios.create({
 
 const sessionExpiredMessageKey = 'session_expired_message'
 const sessionExpiredMessage = '登录已过期，请重新登录'
-const skipAuthHandlingPaths = ['/auth/login', '/auth/register', '/auth/logout']
+const skipAuthHandlingPaths = ['/auth/login', '/auth/register', '/auth/logout', '/auth/captcha']
 // 标记：401 触发的跳转只执行一次，避免多个并发请求反复 push
 let sessionExpiredRedirecting = false
 
@@ -50,7 +51,7 @@ function forceRedirectToLogin() {
 // 请求拦截器：添加 Authorization header
 request.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token') || ''
+    const token = getAccessToken()
     if (token && !config.headers.has('Authorization')) {
       config.headers.set('Authorization', `Bearer ${token}`)
     }

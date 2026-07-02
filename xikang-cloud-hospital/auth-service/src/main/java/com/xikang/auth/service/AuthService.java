@@ -6,6 +6,7 @@ import com.xikang.auth.mapper.UserMapper;
 import com.xikang.auth.mapper.PatientMapper;
 import com.xikang.auth.mapper.UserPatientManagedMapper;
 import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
+import com.xikang.auth.dto.LoginRequest;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.utils.JwtUtils;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class AuthService {
     private final PatientMapper patientMapper;
     private final PatientService patientService;
     private final UserPatientManagedMapper userPatientManagedMapper;
+    private final CaptchaService captchaService;
 
     @Value("${jwt.accessExpirationMs:900000}")
     private long accessExpirationMs;
@@ -44,7 +46,11 @@ public class AuthService {
     /**
      * User login
      */
-    public Map<String, String> login(String username, String password) {
+    public Map<String, String> login(LoginRequest request) {
+        captchaService.validateAndConsume(request.getCaptchaId(), request.getCaptchaCode());
+
+        String username = request.getUsername();
+        String password = request.getPassword();
         log.info("User login attempt: {}", username);
 
         if (username == null || username.isBlank()) {

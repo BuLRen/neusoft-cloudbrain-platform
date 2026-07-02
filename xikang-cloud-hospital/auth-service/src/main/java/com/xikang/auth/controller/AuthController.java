@@ -2,7 +2,10 @@ package com.xikang.auth.controller;
 
 import com.xikang.auth.service.AuthService;
 import com.xikang.auth.service.PatientService;
+import com.xikang.auth.service.CaptchaService;
 import com.xikang.auth.entity.Patient;
+import com.xikang.auth.dto.LoginRequest;
+import com.xikang.auth.dto.CaptchaResponse;
 import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
 import com.xikang.common.utils.JwtUtils;
 import com.xikang.common.result.Result;
@@ -30,15 +33,24 @@ public class AuthController {
 
     private final AuthService authService;
     private final PatientService patientService;
+    private final CaptchaService captchaService;
+
+    /**
+     * Get login captcha image
+     */
+    @GetMapping("/captcha")
+    public Result<CaptchaResponse> captcha() {
+        return Result.success(captchaService.generate());
+    }
 
     /**
      * User login
      */
     @PostMapping("/login")
-    public ResponseEntity<Result<Map<String, Object>>> login(@RequestBody Map<String, String> loginRequest) {
-        String username = loginRequest.get("username");
-        String password = loginRequest.get("password");
-        Map<String, String> tokens = authService.login(username, password);
+    public ResponseEntity<Result<Map<String, Object>>> login(@RequestBody LoginRequest loginRequest) {
+        Map<String, String> tokens = authService.login(loginRequest);
+
+        String username = loginRequest.getUsername();
 
         String accessToken = tokens.get("accessToken");
         String refreshToken = tokens.get("refreshToken");

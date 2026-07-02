@@ -7,6 +7,7 @@ import type {
   CopilotRunActionResponse,
   CopilotSession,
 } from '@/shared/types/copilot'
+import { getAccessToken } from '@/shared/auth/tokenStorage'
 
 async function callCopilotSSE(
   url: string,
@@ -15,7 +16,7 @@ async function callCopilotSSE(
   onThought?: (thought: CopilotAgentThought) => void,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const token = localStorage.getItem('access_token') || ''
+  const token = getAccessToken()
   const response = await fetch(`/api${url}`, {
     method: 'POST',
     headers: {
@@ -74,7 +75,7 @@ async function callCopilotSSE(
 }
 
 function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem('access_token') || ''
+  const token = getAccessToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
