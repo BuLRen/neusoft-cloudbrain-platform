@@ -22,7 +22,7 @@ public class MedtechPaymentConfig {
     public RestTemplate ctViewerRestTemplate(RestTemplateBuilder builder) {
         return builder
                 .setConnectTimeout(Duration.ofSeconds(3))
-                .setReadTimeout(Duration.ofSeconds(10))
+                .setReadTimeout(Duration.ofSeconds(180))
                 .build();
     }
 }

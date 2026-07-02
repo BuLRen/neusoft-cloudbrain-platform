@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,5 +40,10 @@ public class InternalVolumeController {
     public Result<Void> unbindVolume(@PathVariable String volumeId) {
         ctViewerService.unbindVolume(volumeId);
         return Result.success();
+    }
+
+    @PostMapping("/{volumeId}/analyze")
+    public Result<Map<String, Object>> analyzeVolume(@PathVariable String volumeId) {
+        return Result.success(ctViewerService.analyzeVolumeInternal(volumeId));
     }
 }

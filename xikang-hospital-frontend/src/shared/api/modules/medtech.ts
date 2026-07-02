@@ -1,4 +1,5 @@
 import { http } from '../request'
+import type { CtAnalyzeResult } from './ctViewer'
 import type { MedicalTechnologyCatalogItem } from '@/shared/types/medtech'
 import type { SimulatedCheckStructuredOutput } from '@/shared/types/simulatedCheckResult'
 
@@ -25,6 +26,9 @@ export interface MedtechApplication {
   imagingVolumeId?: string
   imagingUploadedAt?: string
   imagingSourceName?: string
+  hasImagingAnalysis?: boolean
+  imagingAnalyzedAt?: string
+  imagingAnalysisResult?: CtAnalyzeResult
 }
 
 export interface CheckApplication extends MedtechApplication {
@@ -87,7 +91,10 @@ export interface CheckImagingInfo {
   volumeId?: string
   uploadedAt?: string
   sourceName?: string
+  analyzedAt?: string
   hasImaging?: boolean
+  hasImagingAnalysis?: boolean
+  analysisResult?: CtAnalyzeResult
 }
 
 export interface MedtechProfile {
@@ -112,6 +119,7 @@ export interface MedtechHistoricalSummary {
 
 /** Dify 模拟检查 blocking 调用超时（与后端 read-timeout-ms 一致） */
 const CHECK_SIMULATE_TIMEOUT_MS = 5 * 60 * 1000
+const CT_IMAGING_ANALYZE_TIMEOUT_MS = 3 * 60 * 1000
 
 export const medtechApi = {
   get<T>(url: string, params?: Record<string, unknown>) {
@@ -193,6 +201,13 @@ export const medtechApi = {
   },
   clearCheckImaging(id: number) {
     return http<void>({ url: `/medtech/check/${id}/imaging`, method: 'DELETE' })
+  },
+  analyzeCheckImaging(id: number) {
+    return http<CheckImagingInfo>({
+      url: `/medtech/check/${id}/imaging/analyze`,
+      method: 'POST',
+      timeout: CT_IMAGING_ANALYZE_TIMEOUT_MS,
+    })
   },
   startInspection(id: number, operatorInfo?: Record<string, unknown>) {
     return http<void>({ url: `/medtech/inspection/start/${id}`, method: 'PUT', data: operatorInfo })

@@ -215,8 +215,7 @@ public class CtViewerService {
 
     public Map<String, Object> analyzeVolume(String volumeId) {
         VolumeMetaDto meta = volumeAccessService.requireReadableVolume(volumeId);
-        ExportFile exported = exportVolumeInternal(meta, "nii.gz");
-        Map<String, Object> result = aiCtClient.analyze(exported.bytes(), exported.fileName());
+        Map<String, Object> result = runAiAnalyze(meta);
         auditService.logSuccess(
             CtImagingAuditAction.ANALYZE,
             volumeId,
@@ -225,6 +224,19 @@ public class CtViewerService {
             meta.getBoundRegisterId()
         );
         return result;
+    }
+
+    /**
+     * 供 medtech-service 内部调用（已在上游完成业务鉴权）。
+     */
+    public Map<String, Object> analyzeVolumeInternal(String volumeId) {
+        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        return runAiAnalyze(meta);
+    }
+
+    private Map<String, Object> runAiAnalyze(VolumeMetaDto meta) {
+        ExportFile exported = exportVolumeInternal(meta, "nii.gz");
+        return aiCtClient.analyze(exported.bytes(), exported.fileName());
     }
 
     public void bindVolume(String volumeId, VolumeBindRequestDto request) {

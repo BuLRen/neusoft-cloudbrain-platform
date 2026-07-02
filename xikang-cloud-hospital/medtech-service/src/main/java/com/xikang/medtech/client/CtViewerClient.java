@@ -80,6 +80,32 @@ public class CtViewerClient {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
+    public Map<String, Object> analyzeVolume(String volumeId) {
+        if (!StringUtils.hasText(volumeId)) {
+            throw new BusinessException(400, "volumeId 不能为空");
+        }
+        if (!StringUtils.hasText(internalToken)) {
+            throw new BusinessException(500, "未配置 ct-viewer internal token，无法执行 CT 影像分析");
+        }
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(AgentContextHeaders.INTERNAL_TOKEN, internalToken);
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            Map<String, Object> response = restTemplate.exchange(
+                ctViewerBaseUrl + "/api/ct-viewer/internal/volume/{volumeId}/analyze",
+                HttpMethod.POST,
+                entity,
+                Map.class,
+                Map.of("volumeId", volumeId.trim())
+            ).getBody();
+            return extractData(response, "CT 影像分析失败");
+        } catch (RestClientException e) {
+            log.warn("调 ct-viewer-service 分析失败 | volumeId={}", volumeId, e);
+            throw new BusinessException(500, "CT 影像分析服务暂时不可用", e);
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public Map<String, Object> getVolumeMeta(String volumeId) {
         try {
             Map<String, Object> response = restTemplate.getForObject(

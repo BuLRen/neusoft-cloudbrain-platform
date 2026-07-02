@@ -127,6 +127,15 @@ public class MedtechController {
     }
 
     /**
+     * 执行 CT 伪影分析并持久化
+     */
+    @PostMapping("/check/{id}/imaging/analyze")
+    public Result<Map<String, Object>> analyzeCheckImaging(@PathVariable Long id) {
+        Map<String, Object> response = medtechService.analyzeCheckImaging(id);
+        return Result.success("CT 影像分析完成", response);
+    }
+
+    /**
      * 解析检查结果录入表单 schema
      */
     @GetMapping("/check/result-form/resolve")

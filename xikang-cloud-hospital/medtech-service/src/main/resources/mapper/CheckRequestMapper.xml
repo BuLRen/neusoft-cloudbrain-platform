@@ -18,6 +18,8 @@
         <result column="imaging_volume_id" property="imagingVolumeId"/>
         <result column="imaging_uploaded_at" property="imagingUploadedAt"/>
         <result column="imaging_source_name" property="imagingSourceName"/>
+        <result column="imaging_analysis_result" property="imagingAnalysisResult"/>
+        <result column="imaging_analyzed_at" property="imagingAnalyzedAt"/>
         <result column="case_number" property="caseNumber"/>
         <result column="patient_name" property="patientName"/>
         <result column="tech_name" property="techName"/>
@@ -42,6 +44,8 @@
             cr.imaging_volume_id,
             cr.imaging_uploaded_at,
             cr.imaging_source_name,
+            cr.imaging_analysis_result,
+            cr.imaging_analyzed_at,
             r.case_number,
             r.real_name AS patient_name,
             mt.tech_name,
@@ -116,7 +120,16 @@
         UPDATE check_request
         SET imaging_volume_id = #{imagingVolumeId},
             imaging_uploaded_at = #{imagingUploadedAt},
-            imaging_source_name = #{imagingSourceName}
+            imaging_source_name = #{imagingSourceName},
+            imaging_analysis_result = NULL,
+            imaging_analyzed_at = NULL
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateImagingAnalysis">
+        UPDATE check_request
+        SET imaging_analysis_result = #{imagingAnalysisResult},
+            imaging_analyzed_at = #{imagingAnalyzedAt}
         WHERE id = #{id}
     </update>
 
@@ -124,7 +137,9 @@
         UPDATE check_request
         SET imaging_volume_id = NULL,
             imaging_uploaded_at = NULL,
-            imaging_source_name = NULL
+            imaging_source_name = NULL,
+            imaging_analysis_result = NULL,
+            imaging_analyzed_at = NULL
         WHERE id = #{id}
     </update>
 

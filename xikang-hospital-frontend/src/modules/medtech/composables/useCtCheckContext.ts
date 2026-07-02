@@ -132,6 +132,9 @@ export function useCtCheckContext() {
           imagingVolumeId: imagingVolumeId.value,
           imagingSourceName: imagingSourceName.value,
           hasImaging: true,
+          hasImagingAnalysis: false,
+          imagingAnalyzedAt: undefined,
+          imagingAnalysisResult: undefined,
         }
       }
       ElMessage.success('CT 影像已绑定到当前检查单')
@@ -156,6 +159,9 @@ export function useCtCheckContext() {
           imagingVolumeId: undefined,
           imagingSourceName: undefined,
           hasImaging: false,
+          hasImagingAnalysis: false,
+          imagingAnalyzedAt: undefined,
+          imagingAnalysisResult: undefined,
         }
       }
       ElMessage.info('已清除影像绑定，可重新上传')

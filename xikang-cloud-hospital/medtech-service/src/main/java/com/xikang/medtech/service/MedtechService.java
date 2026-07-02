@@ -1,5 +1,7 @@
 package com.xikang.medtech.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.client.CtViewerClient;
@@ -158,6 +160,29 @@ public class MedtechService {
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         return buildImagingMap(request);
+    }
+
+    /**
+     * 执行 CT 伪影分析并持久化到检查单
+     */
+    @Transactional
+    public Map<String, Object> analyzeCheckImaging(Long id) {
+        CheckRequest request = requireCtImagingContext(id, true);
+        String volumeId = request.getImagingVolumeId();
+        Map<String, Object> analysis = ctViewerClient.analyzeVolume(volumeId);
+        LocalDateTime analyzedAt = LocalDateTime.now();
+        try {
+            String json = objectMapper.writeValueAsString(analysis);
+            checkRequestMapper.updateImagingAnalysis(id, json, analyzedAt);
+            request.setImagingAnalysisResult(json);
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException(500, "分析结果序列化失败", ex);
+        }
+        request.setImagingAnalyzedAt(analyzedAt);
+        log.info("CT 影像分析完成 | checkRequestId={} volumeId={}", id, volumeId);
+        Map<String, Object> response = buildImagingMap(request);
+        response.put("analysisResult", analysis);
+        return response;
     }
 
     /**
@@ -741,11 +766,17 @@ public class MedtechService {
         return request.getImagingVolumeId() != null && !request.getImagingVolumeId().isBlank();
     }
 
-    private static void appendImagingFields(Map<String, Object> map, CheckRequest request) {
+    private void appendImagingFields(Map<String, Object> map, CheckRequest request) {
         map.put("imagingVolumeId", request.getImagingVolumeId());
         map.put("imagingUploadedAt", request.getImagingUploadedAt());
         map.put("imagingSourceName", request.getImagingSourceName());
+        map.put("imagingAnalyzedAt", request.getImagingAnalyzedAt());
         map.put("hasImaging", hasImaging(request));
+        map.put("hasImagingAnalysis", hasImagingAnalysis(request));
+        Map<String, Object> analysis = parseImagingAnalysis(request.getImagingAnalysisResult());
+        if (analysis != null) {
+            map.put("imagingAnalysisResult", analysis);
+        }
     }
 
     private Map<String, Object> buildImagingMap(CheckRequest request) {
@@ -754,8 +785,30 @@ public class MedtechService {
         map.put("volumeId", request.getImagingVolumeId());
         map.put("uploadedAt", request.getImagingUploadedAt());
         map.put("sourceName", request.getImagingSourceName());
+        map.put("analyzedAt", request.getImagingAnalyzedAt());
         map.put("hasImaging", hasImaging(request));
+        map.put("hasImagingAnalysis", hasImagingAnalysis(request));
+        Map<String, Object> analysis = parseImagingAnalysis(request.getImagingAnalysisResult());
+        if (analysis != null) {
+            map.put("analysisResult", analysis);
+        }
         return map;
+    }
+
+    private Map<String, Object> parseImagingAnalysis(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {});
+        } catch (JsonProcessingException ex) {
+            log.warn("解析 CT 分析结果失败", ex);
+            return null;
+        }
+    }
+
+    private static boolean hasImagingAnalysis(CheckRequest request) {
+        return request.getImagingAnalysisResult() != null && !request.getImagingAnalysisResult().isBlank();
     }
 
     private Map<String, Object> toInspectionMap(InspectionRequest request) {

@@ -6,7 +6,8 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import CtViewerPanel from '@/modules/medtech/ct-viewer/components/CtViewerPanel.vue'
 import CtArtifactAnalysisDialog from '@/modules/medtech/ct-viewer/components/CtArtifactAnalysisDialog.vue'
 import type { CtAnalyzeResult, CtVolumeMeta } from '@/shared/api/modules/ctViewer'
-import { analyzeCtVolume, checkCtViewerHealth } from '@/shared/api/modules/ctViewer'
+import { checkCtViewerHealth } from '@/shared/api/modules/ctViewer'
+import { medtechApi } from '@/shared/api/modules/medtech'
 import { useCtCheckContext } from '@/modules/medtech/composables/useCtCheckContext'
 import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 
@@ -62,6 +63,7 @@ async function handleImagingCleared() {
   if (!id.value) return
   await clearImaging(id.value)
   volumeMeta.value = null
+  analysisResult.value = null
 }
 
 function handleMetaUpdated(meta: CtVolumeMeta | null) {
@@ -78,7 +80,7 @@ async function refreshAiCtHealth() {
 }
 
 async function handleRunAnalysis() {
-  if (!imagingVolumeId.value || !canInfer.value) return
+  if (!imagingVolumeId.value || !canInfer.value || !id.value) return
 
   await refreshAiCtHealth()
   if (!aiCtReady.value) {
@@ -96,7 +98,18 @@ async function handleRunAnalysis() {
   analysisDialogVisible.value = true
 
   try {
-    analysisResult.value = await analyzeCtVolume(imagingVolumeId.value)
+    const response = await medtechApi.analyzeCheckImaging(id.value)
+    analysisResult.value = response.analysisResult ?? null
+    if (!analysisResult.value) {
+      analysisError.value = '分析完成但未返回结果数据'
+    } else if (report.value) {
+      report.value = {
+        ...report.value,
+        hasImagingAnalysis: true,
+        imagingAnalyzedAt: response.analyzedAt,
+        imagingAnalysisResult: analysisResult.value,
+      }
+    }
   } catch (error) {
     analysisError.value = error instanceof Error ? error.message : 'CT 影像分析失败，请稍后重试'
     ElMessage.error(analysisError.value)
@@ -105,14 +118,34 @@ async function handleRunAnalysis() {
   }
 }
 
+function syncAnalysisFromReport() {
+  const saved = report.value?.imagingAnalysisResult
+  if (saved) {
+    analysisResult.value = saved
+  }
+}
+
+function handleViewAnalysis() {
+  if (!analysisResult.value && report.value?.imagingAnalysisResult) {
+    analysisResult.value = report.value.imagingAnalysisResult
+  }
+  if (!analysisResult.value) {
+    ElMessage.info('暂无已保存的分析结果')
+    return
+  }
+  analysisError.value = ''
+  analysisDialogVisible.value = true
+}
+
 function goBack() {
   router.push('/medtech/check-queue')
 }
 
-onMounted(() => {
+onMounted(async () => {
   void refreshAiCtHealth()
   if (!id.value) return
-  void loadCheckContext(id.value)
+  await loadCheckContext(id.value)
+  syncAnalysisFromReport()
 })
 </script>
 
@@ -139,8 +172,21 @@ onMounted(() => {
         <div class="ct-exam-header__actions">
           <span v-if="hasImaging" class="ct-exam-status ct-exam-status--bound">影像已绑定</span>
           <span v-else-if="started" class="ct-exam-status ct-exam-status--pending">待上传影像</span>
+          <span v-if="report?.hasImagingAnalysis" class="ct-exam-status ct-exam-status--analyzed">已分析</span>
 
-          <ElButton class="ct-exam-btn-secondary" @click="goBack">报告</ElButton>
+          <ElButton
+            v-if="report?.hasImagingAnalysis"
+            class="ct-exam-btn-secondary"
+            @click="handleViewAnalysis"
+          >
+            查看分析
+          </ElButton>
+          <ElButton
+            class="ct-exam-btn-secondary"
+            @click="goBack"
+          >
+            报告
+          </ElButton>
           <ElButton
             class="ct-exam-btn-primary"
             type="primary"
@@ -311,6 +357,11 @@ onMounted(() => {
 .ct-exam-status--pending {
   color: var(--ct-warning);
   background: rgba(251, 191, 36, 0.12);
+}
+
+.ct-exam-status--analyzed {
+  color: var(--el-color-success);
+  background: rgba(103, 194, 58, 0.12);
 }
 
 .ct-exam-btn-secondary {
