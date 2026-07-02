@@ -48,6 +48,16 @@ PATIENTS = [
     },
 ]
 
+EXTRA_REGISTERS = [
+    {
+        "register_id": 9011,
+        "patient_id": 9001,
+        "dept_id": 9,
+        "case_number": "BL20260626011",
+        "real_name": "张糖友",
+    },
+]
+
 DEFAULT_PASSWORD = "followup123"
 PATIENT_PASSWORD = "patient123"
 
@@ -83,6 +93,11 @@ LAST_VISIT_LAB_ITEMS = {
         {"metric_code": "hba1c", "label": "糖化血红蛋白", "metric_value": 7.5, "unit": "%", "ref_range": "4.0-6.0", "abnormal_flag": "high", "sort_order": 1},
         {"metric_code": "fasting_glucose", "label": "空腹血糖", "metric_value": 7.9, "unit": "mmol/L", "ref_range": "3.9-6.1", "abnormal_flag": "high", "sort_order": 2},
         {"metric_code": "postprandial_glucose", "label": "餐后2h血糖", "metric_value": 11.0, "unit": "mmol/L", "ref_range": "<7.8", "abnormal_flag": "high", "sort_order": 3},
+    ],
+    9011: [
+        {"metric_code": "esr", "label": "血沉", "metric_value": 18, "unit": "mm/h", "ref_range": "0-20", "abnormal_flag": "normal", "sort_order": 1},
+        {"metric_code": "crp", "label": "C反应蛋白", "metric_value": 5.2, "unit": "mg/L", "ref_range": "<10", "abnormal_flag": "normal", "sort_order": 2},
+        {"metric_code": "rf", "label": "类风湿因子", "metric_value": 12, "unit": "IU/mL", "ref_range": "<20", "abnormal_flag": "normal", "sort_order": 3},
     ],
 }
 
@@ -123,6 +138,17 @@ LAST_VISIT_SNAPSHOTS = {
             "postprandial_glucose": {"value": 11.0, "unit": "mmol/L", "label": "餐后2h血糖", "abnormalFlag": "high"},
         },
     },
+    9011: {
+        "diagnosis_summary": "膝关节骨性关节炎 · 建议减少负重并康复锻炼",
+        "doctor_name": "骨科医师",
+        "department_name": "骨科",
+        "chief_complaint": "右膝疼痛活动受限",
+        "treatment_advice": "口服 NSAIDs，物理治疗，必要时关节腔注射。",
+        "metrics": {
+            "esr": {"value": 18, "unit": "mm/h", "label": "血沉", "abnormalFlag": "normal"},
+            "crp": {"value": 5.2, "unit": "mg/L", "label": "C反应蛋白", "abnormalFlag": "normal"},
+        },
+    },
 }
 
 
@@ -153,6 +179,15 @@ CLINICAL_PROFILES = {
         "diagnosis": "2型糖尿病",
         "drug_keyword": "二甲双胍",
         "drug_usage": "口服，每日2次，每次0.5g",
+    },
+    9011: {
+        "medical_record_id": 59101,
+        "readme": "右膝疼痛活动受限",
+        "present": "右膝关节疼痛 3 月，上下楼梯加重，无外伤史。",
+        "proposal": "减少负重活动，口服 NSAIDs，康复锻炼。",
+        "diagnosis": "膝关节骨性关节炎",
+        "drug_keyword": "布洛芬",
+        "drug_usage": "口服，每日2次，每次0.2g，餐后服用",
     },
 }
 
@@ -656,6 +691,86 @@ def ensure_patient_bundle(cur, p: dict, patient_cols: set[str]) -> None:
             (rid, rid),
         )
 
+    if rid == 9001:
+        ensure_glucose_bootstrap(cur, rid)
+
+    snap = LAST_VISIT_SNAPSHOTS.get(rid)
+    if snap:
+        ensure_clinical_data(cur, rid, dept_id, snap)
+
+
+def ensure_glucose_bootstrap(cur, rid: int) -> None:
+    """张糖友：写入 48 小时模型输入基线；前端图表仍只展示最早 5 个 uci 点。"""
+    if rid != 9001:
+        return
+
+    cur.execute(
+        "DELETE FROM patient_health_observation WHERE register_id = %s AND source_type = 'uci_import'",
+        (rid,),
+    )
+    cur.execute(
+        """
+        INSERT INTO patient_health_observation (
+            register_id, observed_at, metric_code, metric_value, unit, source_type, note
+        )
+        SELECT
+            %s,
+            date_trunc('hour', CURRENT_TIMESTAMP) - (n || ' hours')::interval,
+            'blood_glucose',
+            ROUND((6.8 + 0.35 * sin(n::float / 4.0))::numeric, 2),
+            'mmol/L',
+            'uci_import',
+            '模型输入基线(48h)'
+        FROM generate_series(47, 0, -1) AS n
+        WHERE NOT EXISTS (
+            SELECT 1 FROM patient_health_observation
+            WHERE register_id = %s AND source_type = 'uci_import'
+        )
+        """,
+        (rid, rid),
+    )
+
+
+def ensure_extra_register(cur, extra: dict) -> None:
+    rid = extra["register_id"]
+    pid = extra["patient_id"]
+    dept_id = extra["dept_id"]
+
+    cur.execute("SELECT id FROM employee WHERE deptment_id = %s AND delmark = 0 ORDER BY id LIMIT 1", (dept_id,))
+    emp = cur.fetchone()
+    employee_id = emp[0] if emp else 1
+
+    cur.execute("SELECT 1 FROM register WHERE id = %s", (rid,))
+    if not cur.fetchone():
+        cur.execute(
+            """
+            INSERT INTO register (
+                id, case_number, real_name, gender, birthdate, age, age_type, home_address,
+                visit_date, noon, deptment_id, employee_id, regist_level_id, settle_category_id,
+                is_book, regist_method, regist_money, visit_state, patient_id
+            ) VALUES (
+                %s, %s, %s, '男', '1990-01-01', 36, '年', '沈阳市演示区随访路 1 号',
+                CURRENT_TIMESTAMP - INTERVAL '21 days', '上午', %s, %s, 2, 2,
+                '否', '医保', 15.00, 3, %s
+            )
+            """,
+            (rid, extra["case_number"], extra["real_name"], dept_id, employee_id, pid),
+        )
+    else:
+        cur.execute(
+            """
+            UPDATE register SET
+                case_number = %s,
+                real_name = %s,
+                deptment_id = %s,
+                visit_state = 3,
+                patient_id = %s,
+                visit_date = COALESCE(visit_date, CURRENT_TIMESTAMP - INTERVAL '21 days')
+            WHERE id = %s
+            """,
+            (extra["case_number"], extra["real_name"], dept_id, pid, rid),
+        )
+
     snap = LAST_VISIT_SNAPSHOTS.get(rid)
     if snap:
         ensure_clinical_data(cur, rid, dept_id, snap)
@@ -691,6 +806,11 @@ def main() -> None:
     for p in PATIENTS:
         ensure_patient_bundle(cur, p, patient_cols)
         print(f"  register {p['register_id']} {p['real_name']} 科室={p['dept_id']}  账号 {p['username']}/{PATIENT_PASSWORD}")
+
+    print("补充同一患者多科室看诊记录...")
+    for extra in EXTRA_REGISTERS:
+        ensure_extra_register(cur, extra)
+        print(f"  register {extra['register_id']} {extra['real_name']} 科室={extra['dept_id']} (patient {extra['patient_id']})")
 
     print("完成。护士登录后直达疗效评估；患者可录入血糖并与护士沟通。")
     cur.close()

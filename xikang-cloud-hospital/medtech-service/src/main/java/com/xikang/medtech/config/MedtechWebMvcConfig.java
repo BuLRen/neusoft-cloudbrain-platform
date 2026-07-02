@@ -34,7 +34,8 @@ public class MedtechWebMvcConfig implements WebMvcConfigurer {
             .addPathPatterns(
                 "/api/medtech/follow-up/dashboard/**",
                 "/api/medtech/follow-up/outcome/**",
-                "/api/medtech/follow-up/communication/**"
+                "/api/medtech/follow-up/communication/**",
+                "/api/medtech/follow-up/history/**"
             )
             .excludePathPatterns(
                 "/api/medtech/follow-up/communication/sessions/*/patient-messages",
@@ -48,7 +49,8 @@ public class MedtechWebMvcConfig implements WebMvcConfigurer {
                 "/api/medtech/follow-up/patient/**",
                 "/api/medtech/follow-up/dashboard/**",
                 "/api/medtech/follow-up/outcome/**",
-                "/api/medtech/follow-up/communication/**"
+                "/api/medtech/follow-up/communication/**",
+                "/api/medtech/follow-up/history/**"
             );
     }
 }

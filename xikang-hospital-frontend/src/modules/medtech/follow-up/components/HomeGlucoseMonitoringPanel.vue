@@ -61,7 +61,7 @@ defineExpose({ reload: loadData })
       <div>
         <h3 class="panel-title">居家自测血糖</h3>
         <p class="panel-desc">
-          实测曲线仅展示患者自录数据；灰色基线为 UCI 演示导入（uci_import）。模型建议复诊时，请通过沟通提醒患者自行挂号。
+          实线为居家自测，虚线为未来 24 小时预测；请结合下方解读安排随访与复诊提醒。
         </p>
       </div>
     </div>

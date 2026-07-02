@@ -78,11 +78,13 @@ export interface ClinicalVisitSummary {
   caseNumber?: string
   visitDate?: string
   visitState?: number
+  departmentId?: number
   departmentName?: string
   physicianName?: string
   diagnosis?: string
   preliminaryDiagnosis?: string
   clinicalArchivedAt?: string
+  hasLastVisitData?: boolean
   archived: boolean
   patientVisible: boolean
   archiveStatus: 'archived' | 'pending'

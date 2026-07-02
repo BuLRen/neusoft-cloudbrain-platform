@@ -105,6 +105,7 @@ export function buildGlucoseTrendOption(params: {
   actualPoints: GlucoseChartPoint[]
   forecastPoints: GlucoseChartPoint[]
   baselinePoints?: GlucoseChartPoint[]
+  bridgePoint?: GlucoseChartPoint | null
   formatTime?: (value: string) => string
   unit?: string
   color?: string
@@ -142,28 +143,28 @@ export function buildGlucoseTrendOption(params: {
   }
 
   const sorted = [...slots.entries()].sort((a, b) => a[0] - b[0])
-  const lastActual = params.actualPoints.at(-1)
-  const lastActualMs = lastActual ? parseChartTime(lastActual.time) : null
+  const bridge = params.bridgePoint ?? params.actualPoints.at(-1) ?? null
+  const bridgeMs = bridge ? parseChartTime(bridge.time) : null
 
   const axisLabels = sorted.map(([, slot]) => formatTime(slot.time))
   const actualData = sorted.map(([, slot]) => slot.actual)
   const baselineData = sorted.map(([, slot]) => slot.baseline)
   const forecastData = sorted.map(([ms, slot]) => {
-    if (lastActualMs != null && ms === lastActualMs && lastActual != null) {
-      return lastActual.value
-    }
+    if (bridgeMs == null) return slot.forecast
+    if (ms < bridgeMs) return null
+    if (ms === bridgeMs && bridge) return bridge.value
     return slot.forecast
   })
 
   const legendItems = ['实测', '预测']
   if ((params.baselinePoints?.length ?? 0) > 0) {
-    legendItems.unshift('基线(演示)')
+    legendItems.unshift('历史基线')
   }
 
   const series: echarts.SeriesOption[] = []
   if ((params.baselinePoints?.length ?? 0) > 0) {
     series.push({
-      name: '基线(演示)',
+      name: '历史基线',
       type: 'line',
       smooth: true,
       connectNulls: false,

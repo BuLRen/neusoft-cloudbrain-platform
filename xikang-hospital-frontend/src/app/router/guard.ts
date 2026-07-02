@@ -30,6 +30,9 @@ export function setupRouterGuard(router: Router) {
       if (nonPatientPaths.some(path => to.path.startsWith(path))) {
         return '/patient/overview'
       }
+      if (to.path.startsWith('/follow-up')) {
+        return '/patient/followup'
+      }
     }
 
     if (authStore.role === 'followup' && authStore.isAuthenticated) {

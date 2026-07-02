@@ -6,6 +6,10 @@ import StatusTag from '@/shared/components/StatusTag.vue'
 import GlucoseRevisitAdviceBlock from '@/modules/medtech/follow-up/components/GlucoseRevisitAdviceBlock.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { buildGlucoseTrendOption } from '@/shared/composables/useECharts'
+import {
+  mergeGlucoseChartSeries,
+  type GlucoseChartPoint,
+} from '@/shared/utils/glucoseChartSeries'
 import { beijingTodayYmd, beijingYmdAddDays, formatBeijingDateTime } from '@/shared/utils/beijingDate'
 import type { FollowUpHealthMetric, GlucoseAdvice } from '@/shared/types/medtechFollowUp'
 import {
@@ -13,6 +17,7 @@ import {
   GLUCOSE_RISK_TONES,
   type GlucoseForecastResult,
 } from '@/shared/types/glucoseForecast'
+import { forecastPointStats, patientForecastHint } from '@/shared/utils/glucoseForecastCopy'
 
 const props = withDefaults(
   defineProps<{
@@ -46,21 +51,40 @@ const riskLevel = computed(() => forecast.value?.riskLevel ?? 'unknown')
 const riskLabel = computed(() => GLUCOSE_RISK_LABELS[riskLevel.value] ?? riskLevel.value)
 const riskTone = computed(() => GLUCOSE_RISK_TONES[riskLevel.value] ?? 'neutral')
 
+const panelTitle = computed(() => {
+  if (props.compact) return '血糖预测'
+  return props.mode === 'patient' ? '血糖趋势预测' : '血糖监测与预测'
+})
+
+const panelDesc = computed(() => {
+  if (props.compact) return ''
+  if (props.mode === 'patient') {
+    return '实线为居家自测，虚线为未来一天预测走势；请按下方建议规律监测。'
+  }
+  return '灰色为历史基线，实线为居家自测，虚线为未来 24 小时预测，供随访评估参考。'
+})
+
+const forecastStats = computed(() => forecastPointStats(forecast.value))
+const displayForecastHint = computed(() => {
+  if (props.mode === 'patient') {
+    return patientForecastHint(forecast.value)
+  }
+  return forecast.value?.message && !(forecast.value.forecasts?.length) ? forecast.value.message : ''
+})
+
 const actualSeries = computed(() => {
   const source = glucoseMetrics.value.length
     ? glucoseMetrics.value
     : props.metrics.filter((item) => item.metricKey === 'blood_glucose')
   const rows = source
-    .filter((item) => item.metricKey === 'blood_glucose')
+    .filter((item) => item.metricKey === 'blood_glucose' && item.source === 'patient_report')
     .sort((a, b) => String(a.recordedAt ?? a.recordDate).localeCompare(String(b.recordedAt ?? b.recordDate)))
-  const patientRows = rows.filter((item) => item.source !== 'uci_import')
-  const recent = (patientRows.length ? patientRows : rows).slice(-72)
   return {
-    points: recent.map((item) => ({
+    points: rows.map((item) => ({
       time: String(item.recordedAt ?? item.recordDate),
       value: Number(item.metricValue),
-    })),
-    unit: recent[0]?.unit ?? 'mmol/L',
+    })) satisfies GlucoseChartPoint[],
+    unit: rows[0]?.unit ?? 'mmol/L',
   }
 })
 
@@ -69,12 +93,11 @@ const baselineSeries = computed(() => {
   const rows = source
     .filter((item) => item.metricKey === 'blood_glucose' && item.source === 'uci_import')
     .sort((a, b) => String(a.recordedAt ?? a.recordDate).localeCompare(String(b.recordedAt ?? b.recordDate)))
-    .slice(-72)
   return {
     points: rows.map((item) => ({
       time: String(item.recordedAt ?? item.recordDate),
       value: Number(item.metricValue),
-    })),
+    })) satisfies GlucoseChartPoint[],
   }
 })
 
@@ -94,18 +117,25 @@ async function renderChart() {
   await nextTick()
   if (!chartEl.value) return
   disposeChart()
-  const actual = actualSeries.value
-  const predicted = forecastSeries.value
-  if (!actual.points.length && !predicted.points.length) return
+
+  const merged = mergeGlucoseChartSeries({
+    baselinePoints: baselineSeries.value.points,
+    actualPoints: actualSeries.value.points,
+    forecastPoints: forecastSeries.value.points,
+  })
+
+  if (!merged.actual.length && !merged.forecast.length && !merged.baseline.length) return
+
   chart = echarts.init(chartEl.value)
   chart.setOption(
-    buildGlucoseTrendOption({
-      title: props.compact ? '血糖趋势与预测' : '血糖监测与 24h 预测',
-      actualPoints: actual.points,
-      baselinePoints: baselineSeries.value.points,
-      forecastPoints: predicted.points,
+      buildGlucoseTrendOption({
+      title: props.compact ? '血糖趋势与预测' : props.mode === 'patient' ? '血糖趋势' : '血糖监测与 24h 预测',
+      actualPoints: merged.actual,
+      baselinePoints: merged.baseline,
+      forecastPoints: merged.forecast,
+      bridgePoint: merged.bridgePoint,
       formatTime: (value) => formatBeijingDateTime(value),
-      unit: actual.unit,
+      unit: actualSeries.value.unit,
     }),
   )
 }
@@ -187,7 +217,7 @@ async function refreshForecast() {
     await renderChart()
     await loadAdvice()
   } catch {
-    ElMessage.error('刷新预测失败，请确认推理服务已启动')
+    ElMessage.error('刷新预测失败，请稍后重试')
   } finally {
     refreshing.value = false
   }
@@ -198,10 +228,14 @@ async function reloadForecast() {
   refreshing.value = true
   try {
     await loadGlucoseMetrics()
-    forecast.value = await medtechFollowUpApi.getPatientGlucoseForecast({
-      patientId: props.patientId,
-      registerId: props.registerId,
-    })
+    if (props.mode === 'doctor') {
+      forecast.value = await medtechFollowUpApi.refreshGlucoseForecast(props.registerId)
+    } else {
+      forecast.value = await medtechFollowUpApi.refreshPatientGlucoseForecast({
+        patientId: props.patientId,
+        registerId: props.registerId,
+      })
+    }
     ElMessage.success('血糖预测已更新')
     await renderChart()
     await loadAdvice()
@@ -231,14 +265,16 @@ watch(
 )
 
 onUnmounted(disposeChart)
+
+defineExpose({ reloadAfterEntry: reloadForecast })
 </script>
 
 <template>
   <div class="glucose-forecast" v-loading="loading">
     <div class="glucose-forecast__head">
       <div>
-        <h3>{{ compact ? '血糖预测' : 'AI 血糖预测' }}</h3>
-        <p v-if="!compact">展示最近 72 小时实测与 LSTM+GRU 未来 24 小时预测；下方根据模型输出给出复诊提醒</p>
+        <h3>{{ panelTitle }}</h3>
+        <p v-if="panelDesc">{{ panelDesc }}</p>
       </div>
       <div class="glucose-forecast__actions">
         <StatusTag :tone="riskTone">{{ riskLabel }}</StatusTag>
@@ -255,8 +291,8 @@ onUnmounted(disposeChart)
       </div>
     </div>
 
-    <div v-if="forecast?.message && !(forecast.forecasts?.length)" class="glucose-forecast__hint">
-      {{ forecast.message }}
+    <div v-if="displayForecastHint" class="glucose-forecast__hint">
+      {{ displayForecastHint }}
     </div>
 
     <GlucoseRevisitAdviceBlock
@@ -264,17 +300,21 @@ onUnmounted(disposeChart)
       :advice="advice"
       :loading="adviceLoading"
       :compact="compact"
+      :mode="mode"
       :show-registration-link="mode === 'patient'"
       @go-registration="$emit('goRegistration')"
     />
 
-    <div v-if="actualSeries.points.length || forecastSeries.points.length" ref="chartEl" class="glucose-forecast__chart" />
-    <ElEmpty v-else description="暂无血糖观测数据，请先导入或刷新预测" />
+    <div
+      v-if="actualSeries.points.length || forecastSeries.points.length || baselineSeries.points.length"
+      ref="chartEl"
+      class="glucose-forecast__chart"
+    />
+    <ElEmpty v-else :description="mode === 'patient' ? '暂无血糖记录，请先录入居家血糖' : '暂无血糖数据'" />
 
-    <div v-if="forecast?.modelId" class="glucose-forecast__meta">
-      模型 {{ forecast.modelId }}
-      <span v-if="forecast.confidence != null"> · 置信度 {{ (forecast.confidence * 100).toFixed(0) }}%</span>
-      <span v-if="forecast.observationCount != null"> · 观测 {{ forecast.observationCount }} 条</span>
+    <div v-if="mode === 'doctor' && forecastStats" class="glucose-forecast__meta">
+      预测区间 {{ forecastStats.min.toFixed(1) }}–{{ forecastStats.max.toFixed(1) }} mmol/L
+      <span> · 共 {{ forecastStats.count }} 个时点</span>
     </div>
   </div>
 </template>

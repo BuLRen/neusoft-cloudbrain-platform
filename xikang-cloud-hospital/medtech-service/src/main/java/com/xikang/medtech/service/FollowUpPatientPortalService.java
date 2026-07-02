@@ -2,6 +2,8 @@ package com.xikang.medtech.service;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.context.PatientFollowUpAuthContext;
+import com.xikang.medtech.constants.FollowUpDepartmentConstants;
+import com.xikang.medtech.mapper.FollowUpClinicalMapper;
 import com.xikang.medtech.mapper.FollowUpPatientMapper;
 import com.xikang.medtech.mapper.PatientFollowUpAuthMapper;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import java.util.Map;
 public class FollowUpPatientPortalService {
 
     private final FollowUpPatientMapper followUpPatientMapper;
+    private final FollowUpClinicalMapper followUpClinicalMapper;
     private final GlucoseForecastService glucoseForecastService;
     private final HealthObservationService healthObservationService;
     private final FollowUpClinicalSnapshotService clinicalSnapshotService;
@@ -58,7 +61,10 @@ public class FollowUpPatientPortalService {
         Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
         Map<String, Object> snapshot = clinicalSnapshotService.getOrSyncLastVisit(targetRegisterId);
         if (snapshot == null || snapshot.isEmpty()) {
-            throw new BusinessException("暂无上次看诊记录");
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("registerId", targetRegisterId);
+            empty.put("hasData", false);
+            return empty;
         }
         return snapshot;
     }
@@ -90,6 +96,7 @@ public class FollowUpPatientPortalService {
         Long registerId = toLong(request.get("registerId"));
         Long resolvedPatientId = resolvePatientId(patientId);
         Long targetRegisterId = requireAccessibleRegister(resolvedPatientId, registerId);
+        requireEndocrineVisit(targetRegisterId);
 
         double metricValue = toDouble(request.get("metricValue"));
         if (metricValue <= 0 || metricValue > 33) {
@@ -107,12 +114,13 @@ public class FollowUpPatientPortalService {
         );
 
         historyService.recordGlucoseEntry(targetRegisterId, resolvedPatientId, metricValue, note);
-        glucoseForecastService.refreshForecastAsync(targetRegisterId);
+        glucoseForecastService.refreshForecast(targetRegisterId);
         return created;
     }
 
     public Map<String, Object> getGlucoseAdvice(Long patientId, Long registerId) {
         Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        requireEndocrineVisit(targetRegisterId);
         return glucoseForecastService.buildAdvice(targetRegisterId);
     }
 
@@ -159,7 +167,14 @@ public class FollowUpPatientPortalService {
 
     public Map<String, Object> getGlucoseForecast(Long patientId, Long registerId) {
         Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        requireEndocrineVisit(targetRegisterId);
         return glucoseForecastService.getForecast(targetRegisterId, null, null);
+    }
+
+    public Map<String, Object> refreshGlucoseForecast(Long patientId, Long registerId) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        requireEndocrineVisit(targetRegisterId);
+        return glucoseForecastService.refreshForecast(targetRegisterId);
     }
 
     public Map<String, Object> getCommunicationSession(Long patientId, Long registerId) {
@@ -185,6 +200,13 @@ public class FollowUpPatientPortalService {
     public Map<String, Object> getSharedCaseSummary(Long patientId, Long registerId) {
         Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
         return followUpCommunicationService.getSharedCaseSummary(targetRegisterId);
+    }
+
+    private void requireEndocrineVisit(Long registerId) {
+        Integer departmentId = followUpClinicalMapper.selectRegisterDepartmentId(registerId);
+        if (!FollowUpDepartmentConstants.isEndocrine(departmentId)) {
+            throw new BusinessException("当前就诊不属于内分泌科，不提供血糖管理");
+        }
     }
 
     private Long resolvePatientId(Long patientId) {

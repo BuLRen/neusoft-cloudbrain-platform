@@ -94,6 +94,14 @@ public class FollowUpPatientPortalController {
         return Result.success(patientPortalService.getGlucoseForecast(patientId, registerId));
     }
 
+    @PostMapping("/glucose-forecast/refresh")
+    public Result<Map<String, Object>> refreshGlucoseForecast(
+        @RequestParam(required = false) Long patientId,
+        @RequestParam(required = false) Long registerId
+    ) {
+        return Result.success("预测已更新", patientPortalService.refreshGlucoseForecast(patientId, registerId));
+    }
+
     @GetMapping("/communication/sessions/{registerId}")
     public Result<Map<String, Object>> getCommunicationSession(
         @RequestParam(required = false) Long patientId,

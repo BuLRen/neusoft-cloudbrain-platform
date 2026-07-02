@@ -4,10 +4,16 @@ import GlucoseRevisitAdviceBlock from '@/modules/medtech/follow-up/components/Gl
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import type { GlucoseAdvice } from '@/shared/types/medtechFollowUp'
 
-const props = defineProps<{
-  registerId?: number
-  patientId?: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    registerId?: number
+    patientId?: number
+    showGlucoseAdvice?: boolean
+  }>(),
+  {
+    showGlucoseAdvice: false,
+  },
+)
 
 const emit = defineEmits<{
   goRegistration: []
@@ -17,7 +23,10 @@ const loading = ref(false)
 const advice = ref<GlucoseAdvice | null>(null)
 
 async function loadAdvice() {
-  if (!props.registerId && !props.patientId) return
+  if (!props.showGlucoseAdvice || (!props.registerId && !props.patientId)) {
+    advice.value = null
+    return
+  }
   loading.value = true
   try {
     advice.value = await medtechFollowUpApi.getPatientGlucoseAdvice({
@@ -32,7 +41,7 @@ async function loadAdvice() {
 }
 
 watch(
-  () => [props.registerId, props.patientId],
+  () => [props.registerId, props.patientId, props.showGlucoseAdvice],
   () => {
     void loadAdvice()
   },
@@ -47,9 +56,11 @@ defineExpose({ reload: loadAdvice })
 
 <template>
   <GlucoseRevisitAdviceBlock
+    v-if="showGlucoseAdvice"
     :advice="advice"
     :loading="loading"
     compact
+    mode="patient"
     show-registration-link
     @go-registration="emit('goRegistration')"
   />

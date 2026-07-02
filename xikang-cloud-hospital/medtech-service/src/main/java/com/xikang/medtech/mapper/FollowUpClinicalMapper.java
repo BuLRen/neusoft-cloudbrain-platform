@@ -17,5 +17,7 @@ public interface FollowUpClinicalMapper {
 
     List<Map<String, Object>> searchDrugs(@Param("keyword") String keyword, @Param("limit") int limit);
 
+    Integer selectRegisterDepartmentId(@Param("registerId") Long registerId);
+
     int upsertLastVisitSnapshot(Map<String, Object> payload);
 }

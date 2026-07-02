@@ -357,6 +357,7 @@ export interface LastVisitLabItem {
 
 export interface LastVisitSnapshot {
   registerId: number
+  hasData?: boolean
   visitDate?: string
   diagnosisSummary?: string
   chiefComplaint?: string

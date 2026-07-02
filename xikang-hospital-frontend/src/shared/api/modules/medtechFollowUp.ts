@@ -435,6 +435,14 @@ export const medtechFollowUpApi = {
     })
   },
 
+  refreshPatientGlucoseForecast(params: { patientId?: number; registerId?: number }) {
+    return http<GlucoseForecastResult>({
+      url: `${patientPortalBase}/glucose-forecast/refresh`,
+      method: 'POST',
+      params,
+    })
+  },
+
   getPatientLastVisit(params: { patientId?: number; registerId?: number }) {
     return http<LastVisitSnapshot>({
       url: `${patientPortalBase}/last-visit`,

@@ -29,10 +29,21 @@
             r.visit_date AS "visitDate",
             r.visit_state AS "visitState",
             r.clinical_archived_at AS "clinicalArchivedAt",
+            r.deptment_id AS "departmentId",
             d.dept_name AS "departmentName",
             e.realname AS "physicianName",
             mr.diagnosis AS "diagnosis",
-            mr.preliminary_diagnosis AS "preliminaryDiagnosis"
+            mr.preliminary_diagnosis AS "preliminaryDiagnosis",
+            (
+                EXISTS (
+                    SELECT 1 FROM follow_up_last_visit_snapshot s
+                    WHERE s.register_id = r.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM medical_record mr2
+                    WHERE mr2.register_id = r.id
+                )
+            ) AS "hasLastVisitData"
         FROM register r
         LEFT JOIN department d ON d.id = r.deptment_id
         LEFT JOIN employee e ON e.id = r.employee_id

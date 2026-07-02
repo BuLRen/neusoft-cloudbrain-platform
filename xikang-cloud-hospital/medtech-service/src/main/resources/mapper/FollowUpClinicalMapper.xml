@@ -77,6 +77,12 @@
         LIMIT #{limit}
     </select>
 
+    <select id="selectRegisterDepartmentId" resultType="java.lang.Integer">
+        SELECT r.deptment_id
+        FROM register r
+        WHERE r.id = #{registerId}
+    </select>
+
     <insert id="upsertLastVisitSnapshot">
         INSERT INTO follow_up_last_visit_snapshot (
             register_id, visit_date, diagnosis_summary, professional_metrics,

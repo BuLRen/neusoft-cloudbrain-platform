@@ -11,6 +11,7 @@ import LastVisitSnapshotPanel from '@/modules/medtech/follow-up/components/LastV
 import GlucoseForecastPanel from '@/modules/medtech/follow-up/components/GlucoseForecastPanel.vue'
 import { clinicalRecordApi, type ClinicalVisitSummary } from '@/shared/api/modules/clinicalRecord'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
+import { isEndocrineDepartment } from '@/shared/constants/followUpDepartments'
 import { useAuthStore } from '@/app/stores/auth'
 import type {
   PatientFollowUpPlanItem,
@@ -43,13 +44,25 @@ const visitOptions = computed(() =>
   })),
 )
 
+const selectedVisit = computed(() =>
+  visits.value.find((item) => item.registerId === selectedRegisterId.value),
+)
+
+const isEndocrineVisit = computed(() => isEndocrineDepartment(selectedVisit.value?.departmentId))
+
+const pageSubtitle = computed(() =>
+  isEndocrineVisit.value
+    ? '上次看诊、居家血糖、复诊提醒与医患沟通'
+    : '上次看诊、复诊提醒与医患沟通',
+)
+
 const revisitPlans = computed(() =>
   followupPlans.value.filter(
     (plan) => plan.followUpType === 'revisit' && plan.planStatus !== 'completed',
   ),
 )
 
-const glucosePanelKey = ref(0)
+const glucosePanelRef = ref<InstanceType<typeof GlucoseForecastPanel> | null>(null)
 
 function statusTone(status?: string) {
   if (status === 'completed') return 'success'
@@ -110,6 +123,9 @@ async function loadFallbackRegisterId() {
           registerId,
           departmentName: '随访科室',
           visitDate: new Date().toISOString(),
+          archived: false,
+          patientVisible: true,
+          archiveStatus: 'pending',
         },
       ]
     }
@@ -138,7 +154,7 @@ async function loadPortalData() {
 }
 
 async function onGlucoseSubmitted() {
-  glucosePanelKey.value += 1
+  await glucosePanelRef.value?.reloadAfterEntry()
 }
 
 async function markComplete(planId: number) {
@@ -152,6 +168,9 @@ async function markComplete(planId: number) {
 }
 
 watch(selectedRegisterId, () => {
+  if (activeTab.value === 'glucose' && !isEndocrineVisit.value) {
+    activeTab.value = 'lastVisit'
+  }
   void loadPortalData()
 })
 
@@ -177,7 +196,7 @@ watch(activeTab, (tab) => {
     <GlassCard class="followup-tabs-card">
       <div class="tabs-header">
         <h2>随访管理</h2>
-        <p>上次看诊、居家血糖、复诊提醒与医患沟通</p>
+        <p>{{ pageSubtitle }}</p>
       </div>
 
       <div class="register-picker">
@@ -196,7 +215,11 @@ watch(activeTab, (tab) => {
         <button :class="['tab-btn', { active: activeTab === 'lastVisit' }]" @click="activeTab = 'lastVisit'">
           上次看诊
         </button>
-        <button :class="['tab-btn', { active: activeTab === 'glucose' }]" @click="activeTab = 'glucose'">
+        <button
+          v-if="isEndocrineVisit"
+          :class="['tab-btn', { active: activeTab === 'glucose' }]"
+          @click="activeTab = 'glucose'"
+        >
           血糖管理
         </button>
         <button :class="['tab-btn', { active: activeTab === 'revisit' }]" @click="activeTab = 'revisit'">
@@ -224,7 +247,7 @@ watch(activeTab, (tab) => {
       <ElEmpty :description="patientId ? '暂无就诊记录，请联系随访护士' : '正在加载患者档案…'" />
     </GlassCard>
 
-    <template v-if="activeTab === 'glucose' && selectedRegisterId">
+    <template v-if="activeTab === 'glucose' && selectedRegisterId && isEndocrineVisit">
       <PatientGlucoseEntryForm
         :register-id="selectedRegisterId"
         :patient-id="patientId"
@@ -232,7 +255,7 @@ watch(activeTab, (tab) => {
       />
       <GlassCard class="glucose-card">
         <GlucoseForecastPanel
-          :key="glucosePanelKey"
+          ref="glucosePanelRef"
           :patient-id="patientId"
           :register-id="selectedRegisterId"
           mode="patient"
@@ -258,6 +281,7 @@ watch(activeTab, (tab) => {
         <RevisitAdviceCard
           :register-id="selectedRegisterId"
           :patient-id="patientId"
+          :show-glucose-advice="isEndocrineVisit"
           @go-registration="goToRegistration"
         />
 

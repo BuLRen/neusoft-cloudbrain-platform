@@ -78,7 +78,10 @@ public class FollowUpOutcomeService {
     public Map<String, Object> getLastVisit(Long registerId) {
         Map<String, Object> snapshot = clinicalSnapshotService.getOrSyncLastVisit(registerId);
         if (snapshot == null || snapshot.isEmpty()) {
-            throw new BusinessException("暂无上次看诊快照");
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("registerId", registerId);
+            empty.put("hasData", false);
+            return empty;
         }
         return snapshot;
     }

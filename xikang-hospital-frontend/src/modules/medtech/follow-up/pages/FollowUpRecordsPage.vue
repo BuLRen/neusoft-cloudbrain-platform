@@ -6,6 +6,7 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { formatBeijingDateTime } from '@/shared/utils/beijingDate'
+import { formatHistoryEventSummary, formatHistoryEventTitle } from '@/shared/utils/followUpHistoryDisplay'
 import type { FollowUpHistoryEvent, FollowUpHistoryEventType, FollowUpPatientOption } from '@/shared/types/medtechFollowUp'
 
 const route = useRoute()
@@ -33,18 +34,6 @@ const EVENT_LABELS: Record<FollowUpHistoryEventType, string> = {
 const eventTypeOptions = computed(() =>
   Object.entries(EVENT_LABELS).map(([value, label]) => ({ value: value as FollowUpHistoryEventType, label })),
 )
-
-function parsePayload(payload: FollowUpHistoryEvent['payload']) {
-  if (!payload) return {}
-  if (typeof payload === 'string') {
-    try {
-      return JSON.parse(payload) as Record<string, unknown>
-    } catch {
-      return {}
-    }
-  }
-  return payload
-}
 
 function eventTone(type: FollowUpHistoryEventType) {
   if (type === 'glucose_entry' || type === 'forecast_alert') return 'warning'
@@ -125,18 +114,15 @@ onMounted(async () => {
         >
           <div class="records-page__item">
             <div class="records-page__item-head">
-              <strong>{{ item.title }}</strong>
+              <strong>{{ formatHistoryEventTitle(item) }}</strong>
               <ElTag size="small" :type="eventTone(item.eventType)" effect="plain">
                 {{ EVENT_LABELS[item.eventType] ?? item.eventType }}
               </ElTag>
             </div>
-            <p v-if="item.summary" class="records-page__summary">{{ item.summary }}</p>
+            <p class="records-page__summary">{{ formatHistoryEventSummary(item) }}</p>
             <p v-if="item.patientName" class="records-page__meta">
               {{ item.patientName }} · {{ item.caseNumber }}
             </p>
-            <pre v-if="parsePayload(item.payload) && Object.keys(parsePayload(item.payload)).length" class="records-page__payload">{{
-              JSON.stringify(parsePayload(item.payload), null, 2)
-            }}</pre>
           </div>
         </ElTimelineItem>
       </ElTimeline>
@@ -194,15 +180,5 @@ onMounted(async () => {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-muted);
-}
-
-.records-page__payload {
-  margin: 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-soft);
-  font-size: 12px;
-  overflow-x: auto;
-  white-space: pre-wrap;
 }
 </style>

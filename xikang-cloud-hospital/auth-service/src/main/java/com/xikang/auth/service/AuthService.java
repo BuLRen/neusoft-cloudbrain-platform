@@ -109,6 +109,9 @@ public class AuthService {
      * Refresh access token
      */
     public Map<String, String> refresh(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new BusinessException(401, "Refresh token 无效或已过期");
+        }
         if (!JwtUtils.validateToken(refreshToken)) {
             throw new BusinessException(401, "Refresh token 无效或已过期");
         }

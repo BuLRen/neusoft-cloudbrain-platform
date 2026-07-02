@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +35,47 @@ def build_feature_matrix(observations: list[dict]) -> np.ndarray | None:
     return mat
 
 
+def resample_hourly(observations: list[dict], seq_len: int = SEQ_LEN) -> list[dict]:
+    """Resample sparse observations to consecutive hourly slots (patient values win on conflict)."""
+    if not observations:
+        return []
+    sorted_obs = sorted(observations, key=lambda o: o["observed_at"])
+    anchor = datetime.fromisoformat(sorted_obs[-1]["observed_at"].replace("Z", "+00:00").replace(" ", "T")[:19])
+    anchor = anchor.replace(minute=0, second=0, microsecond=0)
+
+    by_hour: dict[str, dict] = {}
+    for obs in sorted_obs:
+        ts = datetime.fromisoformat(obs["observed_at"].replace("Z", "+00:00").replace(" ", "T")[:19])
+        hour_key = ts.replace(minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S")
+        by_hour[hour_key] = obs
+
+    glucose = float(sorted_obs[-1].get("blood_glucose") or 7.5)
+    insulin = float(sorted_obs[-1].get("insulin_total") or 0.0)
+    meal = float(sorted_obs[-1].get("meal_flag") or 0.0)
+    exercise = float(sorted_obs[-1].get("exercise_flag") or 0.0)
+
+    series: list[dict] = []
+    for offset in range(seq_len - 1, -1, -1):
+        slot = anchor - timedelta(hours=offset)
+        key = slot.strftime("%Y-%m-%dT%H:%M:%S")
+        row = by_hour.get(key)
+        if row:
+            glucose = float(row.get("blood_glucose") or glucose)
+            insulin = float(row.get("insulin_total") or insulin)
+            meal = float(row.get("meal_flag") or meal)
+            exercise = float(row.get("exercise_flag") or exercise)
+        series.append(
+            {
+                "observed_at": key,
+                "blood_glucose": glucose,
+                "insulin_total": insulin,
+                "meal_flag": meal,
+                "exercise_flag": exercise,
+            }
+        )
+    return series
+
+
 class GlucosePredictor:
     def __init__(self, model_path: Path):
         import onnxruntime as ort
@@ -42,7 +84,8 @@ class GlucosePredictor:
         self.input_name = self.session.get_inputs()[0].name
 
     def predict(self, observations: list[dict]) -> tuple[list[float], float] | None:
-        mat = build_feature_matrix(observations)
+        hourly = resample_hourly(observations) if len(observations) != SEQ_LEN else observations
+        mat = build_feature_matrix(hourly)
         if mat is None:
             return None
         inp = mat.reshape(1, SEQ_LEN, N_FEATURES)

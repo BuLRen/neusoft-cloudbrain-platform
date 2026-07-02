@@ -1,5 +1,6 @@
 package com.xikang.medtech.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.context.MedtechAuthContext;
@@ -111,7 +112,7 @@ public class FollowUpCommunicationService {
         payload.put("cardPayloadJson", toJson(cardPayload));
         communicationMapper.insertMessage(payload);
         communicationMapper.updateSessionDoctorActive(sessionId);
-        recordMessageHistory(session, payload);
+        recordMessageHistory(session, payload, cardPayload);
         Map<String, Object> result = new LinkedHashMap<>(payload);
         result.put("cardPayload", cardPayload);
         return result;
@@ -294,17 +295,31 @@ public class FollowUpCommunicationService {
     }
 
     private void recordMessageHistory(Map<String, Object> session, Map<String, Object> message) {
+        recordMessageHistory(session, message, null);
+    }
+
+    private void recordMessageHistory(
+        Map<String, Object> session,
+        Map<String, Object> message,
+        Map<String, Object> cardPayload
+    ) {
         Long registerId = toLong(session.get("registerId"));
         Long messageId = toLong(message.get("id"));
         if (registerId == null || messageId == null) {
             return;
         }
-        historyService.recordCommunicationMessage(
-            registerId,
-            messageId,
-            String.valueOf(message.get("messageType")),
-            String.valueOf(message.get("content"))
-        );
+        String messageType = String.valueOf(message.get("messageType"));
+        String content = message.get("content") != null ? String.valueOf(message.get("content")) : null;
+        Map<String, Object> extra = new LinkedHashMap<>();
+        if (cardPayload != null && !cardPayload.isEmpty()) {
+            extra.putAll(cardPayload);
+        } else if (message.get("cardPayloadJson") != null) {
+            try {
+                extra.putAll(MAPPER.readValue(String.valueOf(message.get("cardPayloadJson")), new TypeReference<Map<String, Object>>() {}));
+            } catch (Exception ignored) {
+            }
+        }
+        historyService.recordCommunicationMessage(registerId, messageId, messageType, content, extra);
     }
 
     private String buildCardTitle(String messageType, Map<String, Object> cardPayload) {

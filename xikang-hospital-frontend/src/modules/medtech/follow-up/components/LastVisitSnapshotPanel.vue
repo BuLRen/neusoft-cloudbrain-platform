@@ -184,6 +184,20 @@ const prescriptionItems = computed(() => {
 
 
 
+const hasDisplayData = computed(() => {
+  const raw = snapshot.value
+  if (!raw || raw.hasData === false) return false
+  return Boolean(
+    raw.diagnosisSummary ||
+      raw.chiefComplaint ||
+      raw.treatmentAdvice ||
+      labItems.value.length ||
+      prescriptionItems.value.length,
+  )
+})
+
+
+
 async function loadSnapshot() {
 
   if (!props.registerId && !props.patientId) return
@@ -266,7 +280,7 @@ onMounted(() => {
 
 
 
-    <template v-if="snapshot">
+    <template v-if="hasDisplayData">
 
       <div class="visit-meta">
 
@@ -374,7 +388,7 @@ onMounted(() => {
 
     </template>
 
-    <ElEmpty v-else description="暂无上次看诊快照，请运行种子脚本补齐演示数据" />
+    <ElEmpty v-else-if="!loading" description="该次看诊暂无检验与诊断摘要" />
 
   </GlassCard>
 
