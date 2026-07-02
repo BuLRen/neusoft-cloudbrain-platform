@@ -2,6 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { formatBeijingDateTime } from '@/shared/utils/beijingDate'
 import { stripMarkdown } from '@/shared/utils/plainText'
+import CommunicationCardDetailDialog from '@/modules/medtech/follow-up/components/CommunicationCardDetailDialog.vue'
 import type { FollowUpCommunicationMessage } from '@/shared/types/medtechFollowUp'
 
 const props = defineProps<{
@@ -10,6 +11,8 @@ const props = defineProps<{
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
+const cardDialogVisible = ref(false)
+const activeCard = ref<FollowUpCommunicationMessage | null>(null)
 
 watch(
   () => props.messages,
@@ -28,11 +31,21 @@ function senderLabel(type: string) {
   return '系统'
 }
 
+function isCardMessage(msg: FollowUpCommunicationMessage) {
+  return msg.messageType === 'drug_card' || msg.messageType === 'diagnosis_card'
+}
+
 function displayContent(msg: FollowUpCommunicationMessage) {
   if (msg.messageType === 'case_summary') {
     return stripMarkdown(msg.content)
   }
   return msg.content
+}
+
+function openCard(msg: FollowUpCommunicationMessage) {
+  if (!isCardMessage(msg)) return
+  activeCard.value = msg
+  cardDialogVisible.value = true
 }
 </script>
 
@@ -44,15 +57,30 @@ function displayContent(msg: FollowUpCommunicationMessage) {
       class="comm-thread__bubble"
       :class="[
         `comm-thread__bubble--${msg.senderType}`,
-        { 'comm-thread__bubble--summary': msg.messageType === 'case_summary' },
+        {
+          'comm-thread__bubble--summary': msg.messageType === 'case_summary',
+          'comm-thread__bubble--card': isCardMessage(msg),
+        },
       ]"
+      :role="isCardMessage(msg) ? 'button' : undefined"
+      :tabindex="isCardMessage(msg) ? 0 : undefined"
+      @click="openCard(msg)"
+      @keydown.enter="openCard(msg)"
     >
       <header class="comm-thread__meta">
         <span>{{ senderLabel(msg.senderType) }}</span>
         <time>{{ formatBeijingDateTime(msg.creationTime) }}</time>
       </header>
       <p class="comm-thread__content">{{ displayContent(msg) }}</p>
+      <span v-if="isCardMessage(msg)" class="comm-thread__card-hint">点击查看详情</span>
     </article>
+
+    <CommunicationCardDetailDialog
+      v-model:visible="cardDialogVisible"
+      :message-type="activeCard?.messageType"
+      :title="activeCard?.content"
+      :card-payload="activeCard?.cardPayload"
+    />
   </div>
 </template>
 
@@ -80,49 +108,55 @@ function displayContent(msg: FollowUpCommunicationMessage) {
   border: 1px solid var(--color-border);
 }
 
+.comm-thread__bubble--card {
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 6%, #fff);
+}
+
+.comm-thread__bubble--card:hover {
+  border-color: var(--color-primary);
+}
+
 .comm-thread__bubble--doctor {
-  margin-inline-start: auto;
+  margin-left: auto;
   background: color-mix(in srgb, var(--color-primary) 8%, #fff);
-  border-color: color-mix(in srgb, var(--color-primary) 25%, var(--color-border));
 }
 
 .comm-thread__bubble--patient {
-  margin-inline-end: auto;
+  margin-right: auto;
 }
 
-.comm-thread__bubble--ai {
-  margin-inline-end: auto;
-  background: color-mix(in srgb, #7c5cff 6%, #fff);
-  border-color: color-mix(in srgb, #7c5cff 25%, var(--color-border));
-}
-
+.comm-thread__bubble--ai,
 .comm-thread__bubble--system {
-  margin-inline: auto;
-  max-width: 100%;
-  background: transparent;
-  border-style: dashed;
-  text-align: center;
+  margin-right: auto;
+  background: var(--color-bg-soft);
 }
 
 .comm-thread__bubble--summary {
-  max-width: 100%;
-  background: color-mix(in srgb, #22c55e 6%, #fff);
-  border-color: color-mix(in srgb, #22c55e 30%, var(--color-border));
+  max-width: 92%;
+  border-style: dashed;
 }
 
 .comm-thread__meta {
   display: flex;
   justify-content: space-between;
   gap: var(--space-2);
-  margin-block-end: var(--space-1);
-  color: var(--color-text-soft);
-  font-size: 11px;
+  margin-bottom: var(--space-2);
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 
 .comm-thread__content {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.6;
-  font-size: 14px;
+}
+
+.comm-thread__card-hint {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-size: 12px;
+  color: var(--color-primary);
 }
 </style>

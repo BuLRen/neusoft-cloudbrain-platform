@@ -260,7 +260,7 @@ export interface PatientFollowUpFeedbackPayload {
 }
 
 export type CommunicationSenderType = 'doctor' | 'patient' | 'ai' | 'system'
-export type CommunicationMessageType = 'text' | 'case_summary' | 'notice'
+export type CommunicationMessageType = 'text' | 'case_summary' | 'notice' | 'drug_card' | 'diagnosis_card'
 export type CaseSummaryStatus = 'draft' | 'approved' | 'shared' | 'revoked'
 
 export interface FollowUpCommunicationSession {
@@ -287,6 +287,7 @@ export interface FollowUpCommunicationMessage {
   senderType: CommunicationSenderType
   messageType?: CommunicationMessageType
   content: string
+  cardPayload?: CommunicationCardPayload | string
   summaryId?: number
   workflowRunId?: string
   creationTime?: string
@@ -339,16 +340,114 @@ export interface ProfessionalMetricItem {
   value: number
   unit?: string
   label?: string
+  abnormalFlag?: string
+}
+
+export interface LastVisitLabItem {
+  metricCode?: string
+  code?: string
+  label?: string
+  metricValue?: number
+  value?: number
+  unit?: string
+  refRange?: string
+  abnormalFlag?: string
+  flag?: string
 }
 
 export interface LastVisitSnapshot {
   registerId: number
   visitDate?: string
   diagnosisSummary?: string
+  chiefComplaint?: string
+  treatmentAdvice?: string
   professionalMetrics?: Record<string, ProfessionalMetricItem>
+  labPanel?: LastVisitLabItem[]
+  labItems?: LastVisitLabItem[]
   doctorName?: string
   departmentName?: string
+  sourceMedicalRecordId?: number
+  prescriptionSummary?: PrescriptionSummaryItem[] | string
   updatedAt?: string
+}
+
+export interface PrescriptionSummaryItem {
+  drugId?: number
+  drugName?: string
+  drugFormat?: string
+  drugUsage?: string
+  drugNumber?: string
+}
+
+export interface CommunicationDrugCardPayload {
+  drugId?: number
+  drugName?: string
+  drugFormat?: string
+  drugUsage?: string
+  drugNumber?: string
+  manufacturer?: string
+  cautionNotes?: string
+  source?: string
+}
+
+export interface CommunicationDiagnosisCardPayload {
+  diseaseId?: number
+  diseaseName?: string
+  diseaseIcd?: string
+  diagnosisText?: string
+  treatmentDirection?: string
+  source?: string
+}
+
+export type CommunicationCardPayload = CommunicationDrugCardPayload | CommunicationDiagnosisCardPayload
+
+export type FollowUpHistoryEventType =
+  | 'patient_feedback'
+  | 'glucose_entry'
+  | 'observation_confirmed'
+  | 'interview_scheduled'
+  | 'interview_completed'
+  | 'communication_message'
+  | 'drug_card'
+  | 'diagnosis_card'
+  | 'case_summary'
+  | 'revisit_reminder'
+  | 'forecast_alert'
+
+export interface FollowUpHistoryEvent {
+  id: number
+  registerId: number
+  departmentId?: number
+  eventType: FollowUpHistoryEventType
+  actorType?: string
+  actorId?: number
+  title: string
+  summary?: string
+  payload?: Record<string, unknown> | string
+  refTable?: string
+  refId?: number
+  occurredAt?: string
+  patientName?: string
+  caseNumber?: string
+}
+
+export interface DrugSuggestionItem {
+  drugId?: number
+  drugName?: string
+  drugFormat?: string
+  drugUsage?: string
+  drugNumber?: string
+  manufacturer?: string
+  source?: string
+}
+
+export interface DiagnosisSuggestionItem {
+  diseaseId?: number
+  diseaseName?: string
+  diseaseIcd?: string
+  diagnosisText?: string
+  treatmentDirection?: string
+  source?: string
 }
 
 export interface PatientObservationPayload {

@@ -1,0 +1,62 @@
+# =============================================================================
+# 数据源：连接参数与 local/remote 切换见 xikang-cloud-hospital/.env
+#   SPRING_PROFILES_ACTIVE=remote | local
+# =============================================================================
+server:
+  port: 8096
+
+spring:
+  application:
+    name: payment-service
+  config:
+    import:
+      - optional:file:../.env
+      - optional:file:./.env
+      - optional:classpath:config/database.yml
+      - optional:file:../config/database.yml
+      - optional:file:./config/database.yml
+      - optional:file:../config/database-secrets.yml
+      - optional:file:./config/database-secrets.yml
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      timeout: 5000ms
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.xikang.payment.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 调试时取消注释
+
+# 业务服务直连地址（不走网关，走 Nacos 服务发现也可以；当前先用 url 直连保持简单）
+services:
+  auth-service:
+    url: ${AUTH_SERVICE_URL:http://localhost:8081}
+  registration-service:
+    url: ${REGISTRATION_SERVICE_URL:http://localhost:8091}
+
+# Feign 客户端超时（v3.2 §5.4 风险声明：每次 ≤3s，覆盖 createRegistration 在事务内的 Feign 调用）
+feign:
+  client:
+    config:
+      default:
+        connect-timeout: 3000
+        read-timeout: 3000
+  circuitbreaker:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.xikang.payment: INFO

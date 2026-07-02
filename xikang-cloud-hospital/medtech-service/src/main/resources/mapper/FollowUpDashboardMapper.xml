@@ -11,12 +11,8 @@
         <include refid="eligibleVisitStateCondition"/>
         AND (
             EXISTS (
-                SELECT 1 FROM ai_follow_up_record fr
-                WHERE fr.register_id = r.id
-            )
-            OR EXISTS (
-                SELECT 1 FROM ai_follow_up_plan ap
-                WHERE ap.register_id = r.id
+                SELECT 1 FROM follow_up_history_event he
+                WHERE he.register_id = r.id
             )
             OR EXISTS (
                 SELECT 1

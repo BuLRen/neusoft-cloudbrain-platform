@@ -7,6 +7,7 @@ export interface PrescriptionQuery {
   status?: number
   startDate?: string
   endDate?: string
+  registerId?: number
 }
 
 export interface PrescriptionSummary {

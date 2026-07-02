@@ -14,6 +14,7 @@ import PatientClinicalProfile from '@/modules/patient/pages/PatientClinicalProfi
 import PatientFollowup from '@/modules/patient/pages/PatientFollowup.vue'
 import PatientProfile from '@/modules/patient/pages/PatientProfile.vue'
 import PatientPrescription from '@/modules/patient/pages/PatientPrescription.vue'
+import PatientPayment from '@/modules/patient/pages/PatientPayment.vue'
 import PatientDepartmentDetail from '@/modules/patient/pages/PatientDepartmentDetail.vue'
 import RegistrationWorkspace from '@/modules/registration/RegistrationWorkspace.vue'
 import PharmacyDispensingPage from '@/modules/pharmacy/pages/DispensingPage.vue'
@@ -42,8 +43,8 @@ import MedtechCheckResultPage from '@/modules/medtech/pages/MedtechCheckResultPa
 import MedtechInspectionStartPage from '@/modules/medtech/pages/MedtechInspectionStartPage.vue'
 import MedtechDisposalStartPage from '@/modules/medtech/pages/MedtechDisposalStartPage.vue'
 import OutcomeAssessmentPage from '@/modules/medtech/follow-up/pages/OutcomeAssessmentPage.vue'
-import FollowUpDashboardPage from '@/modules/medtech/follow-up/pages/FollowUpDashboardPage.vue'
 import FollowUpCommunicationPage from '@/modules/medtech/follow-up/pages/FollowUpCommunicationPage.vue'
+import FollowUpRecordsPage from '@/modules/medtech/follow-up/pages/FollowUpRecordsPage.vue'
 import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
@@ -116,6 +117,12 @@ const patientRoutes: RouteRecordRaw[] = [
         name: 'PatientPrescription',
         component: PatientPrescription,
         meta: { title: '我的处方', requiresAuth: true, roles: ['patient', 'admin'] },
+      },
+      {
+        path: 'payment',
+        name: 'PatientPayment',
+        component: PatientPayment,
+        meta: { title: '我的账单', requiresAuth: true, roles: ['patient', 'admin'] },
       },
       {
         path: 'profile',
@@ -258,44 +265,38 @@ export const routes: RouteRecordRaw[] = [
         path: 'follow-up',
         name: 'FollowUp',
         component: RouteGroupView,
-        redirect: '/follow-up/dashboard',
-        meta: { title: '随访系统', description: '疗效评估、医患沟通、随访计划与记录', icon: 'Calendar', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up' },
+        redirect: '/follow-up/outcome',
+        meta: { title: '随访系统', description: '疗效评估、医患沟通、随访记录', icon: 'Calendar', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up' },
         children: [
-          {
-            path: 'dashboard',
-            name: 'FollowUpDashboard',
-            component: FollowUpDashboardPage,
-            meta: { title: '随访工作台', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 1 },
-          },
           {
             path: 'outcome',
             name: 'FollowUpOutcome',
             component: OutcomeAssessmentPage,
-            meta: { title: '疗效评估', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 2 },
+            meta: { title: '疗效评估', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 1 },
           },
           {
             path: 'communication',
             name: 'FollowUpCommunication',
             component: FollowUpCommunicationPage,
-            meta: { title: '医患沟通', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 3 },
+            meta: { title: '医患沟通', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 2 },
           },
           {
             path: 'plans',
             name: 'FollowUpPlans',
             component: RoutePlaceholder,
-            meta: { title: '随访计划', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 4 },
+            meta: { title: '随访计划', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 3, hidden: true },
           },
           {
             path: 'records',
             name: 'FollowUpRecords',
-            component: RoutePlaceholder,
-            meta: { title: '随访记录', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 5 },
+            component: FollowUpRecordsPage,
+            meta: { title: '随访记录', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 3 },
           },
         ],
       },
       {
         path: 'medtech/follow-up/:subpath(.*)',
-        redirect: (to) => `/follow-up/${String(to.params.subpath || 'dashboard')}`,
+        redirect: (to) => `/follow-up/${String(to.params.subpath || 'outcome')}`,
         meta: { hidden: true, roles: ['medtech', 'followup', 'admin'], requiresAuth: true },
       },
       {

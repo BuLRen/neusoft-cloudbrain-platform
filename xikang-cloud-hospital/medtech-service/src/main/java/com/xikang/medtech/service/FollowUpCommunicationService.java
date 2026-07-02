@@ -1,5 +1,6 @@
 package com.xikang.medtech.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.mapper.FollowUpCommunicationMapper;
@@ -19,12 +20,16 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class FollowUpCommunicationService {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final FollowUpCommunicationMapper communicationMapper;
     private final FollowUpDashboardMapper dashboardMapper;
     private final FollowUpOutcomeMapper outcomeMapper;
     private final HealthObservationService healthObservationService;
     private final CaseSummaryWorkflowService caseSummaryWorkflowService;
     private final FollowUpMedicalAiService medicalAiService;
+    private final FollowUpClinicalSnapshotService clinicalSnapshotService;
+    private final FollowUpHistoryService historyService;
 
     public List<Map<String, Object>> listSessions(Long departmentIdOverride) {
         return communicationMapper.selectSessions(resolveDepartmentId(departmentIdOverride));
@@ -87,8 +92,37 @@ public class FollowUpCommunicationService {
         Map<String, Object> payload = messagePayload(sessionId, "doctor", "text", content.trim(), null);
         communicationMapper.insertMessage(payload);
         communicationMapper.updateSessionDoctorActive(sessionId);
+        recordMessageHistory(session, payload);
+        return new LinkedHashMap<>(payload);
+    }
+
+    @Transactional
+    public Map<String, Object> sendDoctorCard(Long sessionId, String messageType, Map<String, Object> cardPayload) {
+        if (!List.of("drug_card", "diagnosis_card").contains(messageType)) {
+            throw new BusinessException("不支持的卡片类型");
+        }
+        if (cardPayload == null || cardPayload.isEmpty()) {
+            throw new BusinessException("卡片内容不能为空");
+        }
+        Map<String, Object> session = getSession(sessionId);
+        String title = buildCardTitle(messageType, cardPayload);
+        String summary = buildCardSummary(messageType, cardPayload);
+        Map<String, Object> payload = messagePayload(sessionId, "doctor", messageType, title, null);
+        payload.put("cardPayloadJson", toJson(cardPayload));
+        communicationMapper.insertMessage(payload);
+        communicationMapper.updateSessionDoctorActive(sessionId);
+        recordMessageHistory(session, payload);
         Map<String, Object> result = new LinkedHashMap<>(payload);
+        result.put("cardPayload", cardPayload);
         return result;
+    }
+
+    public List<Map<String, Object>> suggestDrugs(Long registerId, String keyword) {
+        return clinicalSnapshotService.suggestDrugs(registerId, keyword);
+    }
+
+    public List<Map<String, Object>> suggestDiagnoses(Long registerId) {
+        return clinicalSnapshotService.suggestDiagnoses(registerId);
     }
 
     @Transactional
@@ -183,6 +217,7 @@ public class FollowUpCommunicationService {
             );
             message.put("summaryId", summaryId);
             communicationMapper.insertMessage(message);
+            recordMessageHistory(getSession(sessionId), message);
         }
         return mapCaseSummary(communicationMapper.selectCaseSummaryById(summaryId));
     }
@@ -256,6 +291,44 @@ public class FollowUpCommunicationService {
         payload.put("content", content);
         payload.put("workflowRunId", workflowRunId);
         return payload;
+    }
+
+    private void recordMessageHistory(Map<String, Object> session, Map<String, Object> message) {
+        Long registerId = toLong(session.get("registerId"));
+        Long messageId = toLong(message.get("id"));
+        if (registerId == null || messageId == null) {
+            return;
+        }
+        historyService.recordCommunicationMessage(
+            registerId,
+            messageId,
+            String.valueOf(message.get("messageType")),
+            String.valueOf(message.get("content"))
+        );
+    }
+
+    private String buildCardTitle(String messageType, Map<String, Object> cardPayload) {
+        if ("drug_card".equals(messageType)) {
+            return "推荐药品：" + cardPayload.getOrDefault("drugName", "药品");
+        }
+        return "可能病况：" + cardPayload.getOrDefault("diseaseName", cardPayload.getOrDefault("diagnosisText", "病况"));
+    }
+
+    private String buildCardSummary(String messageType, Map<String, Object> cardPayload) {
+        if ("drug_card".equals(messageType)) {
+            Object usage = cardPayload.get("drugUsage");
+            return usage != null ? String.valueOf(usage) : "请遵医嘱用药";
+        }
+        Object treatment = cardPayload.get("treatmentDirection");
+        return treatment != null ? String.valueOf(treatment) : "请结合临床进一步评估";
+    }
+
+    private String toJson(Object value) {
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (Exception ex) {
+            return "{}";
+        }
     }
 
     private void validateContent(String content) {

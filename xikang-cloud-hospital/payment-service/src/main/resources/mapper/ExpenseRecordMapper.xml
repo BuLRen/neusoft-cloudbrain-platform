@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.payment.mapper.ExpenseRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.payment.entity.ExpenseRecord">
+        <id column="id" property="id"/>
+        <result column="register_id" property="registerId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="category_id" property="categoryId"/>
+        <result column="category_name" property="categoryName"/>
+        <result column="item_id" property="itemId"/>
+        <result column="item_name" property="itemName"/>
+        <result column="item_code" property="itemCode"/>
+        <result column="quantity" property="quantity"/>
+        <result column="unit_price" property="unitPrice"/>
+        <result column="total_amount" property="totalAmount"/>
+        <result column="status" property="status"/>
+        <result column="pay_time" property="payTime"/>
+        <result column="refund_time" property="refundTime"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="operator_name" property="operatorName"/>
+        <result column="remark" property="remark"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, register_id, patient_id, patient_name, category_id, category_name, item_id, item_name,
+        item_code, quantity, unit_price, total_amount, status, pay_time, refund_time,
+        operator_id, operator_name, remark, create_time
+    </sql>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record WHERE id = #{id}
+    </select>
+
+    <select id="selectByIdForUpdate" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <select id="selectByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record WHERE register_id = #{registerId}
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record WHERE patient_id = #{patientId}
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record WHERE status = #{status}
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectPendingByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE register_id = #{registerId} AND status = 0
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectPendingByPatientId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE patient_id = #{patientId} AND status = 0
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectPendingByRegisterAndIds" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE register_id = #{registerId}
+        AND status = 0
+        <if test="itemIds != null and itemIds.size() > 0">
+            AND id IN
+            <foreach collection="itemIds" item="itemId" open="(" separator="," close=")">
+                #{itemId}
+            </foreach>
+        </if>
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectMedicationFeeByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE register_id = #{registerId}
+          AND item_code = 'MEDICATION_FEE'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectRegistrationFeeByRegisterId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE register_id = #{registerId}
+          AND item_code = 'REGISTRATION_FEE'
+          AND status IN (0, 1)
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="queryRecords" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        <where>
+            <if test="patientId != null">AND patient_id = #{patientId}</if>
+            <if test="registerId != null">AND register_id = #{registerId}</if>
+            <if test="status != null">AND status = #{status}</if>
+            <if test="startTime != null">AND pay_time &gt;= #{startTime}</if>
+            <if test="endTime != null">AND pay_time &lt; #{endTime}</if>
+        </where>
+        ORDER BY create_time DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO expense_record (
+            register_id, patient_id, patient_name, category_id, category_name, item_id, item_name,
+            item_code, quantity, unit_price, total_amount, status, pay_time, operator_id, operator_name, remark
+        ) VALUES (
+            #{registerId}, #{patientId}, #{patientName}, #{categoryId}, #{categoryName}, #{itemId}, #{itemName},
+            #{itemCode}, #{quantity}, #{unitPrice}, #{totalAmount}, #{status}, #{payTime},
+            #{operatorId}, #{operatorName}, #{remark}
+        )
+    </insert>
+
+    <!--
+        MEDICATION_FEE 幂等 INSERT：依赖既有 partial unique index
+        uq_expense_record_medication_fee ON (register_id) WHERE item_code='MEDICATION_FEE'
+        PostgreSQL ON CONFLICT 必须匹配 partial index 的 WHERE 子句。
+    -->
+    <insert id="insertMedicationFeeIfAbsent" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO expense_record (
+            register_id, patient_id, patient_name, category_id, category_name, item_id, item_name,
+            item_code, quantity, unit_price, total_amount, status, pay_time, operator_id, operator_name, remark
+        ) VALUES (
+            #{registerId}, #{patientId}, #{patientName}, #{categoryId}, #{categoryName}, #{itemId}, #{itemName},
+            'MEDICATION_FEE', #{quantity}, #{unitPrice}, #{totalAmount}, #{status}, #{payTime},
+            #{operatorId}, #{operatorName}, #{remark}
+        )
+        ON CONFLICT (register_id) WHERE item_code = 'MEDICATION_FEE'
+        DO NOTHING
+    </insert>
+
+    <update id="update">
+        UPDATE expense_record
+        SET status = #{status},
+            pay_time = #{payTime},
+            refund_time = #{refundTime},
+            operator_id = #{operatorId},
+            operator_name = #{operatorName},
+            remark = #{remark}
+        WHERE id = #{id}
+    </update>
+
+    <!--
+        v3.2 §4.2 每日收费统计：替代 StatsMapper.xml:89-95 的 charge 子查询
+        语义：在 [startDate, endDate] 区间按天聚合 status=1 的 total_amount
+    -->
+    <select id="dailyCharges" resultType="java.util.Map">
+        SELECT pay_time::date AS "date", COALESCE(SUM(total_amount), 0) AS "amount"
+        FROM expense_record
+        WHERE status = 1
+          AND pay_time::date BETWEEN #{startDate} AND #{endDate}
+        GROUP BY pay_time::date
+    </select>
+
+    <!--
+        v3.2 §4.2 定时清理 orphan：status=0 + register 不存在 + 创建超过 cutoff
+        用 NOT EXISTS 而非 NOT IN，避免 NULL 语义问题
+    -->
+    <update id="invalidateOrphans">
+        UPDATE expense_record
+        SET status = 3, remark = COALESCE(remark || ' | ', '') || 'orphan-cleanup'
+        WHERE status = 0
+          AND create_time &lt; #{cutoff}
+          AND NOT EXISTS (
+              SELECT 1 FROM register r WHERE r.id = expense_record.register_id
+          )
+    </update>
+
+</mapper>

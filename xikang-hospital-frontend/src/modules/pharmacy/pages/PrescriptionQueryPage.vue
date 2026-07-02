@@ -33,10 +33,12 @@ const loaded = ref(false)
 
 const filter = ref<{
   patientId?: number
+  registerId?: number
   status?: number
   dateRange: [string, string] | null
 }>({
   patientId: undefined,
+  registerId: undefined,
   status: undefined,
   dateRange: null,
 })
@@ -77,6 +79,7 @@ async function load() {
   try {
     const params: Record<string, unknown> = {}
     if (filter.value.patientId) params.patientId = filter.value.patientId
+    if (filter.value.registerId) params.registerId = filter.value.registerId
     if (filter.value.status != null) params.status = filter.value.status
     if (filter.value.dateRange && filter.value.dateRange.length === 2) {
       const [s, e] = filter.value.dateRange
@@ -94,7 +97,7 @@ async function load() {
 }
 
 function reset() {
-  filter.value = { patientId: undefined, status: undefined, dateRange: null }
+  filter.value = { patientId: undefined, registerId: undefined, status: undefined, dateRange: null }
   void load()
 }
 
@@ -134,6 +137,13 @@ onMounted(() => {
             :min="1"
             :controls="false"
             placeholder="患者 ID"
+            class="field-id"
+          />
+          <ElInputNumber
+            v-model="filter.registerId"
+            :min="1"
+            :controls="false"
+            placeholder="挂号号"
             class="field-id"
           />
           <ElSelect

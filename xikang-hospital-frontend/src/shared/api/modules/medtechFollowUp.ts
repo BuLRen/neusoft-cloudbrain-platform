@@ -1,5 +1,7 @@
 import { http } from '../request'
 import type {
+  DiagnosisSuggestionItem,
+  DrugSuggestionItem,
   FollowUpCaseSummary,
   FollowUpCommunicationMessage,
   FollowUpCommunicationMessagesPage,
@@ -9,6 +11,8 @@ import type {
   FollowUpDashboardPatient,
   FollowUpDayScheduleItem,
   FollowUpHealthMetric,
+  FollowUpHistoryEvent,
+  FollowUpHistoryEventType,
   FollowUpEnrollPayload,
   FollowUpEnrollResult,
   FollowUpObservationConfirmPayload,
@@ -34,6 +38,7 @@ import type { GlucoseForecastResult } from '@/shared/types/glucoseForecast'
 const outcomeBase = '/medtech/follow-up/outcome'
 const dashboardBase = '/medtech/follow-up/dashboard'
 const communicationBase = '/medtech/follow-up/communication'
+const historyBase = '/medtech/follow-up/history'
 const patientPortalBase = '/medtech/follow-up/patient'
 
 export const medtechFollowUpApi = {
@@ -213,7 +218,49 @@ export const medtechFollowUpApi = {
     return http<FollowUpCommunicationMessage>({
       url: `${communicationBase}/sessions/${sessionId}/messages`,
       method: 'POST',
-      data: { content },
+      data: { content, messageType: 'text' },
+    })
+  },
+
+  sendDoctorCard(
+    sessionId: number,
+    messageType: 'drug_card' | 'diagnosis_card',
+    cardPayload: Record<string, unknown>,
+  ) {
+    return http<FollowUpCommunicationMessage>({
+      url: `${communicationBase}/sessions/${sessionId}/messages`,
+      method: 'POST',
+      data: { messageType, cardPayload },
+    })
+  },
+
+  suggestDrugs(registerId: number, keyword?: string) {
+    return http<DrugSuggestionItem[]>({
+      url: `${communicationBase}/suggestions/drugs`,
+      method: 'GET',
+      params: { registerId, keyword },
+    })
+  },
+
+  suggestDiagnoses(registerId: number) {
+    return http<DiagnosisSuggestionItem[]>({
+      url: `${communicationBase}/suggestions/diagnoses`,
+      method: 'GET',
+      params: { registerId },
+    })
+  },
+
+  listHistoryEvents(params?: {
+    registerId?: number
+    from?: string
+    to?: string
+    eventType?: FollowUpHistoryEventType
+    limit?: number
+  }) {
+    return http<FollowUpHistoryEvent[]>({
+      url: historyBase,
+      method: 'GET',
+      params,
     })
   },
 

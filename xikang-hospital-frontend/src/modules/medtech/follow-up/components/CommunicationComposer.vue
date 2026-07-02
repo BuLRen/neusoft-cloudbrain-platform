@@ -14,6 +14,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   send: [content: string]
+  sendCard: [messageType: 'drug_card' | 'diagnosis_card', payload: Record<string, unknown>]
+  openPicker: [mode: 'drug' | 'diagnosis']
 }>()
 
 const draft = ref('')
@@ -58,6 +60,10 @@ function sendQuickTemplate(text: string) {
       @keydown.ctrl.enter="submit"
     />
     <div class="comm-composer__actions">
+      <div class="comm-composer__extras">
+        <ElButton size="small" :disabled="disabled || sending" @click="emit('openPicker', 'drug')">荐药卡片</ElButton>
+        <ElButton size="small" :disabled="disabled || sending" @click="emit('openPicker', 'diagnosis')">病况卡片</ElButton>
+      </div>
       <span class="comm-composer__hint">Ctrl + Enter 发送 · 随访系统不参与挂号</span>
       <ElButton type="primary" :disabled="disabled || !draft.trim()" :loading="sending" @click="submit">
         发送
@@ -106,6 +112,12 @@ function sendQuickTemplate(text: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.comm-composer__extras {
+  display: flex;
   gap: var(--space-2);
 }
 

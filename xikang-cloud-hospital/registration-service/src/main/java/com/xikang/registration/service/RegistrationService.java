@@ -7,6 +7,7 @@ import com.xikang.registration.entity.*;
 import com.xikang.registration.mapper.*;
 import com.xikang.registration.feign.AuthPatientFeignClient;
 import com.xikang.registration.feign.AiTriageFeignClient;
+import com.xikang.registration.feign.PaymentFeignClient;
 import com.xikang.registration.feign.ScheduleFeignClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class RegistrationService {
     private final AuthPatientFeignClient authPatientFeignClient;
     private final AiTriageFeignClient aiTriageFeignClient;
     private final RefundService refundService;
+    private final PaymentFeignClient paymentFeignClient;
 
     // 用于生成病历号
     private static final AtomicLong caseCounter = new AtomicLong(System.currentTimeMillis() % 100000);
@@ -307,7 +309,19 @@ public class RegistrationService {
             throw new BusinessException(404, "挂号记录不存在");
         }
         Map<String, Object> result = toMap(register);
-        result.put("expenseRecords", expenseRecordMapper.selectByRegisterId(id).stream().map(this::toExpenseRecordMap).toList());
+        // v3.2：改 Feign 调 payment-service.records（按 registerId 查所有费用行）
+        try {
+            Map<String, Object> resp = paymentFeignClient.records(null, id, null, null, null);
+            Object dataObj = resp.get("data");
+            if (dataObj instanceof List<?> list) {
+                result.put("expenseRecords", list);
+            } else {
+                result.put("expenseRecords", List.of());
+            }
+        } catch (Exception e) {
+            log.warn("getRegistration 调 payment.records 失败 | registerId={}, err={}", id, e.getMessage());
+            result.put("expenseRecords", List.of());
+        }
         return result;
     }
 
@@ -555,6 +569,13 @@ public class RegistrationService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> unwrapMapData(Map<String, Object> response, String errorMessage) {
+        if (response != null) {
+            Object codeObj = response.get("code");
+            if (codeObj instanceof Number num && num.intValue() != 200) {
+                String msg = String.valueOf(response.getOrDefault("message", errorMessage));
+                throw new BusinessException(num.intValue(), msg);
+            }
+        }
         Object data = response != null ? response.get("data") : null;
         if (!(data instanceof Map<?, ?> dataMap)) {
             throw new BusinessException(500, errorMessage);
@@ -589,61 +610,71 @@ public class RegistrationService {
 
     private ExpenseRecord createRegistrationFee(Register register, Integer patientId, String patientName,
                                                 RegistLevel registLevel, BigDecimal registMoney, Long operatorId) {
+        // v3.2：改为 Feign 调 payment-service 创建 REGISTRATION_FEE 行（payment-service 端幂等）
+        Map<String, Object> body = new HashMap<>();
+        body.put("registerId", register.getId());
+        body.put("patientId", patientId != null ? patientId.longValue() : null);
+        body.put("patientName", patientName);
+        body.put("categoryName", "挂号费");
+        body.put("itemId", registLevel.getId());
+        body.put("itemName", registLevel.getName() + "挂号费");
+        body.put("itemCode", "REGISTRATION_FEE");
+        body.put("quantity", 1);
+        body.put("unitPrice", registMoney);
+        body.put("amount", registMoney);
+        body.put("operatorId", operatorId);
+        body.put("operatorName", register.getRegistMethod());
+        body.put("remark", "挂号自动生成费用");
+
+        Map<String, Object> resp = paymentFeignClient.createItem(body);
+        Map<String, Object> data = unwrapMapData(resp, "创建挂号费失败");
+        Long itemId = toLong(data.get("itemId"));
+
+        // 构造一个本地 ExpenseRecord 对象供后续 tryBalancePayment / invalidateDuplicateRegistrationFees 使用
         ExpenseRecord record = new ExpenseRecord();
+        record.setId(itemId);
         record.setRegisterId(register.getId());
         record.setPatientId(patientId != null ? patientId.longValue() : null);
         record.setPatientName(patientName);
-        record.setCategoryName("挂号费");
-        record.setItemId(registLevel.getId());
-        record.setItemName(registLevel.getName() + "挂号费");
         record.setItemCode("REGISTRATION_FEE");
-        record.setQuantity(1);
-        record.setUnitPrice(registMoney);
+        record.setItemName(registLevel.getName() + "挂号费");
         record.setTotalAmount(registMoney);
         record.setStatus(0);
-        record.setOperatorId(operatorId);
-        record.setOperatorName(register.getRegistMethod());
-        record.setRemark("挂号自动生成费用");
-        expenseRecordMapper.insert(record);
         return record;
     }
 
     private Map<String, Object> tryBalancePayment(Integer patientId, ExpenseRecord feeRecord, BigDecimal amount) {
         Map<String, Object> result = new HashMap<>();
-        if (patientId == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+        if (patientId == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0
+                || feeRecord == null || feeRecord.getId() == null) {
             result.put("payStatus", 0);
             result.put("payStatusName", "待缴费");
             result.put("paymentMessage", "请到收费处缴费");
             return result;
         }
 
+        // v3.2：改 Feign 调 payment-service.payItem，由 payment-service 完成扣款 + 写 expense_record + 回调本服务
         Map<String, Object> body = new HashMap<>();
-        body.put("amount", amount);
-        body.put("businessType", "REGISTRATION");
-        body.put("businessId", feeRecord.getRegisterId());
-        body.put("operatorId", patientId);
+        body.put("operatorId", patientId.longValue());
         body.put("operatorName", "患者余额");
-        body.put("remark", "挂号时自动使用余额支付");
 
-        Map<String, Object> response = authPatientFeignClient.deductBalance(patientId, body);
-        Map<String, Object> data = unwrapMapData(response, "余额扣款失败");
-        result.put("accountBalance", data.get("accountBalance"));
-        if (Boolean.TRUE.equals(data.get("success"))) {
-            feeRecord.setStatus(1);
-            feeRecord.setPayTime(LocalDateTime.now());
-            feeRecord.setOperatorName("患者余额");
-            feeRecord.setRemark("患者账户余额自动支付");
-            expenseRecordMapper.update(feeRecord);
+        try {
+            Map<String, Object> response = paymentFeignClient.payItem(feeRecord.getId(), body);
+            Map<String, Object> data = unwrapMapData(response, "余额扣款失败");
+            result.put("accountBalance", data.get("accountBalance"));
             result.put("payStatus", 1);
             result.put("payStatusName", "已缴费");
             result.put("paymentMessage", "余额支付成功");
             return result;
+        } catch (Exception e) {
+            // 扣款失败（余额不足等）：不抛异常，返回待缴费状态供前端引导
+            log.warn("tryBalancePayment 失败 | registerId={}, itemId={}, err={}",
+                    feeRecord.getRegisterId(), feeRecord.getId(), e.getMessage());
+            result.put("payStatus", 0);
+            result.put("payStatusName", "待缴费");
+            result.put("paymentMessage", e.getMessage() != null ? e.getMessage() : "余额不足，请充值后缴费");
+            return result;
         }
-
-        result.put("payStatus", 0);
-        result.put("payStatusName", "待缴费");
-        result.put("paymentMessage", String.valueOf(data.getOrDefault("message", "余额不足，请充值后缴费")));
-        return result;
     }
 
     private String generateCaseNumber(Long patientId) {
@@ -660,25 +691,12 @@ public class RegistrationService {
 
     /**
      * 清理同一挂号单上重复的待缴费 REGISTRATION_FEE。
-     * 保留 keepId（通常是本次新建的那条），把其他 status=0 的 REGISTRATION_FEE 标记为已作废（status=3），
-     * 防止前端"去缴费"/"取消挂号"时把多条一起扣/退造成 N 倍金额异常。
+     *
+     * v3.2：payment-service 端 createItem 已用 "先 SELECT 后 INSERT" 保证一个挂号至多一条 REGISTRATION_FEE，
+     * 重复行再也不会出现，本方法保留为 no-op 以兼容既有调用点（createRegistration L232）。
      */
     private void invalidateDuplicateRegistrationFees(Long registerId, Long keepId) {
-        if (registerId == null) return;
-        List<ExpenseRecord> pendingFees = expenseRecordMapper.selectByRegisterId(registerId).stream()
-                .filter(record -> "REGISTRATION_FEE".equals(record.getItemCode()))
-                .filter(record -> record.getStatus() != null && record.getStatus() == 0)
-                .toList();
-        if (pendingFees.isEmpty()) return;
-        LocalDateTime now = LocalDateTime.now();
-        for (ExpenseRecord record : pendingFees) {
-            if (keepId != null && keepId.equals(record.getId())) {
-                continue;
-            }
-            record.setStatus(3);
-            record.setRemark("重复挂号费作废");
-            expenseRecordMapper.update(record);
-        }
+        // v3.2：no-op（payment-service 端 createItem 幂等保证）
     }
 
     private String getString(Map<String, Object> data, String key, String defaultValue) {
@@ -764,59 +782,59 @@ public class RegistrationService {
         return map;
     }
 
+    /**
+     * v3.2 §4.2 回调入口：payment-service.payItem 成功后通过 Feign 调本方法。
+     * 重算 payment.summary，按聚合结果更新 register.pay_status；
+     * 若 visit_state==1（已挂号未接诊）且费用全部付清，推进到 2（医生接诊）。
+     * 幂等：重复调用只会得到相同的最终态。
+     */
+    @Transactional
+    public Map<String, Object> onFeePaid(Long registerId) {
+        log.info("on-fee-paid 回调 | registerId={}", registerId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("registerId", registerId);
+
+        // 重算 summary
+        Integer payStatus = null;
+        try {
+            Map<String, Object> resp = paymentFeignClient.summary(registerId);
+            Object data = resp.get("data");
+            if (data instanceof Map<?, ?> m && m.get("payStatus") != null) {
+                payStatus = ((Number) m.get("payStatus")).intValue();
+            }
+        } catch (Exception e) {
+            log.warn("on-fee-paid 回调重算 summary 失败 | registerId={}, err={}", registerId, e.getMessage());
+        }
+
+        if (payStatus != null) {
+            registrationMapper.updatePayStatus(registerId, payStatus);
+            // 仅在 visit_state==1 且全部付清时推进到接诊
+            if (payStatus == 1) {
+                Register register = registrationMapper.selectById(registerId);
+                if (register != null && register.getVisitState() != null && register.getVisitState() == 1) {
+                    registrationMapper.updateStatus(registerId, 2);
+                    log.info("on-fee-paid 推进就诊状态 1→2 | registerId={}", registerId);
+                }
+            }
+            result.put("payStatus", payStatus);
+        }
+        result.put("success", true);
+        return result;
+    }
+
     private void fillPaymentStatus(Map<String, Object> map, Long registerId) {
-        List<ExpenseRecord> expenseRecords = expenseRecordMapper.selectByRegisterId(registerId);
-        if (expenseRecords == null || expenseRecords.isEmpty()) {
-            map.put("payStatus", 0);
-            map.put("payStatusName", "待缴费");
-            return;
-        }
-
-        boolean hasRegistrationFee = expenseRecords.stream()
-            .anyMatch(record -> "REGISTRATION_FEE".equals(record.getItemCode()));
-        boolean hasPending = false;
-        boolean hasPaid = false;
-        boolean allRefunded = true;
-        BigDecimal totalAmount = BigDecimal.ZERO;
-        LocalDateTime latestPayTime = null;
-        LocalDateTime latestRefundTime = null;
-        for (ExpenseRecord record : expenseRecords) {
-            if (hasRegistrationFee && !"REGISTRATION_FEE".equals(record.getItemCode())) {
-                continue;
-            }
-            if (record.getStatus() == null || record.getStatus() == 0) {
-                hasPending = true;
-            }
-            if (record.getStatus() != null && record.getStatus() == 1) {
-                hasPaid = true;
-            }
-            if (record.getStatus() == null || record.getStatus() != 2) {
-                allRefunded = false;
-            }
-            if (record.getTotalAmount() != null) {
-                totalAmount = totalAmount.add(record.getTotalAmount());
-            }
-            if (record.getPayTime() != null && (latestPayTime == null || record.getPayTime().isAfter(latestPayTime))) {
-                latestPayTime = record.getPayTime();
-            }
-            if (record.getRefundTime() != null && (latestRefundTime == null || record.getRefundTime().isAfter(latestRefundTime))) {
-                latestRefundTime = record.getRefundTime();
-            }
-        }
-
-        map.put("amount", totalAmount);
-        map.put("payTime", latestPayTime);
-        map.put("refundTime", latestRefundTime);
-        if (hasPending) {
-            map.put("payStatus", 0);
-            map.put("payStatusName", "待缴费");
-        } else if (hasPaid) {
-            map.put("payStatus", 1);
-            map.put("payStatusName", "已缴费");
-        } else if (allRefunded) {
-            map.put("payStatus", 2);
-            map.put("payStatusName", "已退费");
-        } else {
+        // v3.2：改 Feign 调 payment-service.summary，由 payment-service 汇总
+        try {
+            Map<String, Object> response = paymentFeignClient.summary(registerId);
+            Map<String, Object> data = unwrapMapData(response, "查询支付状态失败");
+            map.put("amount", data.get("amount"));
+            map.put("payTime", data.get("payTime"));
+            map.put("refundTime", data.get("refundTime"));
+            map.put("payStatus", data.get("payStatus"));
+            map.put("payStatusName", data.get("payStatusName"));
+        } catch (Exception e) {
+            log.warn("fillPaymentStatus 调 payment.summary 失败，回退为待缴费 | registerId={}, err={}",
+                    registerId, e.getMessage());
             map.put("payStatus", 0);
             map.put("payStatusName", "待缴费");
         }

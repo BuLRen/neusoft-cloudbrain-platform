@@ -119,6 +119,22 @@
         WHERE id = #{id}
     </update>
 
+    <!--
+        v3.2 防双写：只有当 status=0（待缴费）时才能改。
+        与 payment-service.payItem 的 SELECT FOR UPDATE + 二次校验互斥：
+        任何一方先 flip 状态，另一方的 UPDATE 命中 0 行，循环跳过该行。
+    -->
+    <update id="updateIfPending">
+        UPDATE expense_record
+        SET status = #{status},
+            pay_time = #{payTime},
+            refund_time = #{refundTime},
+            operator_id = #{operatorId},
+            operator_name = #{operatorName},
+            remark = #{remark}
+        WHERE id = #{id} AND status = 0
+    </update>
+
     <update id="updateStatus">
         UPDATE expense_record SET status = #{status} WHERE id = #{id}
     </update>

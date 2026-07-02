@@ -37,6 +37,12 @@ public interface ExpenseRecordMapper {
 
     int update(ExpenseRecord record);
 
+    /**
+     * v3.2 防双写：仅在 status=0 时更新。返回受影响行数（0 表示已被并发 flip，应跳过）。
+     * 与 payment-service.payItem 的 SELECT FOR UPDATE + 二次校验互斥。
+     */
+    int updateIfPending(ExpenseRecord record);
+
     int updateStatus(Long id, Integer status);
 
     int updatePayStatus(Long id, Integer status);

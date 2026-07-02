@@ -12,6 +12,8 @@ import psycopg2
 
 ROOT = Path(__file__).resolve().parents[2]
 ENV_PATH = ROOT / ".env"
+MIGRATE_027 = Path(__file__).resolve().parent / "migrate_027_follow_up_demo_enrichment.sql"
+MIGRATE_028 = Path(__file__).resolve().parent / "migrate_028_follow_up_last_visit_lab.sql"
 
 NURSES = [
     {"username": "followup_nfm", "realname": "内分泌护士", "dept_id": 7},
@@ -49,38 +51,117 @@ PATIENTS = [
 DEFAULT_PASSWORD = "followup123"
 PATIENT_PASSWORD = "patient123"
 
+def _lab_panel(items: list[dict]) -> list[dict]:
+    return [
+        {
+            "code": item["metric_code"],
+            "label": item["label"],
+            "value": item["metric_value"],
+            "unit": item["unit"],
+            "refRange": item["ref_range"],
+            "flag": item["abnormal_flag"],
+        }
+        for item in items
+    ]
+
+
+LAST_VISIT_LAB_ITEMS = {
+    9001: [
+        {"metric_code": "hba1c", "label": "糖化血红蛋白", "metric_value": 7.8, "unit": "%", "ref_range": "4.0-6.0", "abnormal_flag": "high", "sort_order": 1},
+        {"metric_code": "fasting_glucose", "label": "空腹血糖", "metric_value": 8.2, "unit": "mmol/L", "ref_range": "3.9-6.1", "abnormal_flag": "high", "sort_order": 2},
+        {"metric_code": "postprandial_glucose", "label": "餐后2h血糖", "metric_value": 11.5, "unit": "mmol/L", "ref_range": "<7.8", "abnormal_flag": "high", "sort_order": 3},
+        {"metric_code": "ldl_c", "label": "低密度脂蛋白", "metric_value": 3.4, "unit": "mmol/L", "ref_range": "<2.6", "abnormal_flag": "high", "sort_order": 4},
+        {"metric_code": "urine_microalbumin", "label": "尿微量白蛋白", "metric_value": 28, "unit": "mg/L", "ref_range": "<30", "abnormal_flag": "normal", "sort_order": 5},
+    ],
+    9002: [
+        {"metric_code": "hba1c", "label": "糖化血红蛋白", "metric_value": 7.2, "unit": "%", "ref_range": "4.0-6.0", "abnormal_flag": "high", "sort_order": 1},
+        {"metric_code": "fasting_glucose", "label": "空腹血糖", "metric_value": 7.6, "unit": "mmol/L", "ref_range": "3.9-6.1", "abnormal_flag": "high", "sort_order": 2},
+        {"metric_code": "postprandial_glucose", "label": "餐后2h血糖", "metric_value": 10.8, "unit": "mmol/L", "ref_range": "<7.8", "abnormal_flag": "high", "sort_order": 3},
+        {"metric_code": "ldl_c", "label": "低密度脂蛋白", "metric_value": 2.8, "unit": "mmol/L", "ref_range": "<1.8", "abnormal_flag": "high", "sort_order": 4},
+    ],
+    9003: [
+        {"metric_code": "hba1c", "label": "糖化血红蛋白", "metric_value": 7.5, "unit": "%", "ref_range": "4.0-6.0", "abnormal_flag": "high", "sort_order": 1},
+        {"metric_code": "fasting_glucose", "label": "空腹血糖", "metric_value": 7.9, "unit": "mmol/L", "ref_range": "3.9-6.1", "abnormal_flag": "high", "sort_order": 2},
+        {"metric_code": "postprandial_glucose", "label": "餐后2h血糖", "metric_value": 11.0, "unit": "mmol/L", "ref_range": "<7.8", "abnormal_flag": "high", "sort_order": 3},
+    ],
+}
+
 LAST_VISIT_SNAPSHOTS = {
     9001: {
         "diagnosis_summary": "2型糖尿病 · 血糖控制一般，建议加强居家监测",
         "doctor_name": "内分泌科医师",
         "department_name": "内分泌科",
+        "chief_complaint": "血糖控制不佳复诊",
+        "treatment_advice": "继续二甲双胍，加强血糖监测与生活方式干预。",
         "metrics": {
-            "hba1c": {"value": 7.8, "unit": "%", "label": "糖化血红蛋白"},
-            "fasting_glucose": {"value": 8.2, "unit": "mmol/L", "label": "空腹血糖"},
-            "postprandial_glucose": {"value": 11.5, "unit": "mmol/L", "label": "餐后2h血糖"},
+            "hba1c": {"value": 7.8, "unit": "%", "label": "糖化血红蛋白", "abnormalFlag": "high"},
+            "fasting_glucose": {"value": 8.2, "unit": "mmol/L", "label": "空腹血糖", "abnormalFlag": "high"},
+            "postprandial_glucose": {"value": 11.5, "unit": "mmol/L", "label": "餐后2h血糖", "abnormalFlag": "high"},
         },
     },
     9002: {
         "diagnosis_summary": "2型糖尿病合并冠心病 · 需关注血糖与心血管风险",
         "doctor_name": "心血管科医师",
         "department_name": "心血管科",
+        "chief_complaint": "糖尿病合并冠心病随访",
+        "treatment_advice": "控制血糖，继续心血管二级预防用药。",
         "metrics": {
-            "hba1c": {"value": 7.2, "unit": "%", "label": "糖化血红蛋白"},
-            "fasting_glucose": {"value": 7.6, "unit": "mmol/L", "label": "空腹血糖"},
-            "postprandial_glucose": {"value": 10.8, "unit": "mmol/L", "label": "餐后2h血糖"},
+            "hba1c": {"value": 7.2, "unit": "%", "label": "糖化血红蛋白", "abnormalFlag": "high"},
+            "fasting_glucose": {"value": 7.6, "unit": "mmol/L", "label": "空腹血糖", "abnormalFlag": "high"},
+            "postprandial_glucose": {"value": 10.8, "unit": "mmol/L", "label": "餐后2h血糖", "abnormalFlag": "high"},
         },
     },
     9003: {
         "diagnosis_summary": "2型糖尿病 · 合并轻度慢阻肺，注意感染期血糖波动",
         "doctor_name": "呼吸科医师",
         "department_name": "呼吸科",
+        "chief_complaint": "慢阻肺合并糖尿病复诊",
+        "treatment_advice": "监测血糖，预防感染期血糖波动。",
         "metrics": {
-            "hba1c": {"value": 7.5, "unit": "%", "label": "糖化血红蛋白"},
-            "fasting_glucose": {"value": 7.9, "unit": "mmol/L", "label": "空腹血糖"},
-            "postprandial_glucose": {"value": 11.0, "unit": "mmol/L", "label": "餐后2h血糖"},
+            "hba1c": {"value": 7.5, "unit": "%", "label": "糖化血红蛋白", "abnormalFlag": "high"},
+            "fasting_glucose": {"value": 7.9, "unit": "mmol/L", "label": "空腹血糖", "abnormalFlag": "high"},
+            "postprandial_glucose": {"value": 11.0, "unit": "mmol/L", "label": "餐后2h血糖", "abnormalFlag": "high"},
         },
     },
 }
+
+
+CLINICAL_PROFILES = {
+    9001: {
+        "medical_record_id": 59001,
+        "readme": "血糖控制不佳复诊",
+        "present": "既往 2 型糖尿病 5 年，近期空腹血糖波动偏大。",
+        "proposal": "继续二甲双胍，加强血糖监测与生活方式干预。",
+        "diagnosis": "2型糖尿病",
+        "drug_keyword": "二甲双胍",
+        "drug_usage": "口服，每日2次，每次0.5g，餐中服用",
+    },
+    9002: {
+        "medical_record_id": 59002,
+        "readme": "糖尿病合并冠心病随访",
+        "present": "2 型糖尿病 8 年，冠心病支架术后 2 年，近期胸闷偶发。",
+        "proposal": "控制血糖，继续心血管二级预防用药。",
+        "diagnosis": "2型糖尿病合并冠心病",
+        "drug_keyword": "阿卡波糖",
+        "drug_usage": "口服，每日3次，每次50mg，随餐服用",
+    },
+    9003: {
+        "medical_record_id": 59003,
+        "readme": "慢阻肺合并糖尿病复诊",
+        "present": "2 型糖尿病 6 年，慢阻肺稳定期，冬季易咳嗽。",
+        "proposal": "监测血糖，预防感染期血糖波动。",
+        "diagnosis": "2型糖尿病",
+        "drug_keyword": "二甲双胍",
+        "drug_usage": "口服，每日2次，每次0.5g",
+    },
+}
+
+HISTORY_SEEDS = [
+    ("observation_confirmed", "患者纳入随访管理", "已完成科室在管登记"),
+    ("interview_scheduled", "首次访谈已安排", "纳入后一周内电话随访"),
+    ("glucose_entry", "早期居家血糖录入", "空腹血糖 7.2 mmol/L"),
+    ("communication_message", "随访沟通提醒", "请按时记录居家血糖并关注复诊提醒"),
+]
 
 
 def load_env() -> dict[str, str]:
@@ -132,6 +213,74 @@ def table_columns(cur, table: str) -> set[str]:
     return {r[0] for r in cur.fetchall()}
 
 
+def table_exists(cur, table: str) -> bool:
+    cur.execute(
+        """
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = %s
+        """,
+        (table,),
+    )
+    return cur.fetchone() is not None
+
+
+def ensure_migrate_027_schema(cur) -> None:
+    """幂等应用 migrate_027，种子依赖 follow_up_history_event 与快照扩展列。"""
+    if not MIGRATE_027.exists():
+        raise SystemExit(f"缺少迁移文件: {MIGRATE_027}")
+
+    sql = MIGRATE_027.read_text(encoding="utf-8")
+    cur.execute(sql)
+
+    after_cols = table_columns(cur, "follow_up_last_visit_snapshot")
+    if "source_medical_record_id" not in after_cols:
+        raise SystemExit("migrate_027 执行后仍缺少 follow_up_last_visit_snapshot.source_medical_record_id")
+
+
+def ensure_migrate_028_schema(cur) -> None:
+    """幂等应用 migrate_028，上次看诊检验面板与 lab_item 表。"""
+    if not MIGRATE_028.exists():
+        raise SystemExit(f"缺少迁移文件: {MIGRATE_028}")
+
+    cur.execute(MIGRATE_028.read_text(encoding="utf-8"))
+
+    if not table_exists(cur, "follow_up_last_visit_lab_item"):
+        raise SystemExit("migrate_028 执行后仍缺少 follow_up_last_visit_lab_item")
+
+
+def ensure_last_visit_lab_items(cur, rid: int) -> None:
+    items = LAST_VISIT_LAB_ITEMS.get(rid)
+    if not items or not table_exists(cur, "follow_up_last_visit_lab_item"):
+        return
+
+    for item in items:
+        cur.execute(
+            """
+            INSERT INTO follow_up_last_visit_lab_item (
+                register_id, metric_code, label, metric_value, unit, ref_range, abnormal_flag, sort_order
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (register_id, metric_code) DO UPDATE SET
+                label = EXCLUDED.label,
+                metric_value = EXCLUDED.metric_value,
+                unit = EXCLUDED.unit,
+                ref_range = EXCLUDED.ref_range,
+                abnormal_flag = EXCLUDED.abnormal_flag,
+                sort_order = EXCLUDED.sort_order
+            """,
+            (
+                rid,
+                item["metric_code"],
+                item["label"],
+                item["metric_value"],
+                item["unit"],
+                item["ref_range"],
+                item["abnormal_flag"],
+                item["sort_order"],
+            ),
+        )
+
+
 def ensure_nurse(cur, username: str, realname: str, dept_id: int) -> int:
     cur.execute(
         "SELECT employee_id FROM users WHERE username = %s AND user_type = 7",
@@ -154,6 +303,212 @@ def ensure_nurse(cur, username: str, realname: str, dept_id: int) -> int:
         (username, DEFAULT_PASSWORD, realname, employee_id),
     )
     return employee_id
+
+
+def ensure_clinical_data(cur, rid: int, dept_id: int, snap: dict) -> None:
+    profile = CLINICAL_PROFILES.get(rid)
+    if not profile:
+        return
+
+    mr_cols = table_columns(cur, "medical_record")
+    mr_id = profile["medical_record_id"]
+    mr_row = {"id": mr_id, "register_id": rid}
+    if "chief_complaint" in mr_cols:
+        mr_row.update(
+            {
+                "chief_complaint": profile["readme"],
+                "present_illness": profile["present"],
+                "treatment_proposal": profile["proposal"],
+                "diagnosis": profile["diagnosis"],
+                "preliminary_diagnosis": profile["diagnosis"],
+            }
+        )
+    else:
+        mr_row.update(
+            {
+                "readme": profile["readme"],
+                "present": profile["present"],
+                "proposal": profile["proposal"],
+                "diagnosis": profile["diagnosis"],
+            }
+        )
+    mr_row = {k: v for k, v in mr_row.items() if k in mr_cols}
+    cur.execute(f"SELECT 1 FROM medical_record WHERE id = %s", (mr_id,))
+    if not cur.fetchone():
+        cols = list(mr_row.keys())
+        cur.execute(
+            f"INSERT INTO medical_record ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))})",
+            tuple(mr_row[c] for c in cols),
+        )
+
+    cur.execute(
+        """
+        INSERT INTO medical_record_disease (medical_record_id, disease_id)
+        SELECT %s, d.id FROM disease d
+        WHERE d.disease_code = 'T2DM'
+          AND NOT EXISTS (
+            SELECT 1 FROM medical_record_disease mrd
+            WHERE mrd.medical_record_id = %s AND mrd.disease_id = d.id
+          )
+        LIMIT 1
+        """,
+        (mr_id, mr_id),
+    )
+
+    cur.execute(
+        """
+        INSERT INTO prescription (register_id, drug_id, drug_usage, drug_number, creation_time)
+        SELECT %s, d.id, %s, '按医嘱', CURRENT_TIMESTAMP - INTERVAL '14 days'
+        FROM drug_info d
+        WHERE d.drug_name LIKE %s
+          AND NOT EXISTS (SELECT 1 FROM prescription WHERE register_id = %s)
+        LIMIT 1
+        """,
+        (rid, profile["drug_usage"], f"%{profile['drug_keyword']}%", rid),
+    )
+
+    cur.execute(
+        """
+        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'drugId', pr.drug_id,
+            'drugName', di.drug_name,
+            'drugUsage', pr.drug_usage,
+            'drugNumber', pr.drug_number
+        )), '[]'::jsonb)
+        FROM prescription pr
+        INNER JOIN drug_info di ON di.id = pr.drug_id
+        WHERE pr.register_id = %s
+        """,
+        (rid,),
+    )
+    prescription_summary = cur.fetchone()[0]
+    if isinstance(prescription_summary, (dict, list)):
+        prescription_json = json.dumps(prescription_summary, ensure_ascii=False)
+    else:
+        prescription_json = prescription_summary
+
+    snapshot_cols = table_columns(cur, "follow_up_last_visit_snapshot")
+    lab_panel_json = json.dumps(_lab_panel(LAST_VISIT_LAB_ITEMS.get(rid, [])), ensure_ascii=False)
+    metrics_json = json.dumps(snap["metrics"], ensure_ascii=False)
+    if "source_medical_record_id" in snapshot_cols and "prescription_summary" in snapshot_cols:
+        if "lab_panel" in snapshot_cols and "chief_complaint" in snapshot_cols:
+            cur.execute(
+                """
+                INSERT INTO follow_up_last_visit_snapshot (
+                    register_id, visit_date, diagnosis_summary, professional_metrics,
+                    doctor_name, department_name, source_medical_record_id, prescription_summary,
+                    chief_complaint, treatment_advice, lab_panel
+                )
+                VALUES (
+                    %s, (CURRENT_DATE - INTERVAL '14 days')::date, %s, %s::jsonb, %s, %s, %s, %s::jsonb, %s, %s, %s::jsonb
+                )
+                ON CONFLICT (register_id) DO UPDATE SET
+                    visit_date = EXCLUDED.visit_date,
+                    diagnosis_summary = EXCLUDED.diagnosis_summary,
+                    professional_metrics = EXCLUDED.professional_metrics,
+                    doctor_name = EXCLUDED.doctor_name,
+                    department_name = EXCLUDED.department_name,
+                    source_medical_record_id = EXCLUDED.source_medical_record_id,
+                    prescription_summary = EXCLUDED.prescription_summary,
+                    chief_complaint = EXCLUDED.chief_complaint,
+                    treatment_advice = EXCLUDED.treatment_advice,
+                    lab_panel = EXCLUDED.lab_panel,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    rid,
+                    snap["diagnosis_summary"],
+                    metrics_json,
+                    snap["doctor_name"],
+                    snap["department_name"],
+                    mr_id,
+                    prescription_json,
+                    snap.get("chief_complaint"),
+                    snap.get("treatment_advice"),
+                    lab_panel_json,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO follow_up_last_visit_snapshot (
+                    register_id, visit_date, diagnosis_summary, professional_metrics,
+                    doctor_name, department_name, source_medical_record_id, prescription_summary
+                )
+                VALUES (%s, (CURRENT_DATE - INTERVAL '14 days')::date, %s, %s::jsonb, %s, %s, %s, %s::jsonb)
+                ON CONFLICT (register_id) DO UPDATE SET
+                    visit_date = EXCLUDED.visit_date,
+                    diagnosis_summary = EXCLUDED.diagnosis_summary,
+                    professional_metrics = EXCLUDED.professional_metrics,
+                    doctor_name = EXCLUDED.doctor_name,
+                    department_name = EXCLUDED.department_name,
+                    source_medical_record_id = EXCLUDED.source_medical_record_id,
+                    prescription_summary = EXCLUDED.prescription_summary,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    rid,
+                    snap["diagnosis_summary"],
+                    metrics_json,
+                    snap["doctor_name"],
+                    snap["department_name"],
+                    mr_id,
+                    prescription_json,
+                ),
+            )
+    else:
+        cur.execute(
+            """
+            INSERT INTO follow_up_last_visit_snapshot (
+                register_id, visit_date, diagnosis_summary, professional_metrics, doctor_name, department_name
+            )
+            VALUES (%s, (CURRENT_DATE - INTERVAL '14 days')::date, %s, %s::jsonb, %s, %s)
+            ON CONFLICT (register_id) DO UPDATE SET
+                visit_date = EXCLUDED.visit_date,
+                diagnosis_summary = EXCLUDED.diagnosis_summary,
+                professional_metrics = EXCLUDED.professional_metrics,
+                doctor_name = EXCLUDED.doctor_name,
+                department_name = EXCLUDED.department_name
+            """,
+            (
+                rid,
+                snap["diagnosis_summary"],
+                json.dumps(snap["metrics"], ensure_ascii=False),
+                snap["doctor_name"],
+                snap["department_name"],
+            ),
+        )
+
+    ensure_last_visit_lab_items(cur, rid)
+
+    if not table_exists(cur, "follow_up_history_event"):
+        return
+
+    for idx, (event_type, title, summary) in enumerate(HISTORY_SEEDS):
+        cur.execute(
+            """
+            INSERT INTO follow_up_history_event (
+                register_id, department_id, event_type, actor_type, title, summary, payload, occurred_at
+            )
+            SELECT %s, %s, %s, 'system', %s, %s, %s::jsonb, CURRENT_TIMESTAMP - (%s || ' days')::interval
+            WHERE NOT EXISTS (
+                SELECT 1 FROM follow_up_history_event
+                WHERE register_id = %s AND event_type = %s AND title = %s
+            )
+            """,
+            (
+                rid,
+                dept_id,
+                event_type,
+                title,
+                summary,
+                json.dumps({"seed": True, "summary": summary}, ensure_ascii=False),
+                str(7 - idx),
+                rid,
+                event_type,
+                title,
+            ),
+        )
 
 
 def ensure_patient_bundle(cur, p: dict, patient_cols: set[str]) -> None:
@@ -281,7 +636,7 @@ def ensure_patient_bundle(cur, p: dict, patient_cols: set[str]) -> None:
         (pid, p["username"], pid),
     )
 
-    if rid in (9002, 9003):
+    if rid in (9001, 9002, 9003):
         cur.execute(
             """
             INSERT INTO patient_health_observation (
@@ -303,27 +658,7 @@ def ensure_patient_bundle(cur, p: dict, patient_cols: set[str]) -> None:
 
     snap = LAST_VISIT_SNAPSHOTS.get(rid)
     if snap:
-        cur.execute(
-            """
-            INSERT INTO follow_up_last_visit_snapshot (
-                register_id, visit_date, diagnosis_summary, professional_metrics, doctor_name, department_name
-            )
-            VALUES (%s, (CURRENT_DATE - INTERVAL '14 days')::date, %s, %s::jsonb, %s, %s)
-            ON CONFLICT (register_id) DO UPDATE SET
-                visit_date = EXCLUDED.visit_date,
-                diagnosis_summary = EXCLUDED.diagnosis_summary,
-                professional_metrics = EXCLUDED.professional_metrics,
-                doctor_name = EXCLUDED.doctor_name,
-                department_name = EXCLUDED.department_name
-            """,
-            (
-                rid,
-                snap["diagnosis_summary"],
-                json.dumps(snap["metrics"], ensure_ascii=False),
-                snap["doctor_name"],
-                snap["department_name"],
-            ),
-        )
+        ensure_clinical_data(cur, rid, dept_id, snap)
 
 
 def main() -> None:
@@ -341,6 +676,12 @@ def main() -> None:
 
     patient_cols = table_columns(cur, "patient")
 
+    print("检查/应用 migrate_027 演示扩展表结构...")
+    ensure_migrate_027_schema(cur)
+    print("检查/应用 migrate_028 上次看诊检验表结构...")
+    ensure_migrate_028_schema(cur)
+    print("  follow_up_history_event、快照扩展列已就绪")
+
     print("创建随访护士账号...")
     for n in NURSES:
         eid = ensure_nurse(cur, n["username"], n["realname"], n["dept_id"])
@@ -351,7 +692,7 @@ def main() -> None:
         ensure_patient_bundle(cur, p, patient_cols)
         print(f"  register {p['register_id']} {p['real_name']} 科室={p['dept_id']}  账号 {p['username']}/{PATIENT_PASSWORD}")
 
-    print("完成。护士登录后仅可访问随访系统；患者可在随访管理录入血糖并与护士沟通。")
+    print("完成。护士登录后直达疗效评估；患者可录入血糖并与护士沟通。")
     cur.close()
     conn.close()
 

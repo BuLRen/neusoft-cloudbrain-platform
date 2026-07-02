@@ -21,6 +21,19 @@
 | Shanghai | T1DM + T2DM CGM | 24 |
 | D1NAMO | Zenodo 血糖子集（非 sensor） | 约 9+ |
 
+## 演示：模拟患者居家录血糖
+
+需 gateway、auth-service、medtech-service、glucose-prediction-service 已启动。
+
+```powershell
+cd xikang-cloud-hospital/glucose-ml
+pip install requests
+python scripts/simulate_patient_glucose.py --register-id 9001 --interval-minutes 5
+# 单次写入：加 --once
+```
+
+演示账号：`patient_tang` / `patient123`（register 9001）。
+
 ## 训练（自行执行）
 
 ```powershell

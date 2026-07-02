@@ -26,12 +26,8 @@
             ON fe.register_id = r.id AND fe.status = 'active'
         WHERE (
             EXISTS (
-                SELECT 1 FROM ai_follow_up_record fr
-                WHERE fr.register_id = r.id
-            )
-            OR EXISTS (
-                SELECT 1 FROM ai_follow_up_plan ap
-                WHERE ap.register_id = r.id
+                SELECT 1 FROM follow_up_history_event he
+                WHERE he.register_id = r.id
             )
             OR EXISTS (
                 SELECT 1
@@ -97,7 +93,7 @@
             r.age AS "age",
             r.visit_state AS "visitState",
             mr.diagnosis AS "diagnosis",
-            mr.preliminary_diagnosis AS "preliminaryDiagnosis"
+            mr.diagnosis AS "preliminaryDiagnosis"
         FROM register r
         LEFT JOIN medical_record mr ON mr.register_id = r.id
         WHERE r.id = #{registerId}
@@ -126,7 +122,7 @@
             rl.regist_name AS "registLevelName",
             sc.settle_name AS "settleCategoryName",
             mr.diagnosis AS "diagnosis",
-            mr.preliminary_diagnosis AS "preliminaryDiagnosis",
+            mr.diagnosis AS "preliminaryDiagnosis",
             mr.readme AS "chiefComplaint",
             mr.present AS "presentIllness",
             mr.history AS "pastHistory",
@@ -240,18 +236,15 @@
 
     <select id="selectFollowUpRecords" resultType="map">
         SELECT
-            fr.id AS "id",
-            fr.follow_up_plan_id AS "followUpPlanId",
-            fr.register_id AS "registerId",
-            fr.symptom_relief AS "symptomRelief",
-            fr.has_side_effect AS "hasSideEffect",
-            fr.patient_feedback AS "patientFeedback",
-            fr.ai_assessment AS "aiAssessment",
-            fr.ai_advice AS "aiAdvice",
-            fr.follow_up_time AS "followUpTime"
-        FROM ai_follow_up_record fr
-        WHERE fr.register_id = #{registerId}
-        ORDER BY fr.follow_up_time DESC NULLS LAST, fr.id DESC
+            e.id AS "id",
+            e.register_id AS "registerId",
+            e.payload->>'symptomRelief' AS "symptomRelief",
+            e.summary AS "patientFeedback",
+            e.occurred_at AS "followUpTime"
+        FROM follow_up_history_event e
+        WHERE e.register_id = #{registerId}
+          AND e.event_type = 'patient_feedback'
+        ORDER BY e.occurred_at DESC NULLS LAST, e.id DESC
     </select>
 
     <select id="selectInterviewSchedules" resultType="map">

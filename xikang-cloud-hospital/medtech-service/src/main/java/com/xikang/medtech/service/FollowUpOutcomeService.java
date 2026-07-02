@@ -2,7 +2,6 @@ package com.xikang.medtech.service;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.context.MedtechAuthContext;
-import com.xikang.medtech.mapper.FollowUpLastVisitMapper;
 import com.xikang.medtech.mapper.FollowUpOutcomeMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,8 @@ public class FollowUpOutcomeService {
 
     private final FollowUpOutcomeMapper followUpOutcomeMapper;
     private final HealthObservationService healthObservationService;
-    private final FollowUpLastVisitMapper followUpLastVisitMapper;
+    private final FollowUpClinicalSnapshotService clinicalSnapshotService;
+    private final FollowUpHistoryService historyService;
     private final GlucoseForecastService glucoseForecastService;
 
     public List<Map<String, Object>> listPatients(Integer visitState) {
@@ -76,7 +76,7 @@ public class FollowUpOutcomeService {
     }
 
     public Map<String, Object> getLastVisit(Long registerId) {
-        Map<String, Object> snapshot = followUpLastVisitMapper.selectByRegisterId(registerId);
+        Map<String, Object> snapshot = clinicalSnapshotService.getOrSyncLastVisit(registerId);
         if (snapshot == null || snapshot.isEmpty()) {
             throw new BusinessException("暂无上次看诊快照");
         }
@@ -130,6 +130,12 @@ public class FollowUpOutcomeService {
         payload.put("createdBy", MedtechAuthContext.employeeIdOrNull());
 
         followUpOutcomeMapper.insertInterviewSchedule(payload);
+
+        historyService.recordInterviewScheduled(
+            registerId,
+            MedtechAuthContext.employeeIdOrNull(),
+            request.get("triggerReason") != null ? String.valueOf(request.get("triggerReason")) : "疗效评估安排访谈"
+        );
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", payload.get("id"));

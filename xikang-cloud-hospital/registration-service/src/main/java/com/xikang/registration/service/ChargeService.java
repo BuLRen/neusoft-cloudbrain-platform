@@ -4,6 +4,7 @@ import com.xikang.common.exception.BusinessException;
 import com.xikang.registration.entity.ExpenseRecord;
 import com.xikang.registration.entity.Register;
 import com.xikang.registration.feign.AuthPatientFeignClient;
+import com.xikang.registration.feign.PaymentFeignClient;
 import com.xikang.registration.mapper.ExpenseRecordMapper;
 import com.xikang.registration.mapper.RegistrationMapper;
 import lombok.RequiredArgsConstructor;
@@ -14,11 +15,18 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Charge Service - 收费核心服务
+ * Charge Service - 收费核心服务（v3.2 改造）
+ *
+ * - payRegistration / payMedication：改 Feign 透传 payment-service（链 G/H 兼容入口）
+ * - charge（cashier 集中收费）：保留旧路径，写前申请 write-token 防与 payment.payItem 并发双扣
+ * - getPendingCharges：改 Feign 透传
+ *
+ * 保留 expenseRecordMapper：charge 路径双写期仍需直接读写。
  */
 @Slf4j
 @Service
@@ -28,11 +36,11 @@ public class ChargeService {
     private final ExpenseRecordMapper expenseRecordMapper;
     private final RegistrationMapper registrationMapper;
     private final AuthPatientFeignClient authPatientFeignClient;
+    private final PaymentFeignClient paymentFeignClient;
 
     /**
-     * 患者按挂号单自助缴费
+     * 患者按挂号单自助缴费（v3.2：Feign 透传 payment-service.payItem）
      */
-    @Transactional
     public Map<String, Object> payRegistration(Long registerId) {
         Register register = registrationMapper.selectById(registerId);
         if (register == null) {
@@ -41,173 +49,86 @@ public class ChargeService {
         if (register.getVisitState() != null && register.getVisitState() == 4) {
             throw new BusinessException(400, "该挂号已退号，不能继续缴费");
         }
-        if (register.getPatientId() == null) {
-            throw new BusinessException(400, "该挂号缺少患者信息，无法自助缴费");
+
+        // 通过 payment.internal.items/by-register 找出该挂号的 REGISTRATION_FEE 待缴行
+        Map<String, Object> itemResp = paymentFeignClient.getItemByRegister(registerId, "REGISTRATION_FEE");
+        Object itemData = itemResp.get("data");
+        if (!(itemData instanceof Map<?, ?> itemMap) || itemMap.get("id") == null) {
+            throw new BusinessException(400, "没有待缴费的挂号费");
+        }
+        Integer status = (Integer) itemMap.get("status");
+        if (status != null && status != 0) {
+            throw new BusinessException(400, "挂号费当前状态不允许支付: " + status);
         }
 
-        List<ExpenseRecord> pendingItems = filterPatientPayItems(expenseRecordMapper.selectPendingByRegisterId(registerId));
-        if (pendingItems == null || pendingItems.isEmpty()) {
-            throw new BusinessException(400, "没有待缴费项目");
+        Long itemId = Long.valueOf(itemMap.get("id").toString());
+        Map<String, Object> payBody = new HashMap<>();
+        if (register.getPatientId() != null) {
+            payBody.put("operatorId", register.getPatientId().longValue());
         }
+        payBody.put("operatorName", "患者余额");
 
-        // 一个挂号单只会产生一条"待支付"的挂号费；如果历史脏数据产生多条，强制只取最早一条进行真实扣款，
-        // 避免一次性扣 N 次造成余额异常。
-        ExpenseRecord payItem = pendingItems.stream()
-                .min((a, b) -> {
-                    LocalDateTime ta = a.getCreateTime();
-                    LocalDateTime tb = b.getCreateTime();
-                    if (ta == null && tb == null) return 0;
-                    if (ta == null) return 1;
-                    if (tb == null) return -1;
-                    return ta.compareTo(tb);
-                })
-                .orElseThrow(() -> new BusinessException(400, "没有待缴费项目"));
-        pendingItems = List.of(payItem);
+        Map<String, Object> resp = paymentFeignClient.payItem(itemId, payBody);
+        Map<String, Object> data = unwrapMapData(resp, "余额扣款失败");
 
-        BigDecimal totalAmount = pendingItems.stream()
-                .map(ExpenseRecord::getTotalAmount)
-                .filter(amount -> amount != null && amount.compareTo(BigDecimal.ZERO) > 0)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(400, "待缴费金额异常");
-        }
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("amount", totalAmount);
-        body.put("businessType", "REGISTRATION");
-        body.put("businessId", registerId);
-        body.put("operatorId", register.getPatientId());
-        body.put("operatorName", "患者余额");
-        body.put("remark", "患者自助余额支付挂号费");
-        Map<String, Object> response = authPatientFeignClient.deductBalance(register.getPatientId().intValue(), body);
-        Map<String, Object> data = unwrapMapData(response, "余额扣款失败");
-
-        Map<String, Object> result = new HashMap<>();
+        Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", Boolean.TRUE.equals(data.get("success")));
         result.put("registerId", registerId);
-        result.put("amount", totalAmount);
+        result.put("amount", data.get("paidAmount"));
         result.put("accountBalance", data.get("accountBalance"));
-        result.put("paymentMessage", String.valueOf(data.getOrDefault("message", "缴费失败")));
-
-        if (!Boolean.TRUE.equals(data.get("success"))) {
-            result.put("payStatus", 0);
-            result.put("payStatusName", "待缴费");
-            result.put("status", register.getVisitState());
-            result.put("statusName", getStateName(register.getVisitState()));
-            return result;
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        for (ExpenseRecord item : pendingItems) {
-            item.setStatus(1);
-            item.setPayTime(now);
-            item.setOperatorId(register.getPatientId());
-            item.setOperatorName("患者余额");
-            item.setRemark("患者自助余额支付");
-            expenseRecordMapper.update(item);
-        }
-
-        // 支付成功后，把同 registerId 下其余 status=0 的 REGISTRATION_FEE 作废，
-        // 防止"取消挂号"时把多余的待缴费行也一起退掉。
-        invalidateDuplicateRegistrationFees(registerId, payItem.getId());
-
-        Integer status = register.getVisitState();
-
-        result.put("payStatus", 1);
-        result.put("payStatusName", "已缴费");
-        result.put("payTime", now);
-        result.put("status", status);
-        result.put("statusName", getStateName(status));
-        result.put("itemCount", pendingItems.size());
-        result.put("operatorName", "患者余额");
-        result.put("paymentMessage", "余额支付成功");
-
-        log.info("患者自助缴费成功 | registerId={}, patientId={}, totalAmount={}", registerId, register.getPatientId(), totalAmount);
+        result.put("payTime", data.get("payTime"));
+        result.put("paymentMessage", "缴费成功");
+        // 重新汇总拿到最新 visitState / payStatus
+        fillRegistrationStatus(result, registerId);
+        log.info("患者自助缴费成功（Feign 透传）| registerId={}, itemId={}", registerId, itemId);
         return result;
     }
 
     /**
-     * 患者自助支付药品费（扣余额）。
-     * 与挂号费支付 {@link #payRegistration(Long)} 完全独立，互不影响。
-     *
-     * <p>流程：</p>
-     * <ol>
-     *   <li>查 MEDICATION_FEE 行（由 pharmacy-service 出账写入），状态必须为 0。</li>
-     *   <li>Feign 调 auth-service 扣余额，businessType=MEDICATION。</li>
-     *   <li>更新 expense_record.status=1，写 pay_time。</li>
-     * </ol>
+     * 患者自助支付药品费（v3.2：Feign 透传 payment-service.payItem）
      */
-    @Transactional
     public Map<String, Object> payMedication(Long registerId) {
         Register register = registrationMapper.selectById(registerId);
         if (register == null) {
             throw new BusinessException(404, "挂号记录不存在");
         }
-        if (register.getPatientId() == null) {
-            throw new BusinessException(400, "该挂号缺少患者信息，无法自助缴费");
-        }
 
-        ExpenseRecord medicationFee = expenseRecordMapper.selectMedicationFeeByRegisterId(registerId);
-        if (medicationFee == null) {
+        Map<String, Object> itemResp = paymentFeignClient.getItemByRegister(registerId, "MEDICATION_FEE");
+        Object itemData = itemResp.get("data");
+        if (!(itemData instanceof Map<?, ?> itemMap) || itemMap.get("id") == null) {
             throw new BusinessException(400, "未找到药品费账单，请先在患者端查看处方");
         }
-        if (medicationFee.getStatus() != null && medicationFee.getStatus() == 1) {
+        Integer status = (Integer) itemMap.get("status");
+        if (status != null && status == 1) {
             throw new BusinessException(400, "药品费已支付，无需重复缴费");
         }
-        if (medicationFee.getStatus() == null || medicationFee.getStatus() != 0) {
+        if (status == null || status != 0) {
             throw new BusinessException(400, "当前药品费账单状态不允许支付");
         }
 
-        BigDecimal amount = medicationFee.getTotalAmount();
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(400, "药品费金额异常");
+        Long itemId = Long.valueOf(itemMap.get("id").toString());
+        Map<String, Object> payBody = new HashMap<>();
+        if (register.getPatientId() != null) {
+            payBody.put("operatorId", register.getPatientId().longValue());
         }
+        payBody.put("operatorName", "患者余额");
 
-        Map<String, Object> body = new HashMap<>();
-        body.put("amount", amount);
-        body.put("businessType", "MEDICATION");
-        body.put("businessId", registerId);
-        body.put("operatorId", register.getPatientId());
-        body.put("operatorName", "患者余额");
-        body.put("remark", "患者自助余额支付药品费");
-        Map<String, Object> response = authPatientFeignClient.deductBalance(register.getPatientId().intValue(), body);
-        Map<String, Object> data = unwrapMapData(response, "余额扣款失败");
+        Map<String, Object> resp = paymentFeignClient.payItem(itemId, payBody);
+        Map<String, Object> data = unwrapMapData(resp, "余额扣款失败");
 
-        Map<String, Object> result = new HashMap<>();
+        Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", Boolean.TRUE.equals(data.get("success")));
         result.put("registerId", registerId);
-        result.put("amount", amount);
+        result.put("amount", data.get("paidAmount"));
         result.put("accountBalance", data.get("accountBalance"));
-
-        if (!Boolean.TRUE.equals(data.get("success"))) {
-            result.put("payStatus", 0);
-            result.put("paymentMessage", String.valueOf(data.getOrDefault("message", "缴费失败")));
-            return result;
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        medicationFee.setStatus(1);
-        medicationFee.setPayTime(now);
-        medicationFee.setOperatorId(register.getPatientId());
-        medicationFee.setOperatorName("患者余额");
-        medicationFee.setRemark("患者自助余额支付药品费");
-        expenseRecordMapper.update(medicationFee);
-
-        result.put("payStatus", 1);
-        result.put("payTime", now);
+        result.put("payTime", data.get("payTime"));
         result.put("paymentMessage", "药品费支付成功");
-
-        log.info("患者自助支付药品费成功 | registerId={}, patientId={}, amount={}",
-            registerId, register.getPatientId(), amount);
+        log.info("患者自助支付药品费成功（Feign 透传）| registerId={}, itemId={}", registerId, itemId);
         return result;
     }
 
     /**
-     * 收费核心流程：
-     * 1. 根据 registerId 查询待缴费项目
-     * 2. 计算总金额
-     * 3. 创建 expense_record（状态设为已缴费）
-     * 4. 更新 register 的 pay_status
+     * 收费员集中收费（cashier）— v3.2 §2.2 链 F：申请 write-token 后直接读写
      */
     @Transactional
     public Map<String, Object> charge(Map<String, Object> request) {
@@ -222,125 +143,130 @@ public class ChargeService {
 
         log.info("收费操作 | registerId={}, itemIds={}, operatorId={}", registerId, itemIds, operatorId);
 
-        List<ExpenseRecord> pendingItems;
-        if (itemIds != null && !itemIds.isEmpty()) {
-            pendingItems = expenseRecordMapper.selectPendingByRegisterAndIds(registerId, itemIds);
-        } else {
-            pendingItems = expenseRecordMapper.selectPendingByRegisterId(registerId);
+        // v3.2 申请 write-token（与 payment-service.payItem 互斥）
+        Map<String, Object> tokenBody = new HashMap<>();
+        tokenBody.put("registerId", registerId);
+        tokenBody.put("holder", "CHARGE_SERVICE");
+        tokenBody.put("ttlSeconds", 30);
+        Map<String, Object> tokenResp = paymentFeignClient.acquireWriteToken(tokenBody);
+        Integer tokenCode = (Integer) tokenResp.get("code");
+        if (tokenCode == null || tokenCode != 200) {
+            String msg = String.valueOf(tokenResp.getOrDefault("message", "申请写令牌失败"));
+            throw new BusinessException(409, msg);
         }
+        log.info("charge 获取 write-token | registerId={}", registerId);
 
-        if (pendingItems == null || pendingItems.isEmpty()) {
-            throw new BusinessException(400, "没有待缴费项目");
+        try {
+            List<ExpenseRecord> pendingItems;
+            if (itemIds != null && !itemIds.isEmpty()) {
+                pendingItems = expenseRecordMapper.selectPendingByRegisterAndIds(registerId, itemIds);
+            } else {
+                pendingItems = expenseRecordMapper.selectPendingByRegisterId(registerId);
+            }
+
+            if (pendingItems == null || pendingItems.isEmpty()) {
+                throw new BusinessException(400, "没有待缴费项目");
+            }
+
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            int claimedCount = 0;
+            LocalDateTime now = LocalDateTime.now();
+
+            // v3.2 防双写：updateIfPending 仅在 status=0 时生效。
+            // 并发场景：payment-service.payItem 已 flip 某行为 status=1 → 该行 UPDATE 命中 0 行 → 跳过。
+            for (ExpenseRecord item : pendingItems) {
+                item.setStatus(1);
+                item.setPayTime(now);
+                item.setOperatorId(operatorId);
+                item.setOperatorName(operatorName);
+                int affected = expenseRecordMapper.updateIfPending(item);
+                if (affected > 0) {
+                    totalAmount = totalAmount.add(item.getTotalAmount() != null ? item.getTotalAmount() : BigDecimal.ZERO);
+                    claimedCount++;
+                } else {
+                    log.info("charge 跳过已被并发支付的项 | registerId={}, itemId={}", registerId, item.getId());
+                }
+            }
+
+            if (claimedCount == 0) {
+                throw new BusinessException(400, "待缴费项目已被支付，无需重复收费");
+            }
+
+            registrationMapper.updatePayStatus(registerId, 2);
+
+            Register register = registrationMapper.selectById(registerId);
+            if (register != null && register.getVisitState() == 1) {
+                registrationMapper.updateStatus(registerId, 2);
+            }
+
+            // 收费员直接写了 expense_record，需要通知 payment-service 重新汇总（避免下次支付时状态不一致）
+            // 通过 payment-service 的内部 API：本服务后续会通过 summary 端点拉取，所以这里不需要主动通知
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("registerId", registerId);
+            result.put("itemCount", claimedCount);
+            result.put("totalAmount", totalAmount);
+            result.put("payTime", now);
+            result.put("operatorName", operatorName);
+
+            log.info("收费成功 | registerId={}, claimedCount={}, totalAmount={}", registerId, claimedCount, totalAmount);
+            return result;
+        } finally {
+            // 释放 write-token
+            try {
+                Map<String, Object> relBody = new HashMap<>();
+                relBody.put("registerId", registerId);
+                relBody.put("holder", "CHARGE_SERVICE");
+                paymentFeignClient.releaseWriteToken(relBody);
+            } catch (Exception e) {
+                log.warn("释放 write-token 失败 | registerId={}, err={}", registerId, e.getMessage());
+                // 自然过期也 OK（30s TTL）
+            }
         }
-
-        BigDecimal totalAmount = pendingItems.stream()
-            .map(ExpenseRecord::getTotalAmount)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        LocalDateTime now = LocalDateTime.now();
-        for (ExpenseRecord item : pendingItems) {
-            item.setStatus(1);
-            item.setPayTime(now);
-            item.setOperatorId(operatorId);
-            item.setOperatorName(operatorName);
-            expenseRecordMapper.update(item);
-        }
-
-        registrationMapper.updatePayStatus(registerId, 2);
-
-        Register register = registrationMapper.selectById(registerId);
-        if (register != null && register.getVisitState() == 1) {
-            registrationMapper.updateStatus(registerId, 2);
-        }
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("registerId", registerId);
-        result.put("itemCount", pendingItems.size());
-        result.put("totalAmount", totalAmount);
-        result.put("payTime", now);
-        result.put("operatorName", operatorName);
-
-        log.info("收费成功 | registerId={}, totalAmount={}", registerId, totalAmount);
-        return result;
     }
 
     /**
-     * 查询待缴费项目
+     * 查询待缴费项目（v3.2：改 Feign 透传）
      */
     public List<Map<String, Object>> getPendingCharges(Long registerId) {
-        List<ExpenseRecord> records = expenseRecordMapper.selectPendingByRegisterId(registerId);
-        return records.stream().map(this::toMap).toList();
+        Map<String, Object> resp = paymentFeignClient.records(null, registerId, 0, null, null);
+        Object data = resp.get("data");
+        return data instanceof List<?> list ? (List<Map<String, Object>>) (List) list : List.of();
     }
 
     /**
-     * 查询患者的待缴费项目
+     * 查询患者的待缴费项目（v3.2：改 Feign 透传）
      */
     public List<Map<String, Object>> getPendingChargesByPatient(Long patientId) {
-        List<ExpenseRecord> records = expenseRecordMapper.selectPendingByPatientId(patientId);
-        return records.stream().map(this::toMap).toList();
+        Map<String, Object> resp = paymentFeignClient.records(patientId, null, 0, null, null);
+        Object data = resp.get("data");
+        return data instanceof List<?> list ? (List<Map<String, Object>>) (List) list : List.of();
     }
 
-    private List<ExpenseRecord> filterPatientPayItems(List<ExpenseRecord> records) {
-        if (records == null || records.isEmpty()) {
-            return List.of();
-        }
-        boolean hasRegistrationFee = records.stream().anyMatch(record -> "REGISTRATION_FEE".equals(record.getItemCode()));
-        if (!hasRegistrationFee) {
-            return records;
-        }
-        return records.stream()
-                .filter(record -> "REGISTRATION_FEE".equals(record.getItemCode()))
-                .toList();
-    }
-
-    private void invalidateDuplicateRegistrationFees(Long registerId, Long keepId) {
-        if (registerId == null) return;
-        List<ExpenseRecord> pendingFees = expenseRecordMapper.selectByRegisterId(registerId).stream()
-                .filter(record -> "REGISTRATION_FEE".equals(record.getItemCode()))
-                .filter(record -> record.getStatus() != null && record.getStatus() == 0)
-                .toList();
-        for (ExpenseRecord record : pendingFees) {
-            if (keepId != null && keepId.equals(record.getId())) {
-                continue;
+    private void fillRegistrationStatus(Map<String, Object> result, Long registerId) {
+        try {
+            Map<String, Object> resp = paymentFeignClient.summary(registerId);
+            Object data = resp.get("data");
+            if (data instanceof Map<?, ?> m) {
+                result.put("payStatus", m.get("payStatus"));
+                result.put("payStatusName", m.get("payStatusName"));
             }
-            record.setStatus(3);
-            record.setRemark("重复挂号费作废");
-            expenseRecordMapper.update(record);
-        }
+        } catch (Exception ignored) {}
     }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> unwrapMapData(Map<String, Object> response, String errorMessage) {
+        if (response != null) {
+            Object codeObj = response.get("code");
+            if (codeObj instanceof Number num && num.intValue() != 200) {
+                String msg = String.valueOf(response.getOrDefault("message", errorMessage));
+                throw new BusinessException(num.intValue(), msg);
+            }
+        }
         Object data = response != null ? response.get("data") : null;
         if (!(data instanceof Map<?, ?> dataMap)) {
             throw new BusinessException(500, errorMessage);
         }
         return (Map<String, Object>) dataMap;
-    }
-
-    private String getStateName(Integer state) {
-        return switch (state) {
-            case 1 -> "已挂号";
-            case 2 -> "医生接诊";
-            case 3 -> "看诊结束";
-            case 4 -> "已退号";
-            default -> "未知";
-        };
-    }
-
-    private Map<String, Object> toMap(ExpenseRecord record) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("id", record.getId());
-        map.put("registerId", record.getRegisterId());
-        map.put("patientId", record.getPatientId());
-        map.put("patientName", record.getPatientName());
-        map.put("categoryName", record.getCategoryName());
-        map.put("itemId", record.getItemId());
-        map.put("itemName", record.getItemName());
-        map.put("quantity", record.getQuantity());
-        map.put("unitPrice", record.getUnitPrice());
-        map.put("totalAmount", record.getTotalAmount());
-        map.put("createTime", record.getCreateTime());
-        return map;
     }
 }

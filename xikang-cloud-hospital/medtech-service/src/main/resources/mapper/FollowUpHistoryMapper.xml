@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpHistoryMapper">
+
+    <insert id="insertEvent" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_history_event (
+            register_id, department_id, event_type, actor_type, actor_id,
+            title, summary, payload, ref_table, ref_id, occurred_at
+        ) VALUES (
+            #{registerId}, #{departmentId}, #{eventType}, COALESCE(#{actorType}, 'system'),
+            #{actorId}, #{title}, #{summary},
+            COALESCE(#{payloadJson}::jsonb, '{}'::jsonb),
+            #{refTable}, #{refId},
+            COALESCE(#{occurredAt}, CURRENT_TIMESTAMP)
+        )
+    </insert>
+
+    <select id="selectEvents" resultType="map">
+        SELECT
+            e.id AS "id",
+            e.register_id AS "registerId",
+            e.department_id AS "departmentId",
+            e.event_type AS "eventType",
+            e.actor_type AS "actorType",
+            e.actor_id AS "actorId",
+            e.title AS "title",
+            e.summary AS "summary",
+            e.payload AS "payload",
+            e.ref_table AS "refTable",
+            e.ref_id AS "refId",
+            e.occurred_at AS "occurredAt",
+            r.real_name AS "patientName",
+            r.case_number AS "caseNumber"
+        FROM follow_up_history_event e
+        INNER JOIN register r ON r.id = e.register_id
+        <where>
+            <if test="registerId != null">
+                AND e.register_id = #{registerId}
+            </if>
+            <if test="departmentId != null">
+                AND e.department_id = #{departmentId}
+            </if>
+            <if test="from != null">
+                AND e.occurred_at::date &gt;= #{from}
+            </if>
+            <if test="to != null">
+                AND e.occurred_at::date &lt;= #{to}
+            </if>
+            <if test="eventType != null and eventType != ''">
+                AND e.event_type = #{eventType}
+            </if>
+        </where>
+        ORDER BY e.occurred_at DESC, e.id DESC
+        <if test="limit != null and limit &gt; 0">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <select id="selectRecentPatientFeedback" resultType="map">
+        SELECT
+            e.id AS "id",
+            e.payload AS "payload",
+            e.summary AS "patientFeedback",
+            e.occurred_at AS "followUpTime",
+            e.payload->>'symptomRelief' AS "symptomRelief"
+        FROM follow_up_history_event e
+        WHERE e.register_id = #{registerId}
+          AND e.event_type = 'patient_feedback'
+        ORDER BY e.occurred_at DESC, e.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectRegisterDepartmentId" resultType="long">
+        SELECT COALESCE(
+            (SELECT fe.managing_department_id FROM follow_up_enrollment fe
+             WHERE fe.register_id = #{registerId} AND fe.status = 'active' LIMIT 1),
+            (SELECT fp.department_id FROM follow_up_patient_profile fp
+             WHERE fp.register_id = #{registerId} LIMIT 1),
+            (SELECT r.deptment_id FROM register r WHERE r.id = #{registerId} LIMIT 1)
+        )
+    </select>
+
+</mapper>

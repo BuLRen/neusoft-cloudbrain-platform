@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpClinicalMapper">
+
+    <select id="selectMedicalRecordByRegisterId" resultType="map">
+        SELECT
+            mr.id AS "id",
+            mr.register_id AS "registerId",
+            mr.diagnosis AS "diagnosis",
+            mr.readme AS "chiefComplaint",
+            mr.present AS "presentIllness",
+            mr.proposal AS "treatmentProposal",
+            COALESCE(mr.allergy, '') AS "allergy"
+        FROM medical_record mr
+        WHERE mr.register_id = #{registerId}
+        ORDER BY mr.id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectPrescriptionsByRegisterId" resultType="map">
+        SELECT
+            pr.id AS "prescriptionId",
+            pr.register_id AS "registerId",
+            pr.drug_id AS "drugId",
+            d.drug_name AS "drugName",
+            d.drug_format AS "drugFormat",
+            d.drug_unit AS "drugUnit",
+            d.drug_dosage AS "drugDosage",
+            d.manufacturer AS "manufacturer",
+            pr.drug_usage AS "drugUsage",
+            pr.drug_number AS "drugNumber",
+            pr.creation_time AS "creationTime",
+            'prescription' AS "source"
+        FROM prescription pr
+        INNER JOIN drug_info d ON d.id = pr.drug_id
+        WHERE pr.register_id = #{registerId}
+        ORDER BY pr.creation_time DESC, pr.id DESC
+    </select>
+
+    <select id="selectDiseasesByRegisterId" resultType="map">
+        SELECT
+            d.id AS "diseaseId",
+            d.disease_name AS "diseaseName",
+            d.diseaseicd AS "diseaseIcd",
+            d.disease_category AS "diseaseCategory",
+            COALESCE(mr.diagnosis, d.disease_name) AS "diagnosisText",
+            mr.proposal AS "treatmentDirection",
+            'medical_record' AS "source"
+        FROM medical_record mr
+        LEFT JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+        LEFT JOIN disease d ON d.id = mrd.disease_id
+        WHERE mr.register_id = #{registerId}
+        ORDER BY d.id NULLS LAST
+    </select>
+
+    <select id="searchDrugs" resultType="map">
+        SELECT
+            d.id AS "drugId",
+            d.drug_name AS "drugName",
+            d.drug_format AS "drugFormat",
+            d.drug_unit AS "drugUnit",
+            d.drug_dosage AS "drugDosage",
+            d.manufacturer AS "manufacturer",
+            d.drug_type AS "drugType",
+            'catalog' AS "source"
+        FROM drug_info d
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    d.drug_name ILIKE CONCAT('%', #{keyword}, '%')
+                    OR d.mnemonic_code ILIKE CONCAT('%', #{keyword}, '%')
+                    OR d.drug_code ILIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY d.drug_name ASC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="upsertLastVisitSnapshot">
+        INSERT INTO follow_up_last_visit_snapshot (
+            register_id, visit_date, diagnosis_summary, professional_metrics,
+            doctor_name, department_name, source_medical_record_id, prescription_summary
+        ) VALUES (
+            #{registerId}, #{visitDate}, #{diagnosisSummary},
+            COALESCE(#{professionalMetricsJson}::jsonb, '{}'::jsonb),
+            #{doctorName}, #{departmentName}, #{sourceMedicalRecordId},
+            COALESCE(#{prescriptionSummaryJson}::jsonb, '[]'::jsonb)
+        )
+        ON CONFLICT (register_id) DO UPDATE SET
+            visit_date = EXCLUDED.visit_date,
+            diagnosis_summary = COALESCE(NULLIF(EXCLUDED.diagnosis_summary, ''), follow_up_last_visit_snapshot.diagnosis_summary),
+            professional_metrics = CASE
+                WHEN EXCLUDED.professional_metrics IS NOT NULL
+                     AND EXCLUDED.professional_metrics &lt;&gt; '{}'::jsonb
+                THEN EXCLUDED.professional_metrics
+                ELSE follow_up_last_visit_snapshot.professional_metrics
+            END,
+            doctor_name = COALESCE(EXCLUDED.doctor_name, follow_up_last_visit_snapshot.doctor_name),
+            department_name = COALESCE(EXCLUDED.department_name, follow_up_last_visit_snapshot.department_name),
+            source_medical_record_id = COALESCE(EXCLUDED.source_medical_record_id, follow_up_last_visit_snapshot.source_medical_record_id),
+            prescription_summary = COALESCE(EXCLUDED.prescription_summary, follow_up_last_visit_snapshot.prescription_summary),
+            updated_at = CURRENT_TIMESTAMP
+    </insert>
+
+</mapper>

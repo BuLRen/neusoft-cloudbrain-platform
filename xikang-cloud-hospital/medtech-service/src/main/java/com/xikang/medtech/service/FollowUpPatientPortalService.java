@@ -2,7 +2,6 @@ package com.xikang.medtech.service;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.context.PatientFollowUpAuthContext;
-import com.xikang.medtech.mapper.FollowUpLastVisitMapper;
 import com.xikang.medtech.mapper.FollowUpPatientMapper;
 import com.xikang.medtech.mapper.PatientFollowUpAuthMapper;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,17 +23,13 @@ public class FollowUpPatientPortalService {
     private final FollowUpPatientMapper followUpPatientMapper;
     private final GlucoseForecastService glucoseForecastService;
     private final HealthObservationService healthObservationService;
-    private final FollowUpLastVisitMapper followUpLastVisitMapper;
+    private final FollowUpClinicalSnapshotService clinicalSnapshotService;
+    private final FollowUpHistoryService historyService;
     private final PatientFollowUpAuthMapper patientFollowUpAuthMapper;
     private final FollowUpCommunicationService followUpCommunicationService;
 
     public List<Map<String, Object>> listPlans(Long patientId, List<Long> registerIds) {
-        Long resolvedPatientId = resolvePatientId(patientId);
-        List<Long> ids = resolveRegisterIds(resolvedPatientId, registerIds);
-        if (ids.isEmpty()) {
-            return List.of();
-        }
-        return followUpPatientMapper.selectPlansByRegisterIds(ids);
+        return List.of();
     }
 
     public List<Map<String, Object>> listRecords(Long patientId, List<Long> registerIds) {
@@ -42,7 +38,11 @@ public class FollowUpPatientPortalService {
         if (ids.isEmpty()) {
             return List.of();
         }
-        return followUpPatientMapper.selectRecordsByRegisterIds(ids);
+        List<Map<String, Object>> all = new ArrayList<>();
+        for (Long registerId : ids) {
+            all.addAll(historyService.listRecentFeedbackAsRecords(registerId, 20));
+        }
+        return all;
     }
 
     public List<Map<String, Object>> listMedications(Long patientId, List<Long> registerIds) {
@@ -56,7 +56,7 @@ public class FollowUpPatientPortalService {
 
     public Map<String, Object> getLastVisit(Long patientId, Long registerId) {
         Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
-        Map<String, Object> snapshot = followUpLastVisitMapper.selectByRegisterId(targetRegisterId);
+        Map<String, Object> snapshot = clinicalSnapshotService.getOrSyncLastVisit(targetRegisterId);
         if (snapshot == null || snapshot.isEmpty()) {
             throw new BusinessException("暂无上次看诊记录");
         }
@@ -106,6 +106,7 @@ public class FollowUpPatientPortalService {
             note
         );
 
+        historyService.recordGlucoseEntry(targetRegisterId, resolvedPatientId, metricValue, note);
         glucoseForecastService.refreshForecastAsync(targetRegisterId);
         return created;
     }
@@ -117,14 +118,7 @@ public class FollowUpPatientPortalService {
 
     @Transactional
     public Map<String, Object> completePlan(Long planId) {
-        if (planId == null) {
-            throw new BusinessException("planId 不能为空");
-        }
-        followUpPatientMapper.updatePlanStatus(planId, "completed");
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("id", planId);
-        result.put("planStatus", "completed");
-        return result;
+        throw new BusinessException("随访计划功能已下线，请通过医患沟通或反馈提交随访信息");
     }
 
     @Transactional
@@ -134,7 +128,6 @@ public class FollowUpPatientPortalService {
         if (registerId != null && resolvedPatientId != null) {
             requireAccessibleRegister(resolvedPatientId, registerId);
         }
-        Long followUpPlanId = toLong(request.get("followUpPlanId"));
         if (registerId == null) {
             throw new BusinessException("registerId 不能为空");
         }
@@ -152,26 +145,12 @@ public class FollowUpPatientPortalService {
         }
 
         String relief = mapRatingToRelief(rating);
-        if (followUpPlanId == null || followUpPlanId <= 0) {
-            List<Map<String, Object>> plans = followUpPatientMapper.selectPlansByRegisterIds(List.of(registerId));
-            if (plans.isEmpty()) {
-                throw new BusinessException("未找到可关联的随访计划，请先选择就诊记录");
-            }
-            followUpPlanId = toLong(plans.get(0).get("id"));
-        }
+        Map<String, Object> recorded = historyService.recordPatientFeedback(
+            registerId, resolvedPatientId, combined, relief, rating
+        );
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("followUpPlanId", followUpPlanId);
-        payload.put("registerId", registerId);
-        payload.put("symptomRelief", relief);
-        payload.put("hasSideEffect", 0);
-        payload.put("patientFeedback", combined);
-        payload.put("aiAssessment", null);
-        payload.put("followUpTime", null);
-
-        followUpPatientMapper.insertFollowUpRecord(payload);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("id", payload.get("id"));
+        result.put("id", recorded.get("id"));
         result.put("registerId", registerId);
         result.put("symptomRelief", relief);
         result.put("patientFeedback", combined);

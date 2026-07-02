@@ -74,6 +74,43 @@ public class AiGeneratePlanResult implements Serializable {
     private List<Object> warnings;
     private String message;
 
+    /**
+     * v4.4：Dify Code 节点为绕开 Array 输出 30 元素限制，把 errors/warnings
+     * 也字符串化输出（{@code "[]"}、{@code "[\"...\"]"}）。此处兼容两种形态。
+     */
+    @com.fasterxml.jackson.annotation.JsonSetter("errors")
+    public void setErrorsFromString(com.fasterxml.jackson.databind.JsonNode node) {
+        this.errors = parseStringOrArray(node);
+    }
+
+    @com.fasterxml.jackson.annotation.JsonSetter("warnings")
+    public void setWarningsFromString(com.fasterxml.jackson.databind.JsonNode node) {
+        this.warnings = parseStringOrArray(node);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.List<Object> parseStringOrArray(com.fasterxml.jackson.databind.JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return java.util.Collections.emptyList();
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            if (node.isTextual()) {
+                String text = node.asText();
+                if (text == null || text.isBlank()) {
+                    return java.util.Collections.emptyList();
+                }
+                return mapper.readValue(text, java.util.List.class);
+            }
+            if (node.isArray()) {
+                return mapper.readValue(node.toString(), java.util.List.class);
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
+            // 解析失败回退到空列表，避免阻塞主流程
+        }
+        return java.util.Collections.emptyList();
+    }
+
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class WorkflowStatistics implements Serializable {

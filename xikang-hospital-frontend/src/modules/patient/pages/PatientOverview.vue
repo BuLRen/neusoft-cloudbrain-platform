@@ -9,6 +9,7 @@ const router = useRouter()
 
 const medicalServices = [
   { key: 'registration', title: '我的挂号', desc: '查看已预约挂号，或继续发起新的导诊挂号', icon: '📋', path: '/patient/registration' },
+  { key: 'payment', title: '我的账单', desc: '查看挂号、药品等费用明细，余额支付', icon: '💳', path: '/patient/payment' },
   { key: 'records', title: '电子病历', desc: '集中查看本次就诊形成的病历、医嘱和检查入口', icon: '📄', path: '/patient/records' },
   { key: 'prescription', title: '我的处方', desc: '查看医生开立的处方和用药信息', icon: '💊', path: '/patient/prescription' },
   { key: 'followup', title: '随访管理', desc: '查看复诊提醒、居家血糖与医患沟通', icon: '📅', path: '/patient/followup' },
