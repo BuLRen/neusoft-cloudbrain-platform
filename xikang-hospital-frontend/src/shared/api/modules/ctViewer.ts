@@ -157,3 +157,88 @@ export async function downloadCtVolume(volumeId: string, format: string) {
   const mime = typeof mimeHeader === 'string' ? mimeHeader : 'application/octet-stream'
   downloadBlob(response.data, fileName, mime)
 }
+
+export interface CtImagingAuditLog {
+  id: number
+  userId?: number
+  employeeId?: number
+  departmentId?: number
+  action: string
+  volumeId?: string
+  sourceVolumeId?: string
+  checkRequestId?: number
+  registerId?: number
+  success?: boolean
+  denialReason?: string
+  clientIp?: string
+  createdAt?: string
+}
+
+export interface CtImagingAuditLogPage {
+  page: number
+  size: number
+  total: number
+  items: CtImagingAuditLog[]
+}
+
+interface JavaCtImagingAuditLog {
+  id: number
+  userId?: number
+  employeeId?: number
+  departmentId?: number
+  action: string
+  volumeId?: string
+  sourceVolumeId?: string
+  checkRequestId?: number
+  registerId?: number
+  success?: boolean
+  denialReason?: string
+  clientIp?: string
+  createdAt?: string
+}
+
+interface JavaCtImagingAuditLogPage {
+  page: number
+  size: number
+  total: number
+  items: JavaCtImagingAuditLog[]
+}
+
+function mapAuditLog(item: JavaCtImagingAuditLog): CtImagingAuditLog {
+  return {
+    id: item.id,
+    userId: item.userId,
+    employeeId: item.employeeId,
+    departmentId: item.departmentId,
+    action: item.action,
+    volumeId: item.volumeId,
+    sourceVolumeId: item.sourceVolumeId,
+    checkRequestId: item.checkRequestId,
+    registerId: item.registerId,
+    success: item.success,
+    denialReason: item.denialReason,
+    clientIp: item.clientIp,
+    createdAt: item.createdAt,
+  }
+}
+
+export async function fetchCtImagingAuditLogs(params: {
+  page?: number
+  size?: number
+  volumeId?: string
+  userId?: number
+  action?: string
+  success?: boolean
+}): Promise<CtImagingAuditLogPage> {
+  const data = await http<JavaCtImagingAuditLogPage>({
+    url: '/ct-viewer/audit/logs',
+    method: 'GET',
+    params,
+  })
+  return {
+    page: data.page,
+    size: data.size,
+    total: data.total,
+    items: (data.items ?? []).map(mapAuditLog),
+  }
+}

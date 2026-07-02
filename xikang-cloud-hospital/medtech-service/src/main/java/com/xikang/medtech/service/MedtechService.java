@@ -177,6 +177,9 @@ public class MedtechService {
         request.setImagingVolumeId(volumeId);
         request.setImagingUploadedAt(uploadedAt);
         request.setImagingSourceName(sourceName);
+        MedicalTechnology technology = medicalTechnologyMapper.selectById(request.getMedicalTechnologyId());
+        Long departmentId = technology != null ? technology.getDeptmentId() : null;
+        ctViewerClient.bindVolume(volumeId, id, departmentId, request.getRegisterId());
         log.info("绑定 CT 影像 | checkRequestId={} volumeId={}", id, volumeId);
         return buildImagingMap(request);
     }
@@ -186,8 +189,12 @@ public class MedtechService {
      */
     @Transactional
     public void clearCheckImaging(Long id) {
-        requireCtImagingContext(id, false);
+        CheckRequest request = requireCtImagingContext(id, false);
+        String volumeId = request.getImagingVolumeId();
         checkRequestMapper.clearImaging(id);
+        if (volumeId != null && !volumeId.isBlank()) {
+            ctViewerClient.unbindVolume(volumeId.trim());
+        }
         log.info("清除 CT 影像绑定 | checkRequestId={}", id);
     }
 

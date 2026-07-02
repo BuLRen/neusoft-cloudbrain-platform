@@ -24,6 +24,14 @@ public class VolumeMetaDto {
     private Double min;
     private Double max;
 
+    private Long ownerUserId;
+    private Long ownerEmployeeId;
+    private Long ownerDepartmentId;
+    private Long boundCheckRequestId;
+    private Long boundDepartmentId;
+    private Long boundRegisterId;
+    private String sourceVolumeId;
+
     @SuppressWarnings("unchecked")
     public static VolumeMetaDto fromAlgoMeta(String volumeId, String nrrdPath, Map<String, Object> meta, long createdAt) {
         VolumeMetaDto dto = new VolumeMetaDto();
@@ -75,6 +83,38 @@ public class VolumeMetaDto {
         map.put("series_id", seriesId);
         map.put("file_count", fileCount);
         return map;
+    }
+
+    public void applyOwner(Long userId, Long employeeId, Long departmentId) {
+        this.ownerUserId = userId;
+        this.ownerEmployeeId = employeeId;
+        this.ownerDepartmentId = departmentId;
+    }
+
+    public void applyBinding(Long checkRequestId, Long departmentId, Long registerId) {
+        this.boundCheckRequestId = checkRequestId;
+        this.boundDepartmentId = departmentId;
+        this.boundRegisterId = registerId;
+    }
+
+    public void clearBinding() {
+        this.boundCheckRequestId = null;
+        this.boundDepartmentId = null;
+        this.boundRegisterId = null;
+    }
+
+    public void inheritAccessFrom(VolumeMetaDto source, String derivedVolumeId) {
+        if (source == null) {
+            return;
+        }
+        this.volumeId = derivedVolumeId;
+        this.ownerUserId = source.getOwnerUserId();
+        this.ownerEmployeeId = source.getOwnerEmployeeId();
+        this.ownerDepartmentId = source.getOwnerDepartmentId();
+        this.boundCheckRequestId = source.getBoundCheckRequestId();
+        this.boundDepartmentId = source.getBoundDepartmentId();
+        this.boundRegisterId = source.getBoundRegisterId();
+        this.sourceVolumeId = source.getVolumeId();
     }
 
     private static String stringVal(Object value) {

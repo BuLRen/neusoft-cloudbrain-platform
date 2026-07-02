@@ -1,11 +1,14 @@
 package com.xikang.ctviewer.service;
 
 import com.xikang.common.exception.BusinessException;
+import com.xikang.ctviewer.audit.CtImagingAuditAction;
 import com.xikang.ctviewer.client.AiCtClient;
 import com.xikang.ctviewer.client.CtViewerAlgoClient;
+import com.xikang.ctviewer.context.CtViewerAuthContext;
 import com.xikang.ctviewer.dto.FilterRequestDto;
 import com.xikang.ctviewer.dto.FilterResponseDto;
 import com.xikang.ctviewer.dto.LoadResponseDto;
+import com.xikang.ctviewer.dto.VolumeBindRequestDto;
 import com.xikang.ctviewer.dto.VolumeMetaDto;
 import com.xikang.ctviewer.repository.VolumeMetaRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +28,8 @@ public class CtViewerService {
 
     private final VolumeStorageService storageService;
     private final VolumeMetaRepository metaRepository;
+    private final VolumeAccessService volumeAccessService;
+    private final CtImagingAuditService auditService;
     private final CtViewerAlgoClient algoClient;
     private final AiCtClient aiCtClient;
 
@@ -60,7 +65,9 @@ public class CtViewerService {
                 storageService.absolutePath(outNrrd),
                 originalName
             );
-            return persistVolume(volumeId, outNrrd, algoData);
+            LoadResponseDto response = persistVolume(volumeId, outNrrd, algoData);
+            auditService.logSuccess(CtImagingAuditAction.UPLOAD_NRRD, volumeId, null, null, null);
+            return response;
         } catch (IOException ex) {
             storageService.deleteVolumeDirectory(volumeId);
             throw new BusinessException(500, "保存上传文件失败", ex);
@@ -85,7 +92,9 @@ public class CtViewerService {
                 storageService.absolutePath(outNrrd),
                 "DICOM Folder"
             );
-            return persistVolume(volumeId, outNrrd, algoData);
+            LoadResponseDto response = persistVolume(volumeId, outNrrd, algoData);
+            auditService.logSuccess(CtImagingAuditAction.UPLOAD_DICOM, volumeId, null, null, null);
+            return response;
         } catch (IOException ex) {
             storageService.deleteVolumeDirectory(volumeId);
             throw new BusinessException(500, "保存 DICOM 文件失败", ex);
@@ -93,12 +102,26 @@ public class CtViewerService {
     }
 
     public byte[] getVolumeNrrd(String volumeId) {
-        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        VolumeMetaDto meta = volumeAccessService.requireReadableVolume(volumeId);
+        auditService.logSuccess(
+            CtImagingAuditAction.VIEW_NRRD,
+            volumeId,
+            null,
+            meta.getBoundCheckRequestId(),
+            meta.getBoundRegisterId()
+        );
         return storageService.readNrrdBytes(meta);
     }
 
     public Map<String, Object> getVolumeMeta(String volumeId) {
-        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        VolumeMetaDto meta = volumeAccessService.requireReadableVolume(volumeId);
+        auditService.logSuccess(
+            CtImagingAuditAction.VIEW_META,
+            volumeId,
+            null,
+            meta.getBoundCheckRequestId(),
+            meta.getBoundRegisterId()
+        );
         Map<String, Object> result = new LinkedHashMap<>(meta.toFrontendMeta());
         result.put("volume_id", meta.getVolumeId());
         result.put("source_name", meta.getSourceName());
@@ -110,7 +133,7 @@ public class CtViewerService {
             throw new BusinessException(400, "缺少 source_volume_id 或 filter_name");
         }
 
-        VolumeMetaDto source = metaRepository.requireById(request.getSourceVolumeId());
+        VolumeMetaDto source = volumeAccessService.requireReadableVolume(request.getSourceVolumeId());
         String resultId = storageService.newVolumeId();
         try {
             storageService.ensureVolumeDir(resultId);
@@ -127,7 +150,16 @@ public class CtViewerService {
             Map<String, Object> metaMap = (Map<String, Object>) algoData.get("meta");
             long now = System.currentTimeMillis();
             VolumeMetaDto resultMeta = VolumeMetaDto.fromAlgoMeta(resultId, storageService.absolutePath(outNrrd), metaMap, now);
+            resultMeta.inheritAccessFrom(source, resultId);
             metaRepository.save(resultMeta);
+
+            auditService.logSuccess(
+                CtImagingAuditAction.FILTER,
+                resultId,
+                source.getVolumeId(),
+                source.getBoundCheckRequestId(),
+                source.getBoundRegisterId()
+            );
 
             FilterResponseDto response = new FilterResponseDto();
             response.setVolumeId(resultId);
@@ -146,8 +178,131 @@ public class CtViewerService {
     }
 
     public ExportFile exportVolume(String volumeId, String format) {
-        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        VolumeMetaDto meta = volumeAccessService.requireReadableVolume(volumeId);
         String fmt = format == null ? "nrrd" : format.trim().toLowerCase();
+
+        ExportFile exported;
+        if ("nrrd".equals(fmt)) {
+            Path path = Path.of(meta.getNrrdPath());
+            try {
+                exported = new ExportFile(Files.readAllBytes(path), "filtered_volume.nrrd", "application/octet-stream");
+            } catch (IOException ex) {
+                throw new BusinessException(500, "读取 NRRD 失败", ex);
+            }
+        } else {
+            String suffix = fmt.contains("nii") ? ".nii.gz" : ".nrrd";
+            Path outPath = storageService.exportPath(volumeId, suffix);
+            algoClient.export(meta.getNrrdPath(), storageService.absolutePath(outPath), fmt);
+            try {
+                byte[] bytes = Files.readAllBytes(outPath);
+                String fileName = "filtered_volume" + suffix;
+                String mime = suffix.endsWith(".gz") ? "application/gzip" : "application/octet-stream";
+                exported = new ExportFile(bytes, fileName, mime);
+            } catch (IOException ex) {
+                throw new BusinessException(500, "读取导出文件失败", ex);
+            }
+        }
+
+        auditService.logSuccess(
+            CtImagingAuditAction.EXPORT,
+            volumeId,
+            null,
+            meta.getBoundCheckRequestId(),
+            meta.getBoundRegisterId()
+        );
+        return exported;
+    }
+
+    public Map<String, Object> analyzeVolume(String volumeId) {
+        VolumeMetaDto meta = volumeAccessService.requireReadableVolume(volumeId);
+        ExportFile exported = exportVolumeInternal(meta, "nii.gz");
+        Map<String, Object> result = aiCtClient.analyze(exported.bytes(), exported.fileName());
+        auditService.logSuccess(
+            CtImagingAuditAction.ANALYZE,
+            volumeId,
+            null,
+            meta.getBoundCheckRequestId(),
+            meta.getBoundRegisterId()
+        );
+        return result;
+    }
+
+    public void bindVolume(String volumeId, VolumeBindRequestDto request) {
+        if (request == null || request.getCheckRequestId() == null) {
+            throw new BusinessException(400, "缺少 checkRequestId");
+        }
+        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        meta.applyBinding(request.getCheckRequestId(), request.getDepartmentId(), request.getRegisterId());
+        metaRepository.save(meta);
+        auditService.logInternal(
+            CtImagingAuditAction.BIND,
+            volumeId,
+            request.getCheckRequestId(),
+            request.getRegisterId()
+        );
+    }
+
+    public void unbindVolume(String volumeId) {
+        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        Long checkRequestId = meta.getBoundCheckRequestId();
+        Long registerId = meta.getBoundRegisterId();
+        meta.clearBinding();
+        metaRepository.save(meta);
+        auditService.logInternal(
+            CtImagingAuditAction.UNBIND,
+            volumeId,
+            checkRequestId,
+            registerId
+        );
+    }
+
+    public Map<String, Object> getVolumeMetaInternal(String volumeId) {
+        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        Map<String, Object> result = new LinkedHashMap<>(meta.toFrontendMeta());
+        result.put("volume_id", meta.getVolumeId());
+        result.put("source_name", meta.getSourceName());
+        return result;
+    }
+
+    public Map<String, Object> queryAuditLogs(
+        int page,
+        int size,
+        String volumeId,
+        Long userId,
+        String action,
+        Boolean success
+    ) {
+        if (!CtViewerAuthContext.isAdminAllAccess()) {
+            throw new BusinessException(403, "仅管理员可查询审计日志");
+        }
+        return auditService.queryLogs(page, size, volumeId, userId, action, success);
+    }
+
+    @SuppressWarnings("unchecked")
+    private LoadResponseDto persistVolume(String volumeId, Path outNrrd, Map<String, Object> algoData) {
+        Map<String, Object> metaMap = (Map<String, Object>) algoData.get("meta");
+        long now = System.currentTimeMillis();
+        VolumeMetaDto meta = VolumeMetaDto.fromAlgoMeta(volumeId, storageService.absolutePath(outNrrd), metaMap, now);
+        applyCurrentOwner(meta);
+        metaRepository.save(meta);
+
+        LoadResponseDto response = new LoadResponseDto();
+        response.setVolumeId(volumeId);
+        response.setMeta(meta.toFrontendMeta());
+        return response;
+    }
+
+    private void applyCurrentOwner(VolumeMetaDto meta) {
+        CtViewerAuthContext.Context ctx = CtViewerAuthContext.get();
+        if (ctx == null) {
+            return;
+        }
+        meta.applyOwner(ctx.userId(), ctx.employeeId(), ctx.departmentId());
+    }
+
+    private ExportFile exportVolumeInternal(VolumeMetaDto meta, String format) {
+        String fmt = format == null ? "nrrd" : format.trim().toLowerCase();
+        String volumeId = meta.getVolumeId();
 
         if ("nrrd".equals(fmt)) {
             Path path = Path.of(meta.getNrrdPath());
@@ -169,25 +324,6 @@ public class CtViewerService {
         } catch (IOException ex) {
             throw new BusinessException(500, "读取导出文件失败", ex);
         }
-    }
-
-    public Map<String, Object> analyzeVolume(String volumeId) {
-        metaRepository.requireById(volumeId);
-        ExportFile exported = exportVolume(volumeId, "nii.gz");
-        return aiCtClient.analyze(exported.bytes(), exported.fileName());
-    }
-
-    @SuppressWarnings("unchecked")
-    private LoadResponseDto persistVolume(String volumeId, Path outNrrd, Map<String, Object> algoData) {
-        Map<String, Object> metaMap = (Map<String, Object>) algoData.get("meta");
-        long now = System.currentTimeMillis();
-        VolumeMetaDto meta = VolumeMetaDto.fromAlgoMeta(volumeId, storageService.absolutePath(outNrrd), metaMap, now);
-        metaRepository.save(meta);
-
-        LoadResponseDto response = new LoadResponseDto();
-        response.setVolumeId(volumeId);
-        response.setMeta(meta.toFrontendMeta());
-        return response;
     }
 
     public record ExportFile(byte[] bytes, String fileName, String contentType) {}

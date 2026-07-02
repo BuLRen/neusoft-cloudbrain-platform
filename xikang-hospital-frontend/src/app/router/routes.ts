@@ -32,6 +32,7 @@ import MedtechItemsManagement from '@/modules/admin/pages/MedtechItemsManagement
 import OperationsCenter from '@/modules/admin/pages/OperationsCenter.vue'
 import PaymentBillManagement from '@/modules/admin/pages/PaymentBillManagement.vue'
 import PaymentBillChargePage from '@/modules/admin/pages/PaymentBillChargePage.vue'
+import CtImagingAuditPage from '@/modules/admin/pages/CtImagingAuditPage.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
 import PhysicianAiAssistantPage from '@/modules/physician/pages/PhysicianAiAssistantPage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
@@ -278,12 +279,6 @@ export const routes: RouteRecordRaw[] = [
             component: MedtechCheckResultPage,
             meta: { title: '结果录入', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', hidden: true },
           },
-          {
-            path: 'ct-viewer',
-            name: 'MedtechCtViewer',
-            component: () => import('@/modules/medtech/pages/CtDicomViewerPage.vue'),
-            meta: { title: 'CT 影像演示', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
-          },
         ],
       },
       {
@@ -417,6 +412,12 @@ export const routes: RouteRecordRaw[] = [
             name: 'OperationsCenter',
             component: OperationsCenter,
             meta: { title: '运营中心', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'ct-imaging-audit',
+            name: 'CtImagingAudit',
+            component: CtImagingAuditPage,
+            meta: { title: 'CT 影像审计', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
             path: 'payment-bills',
