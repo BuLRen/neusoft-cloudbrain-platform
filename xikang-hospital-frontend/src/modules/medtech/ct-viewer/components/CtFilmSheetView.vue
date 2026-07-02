@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { ElAlert } from 'element-plus'
 import type { CtVolumeMeta } from '@/shared/api/modules/ctViewer'
-import { parseNrrdArrayBuffer } from '@/modules/medtech/ct-viewer/lib/nrrdToVtkImageData'
-import {
-  computeCtDisplayWindow,
-  extractCoronalSlice,
-  extractSliceZyx,
-  windowToUint8,
-} from '@/modules/medtech/ct-viewer/lib/volumeUtils'
+import { CT_FILM_GRID_SIZE, useCtFilmGrid } from '../composables/useCtFilmGrid'
 
 const props = withDefaults(
   defineProps<{
@@ -22,138 +16,26 @@ const props = withDefaults(
   },
 )
 
-const GRID_ROWS = 5
-const GRID_COLS = 5
-const GRID_SIZE = GRID_ROWS * GRID_COLS
+const volumeMetaRef = computed(() => props.volumeMeta)
+const windowCenterRef = computed(() => props.windowCenter)
+const windowWidthRef = computed(() => props.windowWidth)
 
-const loading = ref(false)
-const errorMessage = ref('')
-const canvasRefs = ref<(HTMLCanvasElement | null)[]>(Array.from({ length: GRID_SIZE }, () => null))
-const volume = ref<ReturnType<typeof parseNrrdArrayBuffer> | null>(null)
-
-const effectiveWindowCenter = ref(40)
-const effectiveWindowWidth = ref(400)
-
-const sliceThickness = computed(() => {
-  const spacing = props.volumeMeta?.spacing_xyz?.[2] ?? volume.value?.spacing?.[2]
-  if (spacing == null) return '-'
-  return `${spacing.toFixed(3)}mm`
+const {
+  loading,
+  errorMessage,
+  effectiveWindowCenter,
+  effectiveWindowWidth,
+  sliceThickness,
+  setCanvasRef,
+  cellOverlay,
+  loadVolume,
+  refreshWindowAndRender,
+} = useCtFilmGrid({
+  nrrdFetcher: () => props.nrrdFetcher(),
+  volumeMeta: volumeMetaRef,
+  windowCenter: windowCenterRef,
+  windowWidth: windowWidthRef,
 })
-
-function setCanvasRef(index: number, el: HTMLCanvasElement | null) {
-  canvasRefs.value[index] = el
-}
-
-function drawSlice(
-  canvas: HTMLCanvasElement | null,
-  pixelData: Uint8ClampedArray,
-  width: number,
-  height: number,
-) {
-  if (!canvas) return
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-  const imageData = ctx.createImageData(width, height)
-  for (let i = 0; i < pixelData.length; i += 1) {
-    const offset = i * 4
-    const g = pixelData[i]
-    imageData.data[offset] = g
-    imageData.data[offset + 1] = g
-    imageData.data[offset + 2] = g
-    imageData.data[offset + 3] = 255
-  }
-  ctx.putImageData(imageData, 0, 0)
-}
-
-function buildSlicePlan(zDim: number, yDim: number) {
-  const axialCount = GRID_SIZE - 1
-  const axialIndices: number[] = []
-  if (axialCount <= 1 || zDim <= 1) {
-    axialIndices.push(0)
-  } else {
-    for (let i = 0; i < axialCount; i += 1) {
-      const ratio = i / (axialCount - 1)
-      axialIndices.push(Math.round(ratio * (zDim - 1)))
-    }
-  }
-  const scoutIndex = Math.floor(Math.max(yDim - 1, 0) / 2)
-  return { axialIndices, scoutIndex }
-}
-
-function renderFilm() {
-  if (!volume.value) return
-  const { dimensions, scalars } = volume.value
-  const [, yDim, zDim] = dimensions
-  const volumeData = { scalars, dimensions }
-  const { axialIndices, scoutIndex } = buildSlicePlan(zDim, yDim)
-
-  const scoutSlice = extractCoronalSlice(volumeData, scoutIndex)
-  const scoutGray = windowToUint8(
-    scoutSlice.data,
-    effectiveWindowCenter.value,
-    effectiveWindowWidth.value,
-  )
-  drawSlice(canvasRefs.value[0], scoutGray, scoutSlice.width, scoutSlice.height)
-
-  axialIndices.forEach((sliceIndex, offset) => {
-    const canvasIndex = offset + 1
-    const axialSlice = extractSliceZyx(volumeData, sliceIndex)
-    const gray = windowToUint8(
-      axialSlice.data,
-      effectiveWindowCenter.value,
-      effectiveWindowWidth.value,
-    )
-    drawSlice(canvasRefs.value[canvasIndex], gray, axialSlice.width, axialSlice.height)
-  })
-}
-
-function applyWindowFromVolume(parsed: ReturnType<typeof parseNrrdArrayBuffer>) {
-  if (props.windowCenter != null && props.windowWidth != null) {
-    effectiveWindowCenter.value = props.windowCenter
-    effectiveWindowWidth.value = props.windowWidth
-    return
-  }
-  const { windowCenter, windowWidth } = computeCtDisplayWindow({
-    min: props.volumeMeta?.min ?? null,
-    max: props.volumeMeta?.max ?? null,
-    scalars: parsed.scalars,
-  })
-  effectiveWindowCenter.value = windowCenter
-  effectiveWindowWidth.value = windowWidth
-}
-
-async function loadVolume() {
-  loading.value = true
-  errorMessage.value = ''
-  volume.value = null
-  try {
-    const buffer = await props.nrrdFetcher()
-    const parsed = parseNrrdArrayBuffer(buffer)
-    volume.value = parsed
-    applyWindowFromVolume(parsed)
-    await nextTick()
-    renderFilm()
-  } catch (err) {
-    errorMessage.value = err instanceof Error ? err.message : 'CT 胶片加载失败'
-  } finally {
-    loading.value = false
-  }
-}
-
-function cellOverlay(index: number) {
-  if (!volume.value) return { series: '1', image: '-', total: '-' }
-  const [, , zDim] = volume.value.dimensions
-  if (index === 0) {
-    return { series: 'Scout', image: 'Loc', total: '' }
-  }
-  const axialCount = GRID_SIZE - 1
-  const axialIndex = index - 1
-  const ratio = axialCount <= 1 ? 0 : axialIndex / (axialCount - 1)
-  const sliceNo = Math.round(ratio * Math.max(zDim - 1, 0)) + 1
-  return { series: '3', image: String(sliceNo), total: String(zDim) }
-}
 
 watch(
   () => [props.nrrdFetcher, props.windowCenter, props.windowWidth] as const,
@@ -165,9 +47,7 @@ watch(
 watch(
   () => props.volumeMeta,
   () => {
-    if (!volume.value) return
-    applyWindowFromVolume(volume.value)
-    void nextTick().then(() => renderFilm())
+    void refreshWindowAndRender()
   },
 )
 
@@ -189,7 +69,7 @@ onMounted(() => {
 
     <div class="ct-film-sheet__grid">
       <figure
-        v-for="index in GRID_SIZE"
+        v-for="index in CT_FILM_GRID_SIZE"
         :key="index - 1"
         class="ct-film-sheet__cell"
       >
@@ -243,7 +123,6 @@ onMounted(() => {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
   image-rendering: pixelated;
 }
 

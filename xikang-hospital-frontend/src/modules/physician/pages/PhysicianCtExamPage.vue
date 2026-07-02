@@ -6,8 +6,15 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import CtViewerPanel from '@/modules/medtech/ct-viewer/components/CtViewerPanel.vue'
 import CtFilmSheetView from '@/modules/medtech/ct-viewer/components/CtFilmSheetView.vue'
 import CtDiagnosisReportPanel from '@/modules/medtech/components/CtDiagnosisReportPanel.vue'
+import CtFilmPrintSheet from '@/shared/components/CtFilmPrintSheet.vue'
+import CtDiagnosisReportPrintSheet from '@/shared/components/CtDiagnosisReportPrintSheet.vue'
 import { useEncounterStore } from '@/app/stores/encounter'
 import { usePhysicianCtCheckContext } from '@/modules/physician/composables/usePhysicianCtCheckContext'
+import { useCtReportExport } from '@/shared/composables/useCtReportExport'
+import {
+  buildCtDiagnosisReportPdfContext,
+  buildCtFilmPdfContext,
+} from '@/shared/types/ctReportPdf'
 import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 
 const route = useRoute()
@@ -15,6 +22,17 @@ const router = useRouter()
 const encounterStore = useEncounterStore()
 
 const activeImagingTab = ref<'film' | 'viewer'>('film')
+const filmPrintRef = ref<InstanceType<typeof CtFilmPrintSheet> | null>(null)
+const diagnosisPrintRef = ref<InstanceType<typeof CtDiagnosisReportPrintSheet> | null>(null)
+
+const {
+  filmExportContext,
+  diagnosisExportContext,
+  exportingFilm,
+  exportingReport,
+  exportFilmPdf,
+  exportDiagnosisPdf,
+} = useCtReportExport()
 
 const registerId = computed(() => Number(route.query.registerId || encounterStore.registerId || 0))
 const checkRequestId = computed(() => Number(route.query.checkRequestId || 0))
@@ -58,6 +76,27 @@ function goBack() {
   router.push({ path: '/physician/results' })
 }
 
+async function handleExportFilm() {
+  if (!checkResult.value) return
+  await exportFilmPdf(
+    buildCtFilmPdfContext(checkResult.value, encounterStore.patientSummary),
+    filmPrintRef,
+    fetchNrrd,
+  )
+}
+
+async function handleExportReport() {
+  if (!checkResult.value || !resultFormSchema.value) return
+  await exportDiagnosisPdf(
+    buildCtDiagnosisReportPdfContext(
+      checkResult.value,
+      resultFormSchema.value,
+      encounterStore.patientSummary,
+    ),
+    diagnosisPrintRef,
+  )
+}
+
 onMounted(() => {
   if (!registerId.value || !checkRequestId.value) {
     errorMessage.value = '缺少挂号或检查单参数'
@@ -85,10 +124,30 @@ onMounted(() => {
           <span v-if="checkResult.checkTime" class="physician-ct-page__exam-time">{{ checkResult.checkTime }}</span>
         </div>
 
-        <div class="physician-ct-page__status">
-          <span v-if="checkResult?.hasImaging" class="physician-ct-page__badge physician-ct-page__badge--bound">影像已采集</span>
-          <span v-if="checkResult?.hasImagingAnalysis" class="physician-ct-page__badge physician-ct-page__badge--analyzed">已质控分析</span>
-          <span v-if="checkResult?.checkState === '已完成'" class="physician-ct-page__badge physician-ct-page__badge--done">报告已提交</span>
+        <div class="physician-ct-page__actions">
+          <div class="physician-ct-page__status">
+            <span v-if="checkResult?.hasImaging" class="physician-ct-page__badge physician-ct-page__badge--bound">影像已采集</span>
+            <span v-if="checkResult?.hasImagingAnalysis" class="physician-ct-page__badge physician-ct-page__badge--analyzed">已质控分析</span>
+            <span v-if="checkResult?.checkState === '已完成'" class="physician-ct-page__badge physician-ct-page__badge--done">报告已提交</span>
+          </div>
+          <div class="physician-ct-page__export">
+            <ElButton
+              size="small"
+              :loading="exportingFilm"
+              :disabled="!canViewImaging"
+              @click="handleExportFilm"
+            >
+              导出胶片 PDF
+            </ElButton>
+            <ElButton
+              size="small"
+              :loading="exportingReport"
+              :disabled="!resultFormSchema"
+              @click="handleExportReport"
+            >
+              导出报告 PDF
+            </ElButton>
+          </div>
         </div>
       </div>
 
@@ -154,6 +213,15 @@ onMounted(() => {
         </aside>
       </div>
     </main>
+
+    <div class="ct-report-print-host" aria-hidden="true">
+      <CtFilmPrintSheet
+        ref="filmPrintRef"
+        :context="filmExportContext"
+        :volume-meta="volumeMeta"
+      />
+      <CtDiagnosisReportPrintSheet ref="diagnosisPrintRef" :context="diagnosisExportContext" />
+    </div>
   </div>
 </template>
 
@@ -223,10 +291,31 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.physician-ct-page__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .physician-ct-page__status {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
+}
+
+.physician-ct-page__export {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ct-report-print-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  pointer-events: none;
 }
 
 .physician-ct-page__badge {

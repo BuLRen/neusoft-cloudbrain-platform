@@ -23,18 +23,20 @@ import {
   View,
 } from '@element-plus/icons-vue'
 import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
+import CtDiagnosisReportPrintSheet from '@/shared/components/CtDiagnosisReportPrintSheet.vue'
 import SimulatedCheckResultContent from '@/shared/components/SimulatedCheckResultContent.vue'
 import { physicianApi, type CheckResult, type InspectionResult, type W3Output } from '@/shared/api/modules/physician'
 import type { CtAnalyzeResult } from '@/shared/api/modules/ctViewer'
 import { useEncounterStore } from '@/app/stores/encounter'
 import ResultPayloadViewer from '@/shared/components/ResultPayloadViewer.vue'
-import CtFilmSheetView from '@/modules/medtech/ct-viewer/components/CtFilmSheetView.vue'
 import CtDiagnosisReportPanel from '@/modules/medtech/components/CtDiagnosisReportPanel.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 import W3LabReportPanel from '../components/W3LabReportPanel.vue'
 import { useLabReportExport } from '@/shared/composables/useLabReportExport'
+import { useCtReportExport } from '@/shared/composables/useCtReportExport'
 import { buildLabReportContextFromPhysician } from '@/shared/types/labReportPdf'
+import { buildCtDiagnosisReportPdfContext } from '@/shared/types/ctReportPdf'
 import {
   hasExportableLabReportPayload,
   resolveStructuredOutputFromPayload,
@@ -50,8 +52,14 @@ const encounterStore = useEncounterStore()
 const router = useRouter()
 const registerId = computed(() => encounterStore.registerId)
 const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
+const ctDiagnosisPrintRef = ref<InstanceType<typeof CtDiagnosisReportPrintSheet> | null>(null)
 
 const { exportContext, exporting, exportPdf } = useLabReportExport()
+const {
+  diagnosisExportContext,
+  exportingReport: exportingCtReport,
+  exportDiagnosisPdf,
+} = useCtReportExport()
 
 const loading = ref(false)
 const w3Loading = ref(false)
@@ -67,9 +75,6 @@ const ctReportDialogVisible = ref(false)
 const ctReportDialogRow = ref<CheckResult | null>(null)
 const ctReportSchema = ref<ResultFormSchema | null>(null)
 const ctReportSchemaLoading = ref(false)
-const ctFilmDialogVisible = ref(false)
-const ctFilmDialogRow = ref<CheckResult | null>(null)
-const ctFilmMeta = ref<Awaited<ReturnType<typeof physicianApi.fetchCheckImagingMeta>> | null>(null)
 
 const qcSeverityLabel: Record<string, string> = {
   clean: '无伪影',
@@ -234,20 +239,6 @@ function openCtReportDialog(row: CheckResult) {
     })
 }
 
-function openCtFilmDialog(row: CheckResult) {
-  if (!canViewCtImaging(row)) return
-  ctFilmDialogRow.value = row
-  ctFilmMeta.value = null
-  ctFilmDialogVisible.value = true
-  void physicianApi.fetchCheckImagingMeta(row.id)
-    .then((meta) => {
-      ctFilmMeta.value = meta
-    })
-    .catch(() => {
-      // meta 非必须
-    })
-}
-
 function openCtExamPage(row: CheckResult) {
   if (!registerId.value || !isCtImagingResult(row)) return
   router.push({
@@ -259,12 +250,16 @@ function openCtExamPage(row: CheckResult) {
   })
 }
 
-function fetchPhysicianCtNrrdForFilm() {
-  const checkRequestId = ctFilmDialogRow.value?.id
-  if (!checkRequestId) {
-    return Promise.reject(new Error('缺少检查单信息'))
-  }
-  return physicianApi.fetchCheckImagingNrrd(checkRequestId)
+async function handleExportCtReport() {
+  if (!ctReportDialogRow.value || !ctReportSchema.value) return
+  await exportDiagnosisPdf(
+    buildCtDiagnosisReportPdfContext(
+      ctReportDialogRow.value,
+      ctReportSchema.value,
+      encounterStore.patientSummary,
+    ),
+    ctDiagnosisPrintRef,
+  )
 }
 
 watch(registerId, () => {
@@ -367,7 +362,7 @@ onMounted(() => {
               </span>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="操作" width="280" fixed="right">
+          <ElTableColumn label="操作" width="200" fixed="right">
             <template #default="{ row }">
               <div v-if="isCtImagingResult(row)" class="ct-actions">
                 <ElButton
@@ -379,16 +374,6 @@ onMounted(() => {
                 >
                   <ElIcon><Document /></ElIcon>
                   查看报告
-                </ElButton>
-                <ElButton
-                  v-if="canViewCtImaging(row)"
-                  text
-                  type="primary"
-                  size="small"
-                  @click="openCtFilmDialog(row)"
-                >
-                  <ElIcon><Picture /></ElIcon>
-                  查看胶片
                 </ElButton>
                 <ElButton
                   v-if="canViewCtImaging(row)"
@@ -562,37 +547,20 @@ onMounted(() => {
     </div>
     <template #footer>
       <ElButton @click="ctReportDialogVisible = false">关闭</ElButton>
-    </template>
-  </ElDialog>
-
-  <ElDialog
-    v-model="ctFilmDialogVisible"
-    :title="ctFilmDialogRow?.techName ? `${ctFilmDialogRow.techName} 胶片预览` : 'CT 胶片预览'"
-    width="96vw"
-    top="2vh"
-    align-center
-    destroy-on-close
-    class="physician-ct-film-dialog ct-imaging-theme"
-  >
-    <CtFilmSheetView
-      v-if="ctFilmDialogRow"
-      :nrrd-fetcher="fetchPhysicianCtNrrdForFilm"
-      :volume-meta="ctFilmMeta"
-    />
-    <template #footer>
-      <ElButton @click="ctFilmDialogVisible = false">关闭</ElButton>
       <ElButton
-        v-if="ctFilmDialogRow"
         type="primary"
-        @click="openCtExamPage(ctFilmDialogRow); ctFilmDialogVisible = false"
+        :loading="exportingCtReport"
+        :disabled="!ctReportSchema"
+        @click="handleExportCtReport"
       >
-        进入完整阅片
+        导出 PDF
       </ElButton>
     </template>
   </ElDialog>
 
   <div class="lab-report-print-host" aria-hidden="true">
     <LabReportPrintSheet ref="printSheetRef" :context="exportContext" />
+    <CtDiagnosisReportPrintSheet ref="ctDiagnosisPrintRef" :context="diagnosisExportContext" />
   </div>
 </template>
 
@@ -873,10 +841,6 @@ onMounted(() => {
 
 .physician-ct-report-dialog__body {
   min-height: 240px;
-}
-
-:deep(.physician-ct-film-dialog .el-dialog__body) {
-  padding: 0 12px 12px;
 }
 
 .lab-report-print-host {
