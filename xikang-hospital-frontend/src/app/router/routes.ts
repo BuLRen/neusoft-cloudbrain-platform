@@ -261,6 +261,12 @@ export const routes: RouteRecordRaw[] = [
             component: MedtechCheckResultPage,
             meta: { title: '结果录入', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', hidden: true },
           },
+          {
+            path: 'ct-viewer',
+            name: 'MedtechCtViewer',
+            component: () => import('@/modules/medtech/pages/CtDicomViewerPage.vue'),
+            meta: { title: 'CT 影像查看', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+          },
         ],
       },
       {
