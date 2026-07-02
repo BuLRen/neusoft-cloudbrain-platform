@@ -39,6 +39,7 @@ import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.v
 import PhysicianResultsPage from '@/modules/physician/pages/PhysicianResultsPage.vue'
 import PhysicianDiagnosisPage from '@/modules/physician/pages/PhysicianDiagnosisPage.vue'
 import PhysicianPrescriptionPage from '@/modules/physician/pages/PhysicianPrescriptionPage.vue'
+import MySchedulePage from '@/modules/physician/pages/MySchedulePage.vue'
 import MedtechCheckQueuePage from '@/modules/medtech/pages/MedtechCheckQueuePage.vue'
 import MedtechCheckStartPage from '@/modules/medtech/pages/MedtechCheckStartPage.vue'
 import MedtechCheckResultPage from '@/modules/medtech/pages/MedtechCheckResultPage.vue'
@@ -473,10 +474,10 @@ export const routes: RouteRecordRaw[] = [
         meta: { hidden: true, roles: ['admin'], requiresAuth: true },
       },
       {
-        path: 'ai',
-        name: 'AiComponents',
-        component: placeholder,
-        meta: { title: 'AI 组件区', description: 'AI 结果卡片和嵌入组件预留区', icon: 'MagicStick', roles: ['physician', 'registration', 'medtech', 'pharmacy', 'patient'], requiresAuth: true, owner: '共同' },
+        path: 'schedule-mine',
+        name: 'MySchedule',
+        component: MySchedulePage,
+        meta: { title: '我的排班', description: '查看我的班次课程表与请假', icon: 'Calendar', roles: ['physician', 'registration', 'medtech', 'pharmacy', 'patient', 'admin'], requiresAuth: true, owner: '共同' },
       },
       {
         path: '403',
