@@ -100,6 +100,13 @@ public class MedtechService {
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
 
+        if (CtCategoryResolver.isCt(request.getAiCategoryCode())) {
+            String volumeId = trimToNull(request.getImagingVolumeId());
+            if (volumeId == null) {
+                throw new BusinessException(400, "CT 检查须先上传并绑定影像后才能提交诊断报告");
+            }
+        }
+
         String checkResult = resultFormService.buildResultPayload(request.getMedicalTechnologyId(), resultData);
 
         request.setCheckResult(checkResult);

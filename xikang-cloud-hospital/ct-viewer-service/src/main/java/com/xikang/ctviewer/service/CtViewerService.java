@@ -234,6 +234,14 @@ public class CtViewerService {
         return runAiAnalyze(meta);
     }
 
+    /**
+     * 供 physician-service 等内部服务只读拉取体数据（上游已完成业务鉴权）。
+     */
+    public byte[] getVolumeNrrdInternal(String volumeId) {
+        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        return storageService.readNrrdBytes(meta);
+    }
+
     private Map<String, Object> runAiAnalyze(VolumeMetaDto meta) {
         ExportFile exported = exportVolumeInternal(meta, "nii.gz");
         return aiCtClient.analyze(exported.bytes(), exported.fileName());
@@ -245,7 +253,7 @@ public class CtViewerService {
         }
         VolumeMetaDto meta = metaRepository.requireById(volumeId);
         meta.applyBinding(request.getCheckRequestId(), request.getDepartmentId(), request.getRegisterId());
-        metaRepository.save(meta);
+        metaRepository.savePersistent(meta);
         auditService.logInternal(
             CtImagingAuditAction.BIND,
             volumeId,

@@ -43,6 +43,8 @@ const props = withDefaults(
     allowUpload?: boolean
     showSave?: boolean
     showTechBar?: boolean
+    readOnly?: boolean
+    nrrdFetcher?: (volumeId: string) => Promise<ArrayBuffer>
   }>(),
   {
     embedded: false,
@@ -51,6 +53,7 @@ const props = withDefaults(
     allowUpload: true,
     showSave: true,
     showTechBar: true,
+    readOnly: false,
   },
 )
 
@@ -102,6 +105,9 @@ const sagittalCanvas = ref<HTMLCanvasElement | null>(null)
 const activeVolume = computed(() => filteredVolume.value ?? originalVolume.value)
 const activeMeta = computed(() => filteredMeta.value ?? originalMeta.value)
 const displayIsMask = computed(() => filteredIsMask.value && !!filteredVolume.value)
+const effectiveAllowUpload = computed(() => props.allowUpload && !props.readOnly)
+const showFilterSection = computed(() => !props.readOnly)
+const effectiveShowSave = computed(() => props.showSave && !props.readOnly)
 
 const xCount = computed(() => originalVolume.value?.dimensions?.[0] ?? 0)
 const yCount = computed(() => originalVolume.value?.dimensions?.[1] ?? 0)
@@ -225,7 +231,8 @@ async function checkBackend() {
 }
 
 async function loadVolumeById(volumeId: string, target: 'original' | 'filtered') {
-  const arrayBuffer = await fetchCtVolumeNrrd(volumeId)
+  const fetchNrrd = props.nrrdFetcher ?? fetchCtVolumeNrrd
+  const arrayBuffer = await fetchNrrd(volumeId)
   const volumeData = parseNrrdArrayBuffer(arrayBuffer)
   if (target === 'original') {
     originalVolume.value = volumeData
@@ -491,7 +498,7 @@ defineExpose({ resetVolumeState, loadBoundVolume })
     <div class="ct-viewer-layout">
       <aside class="ct-viewer-sidebar">
         <ElScrollbar>
-          <section v-if="allowUpload" class="ct-sidebar-section">
+          <section v-if="effectiveAllowUpload" class="ct-sidebar-section">
             <h3 class="ct-sidebar-section__title">数据加载</h3>
             <div class="ct-btn-stack">
               <ElButton type="primary" class="ct-btn-primary" :loading="isLoading" :disabled="!backendReady" @click="nrrdInput?.click()">
@@ -548,7 +555,7 @@ defineExpose({ resetVolumeState, loadBoundVolume })
             </ElForm>
           </section>
 
-          <section class="ct-sidebar-section">
+          <section v-if="showFilterSection" class="ct-sidebar-section">
             <h3 class="ct-sidebar-section__title">滤波器</h3>
             <ElForm label-position="top">
               <ElFormItem label="选择滤波器">
@@ -610,7 +617,7 @@ defineExpose({ resetVolumeState, loadBoundVolume })
             </ElButton>
           </section>
 
-          <section v-if="showSave" class="ct-sidebar-section">
+          <section v-if="effectiveShowSave" class="ct-sidebar-section">
             <h3 class="ct-sidebar-section__title">保存结果</h3>
             <div class="ct-btn-stack">
               <ElButton class="ct-btn-secondary" :disabled="!zCount" @click="saveCurrentSlicePng">保存轴状切片 PNG</ElButton>

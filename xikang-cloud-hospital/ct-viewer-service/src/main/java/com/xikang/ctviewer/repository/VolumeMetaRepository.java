@@ -27,15 +27,37 @@ public class VolumeMetaRepository {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public void save(VolumeMetaDto meta) {
+        save(meta, resolveTtl(meta));
+    }
+
+    public void savePersistent(VolumeMetaDto meta) {
+        save(meta, null);
+    }
+
+    private void save(VolumeMetaDto meta, Duration ttl) {
         try {
             String json = objectMapper.writeValueAsString(meta);
             String key = key(meta.getVolumeId());
-            Duration ttl = Duration.ofSeconds(properties.getVolumeTtlSeconds());
-            redisTemplate.opsForValue().set(key, json, ttl);
+            if (ttl == null) {
+                redisTemplate.opsForValue().set(key, json);
+            } else {
+                redisTemplate.opsForValue().set(key, json, ttl);
+            }
             redisTemplate.opsForSet().add(INDEX_KEY, meta.getVolumeId());
         } catch (JsonProcessingException ex) {
             throw new BusinessException(500, "体数据元信息序列化失败", ex);
         }
+    }
+
+    private Duration resolveTtl(VolumeMetaDto meta) {
+        if (meta != null && meta.getBoundCheckRequestId() != null) {
+            return null;
+        }
+        return Duration.ofSeconds(properties.getVolumeTtlSeconds());
+    }
+
+    public boolean isPersistent(VolumeMetaDto meta) {
+        return meta != null && meta.getBoundCheckRequestId() != null;
     }
 
     public Optional<VolumeMetaDto> findById(String volumeId) {

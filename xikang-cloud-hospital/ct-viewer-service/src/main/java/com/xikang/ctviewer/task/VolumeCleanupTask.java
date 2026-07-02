@@ -37,6 +37,9 @@ public class VolumeCleanupTask {
                 continue;
             }
             VolumeMetaDto meta = metaOpt.get();
+            if (metaRepository.isPersistent(meta)) {
+                continue;
+            }
             if (meta.getCreatedAtEpochMs() > 0 && now - meta.getCreatedAtEpochMs() > ttlMs) {
                 storageService.deleteVolumeDirectory(volumeId);
                 metaRepository.delete(volumeId);

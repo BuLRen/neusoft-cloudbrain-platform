@@ -92,3 +92,41 @@ export function extractSagittalSlice(volume: VolumeSliceData, xIndex: number) {
 export function normalizeFilterNameForMask(filterName: string) {
   return filterName === '金属伪影掩码 Metal Artifact Mask'
 }
+
+/** CT 显示用窗宽窗位：避免把空气/FOV 外像素纳入后对比度失真 */
+export function computeCtDisplayWindow(options?: {
+  min?: number | null
+  max?: number | null
+  scalars?: ArrayLike<number>
+}): { windowCenter: number; windowWidth: number } {
+  const min = options?.min
+  const max = options?.max
+  if (min != null && max != null && Number.isFinite(min) && Number.isFinite(max)) {
+    const range = max - min
+    if (range > 800) {
+      return { windowCenter: 40, windowWidth: 400 }
+    }
+    return {
+      windowCenter: Math.round((min + max) / 2),
+      windowWidth: Math.max(Math.round(range), 1),
+    }
+  }
+
+  const scalars = options?.scalars
+  if (scalars?.length) {
+    let tissueMin = Number.POSITIVE_INFINITY
+    let tissueMax = Number.NEGATIVE_INFINITY
+    const step = Math.max(1, Math.floor(scalars.length / 8000))
+    for (let i = 0; i < scalars.length; i += step) {
+      const value = Number(scalars[i])
+      if (!Number.isFinite(value) || value < -200) continue
+      tissueMin = Math.min(tissueMin, value)
+      tissueMax = Math.max(tissueMax, value)
+    }
+    if (Number.isFinite(tissueMin) && Number.isFinite(tissueMax) && tissueMax > tissueMin) {
+      return { windowCenter: 40, windowWidth: 400 }
+    }
+  }
+
+  return { windowCenter: 40, windowWidth: 400 }
+}

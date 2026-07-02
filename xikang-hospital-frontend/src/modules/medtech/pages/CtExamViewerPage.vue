@@ -5,6 +5,7 @@ import { ElAlert, ElButton, ElEmpty, ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import CtViewerPanel from '@/modules/medtech/ct-viewer/components/CtViewerPanel.vue'
 import CtArtifactAnalysisDialog from '@/modules/medtech/ct-viewer/components/CtArtifactAnalysisDialog.vue'
+import CtDiagnosisReportPanel from '@/modules/medtech/components/CtDiagnosisReportPanel.vue'
 import type { CtAnalyzeResult, CtVolumeMeta } from '@/shared/api/modules/ctViewer'
 import { checkCtViewerHealth } from '@/shared/api/modules/ctViewer'
 import { medtechApi } from '@/shared/api/modules/medtech'
@@ -14,12 +15,14 @@ import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 const route = useRoute()
 const router = useRouter()
 const viewerPanelRef = ref<InstanceType<typeof CtViewerPanel>>()
+const reportPanelRef = ref<HTMLElement | null>(null)
 const volumeMeta = ref<CtVolumeMeta | null>(null)
 const analyzing = ref(false)
 const analysisDialogVisible = ref(false)
 const analysisResult = ref<CtAnalyzeResult | null>(null)
 const analysisError = ref('')
 const aiCtReady = ref(false)
+const reportPanelVisible = ref(true)
 
 const id = computed(() => Number(route.query.id || 0))
 
@@ -39,6 +42,10 @@ const {
 } = useCtCheckContext()
 
 const examTitle = computed(() => report.value?.techName || 'CT 影像检查')
+
+const canEditReport = computed(
+  () => started.value && report.value?.checkState === '检查中' && report.value?.paid !== false,
+)
 
 const technicalSubline = computed(() => {
   const meta = volumeMeta.value
@@ -137,6 +144,19 @@ function handleViewAnalysis() {
   analysisDialogVisible.value = true
 }
 
+function toggleReportPanel() {
+  reportPanelVisible.value = !reportPanelVisible.value
+  if (reportPanelVisible.value) {
+    requestAnimationFrame(() => {
+      reportPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
+}
+
+function handleReportSubmitted() {
+  router.push('/medtech/check-queue')
+}
+
 function goBack() {
   router.push('/medtech/check-queue')
 }
@@ -183,9 +203,10 @@ onMounted(async () => {
           </ElButton>
           <ElButton
             class="ct-exam-btn-secondary"
-            @click="goBack"
+            :type="reportPanelVisible ? 'primary' : 'default'"
+            @click="toggleReportPanel"
           >
-            报告
+            {{ reportPanelVisible ? '收起报告' : '诊断报告' }}
           </ElButton>
           <ElButton
             class="ct-exam-btn-primary"
@@ -236,17 +257,33 @@ onMounted(async () => {
           class="ct-exam-alert"
         />
 
-        <div v-if="started && !errorMessage" class="ct-exam-viewer">
-          <CtViewerPanel
-            ref="viewerPanelRef"
-            fullscreen
-            :show-save="false"
-            :show-tech-bar="false"
-            :initial-volume-id="imagingVolumeId"
-            @uploaded="handleImagingUploaded"
-            @cleared="handleImagingCleared"
-            @meta-updated="handleMetaUpdated"
-          />
+        <div v-if="started && !errorMessage" class="ct-exam-body">
+          <div class="ct-exam-viewer">
+            <CtViewerPanel
+              ref="viewerPanelRef"
+              fullscreen
+              :show-save="false"
+              :show-tech-bar="false"
+              :initial-volume-id="imagingVolumeId"
+              @uploaded="handleImagingUploaded"
+              @cleared="handleImagingCleared"
+              @meta-updated="handleMetaUpdated"
+            />
+          </div>
+
+          <div
+            v-show="reportPanelVisible"
+            ref="reportPanelRef"
+            class="ct-exam-report"
+          >
+            <CtDiagnosisReportPanel
+              :check-request-id="id"
+              :can-edit="canEditReport"
+              :has-imaging="hasImaging"
+              :analysis-result="analysisResult"
+              @submitted="handleReportSubmitted"
+            />
+          </div>
         </div>
       </template>
     </main>
@@ -410,11 +447,26 @@ onMounted(async () => {
   margin: 10px 14px 0;
 }
 
-.ct-exam-viewer {
+.ct-exam-body {
   flex: 1;
   min-height: 0;
   display: flex;
+  overflow: hidden;
+}
+
+.ct-exam-viewer {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
   flex-direction: column;
+}
+
+.ct-exam-report {
+  flex-shrink: 0;
+  width: min(380px, 38vw);
+  min-height: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 960px) {
@@ -425,6 +477,17 @@ onMounted(async () => {
 
   .ct-exam-header__actions {
     flex-wrap: wrap;
+  }
+
+  .ct-exam-body {
+    flex-direction: column;
+  }
+
+  .ct-exam-report {
+    width: 100%;
+    max-height: 42vh;
+    border-block-start: 1px solid var(--ct-border);
+    border-inline-start: none;
   }
 }
 </style>

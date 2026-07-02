@@ -1,9 +1,11 @@
 package com.xikang.physician.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.agent.AgentToolExecutionContext;
+import com.xikang.physician.client.CtViewerClient;
 import com.xikang.physician.client.PaymentClient;
 import com.xikang.physician.context.PhysicianAuthContext;
 import com.xikang.physician.mapper.PhysicianMapper;
@@ -34,10 +36,16 @@ public class PhysicianService {
 
     private final PhysicianMapper physicianMapper;
     private final PaymentClient paymentClient;
+    private final CtViewerClient ctViewerClient;
 
-    public PhysicianService(PhysicianMapper physicianMapper, PaymentClient paymentClient) {
+    public PhysicianService(
+        PhysicianMapper physicianMapper,
+        PaymentClient paymentClient,
+        CtViewerClient ctViewerClient
+    ) {
         this.physicianMapper = physicianMapper;
         this.paymentClient = paymentClient;
+        this.ctViewerClient = ctViewerClient;
     }
 
     public Map<String, Object> getPatients(String keyword, Integer page, Integer size) {
@@ -223,7 +231,143 @@ public class PhysicianService {
 
     public List<Map<String, Object>> getCheckResults(Long registerId) {
         assertRegisterAccess(registerId);
-        return physicianMapper.selectCheckResults(registerId).stream().map(this::withAiAnalysis).toList();
+        return physicianMapper.selectCheckResults(registerId).stream()
+            .map(this::withAiAnalysis)
+            .map(this::withImagingAnalysis)
+            .toList();
+    }
+
+    public byte[] getCheckImagingNrrd(Long checkRequestId) {
+        Map<String, Object> context = physicianMapper.selectCheckImagingContext(checkRequestId);
+        if (context == null) {
+            throw new BusinessException(404, "检查申请不存在");
+        }
+        Long registerId = toLong(context.get("registerId"));
+        assertRegisterAccess(registerId);
+        String volumeId = context.get("imagingVolumeId") == null
+            ? null
+            : String.valueOf(context.get("imagingVolumeId")).trim();
+        if (volumeId == null || volumeId.isEmpty()) {
+            throw new BusinessException(400, "该检查单尚未绑定 CT 影像");
+        }
+        return ctViewerClient.fetchVolumeNrrd(volumeId);
+    }
+
+    public Map<String, Object> getCheckImagingMeta(Long checkRequestId) {
+        Map<String, Object> context = physicianMapper.selectCheckImagingContext(checkRequestId);
+        if (context == null) {
+            throw new BusinessException(404, "检查申请不存在");
+        }
+        Long registerId = toLong(context.get("registerId"));
+        assertRegisterAccess(registerId);
+        String volumeId = context.get("imagingVolumeId") == null
+            ? null
+            : String.valueOf(context.get("imagingVolumeId")).trim();
+        if (volumeId == null || volumeId.isEmpty()) {
+            throw new BusinessException(400, "该检查单尚未绑定 CT 影像");
+        }
+        return ctViewerClient.fetchVolumeMeta(volumeId);
+    }
+
+    public Map<String, Object> getCheckResultForm(Long checkRequestId) {
+        Map<String, Object> context = physicianMapper.selectCheckRequestResultFormContext(checkRequestId);
+        if (context == null) {
+            throw new BusinessException(404, "检查申请不存在");
+        }
+        Long registerId = toLong(context.get("registerId"));
+        assertRegisterAccess(registerId);
+        return buildCheckResultFormSchema(context);
+    }
+
+    private Map<String, Object> buildCheckResultFormSchema(Map<String, Object> context) {
+        String aiCategoryCode = context.get("aiCategoryCode") == null
+            ? null
+            : String.valueOf(context.get("aiCategoryCode"));
+        String categoryCode = resolveResultFormCategoryCode(aiCategoryCode);
+        List<Map<String, Object>> baseFields = physicianMapper.selectResultFormFieldsByOwner("category", categoryCode);
+        if (baseFields.isEmpty()) {
+            baseFields = defaultCategoryFields(categoryCode);
+        }
+        Long techId = toLong(context.get("medicalTechnologyId"));
+        List<Map<String, Object>> extensionFields = techId == null
+            ? List.of()
+            : physicianMapper.selectResultFormFieldsByOwner("tech_extension", String.valueOf(techId));
+
+        List<Map<String, Object>> merged = new java.util.ArrayList<>(baseFields);
+        merged.addAll(extensionFields);
+
+        Map<String, Object> category = physicianMapper.selectResultFormCategoryByCode(categoryCode);
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("checkRequestId", toLong(context.get("checkRequestId")));
+        schema.put("categoryCode", categoryCode);
+        schema.put("categoryName", category == null ? categoryCode : category.get("categoryName"));
+        schema.put("medicalTechnologyId", techId);
+        schema.put("techCode", context.get("techCode"));
+        schema.put("techName", context.get("techName"));
+        schema.put("fields", merged);
+        schema.put("baseFieldCount", baseFields.size());
+        schema.put("extensionFieldCount", extensionFields.size());
+        schema.put("existingValues", parseExistingResultValues(
+            context.get("checkResult") == null ? null : String.valueOf(context.get("checkResult"))
+        ));
+        return schema;
+    }
+
+    private String resolveResultFormCategoryCode(String aiCategoryCode) {
+        if (aiCategoryCode != null && aiCategoryCode.startsWith("imaging_ct")) {
+            return "imaging_ct";
+        }
+        return "general_check";
+    }
+
+    private List<Map<String, Object>> defaultCategoryFields(String categoryCode) {
+        Map<String, Object> primary = new LinkedHashMap<>();
+        primary.put("fieldKey", "imaging_ct".equals(categoryCode) ? "findings" : "checkResult");
+        primary.put("fieldLabel", "imaging_ct".equals(categoryCode) ? "所见" : "检查结果");
+        primary.put("fieldType", "textarea");
+        primary.put("required", true);
+        primary.put("sortOrder", 1);
+        if ("imaging_ct".equals(categoryCode)) {
+            Map<String, Object> impression = new LinkedHashMap<>();
+            impression.put("fieldKey", "impression");
+            impression.put("fieldLabel", "印象");
+            impression.put("fieldType", "textarea");
+            impression.put("required", true);
+            impression.put("sortOrder", 2);
+            Map<String, Object> conclusion = new LinkedHashMap<>();
+            conclusion.put("fieldKey", "conclusion");
+            conclusion.put("fieldLabel", "结论");
+            conclusion.put("fieldType", "textarea");
+            conclusion.put("required", true);
+            conclusion.put("sortOrder", 3);
+            return List.of(primary, impression, conclusion);
+        }
+        return List.of(primary);
+    }
+
+    private Map<String, Object> parseExistingResultValues(String storedResult) {
+        if (storedResult == null || storedResult.isBlank()) {
+            return Map.of();
+        }
+        String trimmed = storedResult.trim();
+        if (!trimmed.startsWith("{")) {
+            return Map.of("checkResult", trimmed);
+        }
+        try {
+            Map<String, Object> payload = JSON.readValue(trimmed, new TypeReference<>() {});
+            Object values = payload.get("values");
+            if (values instanceof Map<?, ?> map) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                map.forEach((k, v) -> result.put(String.valueOf(k), v));
+                return result;
+            }
+            if (payload.containsKey("legacyText")) {
+                return Map.of("checkResult", payload.get("legacyText"));
+            }
+        } catch (JsonProcessingException ignored) {
+            return Map.of("checkResult", trimmed);
+        }
+        return Map.of();
     }
 
     public List<Map<String, Object>> getInspectionResults(Long registerId) {
@@ -560,6 +704,25 @@ public class PhysicianService {
         analysis.put("abnormalIndicators", row.remove("abnormalIndicators"));
         analysis.put("correlationAnalysis", row.remove("correlationAnalysis"));
         row.put("aiAnalysis", analysis.values().stream().allMatch(Objects::isNull) ? null : analysis);
+        return row;
+    }
+
+    private Map<String, Object> withImagingAnalysis(Map<String, Object> row) {
+        Object raw = row.remove("imagingAnalysisResultRaw");
+        if (raw instanceof String json && !json.isBlank()) {
+            try {
+                Map<String, Object> parsed = JSON.readValue(json, new TypeReference<>() {});
+                row.put("imagingAnalysisResult", parsed);
+            } catch (JsonProcessingException ex) {
+                row.put("imagingAnalysisResult", null);
+            }
+        }
+        Object hasAnalysis = row.get("hasImagingAnalysis");
+        if (hasAnalysis instanceof Boolean bool) {
+            row.put("hasImagingAnalysis", bool);
+        } else if (row.get("imagingAnalysisResult") != null) {
+            row.put("hasImagingAnalysis", true);
+        }
         return row;
     }
 

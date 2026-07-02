@@ -38,6 +38,7 @@ import PhysicianAiAssistantPage from '@/modules/physician/pages/PhysicianAiAssis
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
 import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.vue'
 import PhysicianResultsPage from '@/modules/physician/pages/PhysicianResultsPage.vue'
+import PhysicianCtExamPage from '@/modules/physician/pages/PhysicianCtExamPage.vue'
 import PhysicianDiagnosisPage from '@/modules/physician/pages/PhysicianDiagnosisPage.vue'
 import PhysicianPrescriptionPage from '@/modules/physician/pages/PhysicianPrescriptionPage.vue'
 import MedtechCheckQueuePage from '@/modules/medtech/pages/MedtechCheckQueuePage.vue'
@@ -153,11 +154,34 @@ const ctExamRoutes: RouteRecordRaw[] = [
   },
 ]
 
+const physicianCtExamRoutes: RouteRecordRaw[] = [
+  {
+    path: '/physician/ct-exam',
+    component: () => import('@/modules/medtech/layouts/CtExamLayout.vue'),
+    meta: { requiresAuth: true, roles: ['physician', 'admin'], hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'PhysicianCtExam',
+        component: PhysicianCtExamPage,
+        meta: {
+          title: 'CT 阅片',
+          requiresAuth: true,
+          requiresEncounter: true,
+          roles: ['physician', 'admin'],
+          hidden: true,
+        },
+      },
+    ],
+  },
+]
+
 const placeholder = RoutePlaceholder
 
 export const routes: RouteRecordRaw[] = [
   ...patientRoutes,
   ...ctExamRoutes,
+  ...physicianCtExamRoutes,
   {
     path: '/login',
     name: 'Login',

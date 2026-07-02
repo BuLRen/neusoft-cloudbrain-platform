@@ -2,6 +2,9 @@ package com.xikang.physician.controller;
 
 import com.xikang.common.result.Result;
 import com.xikang.physician.service.PhysicianService;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -110,6 +113,25 @@ public class PhysicianController {
     @GetMapping("/check-results")
     public Result<List<Map<String, Object>>> getCheckResults(@RequestParam Long registerId) {
         return Result.success(physicianService.getCheckResults(registerId));
+    }
+
+    @GetMapping("/check/{checkRequestId}/imaging/nrrd")
+    public ResponseEntity<byte[]> getCheckImagingNrrd(@PathVariable Long checkRequestId) {
+        byte[] payload = physicianService.getCheckImagingNrrd(checkRequestId);
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"volume.nrrd\"")
+            .body(payload);
+    }
+
+    @GetMapping("/check/{checkRequestId}/imaging/meta")
+    public Result<Map<String, Object>> getCheckImagingMeta(@PathVariable Long checkRequestId) {
+        return Result.success(physicianService.getCheckImagingMeta(checkRequestId));
+    }
+
+    @GetMapping("/check/{checkRequestId}/result-form")
+    public Result<Map<String, Object>> getCheckResultForm(@PathVariable Long checkRequestId) {
+        return Result.success(physicianService.getCheckResultForm(checkRequestId));
     }
 
     @GetMapping("/inspection-results")

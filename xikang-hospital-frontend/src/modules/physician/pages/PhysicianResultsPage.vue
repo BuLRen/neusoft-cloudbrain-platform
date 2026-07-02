@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { Component } from 'vue'
 import {
   ElButton,
@@ -24,9 +25,13 @@ import {
 import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import SimulatedCheckResultContent from '@/shared/components/SimulatedCheckResultContent.vue'
 import { physicianApi, type CheckResult, type InspectionResult, type W3Output } from '@/shared/api/modules/physician'
+import type { CtAnalyzeResult } from '@/shared/api/modules/ctViewer'
 import { useEncounterStore } from '@/app/stores/encounter'
 import ResultPayloadViewer from '@/shared/components/ResultPayloadViewer.vue'
+import CtFilmSheetView from '@/modules/medtech/ct-viewer/components/CtFilmSheetView.vue'
+import CtDiagnosisReportPanel from '@/modules/medtech/components/CtDiagnosisReportPanel.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
+import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 import W3LabReportPanel from '../components/W3LabReportPanel.vue'
 import { useLabReportExport } from '@/shared/composables/useLabReportExport'
 import { buildLabReportContextFromPhysician } from '@/shared/types/labReportPdf'
@@ -36,11 +41,13 @@ import {
   type SimulatedCheckStructuredOutput,
 } from '@/shared/types/simulatedCheckResult'
 import { formatPrimaryResultSummary } from '@/shared/types/resultForm'
+import type { ResultFormSchema } from '@/shared/types/resultForm'
 import { hasW3Content } from '@/shared/types/w3Result'
 
 type StateTone = 'primary' | 'success' | 'warning' | 'neutral'
 
 const encounterStore = useEncounterStore()
+const router = useRouter()
 const registerId = computed(() => encounterStore.registerId)
 const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
 
@@ -56,6 +63,20 @@ const inspectionDialogVisible = ref(false)
 const inspectionDialogTitle = ref('检验结果')
 const inspectionDialogOutput = ref<SimulatedCheckStructuredOutput | null>(null)
 const inspectionDialogRow = ref<InspectionResult | null>(null)
+const ctReportDialogVisible = ref(false)
+const ctReportDialogRow = ref<CheckResult | null>(null)
+const ctReportSchema = ref<ResultFormSchema | null>(null)
+const ctReportSchemaLoading = ref(false)
+const ctFilmDialogVisible = ref(false)
+const ctFilmDialogRow = ref<CheckResult | null>(null)
+const ctFilmMeta = ref<Awaited<ReturnType<typeof physicianApi.fetchCheckImagingMeta>> | null>(null)
+
+const qcSeverityLabel: Record<string, string> = {
+  clean: '无伪影',
+  mild: '轻微',
+  moderate: '中等',
+  severe: '严重',
+}
 
 async function loadW3Status() {
   if (!registerId.value) {
@@ -177,6 +198,75 @@ function techIcon(name: string, category: 'check' | 'inspection'): Component {
   return category === 'inspection' ? Odometer : FirstAidKit
 }
 
+function isCtImagingResult(row: CheckResult): boolean {
+  return Boolean(row.aiCategoryCode?.startsWith('imaging_ct') || /CT/i.test(row.techName || ''))
+}
+
+function resolveQcSummary(result?: CtAnalyzeResult | null): string {
+  if (!result) return '-'
+  const severity = qcSeverityLabel[result.severity] ?? result.severity
+  return result.has_artifact ? `检测到伪影（${severity}）` : `未见明显伪影（${severity}）`
+}
+
+function canViewCtImaging(row: CheckResult): boolean {
+  return Boolean(row.hasImaging && row.imagingVolumeId && isCtImagingResult(row))
+}
+
+function canViewCtReport(row: CheckResult): boolean {
+  return Boolean(isCtImagingResult(row) && row.checkState === '已完成' && hasResultPayload(row.checkResult))
+}
+
+function openCtReportDialog(row: CheckResult) {
+  if (!canViewCtReport(row)) return
+  ctReportDialogRow.value = row
+  ctReportSchema.value = null
+  ctReportDialogVisible.value = true
+  ctReportSchemaLoading.value = true
+  void physicianApi.resolveCheckResultForm(row.id)
+    .then((schema) => {
+      ctReportSchema.value = schema
+    })
+    .catch(() => {
+      ElMessage.error('诊断报告加载失败')
+    })
+    .finally(() => {
+      ctReportSchemaLoading.value = false
+    })
+}
+
+function openCtFilmDialog(row: CheckResult) {
+  if (!canViewCtImaging(row)) return
+  ctFilmDialogRow.value = row
+  ctFilmMeta.value = null
+  ctFilmDialogVisible.value = true
+  void physicianApi.fetchCheckImagingMeta(row.id)
+    .then((meta) => {
+      ctFilmMeta.value = meta
+    })
+    .catch(() => {
+      // meta 非必须
+    })
+}
+
+function openCtExamPage(row: CheckResult) {
+  if (!registerId.value || !isCtImagingResult(row)) return
+  router.push({
+    path: '/physician/ct-exam',
+    query: {
+      registerId: String(registerId.value),
+      checkRequestId: String(row.id),
+    },
+  })
+}
+
+function fetchPhysicianCtNrrdForFilm() {
+  const checkRequestId = ctFilmDialogRow.value?.id
+  if (!checkRequestId) {
+    return Promise.reject(new Error('缺少检查单信息'))
+  }
+  return physicianApi.fetchCheckImagingNrrd(checkRequestId)
+}
+
 watch(registerId, () => {
   void loadResults()
 })
@@ -214,7 +304,17 @@ onMounted(() => {
           <ElTableColumn type="expand" width="44">
             <template #default="{ row }">
               <div class="result-expand">
+                <h4 class="result-expand__title">诊断报告</h4>
                 <ResultPayloadViewer :raw="row.checkResult" />
+                <template v-if="row.hasImagingAnalysis && row.imagingAnalysisResult">
+                  <h4 class="result-expand__title result-expand__title--qc">影像质控</h4>
+                  <div class="result-expand__qc">
+                    <p>{{ resolveQcSummary(row.imagingAnalysisResult) }}</p>
+                    <p v-if="row.imagingAnalysisResult.has_artifact" class="result-expand__qc-note">
+                      金属伪影概率 {{ Math.round((row.imagingAnalysisResult.artifact_types?.metal ?? 0) * 1000) / 10 }}%，供参考，不影响诊断报告正文。
+                    </p>
+                  </div>
+                </template>
               </div>
             </template>
           </ElTableColumn>
@@ -247,11 +347,60 @@ onMounted(() => {
               <span v-else class="result-summary result-summary--clamped">{{ resolveCheckSummary(row.checkResult) }}</span>
             </template>
           </ElTableColumn>
+          <ElTableColumn label="影像质控" min-width="140">
+            <template #default="{ row }">
+              <span
+                v-if="row.hasImagingAnalysis"
+                class="result-summary"
+                :class="{ 'result-summary--muted': !row.imagingAnalysisResult }"
+              >
+                {{ resolveQcSummary(row.imagingAnalysisResult) }}
+              </span>
+              <span v-else-if="row.hasImaging" class="result-summary result-summary--muted">待质控分析</span>
+              <span v-else class="result-summary result-summary--muted">-</span>
+            </template>
+          </ElTableColumn>
           <ElTableColumn label="AI 分析" min-width="180">
             <template #default="{ row }">
               <span class="result-summary" :class="{ 'result-summary--muted': !row.aiAnalysis?.analysisReport }">
                 {{ row.aiAnalysis?.analysisReport || '-' }}
               </span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="操作" width="280" fixed="right">
+            <template #default="{ row }">
+              <div v-if="isCtImagingResult(row)" class="ct-actions">
+                <ElButton
+                  v-if="canViewCtReport(row)"
+                  text
+                  type="primary"
+                  size="small"
+                  @click="openCtReportDialog(row)"
+                >
+                  <ElIcon><Document /></ElIcon>
+                  查看报告
+                </ElButton>
+                <ElButton
+                  v-if="canViewCtImaging(row)"
+                  text
+                  type="primary"
+                  size="small"
+                  @click="openCtFilmDialog(row)"
+                >
+                  <ElIcon><Picture /></ElIcon>
+                  查看胶片
+                </ElButton>
+                <ElButton
+                  v-if="canViewCtImaging(row)"
+                  text
+                  type="primary"
+                  size="small"
+                  @click="openCtExamPage(row)"
+                >
+                  <ElIcon><View /></ElIcon>
+                  进入阅片
+                </ElButton>
+              </div>
             </template>
           </ElTableColumn>
         </ElTable>
@@ -389,6 +538,59 @@ onMounted(() => {
     </template>
   </ElDialog>
 
+  <ElDialog
+    v-model="ctReportDialogVisible"
+    :title="ctReportDialogRow?.techName ? `${ctReportDialogRow.techName} 诊断报告` : 'CT 诊断报告'"
+    width="720px"
+    align-center
+    destroy-on-close
+    class="physician-ct-report-dialog"
+  >
+    <div v-loading="ctReportSchemaLoading" class="physician-ct-report-dialog__body">
+      <CtDiagnosisReportPanel
+        v-if="ctReportDialogRow && ctReportSchema"
+        embedded
+        :check-request-id="ctReportDialogRow.id"
+        :can-edit="false"
+        :readonly-schema="ctReportSchema"
+        :analysis-result="ctReportDialogRow.imagingAnalysisResult"
+      />
+      <ResultPayloadViewer
+        v-else-if="ctReportDialogRow && !ctReportSchemaLoading"
+        :raw="ctReportDialogRow.checkResult"
+      />
+    </div>
+    <template #footer>
+      <ElButton @click="ctReportDialogVisible = false">关闭</ElButton>
+    </template>
+  </ElDialog>
+
+  <ElDialog
+    v-model="ctFilmDialogVisible"
+    :title="ctFilmDialogRow?.techName ? `${ctFilmDialogRow.techName} 胶片预览` : 'CT 胶片预览'"
+    width="96vw"
+    top="2vh"
+    align-center
+    destroy-on-close
+    class="physician-ct-film-dialog ct-imaging-theme"
+  >
+    <CtFilmSheetView
+      v-if="ctFilmDialogRow"
+      :nrrd-fetcher="fetchPhysicianCtNrrdForFilm"
+      :volume-meta="ctFilmMeta"
+    />
+    <template #footer>
+      <ElButton @click="ctFilmDialogVisible = false">关闭</ElButton>
+      <ElButton
+        v-if="ctFilmDialogRow"
+        type="primary"
+        @click="openCtExamPage(ctFilmDialogRow); ctFilmDialogVisible = false"
+      >
+        进入完整阅片
+      </ElButton>
+    </template>
+  </ElDialog>
+
   <div class="lab-report-print-host" aria-hidden="true">
     <LabReportPrintSheet ref="printSheetRef" :context="exportContext" />
   </div>
@@ -508,6 +710,41 @@ onMounted(() => {
   padding: var(--space-3) var(--space-4);
 }
 
+.result-expand__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.result-expand__title--qc {
+  margin-top: var(--space-4);
+  color: var(--color-text-muted);
+}
+
+.result-expand__qc {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(247, 251, 255, 0.9);
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.result-expand__qc-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs, 12px);
+}
+
+.physician-ct-viewer-dialog__body {
+  height: min(78vh, 820px);
+  min-height: 480px;
+}
+
+:deep(.physician-ct-viewer-dialog .el-dialog__body) {
+  padding: 0 12px 12px;
+}
+
 .tech-cell {
   display: flex;
   align-items: center;
@@ -618,6 +855,28 @@ onMounted(() => {
 
 .inspection-actions :deep(.el-icon) {
   margin-inline-end: 4px;
+}
+
+.ct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+}
+
+.ct-actions :deep(.el-button) {
+  padding-inline: 6px;
+}
+
+.ct-actions :deep(.el-icon) {
+  margin-inline-end: 4px;
+}
+
+.physician-ct-report-dialog__body {
+  min-height: 240px;
+}
+
+:deep(.physician-ct-film-dialog .el-dialog__body) {
+  padding: 0 12px 12px;
 }
 
 .lab-report-print-host {

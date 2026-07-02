@@ -306,7 +306,11 @@
             cr.check_remark AS "checkRemark",
             cr.imaging_volume_id AS "imagingVolumeId",
             cr.imaging_uploaded_at AS "imagingUploadedAt",
+            cr.imaging_source_name AS "imagingSourceName",
+            cr.imaging_analysis_result AS "imagingAnalysisResultRaw",
+            cr.imaging_analyzed_at AS "imagingAnalyzedAt",
             CASE WHEN cr.imaging_volume_id IS NOT NULL AND cr.imaging_volume_id != '' THEN TRUE ELSE FALSE END AS "hasImaging",
+            CASE WHEN cr.imaging_analysis_result IS NOT NULL AND cr.imaging_analysis_result != '' THEN TRUE ELSE FALSE END AS "hasImagingAnalysis",
             a.risk_level AS "riskLevel",
             a.analysis_report AS "analysisReport",
             a.abnormal_indicators AS "abnormalIndicators",
@@ -316,6 +320,56 @@
         LEFT JOIN ai_exam_analysis a ON a.check_request_id = cr.id
         WHERE cr.register_id = #{registerId}
         ORDER BY cr.creation_time DESC, cr.id DESC
+    </select>
+
+    <select id="selectCheckImagingContext" resultType="map">
+        SELECT
+            cr.register_id AS "registerId",
+            cr.imaging_volume_id AS "imagingVolumeId"
+        FROM check_request cr
+        WHERE cr.id = #{checkRequestId}
+        LIMIT 1
+    </select>
+
+    <select id="selectCheckRequestResultFormContext" resultType="map">
+        SELECT
+            cr.id AS "checkRequestId",
+            cr.register_id AS "registerId",
+            cr.check_result AS "checkResult",
+            cr.medical_technology_id AS "medicalTechnologyId",
+            mt.tech_code AS "techCode",
+            mt.tech_name AS "techName",
+            mt.ai_category_code AS "aiCategoryCode"
+        FROM check_request cr
+        INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+        WHERE cr.id = #{checkRequestId}
+        LIMIT 1
+    </select>
+
+    <select id="selectResultFormCategoryByCode" resultType="map">
+        SELECT
+            category_code AS "categoryCode",
+            category_name AS "categoryName"
+        FROM result_form_category
+        WHERE category_code = #{categoryCode}
+        LIMIT 1
+    </select>
+
+    <select id="selectResultFormFieldsByOwner" resultType="map">
+        SELECT
+            id AS "id",
+            field_key AS "fieldKey",
+            field_label AS "fieldLabel",
+            field_type AS "fieldType",
+            required AS "required",
+            sort_order AS "sortOrder",
+            placeholder AS "placeholder",
+            max_length AS "maxLength",
+            options_json AS "optionsJson"
+        FROM result_form_field
+        WHERE owner_type = #{ownerType}
+          AND owner_key = #{ownerKey}
+        ORDER BY sort_order ASC NULLS LAST, id ASC
     </select>
 
     <select id="selectInspectionResults" resultType="map">

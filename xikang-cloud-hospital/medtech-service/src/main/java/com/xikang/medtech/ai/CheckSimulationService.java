@@ -104,6 +104,9 @@ public class CheckSimulationService {
         ctInput.put("bodyPart", ctx.aiCategoryCode().contains("brain") ? "brain" : "chest");
         ctInput.put("randomSeed", ctx.request().getRegisterId());
         ctInput.put("volumeId", request.getImagingVolumeId());
+        if (request.getImagingAnalysisResult() != null && !request.getImagingAnalysisResult().isBlank()) {
+            ctInput.put("imagingAnalysisResult", request.getImagingAnalysisResult());
+        }
 
         Map<String, Object> ctResult = ctInferenceService.infer(ctInput);
         Map<String, Object> simulatedValues = outputMapper.mapCtInferenceToFormValues(ctResult);

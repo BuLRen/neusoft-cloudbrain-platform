@@ -48,6 +48,17 @@ public interface PhysicianMapper {
 
     List<Map<String, Object>> selectCheckResults(@Param("registerId") Long registerId);
 
+    Map<String, Object> selectCheckImagingContext(@Param("checkRequestId") Long checkRequestId);
+
+    Map<String, Object> selectCheckRequestResultFormContext(@Param("checkRequestId") Long checkRequestId);
+
+    Map<String, Object> selectResultFormCategoryByCode(@Param("categoryCode") String categoryCode);
+
+    List<Map<String, Object>> selectResultFormFieldsByOwner(
+        @Param("ownerType") String ownerType,
+        @Param("ownerKey") String ownerKey
+    );
+
     List<Map<String, Object>> selectInspectionResults(@Param("registerId") Long registerId);
 
     List<Map<String, Object>> selectDiseases(@Param("keyword") String keyword);

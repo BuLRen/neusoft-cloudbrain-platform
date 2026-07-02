@@ -4,6 +4,9 @@ import com.xikang.common.result.Result;
 import com.xikang.ctviewer.dto.VolumeBindRequestDto;
 import com.xikang.ctviewer.service.CtViewerService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,6 +28,15 @@ public class InternalVolumeController {
     @GetMapping("/{volumeId}/meta")
     public Result<Map<String, Object>> getVolumeMeta(@PathVariable String volumeId) {
         return Result.success(ctViewerService.getVolumeMetaInternal(volumeId));
+    }
+
+    @GetMapping("/{volumeId}/nrrd")
+    public ResponseEntity<byte[]> getVolumeNrrd(@PathVariable String volumeId) {
+        byte[] payload = ctViewerService.getVolumeNrrdInternal(volumeId);
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + volumeId + ".nrrd\"")
+            .body(payload);
     }
 
     @PutMapping("/{volumeId}/bind")
