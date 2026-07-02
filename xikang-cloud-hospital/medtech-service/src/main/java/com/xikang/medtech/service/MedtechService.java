@@ -204,10 +204,7 @@ public class MedtechService {
         if (!"检查中".equals(request.getCheckState())) {
             throw new BusinessException(400, "当前状态不允许操作 CT 影像");
         }
-        if (!CtCategoryResolver.isCt(
-                request.getAiCategoryCode(),
-                request.getTechCode(),
-                request.getTechName())) {
+        if (!CtCategoryResolver.isCt(request.getAiCategoryCode())) {
             throw new BusinessException(400, "当前检查项目不是 CT 影像");
         }
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
@@ -622,7 +619,27 @@ public class MedtechService {
         input.setTechType(techType);
         input.setTechFormat(trimToNull(input.getTechFormat()));
         input.setPriceType(trimToNull(input.getPriceType()));
-        input.setAiCategoryCode(trimToNull(input.getAiCategoryCode()));
+        input.setAiCategoryCode(resolveAiCategoryCode(input));
+    }
+
+    private String resolveAiCategoryCode(MedicalTechnology input) {
+        String code = trimToNull(input.getAiCategoryCode());
+        if (code != null) {
+            if (code.startsWith("imaging_ct") && !"check".equals(input.getTechType())) {
+                throw new BusinessException(400, "CT 影像分类仅适用于检查类项目");
+            }
+            if ("general_lab".equals(code) && !"inspection".equals(input.getTechType())) {
+                throw new BusinessException(400, "通用检验分类仅适用于检验类项目");
+            }
+            return code;
+        }
+        if ("inspection".equals(input.getTechType())) {
+            return "general_lab";
+        }
+        if ("check".equals(input.getTechType())) {
+            return "general_check";
+        }
+        return null;
     }
 
     private static String normalizeTechType(String techType) {
@@ -691,10 +708,7 @@ public class MedtechService {
         map.put("patientName", request.getPatientName());
         map.put("techName", request.getTechName());
         map.put("techCode", request.getTechCode());
-        map.put("aiCategoryCode", CtCategoryResolver.resolve(
-                request.getAiCategoryCode(),
-                request.getTechCode(),
-                request.getTechName()));
+        map.put("aiCategoryCode", CtCategoryResolver.normalize(request.getAiCategoryCode()));
         map.put("position", request.getCheckPosition());
         map.put("info", request.getCheckInfo());
         map.put("statusText", request.getCheckState());

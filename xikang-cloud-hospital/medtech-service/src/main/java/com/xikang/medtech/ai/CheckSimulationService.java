@@ -1,7 +1,6 @@
 package com.xikang.medtech.ai;
 
 import com.xikang.common.exception.BusinessException;
-import com.xikang.medtech.util.CtCategoryResolver;
 import com.xikang.medtech.entity.CheckRequest;
 import com.xikang.medtech.entity.InspectionRequest;
 import com.xikang.medtech.entity.MedicalTechnology;
@@ -351,11 +350,8 @@ public class CheckSimulationService {
 
     private record CheckContext(CheckRequest request, MedicalTechnology technology) {
         String aiCategoryCode() {
-            return CtCategoryResolver.resolve(
-                    technology.getAiCategoryCode(),
-                    technology.getTechCode(),
-                    technology.getTechName()
-            );
+            String code = technology.getAiCategoryCode();
+            return code == null ? "" : code;
         }
     }
 

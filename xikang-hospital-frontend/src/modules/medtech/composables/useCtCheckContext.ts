@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { medtechApi, type CheckReport } from '@/shared/api/modules/medtech'
+import { isCtCategoryCode } from '@/modules/medtech/constants/medtechCategory'
 import {
   resolveSimulationDisplayOutput,
   type SimulatedCheckStructuredOutput,
@@ -17,34 +18,14 @@ export function ctCheckDraftKey(id: number) {
 
 export interface CtCheckIdentity {
   aiCategoryCode?: string
-  techCode?: string
-  techName?: string
-}
-
-export function resolveCtCategory(identity: CtCheckIdentity): string | null {
-  const code = (identity.aiCategoryCode ?? '').trim()
-  if (code.startsWith('imaging_ct')) return code
-
-  const techCode = (identity.techCode ?? '').trim().toUpperCase()
-  if (techCode === 'XJCT') return 'imaging_ct_chest'
-  if (techCode === 'TLCT') return 'imaging_ct_brain'
-
-  const techName = (identity.techName ?? '').trim()
-  if (techName && /CT/i.test(techName)) {
-    if (/[脑颅头颅]/.test(techName)) return 'imaging_ct_brain'
-    if (/[胸肺]/.test(techName)) return 'imaging_ct_chest'
-    return 'imaging_ct'
-  }
-
-  return null
 }
 
 export function isCtCheck(identity: CtCheckIdentity): boolean {
-  return resolveCtCategory(identity) != null
+  return isCtCategoryCode(identity.aiCategoryCode)
 }
 
 export function isCtCategory(code?: string) {
-  return (code ?? '').startsWith('imaging_ct')
+  return isCtCategoryCode(code)
 }
 
 export function saveCtDraft(id: number, draft: CtCheckDraft) {
