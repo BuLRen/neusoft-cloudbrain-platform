@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElEmpty, ElMessage, ElTag } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ElAlert, ElButton, ElEmpty, ElIcon, ElMessage } from 'element-plus'
+import { ArrowLeft, ArrowDown } from '@element-plus/icons-vue'
 import CtViewerPanel from '@/modules/medtech/ct-viewer/components/CtViewerPanel.vue'
+import type { CtVolumeMeta } from '@/shared/api/modules/ctViewer'
 import {
   saveCtDraft,
   useCtCheckContext,
 } from '@/modules/medtech/composables/useCtCheckContext'
+import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 
 const route = useRoute()
 const router = useRouter()
 const viewerPanelRef = ref<InstanceType<typeof CtViewerPanel>>()
+const volumeMeta = ref<CtVolumeMeta | null>(null)
 
 const id = computed(() => Number(route.query.id || 0))
 
@@ -33,7 +36,21 @@ const {
   runCtInfer,
 } = useCtCheckContext()
 
-const toolbarTitle = computed(() => report.value?.techName || 'CT 影像检查')
+const examTitle = computed(() => report.value?.techName || 'CT 影像检查')
+
+const technicalSubline = computed(() => {
+  const meta = volumeMeta.value
+  const parts: string[] = []
+  if (imagingSourceName.value) parts.push(`DICOM 来源：${imagingSourceName.value}`)
+  if (meta?.spacing_xyz?.length) {
+    parts.push(`体素间距 ${meta.spacing_xyz.map((v) => v.toFixed(2)).join(' × ')} mm`)
+  }
+  if (meta?.size_xyz?.length) {
+    parts.push(`矩阵 ${meta.size_xyz.join(' × ')}`)
+  }
+  if (meta?.file_count) parts.push(`${meta.file_count} 张`)
+  return parts.join(' · ')
+})
 
 async function handleImagingUploaded(payload: { volumeId: string; sourceName: string }) {
   if (!id.value) return
@@ -43,6 +60,11 @@ async function handleImagingUploaded(payload: { volumeId: string; sourceName: st
 async function handleImagingCleared() {
   if (!id.value) return
   await clearImaging(id.value)
+  volumeMeta.value = null
+}
+
+function handleMetaUpdated(meta: CtVolumeMeta | null) {
+  volumeMeta.value = meta
 }
 
 async function handleRunAnalysis() {
@@ -69,32 +91,46 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="ct-exam-page">
-    <header class="ct-exam-toolbar">
-      <div class="ct-exam-toolbar__left">
-        <ElButton :icon="ArrowLeft" text @click="goBack">返回医技申请</ElButton>
-        <div class="ct-exam-toolbar__info">
-          <h1 class="ct-exam-toolbar__title">{{ toolbarTitle }}</h1>
-          <p v-if="report" class="ct-exam-toolbar__meta">
-            <span>{{ report.patientName || '-' }}</span>
-            <span class="ct-exam-toolbar__sep">·</span>
-            <span>病历号 {{ report.caseNumber || '-' }}</span>
-            <span class="ct-exam-toolbar__sep">·</span>
-            <span>{{ report.statusText || report.checkState || '-' }}</span>
-          </p>
+  <div class="ct-exam-page ct-imaging-theme">
+    <header class="ct-exam-header">
+      <div class="ct-exam-header__row">
+        <div class="ct-exam-header__patient">
+          <ElButton class="ct-exam-back" :icon="ArrowLeft" text @click="goBack">返回</ElButton>
+          <div v-if="report" class="ct-exam-patient-info">
+            <span class="ct-exam-patient-name">{{ report.patientName || '-' }}</span>
+            <span class="ct-exam-meta-item">病历号 {{ report.caseNumber || '-' }}</span>
+            <span class="ct-exam-meta-item">检查单 #{{ report.id }}</span>
+          </div>
+        </div>
+
+        <div v-if="report" class="ct-exam-header__exam">
+          <span class="ct-exam-exam-type">{{ examTitle }}</span>
+          <span v-if="report.checkTime || report.creationTime" class="ct-exam-exam-time">
+            {{ report.checkTime || report.creationTime }}
+          </span>
+        </div>
+
+        <div class="ct-exam-header__actions">
+          <span v-if="hasImaging" class="ct-exam-status ct-exam-status--bound">影像已绑定</span>
+          <span v-else-if="started" class="ct-exam-status ct-exam-status--pending">待上传影像</span>
+
+          <ElButton class="ct-exam-btn-secondary" @click="goBack">报告</ElButton>
+          <ElButton
+            class="ct-exam-btn-primary"
+            type="primary"
+            :loading="simulating"
+            :disabled="!canInfer"
+            @click="handleRunAnalysis"
+          >
+            影像分析
+            <ElIcon class="ct-exam-btn-arrow"><ArrowDown /></ElIcon>
+          </ElButton>
         </div>
       </div>
-      <div class="ct-exam-toolbar__right">
-        <ElTag v-if="hasImaging" type="success" size="small">影像已绑定</ElTag>
-        <ElTag v-else-if="started" type="warning" size="small">待上传影像</ElTag>
-        <ElButton
-          type="primary"
-          :loading="simulating"
-          :disabled="!canInfer"
-          @click="handleRunAnalysis"
-        >
-          运行 CT 影像分析
-        </ElButton>
+
+      <div v-if="technicalSubline" class="ct-exam-header__sub">
+        <span class="ct-exam-header__sub-dot" />
+        <span>{{ technicalSubline }}</span>
       </div>
     </header>
 
@@ -128,16 +164,17 @@ onMounted(() => {
           :closable="false"
           class="ct-exam-alert"
         />
-        <p v-if="hasImaging && imagingSourceName" class="ct-exam-source">影像来源：{{ imagingSourceName }}</p>
 
         <div v-if="started && !errorMessage" class="ct-exam-viewer">
           <CtViewerPanel
             ref="viewerPanelRef"
             fullscreen
             :show-save="false"
+            :show-tech-bar="false"
             :initial-volume-id="imagingVolumeId"
             @uploaded="handleImagingUploaded"
             @cleared="handleImagingCleared"
+            @meta-updated="handleMetaUpdated"
           />
         </div>
       </template>
@@ -151,54 +188,135 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  background: var(--ct-bg);
+  color: var(--ct-text);
 }
 
-.ct-exam-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
+.ct-exam-header {
   flex-shrink: 0;
-  padding: var(--space-3) var(--space-4);
-  border-block-end: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-block-end: 1px solid var(--ct-border);
+  background: var(--ct-surface);
 }
 
-.ct-exam-toolbar__left {
+.ct-exam-header__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+}
+
+.ct-exam-header__patient {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 8px;
   min-width: 0;
 }
 
-.ct-exam-toolbar__info {
+.ct-exam-back {
+  flex-shrink: 0;
+  --el-button-text-color: var(--ct-text-muted);
+  --el-button-hover-text-color: var(--ct-accent);
+}
+
+.ct-exam-patient-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
   min-width: 0;
 }
 
-.ct-exam-toolbar__title {
-  margin: 0;
-  font-size: var(--font-size-lg);
+.ct-exam-patient-name {
+  font-size: 15px;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--ct-text);
 }
 
-.ct-exam-toolbar__meta {
-  margin: var(--space-1) 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
+.ct-exam-meta-item {
+  font-size: 12px;
+  color: var(--ct-text-muted);
 }
 
-.ct-exam-toolbar__sep {
-  margin-inline: var(--space-2);
+.ct-exam-header__exam {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.ct-exam-toolbar__right {
+.ct-exam-exam-type {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ct-text);
+}
+
+.ct-exam-exam-time {
+  font-size: 11px;
+  font-family: var(--ct-font-mono);
+  color: var(--ct-text-dim);
+}
+
+.ct-exam-header__actions {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 10px;
   flex-shrink: 0;
+}
+
+.ct-exam-status {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.ct-exam-status--bound {
+  color: var(--ct-success);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.ct-exam-status--pending {
+  color: var(--ct-warning);
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.ct-exam-btn-secondary {
+  --el-button-bg-color: var(--ct-surface-elevated);
+  --el-button-border-color: var(--ct-border-strong);
+  --el-button-text-color: var(--ct-text-muted);
+  --el-button-hover-bg-color: rgba(255, 255, 255, 0.06);
+  --el-button-hover-border-color: var(--ct-border-strong);
+  --el-button-hover-text-color: var(--ct-text);
+}
+
+.ct-exam-btn-primary {
+  font-weight: 600;
+  padding-inline: 18px;
+}
+
+.ct-exam-btn-arrow {
+  margin-inline-start: 4px;
+  font-size: 12px;
+}
+
+.ct-exam-header__sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px 8px;
+  font-size: 11px;
+  font-family: var(--ct-font-mono);
+  color: var(--ct-text-dim);
+  border-block-start: 1px solid var(--ct-border);
+  background: var(--ct-bg-soft);
+}
+
+.ct-exam-header__sub-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ct-accent);
 }
 
 .ct-exam-main {
@@ -206,20 +324,12 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: var(--space-3) var(--space-4);
   overflow: hidden;
 }
 
 .ct-exam-alert {
   flex-shrink: 0;
-  margin-block-end: var(--space-3);
-}
-
-.ct-exam-source {
-  flex-shrink: 0;
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
+  margin: 10px 14px 0;
 }
 
 .ct-exam-viewer {
@@ -227,5 +337,16 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+@media (max-width: 960px) {
+  .ct-exam-header__row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .ct-exam-header__actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

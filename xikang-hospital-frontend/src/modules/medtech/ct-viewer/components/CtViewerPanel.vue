@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
-  ElAlert,
   ElButton,
-  ElCard,
   ElDivider,
   ElForm,
   ElFormItem,
@@ -23,7 +21,9 @@ import {
   uploadCtNrrdFile,
   type CtVolumeMeta,
 } from '@/shared/api/modules/ctViewer'
+import CtSliceViewPanel from '@/modules/medtech/ct-viewer/components/CtSliceViewPanel.vue'
 import VtkVolumeViewer from '@/modules/medtech/ct-viewer/components/VtkVolumeViewer.vue'
+import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 import { parseNrrdArrayBuffer } from '@/modules/medtech/ct-viewer/lib/nrrdToVtkImageData'
 import {
   extractCoronalSlice,
@@ -42,6 +42,7 @@ const props = withDefaults(
     initialVolumeId?: string
     allowUpload?: boolean
     showSave?: boolean
+    showTechBar?: boolean
   }>(),
   {
     embedded: false,
@@ -49,12 +50,14 @@ const props = withDefaults(
     initialVolumeId: '',
     allowUpload: true,
     showSave: true,
+    showTechBar: true,
   },
 )
 
 const emit = defineEmits<{
   uploaded: [payload: { volumeId: string; sourceName: string; meta: CtVolumeMeta }]
   cleared: []
+  'meta-updated': [meta: CtVolumeMeta | null]
 }>()
 
 const statusText = ref('正在检查 CT 影像服务…')
@@ -109,6 +112,52 @@ const volumeDescription = computed(() => {
   if (!meta) return '尚未加载影像'
   return `Size ${meta.size_xyz?.join(' x ') ?? '-'} | Spacing ${meta.spacing_xyz?.map((v) => v.toFixed(3)).join(', ') ?? '-'}`
 })
+
+const spacingXy = computed(() => {
+  const spacing = originalMeta.value?.spacing_xyz
+  if (!spacing?.length) return 0.5
+  return (spacing[0] + spacing[1]) / 2
+})
+
+const spacingXz = computed(() => {
+  const spacing = originalMeta.value?.spacing_xyz
+  if (!spacing?.length) return 0.5
+  return (spacing[0] + (spacing[2] ?? spacing[0])) / 2
+})
+
+const spacingYz = computed(() => {
+  const spacing = originalMeta.value?.spacing_xyz
+  if (!spacing?.length) return 0.5
+  return (spacing[1] + (spacing[2] ?? spacing[1])) / 2
+})
+
+const seriesLabel = computed(() => {
+  const seriesId = originalMeta.value?.series_id
+  if (!seriesId) return '1'
+  return seriesId.slice(-4) || '1'
+})
+
+const technicalMetaLine = computed(() => {
+  const meta = originalMeta.value
+  if (!meta?.size_xyz?.length) return ''
+  const spacing = meta.spacing_xyz?.map((v) => v.toFixed(2)).join(' × ') ?? '-'
+  const matrix = meta.size_xyz.join(' × ')
+  const files = meta.file_count ? ` · ${meta.file_count} 张` : ''
+  return `体素间距 ${spacing} mm · 矩阵 ${matrix}${files}`
+})
+
+function applyWindowPreset(preset: 'brain' | 'soft' | 'bone') {
+  if (preset === 'brain') {
+    windowCenter.value = 40
+    windowWidth.value = 80
+  } else if (preset === 'soft') {
+    windowCenter.value = 40
+    windowWidth.value = 400
+  } else {
+    windowCenter.value = 400
+    windowWidth.value = 1800
+  }
+}
 
 const dataRange = computed(() => {
   const meta = activeMeta.value
@@ -402,6 +451,14 @@ watch([originalVolume, filteredVolume, axialSlice, coronalSlice, sagittalSlice, 
   refresh2DViews()
 })
 
+watch(
+  originalMeta,
+  (meta) => {
+    emit('meta-updated', meta)
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
   await checkBackend()
   if (props.initialVolumeId) {
@@ -414,7 +471,7 @@ defineExpose({ resetVolumeState, loadBoundVolume })
 
 <template>
   <div
-    class="ct-viewer-panel"
+    class="ct-viewer-panel ct-imaging-theme"
     :class="{
       'ct-viewer-panel--embedded': embedded,
       'ct-viewer-panel--fullscreen': fullscreen,
@@ -423,170 +480,241 @@ defineExpose({ resetVolumeState, loadBoundVolume })
     <input ref="nrrdInput" class="hidden-input" type="file" accept=".nrrd,.nii,.nii.gz" @change="handleNrrdUpload" />
     <input ref="dicomInput" class="hidden-input" type="file" multiple webkitdirectory directory @change="handleDicomFolderUpload" />
 
-    <div v-if="!embedded" class="ct-viewer-panel__status">
-      <el-tag :type="backendReady && algoReady ? 'success' : 'warning'" effect="dark">
-        {{ backendReady && algoReady ? '服务已就绪' : backendReady ? '算法未就绪' : '服务未连接' }}
-      </el-tag>
-      <el-tag v-if="activeMeta" effect="plain">数据范围 {{ dataRange }}</el-tag>
-      <span class="ct-viewer-panel__desc">{{ volumeDescription }}</span>
+    <div v-if="showTechBar && !embedded && technicalMetaLine" class="ct-viewer-panel__tech-bar">
+      <span class="ct-viewer-panel__tech-dot" />
+      <span>{{ technicalMetaLine }}</span>
+      <span v-if="originalMeta?.source_name" class="ct-viewer-panel__tech-source">
+        来源：{{ originalMeta.source_name }}
+      </span>
     </div>
 
     <div class="ct-viewer-layout">
       <aside class="ct-viewer-sidebar">
-        <el-scrollbar>
-          <el-card v-if="allowUpload" class="panel-card" shadow="never">
-            <template #header>加载数据</template>
-            <div class="button-stack">
-              <el-button type="primary" :loading="isLoading" :disabled="!backendReady" @click="nrrdInput?.click()">
+        <ElScrollbar>
+          <section v-if="allowUpload" class="ct-sidebar-section">
+            <h3 class="ct-sidebar-section__title">数据加载</h3>
+            <div class="ct-btn-stack">
+              <ElButton type="primary" class="ct-btn-primary" :loading="isLoading" :disabled="!backendReady" @click="nrrdInput?.click()">
                 上传 NRRD / NIfTI
-              </el-button>
-              <el-button :loading="isLoading" :disabled="!backendReady || !algoReady" @click="dicomInput?.click()">
+              </ElButton>
+              <ElButton class="ct-btn-secondary" :loading="isLoading" :disabled="!backendReady || !algoReady" @click="dicomInput?.click()">
                 上传 DICOM 文件夹
-              </el-button>
-              <el-button v-if="sourceVolumeId" @click="handleClearUpload">清除当前影像</el-button>
+              </ElButton>
+              <ElButton v-if="sourceVolumeId" class="ct-btn-ghost" @click="handleClearUpload">清除当前影像</ElButton>
             </div>
-            <el-alert class="status-alert" :title="statusText" type="info" :closable="false" show-icon />
-          </el-card>
+            <p class="ct-sidebar-status">{{ statusText }}</p>
+            <p v-if="originalMeta" class="ct-sidebar-meta">{{ volumeDescription }}</p>
+          </section>
 
-          <el-card class="panel-card" shadow="never">
-            <template #header>三视图定位</template>
-            <div class="control-block">
-              <div class="control-label">轴状 Axial：{{ axialSlice + 1 }} / {{ zCount || '-' }}</div>
-              <el-slider v-model="axialSlice" :min="0" :max="Math.max(zCount - 1, 0)" :disabled="!zCount" />
+          <section class="ct-sidebar-section">
+            <h3 class="ct-sidebar-section__title">三视图定位</h3>
+            <div class="ct-control-block">
+              <div class="ct-control-row">
+                <span class="ct-control-label">轴状 Axial</span>
+                <span class="ct-control-value">{{ axialSlice + 1 }} / {{ zCount || '-' }}</span>
+              </div>
+              <ElSlider v-model="axialSlice" :min="0" :max="Math.max(zCount - 1, 0)" :disabled="!zCount" />
             </div>
-            <div class="control-block">
-              <div class="control-label">冠状 Coronal：{{ coronalSlice + 1 }} / {{ yCount || '-' }}</div>
-              <el-slider v-model="coronalSlice" :min="0" :max="Math.max(yCount - 1, 0)" :disabled="!yCount" />
+            <div class="ct-control-block">
+              <div class="ct-control-row">
+                <span class="ct-control-label">冠状 Coronal</span>
+                <span class="ct-control-value">{{ coronalSlice + 1 }} / {{ yCount || '-' }}</span>
+              </div>
+              <ElSlider v-model="coronalSlice" :min="0" :max="Math.max(yCount - 1, 0)" :disabled="!yCount" />
             </div>
-            <div class="control-block">
-              <div class="control-label">矢状 Sagittal：{{ sagittalSlice + 1 }} / {{ xCount || '-' }}</div>
-              <el-slider v-model="sagittalSlice" :min="0" :max="Math.max(xCount - 1, 0)" :disabled="!xCount" />
+            <div class="ct-control-block">
+              <div class="ct-control-row">
+                <span class="ct-control-label">矢状 Sagittal</span>
+                <span class="ct-control-value">{{ sagittalSlice + 1 }} / {{ xCount || '-' }}</span>
+              </div>
+              <ElSlider v-model="sagittalSlice" :min="0" :max="Math.max(xCount - 1, 0)" :disabled="!xCount" />
             </div>
-          </el-card>
+          </section>
 
-          <el-card class="panel-card" shadow="never">
-            <template #header>窗宽 / 窗位</template>
-            <el-form label-position="top">
-              <el-form-item label="窗位 Center">
-                <el-input-number v-model="windowCenter" :min="-3000" :max="3000" controls-position="right" />
-              </el-form-item>
-              <el-form-item label="窗宽 Width">
-                <el-input-number v-model="windowWidth" :min="1" :max="6000" controls-position="right" />
-              </el-form-item>
-            </el-form>
-          </el-card>
+          <section class="ct-sidebar-section">
+            <h3 class="ct-sidebar-section__title">窗宽 / 窗位</h3>
+            <div class="ct-wl-presets">
+              <button type="button" class="ct-preset-chip" @click="applyWindowPreset('brain')">脑窗</button>
+              <button type="button" class="ct-preset-chip" @click="applyWindowPreset('soft')">软组织</button>
+              <button type="button" class="ct-preset-chip" @click="applyWindowPreset('bone')">骨窗</button>
+            </div>
+            <ElForm label-position="top" class="ct-wl-form">
+              <ElFormItem label="窗位 Center">
+                <ElInputNumber v-model="windowCenter" :min="-3000" :max="3000" controls-position="right" />
+              </ElFormItem>
+              <ElFormItem label="窗宽 Width">
+                <ElInputNumber v-model="windowWidth" :min="1" :max="6000" controls-position="right" />
+              </ElFormItem>
+            </ElForm>
+          </section>
 
-          <el-card class="panel-card" shadow="never">
-            <template #header>滤波器</template>
-            <el-form label-position="top">
-              <el-form-item label="选择滤波器">
-                <el-select v-model="filterName" class="full-width">
-                  <el-option label="无滤波" value="无滤波" />
-                  <el-option label="高斯滤波 Gaussian" value="高斯滤波 Gaussian" />
-                  <el-option label="双边滤波 Bilateral" value="双边滤波 Bilateral" />
-                  <el-option label="中值滤波 Median" value="中值滤波 Median" />
-                  <el-option label="曲率流平滑 Curvature Flow" value="曲率流平滑 Curvature Flow" />
-                  <el-option label="各向异性扩散 Anisotropic Diffusion" value="各向异性扩散 Anisotropic Diffusion" />
-                  <el-option :label="METAL_MASK_FILTER_NAME" :value="METAL_MASK_FILTER_NAME" />
-                </el-select>
-              </el-form-item>
+          <section class="ct-sidebar-section">
+            <h3 class="ct-sidebar-section__title">滤波器</h3>
+            <ElForm label-position="top">
+              <ElFormItem label="选择滤波器">
+                <ElSelect v-model="filterName" class="full-width">
+                  <ElOption label="无滤波" value="无滤波" />
+                  <ElOption label="高斯滤波 Gaussian" value="高斯滤波 Gaussian" />
+                  <ElOption label="双边滤波 Bilateral" value="双边滤波 Bilateral" />
+                  <ElOption label="中值滤波 Median" value="中值滤波 Median" />
+                  <ElOption label="曲率流平滑 Curvature Flow" value="曲率流平滑 Curvature Flow" />
+                  <ElOption label="各向异性扩散 Anisotropic Diffusion" value="各向异性扩散 Anisotropic Diffusion" />
+                  <ElOption :label="METAL_MASK_FILTER_NAME" :value="METAL_MASK_FILTER_NAME" />
+                </ElSelect>
+              </ElFormItem>
 
-              <el-form-item v-if="showSpatial" label="空间 Sigma">
-                <el-input-number v-model="spatialSigma" :min="0.1" :max="10" :step="0.1" controls-position="right" />
-              </el-form-item>
-              <el-form-item v-if="showRange" label="灰度 Sigma">
-                <el-input-number v-model="rangeSigma" :min="1" :max="300" :step="0.5" controls-position="right" />
-              </el-form-item>
-              <el-form-item v-if="showMedian" label="中值半径">
-                <el-input-number v-model="medianRadius" :min="1" :max="8" :step="1" controls-position="right" />
-              </el-form-item>
+              <ElFormItem v-if="showSpatial" label="空间 Sigma">
+                <ElInputNumber v-model="spatialSigma" :min="0.1" :max="10" :step="0.1" controls-position="right" />
+              </ElFormItem>
+              <ElFormItem v-if="showRange" label="灰度 Sigma">
+                <ElInputNumber v-model="rangeSigma" :min="1" :max="300" :step="0.5" controls-position="right" />
+              </ElFormItem>
+              <ElFormItem v-if="showMedian" label="中值半径">
+                <ElInputNumber v-model="medianRadius" :min="1" :max="8" :step="1" controls-position="right" />
+              </ElFormItem>
               <template v-if="showIter">
-                <el-form-item label="迭代次数">
-                  <el-input-number v-model="iterations" :min="1" :max="30" :step="1" controls-position="right" />
-                </el-form-item>
-                <el-form-item label="Time Step">
-                  <el-input-number v-model="timeStep" :min="0.001" :max="0.25" :step="0.001" controls-position="right" />
-                </el-form-item>
+                <ElFormItem label="迭代次数">
+                  <ElInputNumber v-model="iterations" :min="1" :max="30" :step="1" controls-position="right" />
+                </ElFormItem>
+                <ElFormItem label="Time Step">
+                  <ElInputNumber v-model="timeStep" :min="0.001" :max="0.25" :step="0.001" controls-position="right" />
+                </ElFormItem>
               </template>
-              <el-form-item v-if="showConductance" label="Conductance">
-                <el-input-number v-model="conductance" :min="0.1" :max="20" :step="0.1" controls-position="right" />
-              </el-form-item>
+              <ElFormItem v-if="showConductance" label="Conductance">
+                <ElInputNumber v-model="conductance" :min="0.1" :max="20" :step="0.1" controls-position="right" />
+              </ElFormItem>
               <template v-if="showMetal">
-                <el-divider content-position="left">金属伪影掩码参数</el-divider>
-                <el-form-item label="阈值下限 HU">
-                  <el-input-number v-model="metalThresholdLower" :min="-1000" :max="5000" controls-position="right" />
-                </el-form-item>
-                <el-form-item label="阈值上限 HU">
-                  <el-input-number v-model="metalThresholdUpper" :min="-1000" :max="5000" controls-position="right" />
-                </el-form-item>
-                <el-form-item label="梯度阈值">
-                  <el-input-number v-model="metalGradientThreshold" :min="0" :max="2000" controls-position="right" />
-                </el-form-item>
-                <el-form-item label="开运算半径">
-                  <el-input-number v-model="metalOpeningRadius" :min="0" :max="5" controls-position="right" />
-                </el-form-item>
-                <el-form-item label="闭运算半径">
-                  <el-input-number v-model="metalClosingRadius" :min="0" :max="10" controls-position="right" />
-                </el-form-item>
-                <el-form-item label="最小连通域体素数">
-                  <el-input-number v-model="metalMinComponentSize" :min="0" :max="10000" controls-position="right" />
-                </el-form-item>
+                <ElDivider content-position="left">金属伪影掩码参数</ElDivider>
+                <ElFormItem label="阈值下限 HU">
+                  <ElInputNumber v-model="metalThresholdLower" :min="-1000" :max="5000" controls-position="right" />
+                </ElFormItem>
+                <ElFormItem label="阈值上限 HU">
+                  <ElInputNumber v-model="metalThresholdUpper" :min="-1000" :max="5000" controls-position="right" />
+                </ElFormItem>
+                <ElFormItem label="梯度阈值">
+                  <ElInputNumber v-model="metalGradientThreshold" :min="0" :max="2000" controls-position="right" />
+                </ElFormItem>
+                <ElFormItem label="开运算半径">
+                  <ElInputNumber v-model="metalOpeningRadius" :min="0" :max="5" controls-position="right" />
+                </ElFormItem>
+                <ElFormItem label="闭运算半径">
+                  <ElInputNumber v-model="metalClosingRadius" :min="0" :max="10" controls-position="right" />
+                </ElFormItem>
+                <ElFormItem label="最小连通域体素数">
+                  <ElInputNumber v-model="metalMinComponentSize" :min="0" :max="10000" controls-position="right" />
+                </ElFormItem>
               </template>
-            </el-form>
-            <el-button class="full-width" type="success" :disabled="!sourceVolumeId || !algoReady" :loading="isLoading" @click="applyFilter">
+            </ElForm>
+            <ElButton class="full-width ct-btn-accent" type="primary" :disabled="!sourceVolumeId || !algoReady" :loading="isLoading" @click="applyFilter">
               应用滤波
-            </el-button>
-          </el-card>
+            </ElButton>
+          </section>
 
-          <el-card v-if="showSave" class="panel-card" shadow="never">
-            <template #header>保存结果</template>
-            <div class="button-stack">
-              <el-button :disabled="!zCount" @click="saveCurrentSlicePng">保存轴状切片 PNG</el-button>
-              <el-button :disabled="!sourceVolumeId" @click="saveFilteredVolume('nrrd')">保存体数据 NRRD</el-button>
-              <el-button :disabled="!sourceVolumeId" @click="saveFilteredVolume('nii.gz')">保存体数据 NIfTI</el-button>
+          <section v-if="showSave" class="ct-sidebar-section">
+            <h3 class="ct-sidebar-section__title">保存结果</h3>
+            <div class="ct-btn-stack">
+              <ElButton class="ct-btn-secondary" :disabled="!zCount" @click="saveCurrentSlicePng">保存轴状切片 PNG</ElButton>
+              <ElButton class="ct-btn-secondary" :disabled="!sourceVolumeId" @click="saveFilteredVolume('nrrd')">保存体数据 NRRD</ElButton>
+              <ElButton class="ct-btn-secondary" :disabled="!sourceVolumeId" @click="saveFilteredVolume('nii.gz')">保存体数据 NIfTI</ElButton>
             </div>
-          </el-card>
-        </el-scrollbar>
+          </section>
+
+          <div v-if="!embedded" class="ct-sidebar-footer">
+            <ElTag :type="backendReady && algoReady ? 'success' : 'warning'" effect="dark" size="small">
+              {{ backendReady && algoReady ? '服务已就绪' : backendReady ? '算法未就绪' : '服务未连接' }}
+            </ElTag>
+            <ElTag v-if="activeMeta" effect="plain" size="small">数据范围 {{ dataRange }}</ElTag>
+          </div>
+        </ElScrollbar>
       </aside>
 
       <section class="ct-viewer-workspace">
         <div class="view-grid">
-          <el-card class="view-card" shadow="never">
-            <template #header>
-              <div class="card-title"><span>轴状图 Axial</span><el-tag size="small">Z</el-tag></div>
-            </template>
-            <canvas ref="axialCanvas"></canvas>
-          </el-card>
-          <el-card class="view-card" shadow="never">
-            <template #header>
-              <div class="card-title"><span>冠状图 Coronal</span><el-tag size="small">Y</el-tag></div>
-            </template>
-            <canvas ref="coronalCanvas"></canvas>
-          </el-card>
-          <el-card class="view-card" shadow="never">
-            <template #header>
-              <div class="card-title"><span>矢状图 Sagittal</span><el-tag size="small">X</el-tag></div>
-            </template>
-            <canvas ref="sagittalCanvas"></canvas>
-          </el-card>
-        </div>
-
-        <el-card class="volume-card" shadow="never">
-          <template #header>
-            <div class="card-title">
-              <span>三维体渲染</span>
-              <el-tag v-if="displayIsMask" type="warning" size="small">金属掩码</el-tag>
-            </div>
-          </template>
-          <VtkVolumeViewer
-            :volume-data="activeVolume"
+          <CtSliceViewPanel
+            title="轴状图 Axial"
+            plane="axial"
+            :slice-index="axialSlice"
+            :slice-total="zCount"
             :window-center="windowCenter"
             :window-width="windowWidth"
-            :is-mask="displayIsMask"
-            :data-min="activeMeta?.min ?? 0"
-            :data-max="activeMeta?.max ?? 1"
-          />
-        </el-card>
+            :spacing-mm="spacingXy"
+            :series-label="seriesLabel"
+          >
+            <canvas ref="axialCanvas" />
+          </CtSliceViewPanel>
+          <CtSliceViewPanel
+            title="冠状图 Coronal"
+            plane="coronal"
+            :slice-index="coronalSlice"
+            :slice-total="yCount"
+            :window-center="windowCenter"
+            :window-width="windowWidth"
+            :spacing-mm="spacingXz"
+            :series-label="seriesLabel"
+          >
+            <canvas ref="coronalCanvas" />
+          </CtSliceViewPanel>
+          <CtSliceViewPanel
+            title="矢状图 Sagittal"
+            plane="sagittal"
+            :slice-index="sagittalSlice"
+            :slice-total="xCount"
+            :window-center="windowCenter"
+            :window-width="windowWidth"
+            :spacing-mm="spacingYz"
+            :series-label="seriesLabel"
+          >
+            <canvas ref="sagittalCanvas" />
+          </CtSliceViewPanel>
+        </div>
+
+        <div class="volume-panel">
+          <header class="volume-panel__header">
+            <div class="volume-panel__title-row">
+              <span class="volume-panel__title">三维体渲染</span>
+              <ElTag v-if="displayIsMask" type="warning" size="small">金属掩码</ElTag>
+            </div>
+            <div class="volume-panel__mode">
+              <span>表面渲染</span>
+            </div>
+          </header>
+
+          <div class="volume-panel__body">
+            <div class="volume-panel__toolbar volume-panel__toolbar--top">
+              <span class="volume-tool" title="选择">◎</span>
+              <span class="volume-tool" title="旋转">↻</span>
+              <span class="volume-tool" title="平移">✥</span>
+              <span class="volume-tool" title="缩放">⊕</span>
+              <span class="volume-tool" title="裁剪">▭</span>
+              <span class="volume-tool" title="测量">⌖</span>
+            </div>
+
+            <div class="volume-panel__orient-cube">
+              <span class="cube-face cube-face--r">R</span>
+              <span class="cube-face cube-face--a">A</span>
+              <span class="cube-face cube-face--s">S</span>
+            </div>
+
+            <div class="volume-panel__toolbar volume-panel__toolbar--side">
+              <button type="button" class="volume-side-btn">重置视图</button>
+              <button type="button" class="volume-side-btn">放大</button>
+              <button type="button" class="volume-side-btn">缩小</button>
+              <button type="button" class="volume-side-btn">旋转</button>
+              <button type="button" class="volume-side-btn">平移</button>
+              <button type="button" class="volume-side-btn">窗宽窗位</button>
+              <button type="button" class="volume-side-btn">渲染设置</button>
+            </div>
+
+            <VtkVolumeViewer
+              :volume-data="activeVolume"
+              :window-center="windowCenter"
+              :window-width="windowWidth"
+              :is-mask="displayIsMask"
+              :data-min="activeMeta?.min ?? 0"
+              :data-max="activeMeta?.max ?? 1"
+            />
+          </div>
+        </div>
       </section>
     </div>
   </div>
@@ -596,19 +724,22 @@ defineExpose({ resetVolumeState, loadBoundVolume })
 .ct-viewer-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 0;
   min-height: calc(100vh - var(--shell-gap) * 2 - 120px);
+  background: var(--ct-bg);
+  color: var(--ct-text);
 }
 
 .ct-viewer-panel--embedded {
   min-height: 640px;
+  border-radius: var(--ct-radius-lg);
+  overflow: hidden;
 }
 
 .ct-viewer-panel--fullscreen {
   flex: 1;
   min-height: 0;
   height: 100%;
-  gap: var(--space-2);
 }
 
 .ct-viewer-panel--fullscreen .ct-viewer-layout {
@@ -617,19 +748,33 @@ defineExpose({ resetVolumeState, loadBoundVolume })
 }
 
 .ct-viewer-panel--fullscreen .ct-viewer-workspace {
-  grid-template-rows: minmax(180px, 32%) minmax(280px, 1fr);
+  grid-template-rows: minmax(180px, 34%) minmax(280px, 1fr);
 }
 
-.ct-viewer-panel__status {
+.ct-viewer-panel__tech-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+  padding: 6px 14px;
+  font-size: 11px;
+  font-family: var(--ct-font-mono);
+  color: var(--ct-text-dim);
+  border-block-end: 1px solid var(--ct-border);
+  background: var(--ct-bg-soft);
 }
 
-.ct-viewer-panel__desc {
-  font-size: 13px;
-  color: var(--color-text-soft);
+.ct-viewer-panel__tech-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ct-accent);
+  box-shadow: 0 0 8px var(--ct-accent-glow);
+}
+
+.ct-viewer-panel__tech-source {
+  margin-inline-start: auto;
+  color: var(--ct-text-muted);
 }
 
 .hidden-input {
@@ -638,45 +783,131 @@ defineExpose({ resetVolumeState, loadBoundVolume })
 
 .ct-viewer-layout {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: var(--space-4);
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 0;
   min-height: 0;
   flex: 1;
 }
 
 .ct-viewer-sidebar {
   min-height: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2xl);
-  background: var(--color-sidebar);
+  border-inline-end: 1px solid var(--ct-border);
+  background: var(--ct-surface);
   overflow: hidden;
 }
 
-.panel-card {
-  margin: 12px;
-  border-radius: 14px;
+.ct-sidebar-section {
+  padding: 14px 14px 4px;
+  border-block-end: 1px solid var(--ct-border);
 }
 
-.button-stack {
+.ct-sidebar-section__title {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ct-text-muted);
+}
+
+.ct-btn-stack {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
-.button-stack :deep(.el-button) {
+.ct-btn-stack :deep(.el-button) {
   margin-left: 0;
 }
 
-.status-alert {
-  margin-top: 12px;
+.ct-btn-primary {
+  font-weight: 600;
 }
 
-.control-block + .control-block {
-  margin-top: 12px;
+.ct-btn-secondary {
+  --el-button-bg-color: var(--ct-surface-elevated);
+  --el-button-border-color: var(--ct-border-strong);
+  --el-button-text-color: var(--ct-text);
+  --el-button-hover-bg-color: rgba(255, 255, 255, 0.06);
+  --el-button-hover-border-color: var(--ct-accent);
+  --el-button-hover-text-color: var(--ct-accent);
 }
 
-.control-label {
-  font-size: 13px;
-  color: var(--color-text-soft);
+.ct-btn-ghost {
+  --el-button-bg-color: transparent;
+  --el-button-border-color: transparent;
+  --el-button-text-color: var(--ct-text-dim);
+  --el-button-hover-text-color: var(--ct-danger);
+}
+
+.ct-btn-accent {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.ct-sidebar-status {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ct-text-muted);
+}
+
+.ct-sidebar-meta {
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-family: var(--ct-font-mono);
+  color: var(--ct-text-dim);
+}
+
+.ct-control-block + .ct-control-block {
+  margin-top: 14px;
+}
+
+.ct-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.ct-control-label {
+  font-size: 12px;
+  color: var(--ct-text-muted);
+}
+
+.ct-control-value {
+  font-size: 11px;
+  font-family: var(--ct-font-mono);
+  color: var(--ct-accent);
+}
+
+.ct-wl-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ct-preset-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--ct-border-strong);
+  border-radius: 999px;
+  background: var(--ct-surface-elevated);
+  color: var(--ct-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.ct-preset-chip:hover {
+  border-color: var(--ct-accent);
+  color: var(--ct-accent);
+  background: var(--ct-accent-soft);
+}
+
+.ct-wl-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 10px;
 }
 
 .full-width {
@@ -688,58 +919,187 @@ defineExpose({ resetVolumeState, loadBoundVolume })
 }
 
 .ct-viewer-sidebar :deep(.el-slider) {
-  margin-inline: 4px;
+  margin-inline: 2px;
+}
+
+.ct-viewer-sidebar :deep(.el-divider__text) {
+  background: var(--ct-surface);
+  color: var(--ct-text-dim);
+  font-size: 11px;
+}
+
+.ct-sidebar-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px 16px;
 }
 
 .ct-viewer-workspace {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(220px, 36%) minmax(360px, 1fr);
-  gap: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2xl);
-  background: var(--color-surface);
+  grid-template-rows: minmax(200px, 36%) minmax(360px, 1fr);
+  gap: 10px;
+  padding: 10px;
+  background: var(--ct-bg);
 }
 
 .view-grid {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
+  gap: 10px;
 }
 
-.view-card,
-.volume-card {
+.view-grid :deep(.ct-slice-panel) {
   min-height: 0;
-  border-radius: 16px;
+  height: 100%;
+}
+
+.volume-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ct-border);
+  border-radius: var(--ct-radius-lg);
+  background: var(--ct-panel);
   overflow: hidden;
 }
 
-.view-card :deep(.el-card__body),
-.volume-card :deep(.el-card__body) {
-  height: calc(100% - 54px);
-  padding: 10px;
-}
-
-.card-title {
+.volume-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--ct-border);
+  background: var(--ct-surface);
+}
+
+.volume-panel__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.volume-panel__title {
+  font-size: 13px;
   font-weight: 600;
 }
 
-.view-card canvas {
-  width: 100%;
-  height: 100%;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    #05070d;
-  background-size: 20px 20px;
-  border-radius: 12px;
-  object-fit: contain;
+.volume-panel__mode {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ct-border-strong);
+  color: var(--ct-text-muted);
+  background: var(--ct-surface-elevated);
+}
+
+.volume-panel__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.volume-panel__toolbar--top {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--ct-border);
+  background: rgba(11, 14, 20, 0.82);
+  backdrop-filter: blur(8px);
+}
+
+.volume-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ct-text-muted);
+  cursor: default;
+}
+
+.volume-tool:hover {
+  color: var(--ct-accent);
+  background: var(--ct-accent-soft);
+}
+
+.volume-panel__orient-cube {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--ct-border-strong);
+  border-radius: 8px;
+  background: rgba(11, 14, 20, 0.75);
+  backdrop-filter: blur(6px);
+}
+
+.cube-face {
+  position: absolute;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ct-accent);
+}
+
+.cube-face--r {
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.cube-face--a {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.cube-face--s {
+  top: 4px;
+  left: 4px;
+}
+
+.volume-panel__toolbar--side {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--ct-border);
+  background: rgba(11, 14, 20, 0.82);
+  backdrop-filter: blur(8px);
+}
+
+.volume-side-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ct-text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: default;
+  text-align: left;
+}
+
+.volume-side-btn:hover {
+  color: var(--ct-accent);
+  background: var(--ct-accent-soft);
 }
 
 @media (max-width: 1180px) {
@@ -752,6 +1112,10 @@ defineExpose({ resetVolumeState, loadBoundVolume })
   }
 
   .view-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ct-wl-form {
     grid-template-columns: 1fr;
   }
 }

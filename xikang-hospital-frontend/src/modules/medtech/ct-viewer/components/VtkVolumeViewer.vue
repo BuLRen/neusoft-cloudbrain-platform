@@ -102,7 +102,7 @@ onMounted(() => {
   if (!containerRef.value) return
 
   genericRenderWindow = vtkGenericRenderWindow.newInstance({
-    background: [0.05, 0.05, 0.07],
+    background: [0.02, 0.027, 0.05],
   })
   genericRenderWindow.setContainer(containerRef.value)
   genericRenderWindow.resize()
@@ -156,9 +156,9 @@ onBeforeUnmount(() => {
 .vtk-container {
   width: 100%;
   height: 100%;
-  min-height: 420px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  min-height: 280px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
 }
 </style>
