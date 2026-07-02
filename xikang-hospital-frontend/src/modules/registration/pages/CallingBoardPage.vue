@@ -2,39 +2,53 @@
   <div class="calling-board">
     <!-- 顶部：标题 + 时间 -->
     <header class="board-header">
-      <div class="title">
-        熙康云医院 · 候诊大屏
-        <span v-if="departmentName" class="dept">· {{ departmentName }}</span>
-      </div>
+      <div class="title">熙康云医院 · 全院候诊大屏</div>
       <div class="clock">{{ now }}</div>
     </header>
 
-    <!-- 主区：当前叫号 -->
-    <section class="now-calling" :class="{ flash: flashFlag }">
-      <div class="label">★ 现在叫号 ★</div>
-      <div v-if="current" class="card">
-        <div class="doctor">{{ current.doctorName || '—' }} 医生</div>
-        <div class="queue-number">{{ current.queueNumber ?? '—' }} <span class="unit">号</span></div>
-        <div class="patient">{{ current.patientName || '—' }} 请就诊</div>
+    <!-- 顶部滚动播报：最近叫号 -->
+    <section class="recent-bar">
+      <div class="recent-label">★ 最新叫号</div>
+      <div class="recent-track">
+        <transition-group name="recent-slide" tag="div" class="recent-list">
+          <div v-for="item in recentCalls" :key="item.registerId" class="recent-item" :class="{ 'recent-flash': item.registerId === flashRegisterId }">
+            <span class="r-dept">{{ item.departmentName || '—' }}</span>
+            <span class="r-sep">·</span>
+            <span class="r-doctor">{{ item.doctorName || '—' }}</span>
+            <span class="r-sep">·</span>
+            <span class="r-num">{{ item.queueNumber ?? '—' }}号</span>
+            <span class="r-sep">·</span>
+            <span class="r-name">{{ maskName(item.patientName) }}</span>
+          </div>
+        </transition-group>
+        <div v-if="!recentCalls.length" class="recent-empty">暂无叫号</div>
       </div>
-      <div v-else class="empty">暂无叫号</div>
     </section>
 
-    <!-- 候诊队列 -->
-    <section class="waiting">
-      <div class="section-title">候诊队列（{{ waitingList.length }} 人）</div>
-      <div v-if="waitingList.length" class="queue-list">
-        <div v-for="w in waitingList.slice(0, 8)" :key="w.registerId" class="queue-item">
-          <span class="q-no">{{ w.queueNumber ?? '—' }}号</span>
-          <span class="q-name">{{ maskName(w.patientName) }}</span>
-          <span v-if="w.callStatus === 1" class="q-tag tag-called">已叫</span>
-          <span v-else-if="w.callStatus === 3" class="q-tag tag-passed">过号</span>
+    <!-- 科室卡片墙 -->
+    <section class="dept-grid">
+      <div v-for="dept in departments" :key="dept.departmentId"
+           class="dept-card"
+           :class="{ 'is-calling': dept.callingCount > 0, 'flash': dept.departmentId === flashDeptId }">
+        <div class="dept-card__name">{{ dept.departmentName || '—' }}</div>
+        <div v-if="dept.callingCount > 0" class="dept-card__main">
+          <div v-for="c in dept.calling.slice(0, 3)" :key="c.registerId" class="dept-card__call">
+            <div class="dept-card__doctor">{{ c.doctorName || '—' }}</div>
+            <div class="dept-card__num">{{ c.queueNumber ?? '—' }}<span class="unit">号</span></div>
+            <div class="dept-card__patient">{{ maskName(c.patientName) }}</div>
+          </div>
+        </div>
+        <div v-else class="dept-card__idle">
+          暂无叫号
+        </div>
+        <div class="dept-card__meta">
+          候诊 <strong>{{ dept.waitingCount }}</strong> 人
         </div>
       </div>
-      <div v-else class="empty-small">暂无候诊</div>
+      <div v-if="!departments.length" class="dept-empty">暂无科室数据</div>
     </section>
 
-    <!-- 连接状态条 -->
+    <!-- 连接状态条 + 语音入口 -->
     <footer class="conn-bar">
       <span :class="['dot', connStatusClass]"></span>
       <span>{{ connStatusText }}</span>
@@ -45,18 +59,33 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
 import { http } from '@/shared/api'
 
-const route = useRoute()
-const departmentId = computed(() => String(route.params.departmentId || ''))
+interface CallItem {
+  registerId: number
+  patientName?: string
+  queueNumber?: number
+  doctorName?: string
+  departmentName?: string
+  departmentId?: number
+  calledTime?: string
+  callStatus?: number
+  callRound?: number
+}
+interface DeptItem {
+  departmentId: number
+  departmentName: string
+  calling: CallItem[]
+  callingCount: number
+  waitingCount: number
+}
 
 // ===== 状态 =====
 const now = ref(formatTime(new Date()))
-const current = ref<any>(null)
-const waitingList = ref<any[]>([])
-const departmentName = ref('')
-const flashFlag = ref(false)
+const departments = ref<DeptItem[]>([])
+const recentCalls = ref<CallItem[]>([])
+const flashRegisterId = ref<number | null>(null)
+const flashDeptId = ref<number | null>(null)
 
 const connState = ref<'idle' | 'connecting' | 'open' | 'error'>('idle')
 const connStatusText = computed(() => ({
@@ -72,27 +101,17 @@ const connStatusClass = computed(() => ({
   error: 'dot-red',
 }[connState.value] || 'dot-gray'))
 
-// 音频：浏览器自动播放限制，需用户点击后才能播
 const voiceReady = ref(false)
-let ttsUtterance: SpeechSynthesisUtterance | null = null
 
-// SSE & 定时器
 let es: EventSource | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 // ===== 启动 =====
 onMounted(() => {
-  // 时钟
   clockTimer = setInterval(() => { now.value = formatTime(new Date()) }, 1000)
-
-  // 初次拉全量
   refreshBoard()
-
-  // 轮询兜底（10s 一次，SSE 万一断了也能保持基本可用）
   pollTimer = setInterval(refreshBoard, 10_000)
-
-  // 订阅 SSE
   connectSSE()
 })
 
@@ -102,78 +121,59 @@ onUnmounted(() => {
   if (clockTimer) clearInterval(clockTimer)
 })
 
-// ===== SSE 订阅 =====
+// ===== SSE 订阅 /stream/global =====
 function connectSSE() {
-  if (!departmentId.value) return
   connState.value = 'connecting'
-  const url = `/api/registration/calling/stream/department/${departmentId.value}`
-  es = new EventSource(url)
+  es = new EventSource('/api/registration/calling/stream/global')
 
   es.onopen = () => { connState.value = 'open' }
-
-  es.addEventListener('READY', () => {
-    // 连接建立，立刻拉一次确保最新状态
-    refreshBoard()
-  })
+  es.addEventListener('READY', () => refreshBoard())
 
   es.addEventListener('CALLED', (e: any) => {
-    const payload = JSON.parse(e.data)
-    handleEvent('CALLED', payload)
+    try {
+      const payload = JSON.parse(e.data)
+      handleEvent('CALLED', payload)
+    } catch {}
   })
   es.addEventListener('ANSWERED', (e: any) => {
-    const payload = JSON.parse(e.data)
-    handleEvent('ANSWERED', payload)
+    try {
+      const payload = JSON.parse(e.data)
+      handleEvent('ANSWERED', payload)
+    } catch {}
   })
   es.addEventListener('PASSED', (e: any) => {
-    const payload = JSON.parse(e.data)
-    handleEvent('PASSED', payload)
+    try {
+      const payload = JSON.parse(e.data)
+      handleEvent('PASSED', payload)
+    } catch {}
   })
 
   es.onerror = () => { connState.value = 'error' /* EventSource 自动重连 */ }
 }
 
 function handleEvent(type: string, payload: any) {
-  if (type === 'CALLED' || (type === 'PASSED' && current.value?.registerId !== payload.registerId)) {
-    // CALLED：更新当前叫号区域；PASSED 不一定更新主区，但若是别的号过号也刷一下
-  }
+  // 新叫号：闪动对应科室卡片 + 顶部跑马灯置顶 + TTS
   if (type === 'CALLED') {
-    current.value = payload
-    triggerFlash()
+    flashDeptId.value = payload.departmentId ?? null
+    flashRegisterId.value = payload.registerId ?? null
+    setTimeout(() => { flashDeptId.value = null; flashRegisterId.value = null }, 1500)
     speak(payload)
-  } else if (type === 'ANSWERED') {
-    // 当前号已应答，清空主区
-    if (current.value?.registerId === payload.registerId) {
-      current.value = null
-    }
-  } else if (type === 'PASSED') {
-    // 当前号过号了，也清空主区
-    if (current.value?.registerId === payload.registerId) {
-      current.value = null
-    }
   }
-  // 任何事件后都刷一下候诊队列
+  // 任何事件后都刷一次（让数据更新到最新状态）
   refreshBoard()
-}
-
-function triggerFlash() {
-  flashFlag.value = false
-  // 强制重排触发动画
-  requestAnimationFrame(() => { flashFlag.value = true })
-  setTimeout(() => { flashFlag.value = false }, 1200)
 }
 
 function speak(payload: any) {
   if (!voiceReady.value) return
   if (!('speechSynthesis' in window)) return
-  const text = `请${payload.patientName || ''}到${payload.doctorName || ''}医生处就诊`
-  ttsUtterance = new SpeechSynthesisUtterance(text)
-  ttsUtterance.lang = 'zh-CN'
-  window.speechSynthesis.speak(ttsUtterance)
+  const text = `请${payload.patientName || ''}到${payload.departmentName || ''}${payload.doctorName || ''}医生处就诊`
+  const u = new SpeechSynthesisUtterance(text)
+  u.lang = 'zh-CN'
+  window.speechSynthesis.speak(u)
 }
 
 function enableVoice() {
   voiceReady.value = true
-  // 试播一句确认
   if ('speechSynthesis' in window) {
     const u = new SpeechSynthesisUtterance('语音已开启')
     u.lang = 'zh-CN'
@@ -181,34 +181,24 @@ function enableVoice() {
   }
 }
 
-// ===== HTTP 拉取叫号板 =====
+// ===== HTTP 拉全院叫号板 =====
 async function refreshBoard() {
-  if (!departmentId.value) return
   try {
-    // http() 已剥 ApiResult 外层，返回 data 本身
     const data: any = await http({
-      url: `/api/registration/calling/board/${departmentId.value}`,
+      url: '/api/registration/calling/board/all',
       method: 'GET',
       skipAuthHandling: true,
       skipErrorMessage: true,
     })
     if (data) {
-      // 候诊队列
-      waitingList.value = data.waiting || []
-      // 主区：如果本地 current 没有就用后端 calling[0]
-      if (!current.value && Array.isArray(data.calling) && data.calling.length > 0) {
-        current.value = data.calling[0]
-      }
-      // 科室名
-      const first = (data.calling?.[0]) || (data.waiting?.[0])
-      if (first?.departmentName) departmentName.value = first.departmentName
+      departments.value = data.departments || []
+      recentCalls.value = data.recent || []
     }
-  } catch (e) {
+  } catch {
     // 静默失败，SSE 兜底
   }
 }
 
-// ===== 辅助 =====
 function formatTime(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
@@ -227,7 +217,7 @@ function maskName(name?: string) {
   background: linear-gradient(180deg, #0f172a 0%, #1e3a8a 100%);
   color: #f8fafc;
   min-height: 100vh;
-  padding: 20px 32px;
+  padding: 16px 28px;
   display: flex;
   flex-direction: column;
   font-family: "Noto Sans SC", -apple-system, sans-serif;
@@ -238,82 +228,145 @@ function maskName(name?: string) {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  padding-bottom: 12px;
+  padding-bottom: 10px;
 }
-.title { font-size: 28px; font-weight: 700; }
-.title .dept { color: #93c5fd; font-weight: 500; margin-left: 8px; }
-.clock { font-size: 22px; color: #cbd5e1; font-variant-numeric: tabular-nums; }
+.title { font-size: 26px; font-weight: 700; }
+.clock { font-size: 20px; color: #cbd5e1; font-variant-numeric: tabular-nums; }
 
-.now-calling {
+/* ===== 顶部滚动播报 ===== */
+.recent-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 12px 0;
+  padding: 12px 20px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 10px;
+}
+.recent-label {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fbbf24;
+  letter-spacing: 4px;
+  flex-shrink: 0;
+}
+.recent-track { flex: 1; overflow: hidden; }
+.recent-list {
+  display: flex;
+  gap: 32px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.recent-item {
+  font-size: 18px;
+  color: #fde68a;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.recent-item.recent-flash {
+  animation: recentFlash 1.5s ease-out;
+  color: #fff;
+  font-weight: 700;
+}
+.recent-item .r-sep { color: rgba(251, 191, 36, 0.5); }
+.recent-item .r-num { color: #fff; font-weight: 700; margin: 0 4px; }
+.recent-empty { font-size: 16px; color: #94a3b8; }
+
+@keyframes recentFlash {
+  0%   { background: rgba(251, 191, 36, 0.4); transform: scale(1.05); }
+  100% { background: transparent; transform: scale(1); }
+}
+
+.recent-slide-enter-active, .recent-slide-leave-active { transition: all 0.4s ease; }
+.recent-slide-enter-from { opacity: 0; transform: translateX(20px); }
+.recent-slide-leave-to { opacity: 0; transform: translateX(-20px); }
+
+/* ===== 科室卡片墙 ===== */
+.dept-grid {
   flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  align-content: start;
+  overflow-y: auto;
+  padding: 4px;
+}
+.dept-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  margin: 16px 0;
+  gap: 8px;
+  transition: all 0.2s ease;
 }
-.now-calling .label {
-  font-size: 36px;
-  color: #fbbf24;
+.dept-card.is-calling {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.dept-card.flash {
+  animation: cardFlash 1.5s ease-out;
+}
+@keyframes cardFlash {
+  0%   { background: rgba(251, 191, 36, 0.5); transform: scale(1.04); }
+  100% { background: rgba(59, 130, 246, 0.12); transform: scale(1); }
+}
+
+.dept-card__name {
+  font-size: 20px;
   font-weight: 700;
-  margin-bottom: 16px;
-  letter-spacing: 8px;
+  color: #93c5fd;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
 }
-.now-calling .card {
-  background: rgba(255, 255, 255, 0.08);
-  border: 3px solid #fbbf24;
-  border-radius: 16px;
-  padding: 32px 64px;
-  text-align: center;
-  min-width: 540px;
-}
-.now-calling .doctor { font-size: 32px; color: #93c5fd; margin-bottom: 12px; }
-.now-calling .queue-number {
-  font-size: 144px;
-  font-weight: 900;
-  color: #fff;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-.now-calling .queue-number .unit { font-size: 56px; color: #fbbf24; margin-left: 8px; }
-.now-calling .patient { font-size: 32px; color: #fde68a; margin-top: 12px; }
-.now-calling .empty { font-size: 32px; color: #94a3b8; }
-
-.now-calling.flash .card {
-  animation: flash-card 1.2s ease-out;
-}
-@keyframes flash-card {
-  0%   { background: rgba(251, 191, 36, 0.4); transform: scale(1.05); }
-  100% { background: rgba(255, 255, 255, 0.08); transform: scale(1); }
-}
-
-.waiting {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-top: 8px;
-}
-.section-title { font-size: 22px; color: #93c5fd; margin-bottom: 12px; }
-.queue-list {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-.queue-item {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  padding: 12px 16px;
+.dept-card__main {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
-.q-no { font-size: 22px; font-weight: 700; color: #fbbf24; min-width: 60px; }
-.q-name { font-size: 18px; flex: 1; }
-.q-tag { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
-.tag-called { background: #f59e0b; color: #1e293b; }
-.tag-passed { background: #ef4444; color: #fff; }
-.empty-small { color: #94a3b8; font-size: 16px; }
+.dept-card__call {
+  flex: 1;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px 12px;
+  border-radius: 6px;
+  min-width: 80px;
+}
+.dept-card__doctor { font-size: 14px; color: #cbd5e1; margin-bottom: 2px; }
+.dept-card__num {
+  font-size: 40px;
+  font-weight: 900;
+  color: #fbbf24;
+  line-height: 1.1;
+}
+.dept-card__num .unit { font-size: 18px; color: #fbbf24; margin-left: 2px; }
+.dept-card__patient { font-size: 14px; color: #e2e8f0; margin-top: 2px; }
 
+.dept-card__idle {
+  text-align: center;
+  color: #64748b;
+  font-size: 16px;
+  padding: 20px 0;
+}
+.dept-card__meta {
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: right;
+}
+.dept-card__meta strong { color: #cbd5e1; }
+
+.dept-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #94a3b8;
+  padding: 60px 0;
+  font-size: 22px;
+}
+
+/* ===== 底部连接条 ===== */
 .conn-bar {
   display: flex;
   align-items: center;

@@ -146,12 +146,12 @@ export const routes: RouteRecordRaw[] = [
     component: ScanCheckinPage,
     meta: { title: '报到机', hidden: true },
   },
-  // 候诊叫号大屏：一科室一屏，免登录，订阅 SSE
+  // 候诊叫号大屏：全院大屏，免登录，订阅 SSE /stream/global
   {
-    path: '/calling-board/:departmentId',
+    path: '/calling-board',
     name: 'CallingBoard',
     component: CallingBoardPage,
-    meta: { title: '候诊大屏', hidden: true },
+    meta: { title: '全院候诊大屏', hidden: true },
   },
   ...patientRoutes,
   {

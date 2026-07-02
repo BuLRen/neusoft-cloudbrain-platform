@@ -69,6 +69,61 @@ public class CallingController {
         return Result.success(result);
     }
 
+    /**
+     * 全院叫号板：返回所有科室今天"已叫"的号 + 各科室的候诊人数。
+     * 用于大厅全院大屏的卡片墙。
+     *
+     * 数据结构：
+     *   departments: [{ departmentId, departmentName, calling: [...], waitingCount }]
+     *   recent: 最近 N 条叫号记录（用于顶部滚动播报），按 called_time desc 取前 5
+     */
+    @GetMapping("/board/all")
+    public Result<Map<String, Object>> boardAll() {
+        LocalDate today = LocalDate.now();
+        List<Department> allDepts = departmentService.getAllDepartments();
+
+        List<Map<String, Object>> deptViews = new ArrayList<>(allDepts.size());
+        List<Map<String, Object>> recentCalls = new ArrayList<>();
+
+        for (Department dept : allDepts) {
+            List<Register> calling = registrationMapper.selectCallingByDepartment(dept.getId(), today);
+            List<Register> waiting = registrationMapper.selectWaitingByDepartment(dept.getId(), today);
+
+            Map<String, Object> deptView = new LinkedHashMap<>();
+            deptView.put("departmentId", dept.getId());
+            deptView.put("departmentName", dept.getName());
+            deptView.put("calling", toViewList(calling));
+            deptView.put("callingCount", calling.size());
+            deptView.put("waitingCount", waiting.size());
+            deptViews.add(deptView);
+
+            // 收集每个科室的叫号，后面统一排序取最近 N 条
+            for (Register r : calling) {
+                Map<String, Object> item = toViewList(List.of(r)).get(0);
+                item.put("departmentName", dept.getName());
+                recentCalls.add(item);
+            }
+        }
+
+        // recent 按 called_time desc 排序，取前 5 条
+        recentCalls.sort((a, b) -> {
+            Object ta = a.get("calledTime");
+            Object tb = b.get("calledTime");
+            if (ta == null && tb == null) return 0;
+            if (ta == null) return 1;
+            if (tb == null) return -1;
+            return tb.toString().compareTo(ta.toString());
+        });
+        if (recentCalls.size() > 5) {
+            recentCalls = recentCalls.subList(0, 5);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("departments", deptViews);
+        result.put("recent", recentCalls);
+        return Result.success(result);
+    }
+
     // ==================== 内部动作接口（Feign 给 physician-service 调用）====================
 
     /**
