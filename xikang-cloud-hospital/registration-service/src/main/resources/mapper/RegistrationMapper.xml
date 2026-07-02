@@ -25,6 +25,11 @@
         <result column="regist_money" property="registMoney"/>
         <result column="visit_state" property="visitState"/>
         <result column="check_in_time" property="checkInTime"/>
+        <!-- 叫号系统字段（migration 027） -->
+        <result column="call_status" property="callStatus"/>
+        <result column="called_time" property="calledTime"/>
+        <result column="answered_time" property="answeredTime"/>
+        <result column="call_round" property="callRound"/>
     </resultMap>
 
     <!-- 带 relation 的扩展结果集：JOIN user_patient_managed 后填充"本人/配偶"等关系 -->
@@ -35,7 +40,8 @@
     <sql id="Base_Column_List">
         id, patient_id, scheduling_id, case_number, real_name, gender, card_number, birthdate, age, age_type,
         home_address, visit_date, noon, deptment_id, employee_id, regist_level_id,
-        settle_category_id, is_book, regist_method, regist_money, visit_state, check_in_time
+        settle_category_id, is_book, regist_method, regist_money, visit_state, check_in_time,
+        call_status, called_time, answered_time, call_round
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
@@ -61,6 +67,7 @@
             r.card_number, r.birthdate, r.age, r.age_type, r.home_address, r.visit_date,
             r.noon, r.deptment_id, r.employee_id, r.regist_level_id, r.settle_category_id,
             r.is_book, r.regist_method, r.regist_money, r.visit_state, r.check_in_time,
+            r.call_status, r.called_time, r.answered_time, r.call_round,
             upm.relation AS relation
         FROM register r
         INNER JOIN user_patient_managed upm ON upm.patient_id = r.patient_id
@@ -75,10 +82,14 @@
         ORDER BY visit_date DESC
     </select>
 
+    <!--
+        爽约候选：仅按状态和报到时间过滤，日期判定已挪到 Java 侧 computeMissedeDeadline。
+        deadline 参数仅用于日志参考，不再参与 SQL 过滤。
+    -->
     <select id="selectMissedCandidates" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM register
-        WHERE visit_state = 1 AND visit_date &lt; #{deadline} AND check_in_time IS NULL
+        WHERE visit_state = 1 AND check_in_time IS NULL
         ORDER BY visit_date ASC
     </select>
 
@@ -86,6 +97,20 @@
         UPDATE register
         SET visit_state = 7
         WHERE visit_state = 1 AND visit_date &lt; #{deadline} AND check_in_time IS NULL
+    </update>
+
+    <!--
+        按 ID 单条标记爽约（visit_state = 7）
+        与 markMissed 不同：不依赖 visit_date < deadline 的时间比较，
+        而是由 Java 侧按时段（noon）算出截止时间逐条判定，过期才调本方法。
+        保留 visit_state = 1 与 check_in_time IS NULL 防御性条件，避免误伤。
+    -->
+    <update id="markMissedById">
+        UPDATE register
+        SET visit_state = 7
+        WHERE id = #{id}
+          AND visit_state = 1
+          AND check_in_time IS NULL
     </update>
 
     <select id="selectByDate" resultMap="BaseResultMap">
@@ -203,6 +228,100 @@
         WHERE patient_id = #{patientId}
         ORDER BY id ASC
         LIMIT 1
+    </select>
+
+    <!-- ==================== 叫号系统（migration 027）==================== -->
+
+    <!--
+        选下一个待叫号：同医生、同天、已报到、未叫/过号，按报到时间升序。
+        关键：排除"过号终态"（call_status=3 AND call_round>=2），否则它会一直排在前面卡死队列。
+        FOR UPDATE 防止并发叫到同一条。
+    -->
+    <select id="selectNextCallableForUpdate" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE employee_id = #{employeeId}
+          AND DATE(visit_date) = #{visitDate}
+          AND check_in_time IS NOT NULL
+          AND call_status IN (0, 3)
+          AND NOT (call_status = 3 AND call_round >= 2)
+        ORDER BY check_in_time ASC
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <update id="markCalled">
+        UPDATE register
+        SET call_status = 1,
+            called_time = #{now},
+            call_round = call_round + 1
+        WHERE id = #{id}
+          AND call_status IN (0, 3)
+          AND call_round &lt; 2
+    </update>
+
+    <update id="markAnswered">
+        UPDATE register
+        SET call_status = 2,
+            answered_time = #{now},
+            visit_state = 2
+        WHERE id = #{id}
+          AND call_status = 1
+    </update>
+
+    <update id="markPassed">
+        UPDATE register
+        SET call_status = 3
+        WHERE id = #{id}
+          AND call_status IN (0, 1)
+    </update>
+
+    <select id="selectCurrentCallingByDoctor" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE employee_id = #{employeeId}
+          AND DATE(visit_date) = #{visitDate}
+          AND call_status = 1
+        ORDER BY called_time DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectCallingByDepartment" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE deptment_id = #{departmentId}
+          AND DATE(visit_date) = #{visitDate}
+          AND call_status = 1
+        ORDER BY called_time DESC
+    </select>
+
+    <select id="selectWaitingByDepartment" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE deptment_id = #{departmentId}
+          AND DATE(visit_date) = #{visitDate}
+          AND check_in_time IS NOT NULL
+          AND call_status IN (0, 1, 3)
+        ORDER BY check_in_time ASC
+    </select>
+
+    <select id="selectWaitingByDoctor" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE employee_id = #{employeeId}
+          AND DATE(visit_date) = #{visitDate}
+          AND check_in_time IS NOT NULL
+          AND call_status IN (0, 1, 3)
+        ORDER BY check_in_time ASC
+    </select>
+
+    <!-- 已叫 5 分钟未应答的号 -->
+    <select id="selectTimeoutCandidates" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE call_status = 1
+          AND called_time &lt; #{deadline}
+        ORDER BY called_time ASC
     </select>
 
 </mapper>

@@ -12,7 +12,8 @@ import java.time.LocalDateTime;
  * register: id, patient_id, scheduling_id, case_number, real_name, gender, card_number,
  *           birthdate, age, age_type, home_address, visit_date, noon, deptment_id,
  *           employee_id, regist_level_id, settle_category_id, is_book, regist_method,
- *           regist_money, visit_state
+ *           regist_money, visit_state, check_in_time,
+ *           call_status, called_time, answered_time, call_round
  */
 @Data
 public class Register implements Serializable {
@@ -41,6 +42,13 @@ public class Register implements Serializable {
     private BigDecimal registMoney; // regist_money (挂号费)
     private Integer visitState;   // visit_state (1已挂号/2医生接诊/3看诊结束/4已退号/5检查检验中/6检查检验完成/7爽约)
     private java.time.LocalDateTime checkInTime; // check_in_time (报到时间，NULL=未报到)
+
+    // —— 叫号系统字段（migration 027）——
+    // 设计文档：task_requirements/设计文档/04_叫号系统设计文档.md
+    private Integer callStatus;             // call_status: 0未叫/1已叫/2已应答/3过号
+    private java.time.LocalDateTime calledTime;     // called_time: 最近一次被叫时刻（5 分钟超时判断依据）
+    private java.time.LocalDateTime answeredTime;   // answered_time: 患者应答（进诊室）时刻
+    private Integer callRound;              // call_round: 已叫次数，>=2 后过号为终态禁重叫
 
     // 辅助字段（不映射数据库）
     private String departmentName;

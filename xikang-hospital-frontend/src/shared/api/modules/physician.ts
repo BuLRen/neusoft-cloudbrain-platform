@@ -552,3 +552,45 @@ export const physicianApi = {
     return http<W4Suggestion[]>({ url: '/physician/ai/diagnosis-suggestions', method: 'GET', params: { registerId }, skipErrorMessage: true })
   },
 }
+
+// ==================== 叫号系统（设计文档 §4.1）====================
+
+export interface CallingResult {
+  registerId: number
+  patientName?: string
+  caseNumber?: string
+  callStatus?: number      // 0未叫/1已叫/2已应答/3过号
+  callRound?: number       // 1 或 2
+  calledTime?: string
+  answeredTime?: string
+  departmentId?: number
+  departmentName?: string
+  doctorId?: number
+  doctorName?: string
+  queueNumber?: number
+  waitingBefore?: number
+  hasCalling?: boolean     // 仅 currentCalling 接口返回
+}
+
+export const callingApi = {
+  /** 叫下一个 */
+  callNext() {
+    return http<CallingResult>({ url: '/physician/call/next', method: 'POST' })
+  },
+  /** 指定叫号（重叫过号常用） */
+  callSpecific(registerId: number) {
+    return http<CallingResult>({ url: `/physician/call/${registerId}`, method: 'POST' })
+  },
+  /** 患者应答（进诊室） */
+  answer(registerId: number) {
+    return http<CallingResult>({ url: `/physician/call/${registerId}/answer`, method: 'POST' })
+  },
+  /** 标记过号 */
+  pass(registerId: number) {
+    return http<CallingResult>({ url: `/physician/call/${registerId}/pass`, method: 'POST' })
+  },
+  /** 查当前叫号 */
+  currentCalling() {
+    return http<CallingResult>({ url: '/physician/call/current', method: 'GET' })
+  },
+}

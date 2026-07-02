@@ -51,6 +51,8 @@ import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
 import NotFoundPage from '@/modules/error/NotFoundPage.vue'
+import ScanCheckinPage from '@/modules/registration/pages/ScanCheckinPage.vue'
+import CallingBoardPage from '@/modules/registration/pages/CallingBoardPage.vue'
 
 // 患者端独立布局路由（不经过 AppShell）
 const patientRoutes: RouteRecordRaw[] = [
@@ -139,6 +141,20 @@ const patientRoutes: RouteRecordRaw[] = [
 const placeholder = RoutePlaceholder
 
 export const routes: RouteRecordRaw[] = [
+  // 报到机：扫码 → /check-in → 渲染报到卡片 + SSE 实时叫号
+  {
+    path: '/test-checkin',
+    name: 'ScanCheckin',
+    component: ScanCheckinPage,
+    meta: { title: '报到机', hidden: true },
+  },
+  // 候诊叫号大屏：全院大屏，免登录，订阅 SSE /stream/global
+  {
+    path: '/calling-board',
+    name: 'CallingBoard',
+    component: CallingBoardPage,
+    meta: { title: '全院候诊大屏', hidden: true },
+  },
   ...patientRoutes,
   {
     path: '/login',
