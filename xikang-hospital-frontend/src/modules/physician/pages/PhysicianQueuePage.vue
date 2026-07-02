@@ -564,38 +564,60 @@ onUnmounted(() => {
             </div>
 
             <!-- 叫号操作区（设计文档 §6.2） -->
-            <GlassCard class="calling-card">
-              <div class="calling-card__head">
-                <span class="calling-card__title">叫号</span>
-                <span v-if="currentCalling?.hasCalling" class="calling-card__current">
-                  当前叫号：<strong>{{ currentCalling.patientName }}</strong>
-                  （{{ currentCalling.queueNumber ?? '-' }}号 · 第{{ currentCalling.callRound }}次）
-                </span>
-                <span v-else class="calling-card__current calling-card__current--idle">暂无在叫号</span>
+            <GlassCard class="calling-card" :class="{ 'calling-card--active': currentCalling?.hasCalling }">
+              <!-- 左：当前叫号状态 -->
+              <div class="calling-stage">
+                <div class="calling-stage__label">
+                  <span class="calling-stage__dot" aria-hidden="true"></span>
+                  <span v-if="currentCalling?.hasCalling">正在呼叫</span>
+                  <span v-else>空闲</span>
+                </div>
+                <div v-if="currentCalling?.hasCalling" class="calling-stage__num">
+                  {{ currentCalling.queueNumber ?? '-' }}<span class="calling-stage__unit">号</span>
+                </div>
+                <div v-if="currentCalling?.hasCalling" class="calling-stage__name">
+                  {{ currentCalling.patientName }}
+                </div>
+                <div v-if="currentCalling?.hasCalling" class="calling-stage__meta">
+                  第 {{ currentCalling.callRound }} 次呼叫
+                </div>
+                <div v-else class="calling-stage__hint">点击右侧"叫下一个"开始接诊</div>
               </div>
-              <div class="calling-card__actions">
-                <ElButton type="primary" :loading="callingBusy" @click="callNext">
-                  叫下一个
-                </ElButton>
-                <ElButton :loading="callingBusy" @click="callSpecific(selectedRegisterId!)">
-                  重叫当前
-                </ElButton>
-                <ElButton
+
+              <!-- 右：操作矩阵 -->
+              <div class="calling-pad">
+                <button
+                  class="calling-btn calling-btn--primary"
+                  :disabled="callingBusy"
+                  @click="callNext"
+                >
+                  <span class="calling-btn__icon" aria-hidden="true">▶</span>
+                  <span class="calling-btn__text">叫下一个</span>
+                </button>
+                <button
+                  class="calling-btn calling-btn--ghost"
+                  :disabled="callingBusy"
+                  @click="callSpecific(selectedRegisterId!)"
+                >
+                  <span class="calling-btn__text">重呼当前</span>
+                </button>
+                <button
                   v-if="currentCalling?.hasCalling"
-                  type="success"
-                  :loading="callingBusy"
+                  class="calling-btn calling-btn--answer"
+                  :disabled="callingBusy"
                   @click="answerCurrent(currentCalling.registerId!)"
                 >
-                  患者应答
-                </ElButton>
-                <ElButton
+                  <span class="calling-btn__icon" aria-hidden="true">✓</span>
+                  <span class="calling-btn__text">患者应答</span>
+                </button>
+                <button
                   v-if="currentCalling?.hasCalling"
-                  type="warning"
-                  :loading="callingBusy"
+                  class="calling-btn calling-btn--pass"
+                  :disabled="callingBusy"
                   @click="passCurrent(currentCalling.registerId!)"
                 >
-                  标记过号
-                </ElButton>
+                  <span class="calling-btn__text">标记过号</span>
+                </button>
               </div>
             </GlassCard>
           </div>
@@ -1005,29 +1027,204 @@ onUnmounted(() => {
   }
 }
 
-/* 叫号卡片（设计文档 §6.2） */
+/* ===== 叫号卡片（设计文档 §6.2 重设计版） ===== */
+/* 设计思路：
+   - 左状态 + 右操作的指挥台布局，状态先于操作
+   - "正在呼叫"用品牌渐变 + 大字号承担视觉重量
+   - 空闲态刻意做"扁、静"，让医生明显感知到"还有号没叫"
+   - 按钮按业务语义分层：主操作（叫下一个）= 视觉中心
+     应答 = 绿色 confirm；过号 = 弱化 ghost；重呼 = ghost
+*/
 .calling-card {
   margin-block-start: var(--space-3);
+  padding: var(--space-5) !important;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.3fr);
+  gap: var(--space-5);
+  align-items: stretch;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--duration-base) var(--ease-standard),
+              box-shadow var(--duration-base) var(--ease-standard);
 }
-.calling-card__head {
+
+/* 正在呼叫时：整张卡片左侧加一条 4px 渐变条，作为"有进行中任务"的视觉锚点 */
+.calling-card--active::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--gradient-primary);
+}
+
+/* ===== 左：状态台 ===== */
+.calling-stage {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-block-end: var(--space-3);
-}
-.calling-card__title {
-  font-weight: 600;
-  color: var(--color-primary);
-}
-.calling-card__current {
-  color: var(--color-text-regular);
-}
-.calling-card__current--idle {
-  color: var(--color-text-secondary);
-}
-.calling-card__actions {
-  display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  justify-content: center;
   gap: var(--space-2);
+  padding-inline-start: var(--space-2);
+}
+.calling-stage__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+.calling-stage__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-soft);
+  flex-shrink: 0;
+}
+.calling-card--active .calling-stage__dot {
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
+  animation: calling-pulse 1.6s ease-in-out infinite;
+}
+@keyframes calling-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--color-primary-soft); }
+  50%      { box-shadow: 0 0 0 8px rgba(31, 140, 255, 0.06); }
+}
+
+.calling-stage__num {
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.calling-stage__unit {
+  font-size: 22px;
+  font-weight: 600;
+  margin-inline-start: 4px;
+  -webkit-text-fill-color: var(--color-text-muted);
+}
+.calling-stage__name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.calling-stage__meta {
+  font-size: 12px;
+  color: var(--color-text-soft);
+}
+.calling-stage__hint {
+  font-size: 13px;
+  color: var(--color-text-soft);
+  line-height: 1.5;
+  margin-block-start: var(--space-1);
+}
+
+/* ===== 右：按钮矩阵 ===== */
+.calling-pad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.calling-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+  min-height: 52px;
+}
+.calling-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.calling-btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+.calling-btn__icon {
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 主操作：品牌渐变 + 阴影，占据视觉中心 */
+.calling-btn--primary {
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(31, 140, 255, 0.32);
+}
+.calling-btn--primary:not(:disabled):hover {
+  box-shadow: 0 10px 24px rgba(31, 140, 255, 0.42);
+  transform: translateY(-1px);
+}
+
+/* 应答：绿色 confirm，第二权重 */
+.calling-btn--answer {
+  background: var(--color-success);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(32, 180, 134, 0.28);
+}
+.calling-btn--answer:not(:disabled):hover {
+  box-shadow: 0 8px 18px rgba(32, 180, 134, 0.38);
+  transform: translateY(-1px);
+}
+
+/* Ghost：弱化操作，玻璃描边 */
+.calling-btn--ghost,
+.calling-btn--pass {
+  background: var(--color-control);
+  color: var(--color-text);
+  border-color: var(--color-border);
+  backdrop-filter: blur(8px);
+}
+.calling-btn--ghost:not(:disabled):hover,
+.calling-btn--pass:not(:disabled):hover {
+  background: var(--color-control-hover);
+  border-color: var(--color-border-strong);
+}
+
+/* 过号：刻意弱化（不该频繁用），警告色仅作 hover */
+.calling-btn--pass:not(:disabled):hover {
+  color: var(--color-warning-strong);
+  border-color: var(--color-warning);
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 720px) {
+  .calling-card {
+    grid-template-columns: 1fr;
+  }
+  .calling-stage__num {
+    font-size: 44px;
+  }
+}
+
+/* 尊重用户的 reduced-motion 设置 */
+@media (prefers-reduced-motion: reduce) {
+  .calling-card--active .calling-stage__dot {
+    animation: none;
+  }
+  .calling-btn {
+    transition: none;
+  }
+  .calling-btn:not(:disabled):active {
+    transform: none;
+  }
 }
 </style>

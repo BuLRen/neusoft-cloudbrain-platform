@@ -109,6 +109,9 @@ let clockTimer: ReturnType<typeof setInterval> | null = null
 
 // ===== 启动 =====
 onMounted(() => {
+  console.log('[DEBUG CallingBoard] onMounted! 页面已挂载')
+  console.log('[DEBUG CallingBoard] 当前 URL =', window.location.href)
+  console.log('[DEBUG CallingBoard] 当前 localStorage access_token =', localStorage.getItem('access_token'))
   clockTimer = setInterval(() => { now.value = formatTime(new Date()) }, 1000)
   refreshBoard()
   pollTimer = setInterval(refreshBoard, 10_000)
@@ -124,10 +127,17 @@ onUnmounted(() => {
 // ===== SSE 订阅 /stream/global =====
 function connectSSE() {
   connState.value = 'connecting'
+  console.log('[DEBUG CallingBoard] 即将创建 EventSource, URL = /api/registration/calling/stream/global')
   es = new EventSource('/api/registration/calling/stream/global')
 
-  es.onopen = () => { connState.value = 'open' }
-  es.addEventListener('READY', () => refreshBoard())
+  es.onopen = () => {
+    console.log('[DEBUG CallingBoard] SSE onopen!')
+    connState.value = 'open'
+  }
+  es.addEventListener('READY', (e: any) => {
+    console.log('[DEBUG CallingBoard] SSE READY 事件', e.data)
+    refreshBoard()
+  })
 
   es.addEventListener('CALLED', (e: any) => {
     try {
@@ -148,7 +158,10 @@ function connectSSE() {
     } catch {}
   })
 
-  es.onerror = () => { connState.value = 'error' /* EventSource 自动重连 */ }
+  es.onerror = (e: any) => {
+    console.warn('[DEBUG CallingBoard] SSE onerror!', e, 'readyState =', es?.readyState)
+    connState.value = 'error' /* EventSource 自动重连 */
+  }
 }
 
 function handleEvent(type: string, payload: any) {
@@ -183,18 +196,21 @@ function enableVoice() {
 
 // ===== HTTP 拉全院叫号板 =====
 async function refreshBoard() {
+  console.log('[DEBUG CallingBoard] refreshBoard 开始')
   try {
     const data: any = await http({
-      url: '/api/registration/calling/board/all',
+      url: '/registration/calling/board/all',
       method: 'GET',
       skipAuthHandling: true,
       skipErrorMessage: true,
     })
+    console.log('[DEBUG CallingBoard] refreshBoard 成功, departments count =', data?.departments?.length)
     if (data) {
       departments.value = data.departments || []
       recentCalls.value = data.recent || []
     }
-  } catch {
+  } catch (err) {
+    console.warn('[DEBUG CallingBoard] refreshBoard 失败:', err)
     // 静默失败，SSE 兜底
   }
 }
