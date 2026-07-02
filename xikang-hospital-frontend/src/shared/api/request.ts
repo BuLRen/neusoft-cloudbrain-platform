@@ -15,7 +15,7 @@ const request = axios.create({
 
 const sessionExpiredMessageKey = 'session_expired_message'
 const sessionExpiredMessage = '登录已过期，请重新登录'
-const skipAuthHandlingPaths = ['/auth/login', '/auth/register', '/auth/logout']
+const skipAuthHandlingPaths = ['/auth/login', '/auth/register', '/auth/logout', '/auth/captcha']
 // 标记：401 触发的跳转只执行一次，避免多个并发请求反复 push
 let sessionExpiredRedirecting = false
 

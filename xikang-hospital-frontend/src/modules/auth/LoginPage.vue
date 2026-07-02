@@ -11,6 +11,7 @@ import {
   User,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/app/stores/auth'
+import { authApi } from '@/shared/api/modules/auth'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -30,6 +31,9 @@ const features = [
 const submitting = ref(false)
 const rememberMe = ref(false)
 const isLogin = ref(true)
+const captchaId = ref('')
+const captchaImage = ref('')
+const captchaLoading = ref(false)
 const form = reactive({
   username: '',
   password: '',
@@ -46,7 +50,26 @@ onMounted(() => {
     sessionStorage.removeItem('session_expired_message')
     ElMessage.warning(expiredMessage)
   }
+  loadCaptcha()
 })
+
+async function loadCaptcha() {
+  captchaLoading.value = true
+  try {
+    const data = await authApi.getCaptcha()
+    if (!data) return
+    captchaId.value = data.captchaId
+    captchaImage.value = data.imageBase64.startsWith('data:')
+      ? data.imageBase64
+      : `data:image/png;base64,${data.imageBase64}`
+    form.captcha = ''
+  } catch {
+    captchaId.value = ''
+    captchaImage.value = ''
+  } finally {
+    captchaLoading.value = false
+  }
+}
 
 async function handleLogin() {
   if (!form.username.trim()) {
@@ -57,10 +80,18 @@ async function handleLogin() {
     ElMessage.warning('请输入密码')
     return
   }
+  if (!form.captcha.trim()) {
+    ElMessage.warning('请输入验证码')
+    return
+  }
+  if (!captchaId.value) {
+    ElMessage.warning('验证码加载失败，请点击图片刷新')
+    return
+  }
 
   submitting.value = true
   try {
-    await authStore.login(form.username, form.password)
+    await authStore.login(form.username, form.password, captchaId.value, form.captcha)
     const rawRedirect = route.query.redirect
     const redirect = typeof rawRedirect === 'string' && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : ''
     if (redirect) {
@@ -73,7 +104,7 @@ async function handleLogin() {
       router.push('/dashboard')
     }
   } catch {
-    // Error message is handled by request interceptor
+    await loadCaptcha()
   } finally {
     submitting.value = false
   }
@@ -141,6 +172,9 @@ function switchMode() {
   form.realName = ''
   form.phone = ''
   form.idCard = ''
+  if (isLogin.value) {
+    loadCaptcha()
+  }
 }
 
 function handleForgotPassword() {
@@ -234,7 +268,17 @@ function handleForgotPassword() {
                   <el-icon><Key /></el-icon>
                 </template>
               </el-input>
-              <div class="login-card__captcha-code" aria-hidden="true">7 K 3 P</div>
+              <button
+                type="button"
+                class="login-card__captcha-image"
+                :class="{ 'is-loading': captchaLoading }"
+                title="点击刷新验证码"
+                :disabled="captchaLoading"
+                @click="loadCaptcha"
+              >
+                <img v-if="captchaImage" :src="captchaImage" alt="验证码">
+                <span v-else>加载中</span>
+              </button>
             </div>
           </el-form-item>
 
@@ -533,26 +577,38 @@ function handleForgotPassword() {
   width: 100%;
 }
 
-.login-card__captcha-code {
+.login-card__captcha-image {
   display: grid;
   place-items: center;
+  width: 112px;
   min-height: 40px;
+  padding: 0;
+  border: none;
   border-radius: 10px;
-  color: #1a4f8f;
-  background:
-    linear-gradient(135deg, rgba(0, 82, 217, 0.08), rgba(47, 216, 196, 0.12)),
-    repeating-linear-gradient(
-      -12deg,
-      rgba(255, 255, 255, 0.45) 0,
-      rgba(255, 255, 255, 0.45) 2px,
-      transparent 2px,
-      transparent 6px
-    );
+  background: #f4f8fd;
   box-shadow: 0 0 0 1px #d8e3f0 inset;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 0.22em;
-  user-select: none;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.login-card__captcha-image.is-loading {
+  cursor: wait;
+}
+
+.login-card__captcha-image:disabled {
+  opacity: 0.72;
+}
+
+.login-card__captcha-image img {
+  display: block;
+  width: 100%;
+  height: 40px;
+  object-fit: cover;
+}
+
+.login-card__captcha-image span {
+  color: #8b9cb0;
+  font-size: 12px;
 }
 
 .login-card__options {

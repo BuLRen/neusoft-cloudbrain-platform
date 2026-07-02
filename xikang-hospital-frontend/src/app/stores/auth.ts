@@ -113,7 +113,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(loginUsername: string, password: string) {
+  async function login(
+    loginUsername: string,
+    password: string,
+    captchaId: string,
+    captchaCode: string,
+  ) {
     const data = await authApi.post<{
       userId: string
       username: string
@@ -123,7 +128,12 @@ export const useAuthStore = defineStore('auth', () => {
       realName: string
       employeeId?: number
       patients?: PatientInfo[]
-    }>('/auth/login', { username: loginUsername, password })
+    }>('/auth/login', {
+      username: loginUsername,
+      password,
+      captchaId,
+      captchaCode,
+    })
 
     if (data) {
       userId.value = String(data.userId)

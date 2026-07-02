@@ -1,5 +1,10 @@
 import { http } from '../request'
 
+export interface CaptchaResponse {
+  captchaId: string
+  imageBase64: string
+}
+
 export const authApi = {
   get<T>(url: string, params?: Record<string, unknown>, options?: { skipErrorMessage?: boolean; skipAuthHandling?: boolean }) {
     const token = localStorage.getItem('access_token')
@@ -47,5 +52,9 @@ export const authApi = {
       oldPassword,
       newPassword,
     })
+  },
+
+  getCaptcha() {
+    return authApi.get<CaptchaResponse>('/auth/captcha', undefined, { skipAuthHandling: true })
   },
 }
