@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/app/stores/auth'
 import { loginRoutePath } from '@/shared/constants/app'
 import { canRefreshSession, refreshAccessToken } from '@/shared/api/authRefresh'
+import { getAccessToken } from '@/shared/auth/tokenStorage'
 import type { ApiResult, RequestOptions } from './result'
 
 const request = axios.create({
@@ -50,7 +51,7 @@ function forceRedirectToLogin() {
 // 请求拦截器：添加 Authorization header
 request.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token') || ''
+    const token = getAccessToken()
     if (token && !config.headers.has('Authorization')) {
       config.headers.set('Authorization', `Bearer ${token}`)
     }

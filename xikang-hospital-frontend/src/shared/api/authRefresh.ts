@@ -1,6 +1,11 @@
 import axios from 'axios'
 import { useAuthStore } from '@/app/stores/auth'
 import type { ApiResult } from './result'
+import {
+  canRefreshSession as hasRefreshToken,
+  getRefreshToken,
+  setAccessToken,
+} from '@/shared/auth/tokenStorage'
 
 const refreshClient = axios.create({
   baseURL: '/api',
@@ -10,9 +15,9 @@ const refreshClient = axios.create({
 
 let refreshPromise: Promise<string> | null = null
 
-/** 使用 refresh_token（cookie + localStorage）刷新 access_token，并同步到 localStorage */
+/** 使用 refresh_token 刷新 access_token，并同步到当前会话存储 */
 export async function refreshAccessToken(): Promise<string> {
-  if (!localStorage.getItem('refresh_token')) {
+  if (!getRefreshToken()) {
     throw new Error('No refresh token')
   }
   if (!refreshPromise) {
@@ -27,7 +32,7 @@ export async function refreshAccessToken(): Promise<string> {
         if (!nextToken) {
           throw new Error('刷新登录未返回 access token')
         }
-        localStorage.setItem('access_token', nextToken)
+        setAccessToken(nextToken)
         const authStore = useAuthStore()
         authStore.token = nextToken
         return nextToken
@@ -40,5 +45,5 @@ export async function refreshAccessToken(): Promise<string> {
 }
 
 export function canRefreshSession(): boolean {
-  return Boolean(localStorage.getItem('refresh_token'))
+  return hasRefreshToken()
 }

@@ -2,6 +2,7 @@ import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from '
 import { useAuthStore } from '@/app/stores/auth'
 import { loginRoutePath } from '@/shared/constants/app'
 import { canRefreshSession, refreshAccessToken } from '@/shared/api/authRefresh'
+import { getAccessToken } from '@/shared/auth/tokenStorage'
 import type { ApiResult } from './result'
 
 const sessionExpiredMessage = '登录已过期，请重新登录'
@@ -65,7 +66,7 @@ function isJsonBlobResponse(response: AxiosResponse<Blob>) {
 }
 
 blobClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token') || ''
+  const token = getAccessToken()
   if (token) {
     config.headers.set('Authorization', `Bearer ${token}`)
   }

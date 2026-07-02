@@ -12,7 +12,11 @@ import {
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/app/stores/auth'
 import { authApi } from '@/shared/api/modules/auth'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElCheckbox } from 'element-plus'
+import {
+  getRememberedUsername,
+  isRememberMeEnabled,
+} from '@/shared/auth/tokenStorage'
 
 const route = useRoute()
 const router = useRouter()
@@ -50,6 +54,8 @@ onMounted(() => {
     sessionStorage.removeItem('session_expired_message')
     ElMessage.warning(expiredMessage)
   }
+  rememberMe.value = isRememberMeEnabled()
+  form.username = getRememberedUsername()
   loadCaptcha()
 })
 
@@ -91,7 +97,7 @@ async function handleLogin() {
 
   submitting.value = true
   try {
-    await authStore.login(form.username, form.password, captchaId.value, form.captcha)
+    await authStore.login(form.username, form.password, captchaId.value, form.captcha, rememberMe.value)
     const rawRedirect = route.query.redirect
     const redirect = typeof rawRedirect === 'string' && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : ''
     if (redirect) {
@@ -283,7 +289,7 @@ function handleForgotPassword() {
           </el-form-item>
 
           <div class="login-card__options">
-            <el-checkbox v-model="rememberMe">记住我</el-checkbox>
+            <ElCheckbox v-model="rememberMe">记住我</ElCheckbox>
             <button type="button" class="login-card__link" @click="handleForgotPassword">
               忘记密码?
             </button>

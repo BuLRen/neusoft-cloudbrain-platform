@@ -1,5 +1,6 @@
 
 import type { RouteRecordRaw } from 'vue-router'
+import { getAccessToken } from '@/shared/auth/tokenStorage'
 import AppShell from '@/app/layouts/AppShell.vue'
 import DashboardHome from '@/modules/dashboard/DashboardHome.vue'
 import LoginPage from '@/modules/auth/LoginPage.vue'
@@ -211,7 +212,7 @@ export const routes: RouteRecordRaw[] = [
       // 动态重定向，根据是否有 token 决定目标页面
       // 未登录 -> /login
       // 已登录 -> /dashboard（完整逻辑在 guard.ts 中处理患者角色）
-      const token = localStorage.getItem('access_token')
+      const token = getAccessToken()
       if (!token) {
         return '/login'
       }
