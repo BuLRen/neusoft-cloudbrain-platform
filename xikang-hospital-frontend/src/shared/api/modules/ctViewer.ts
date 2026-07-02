@@ -27,9 +27,27 @@ export interface CtFilterResult {
   meta: CtVolumeMeta
 }
 
+export type CtArtifactSeverity = 'clean' | 'mild' | 'moderate' | 'severe'
+
+export interface CtArtifactTypes {
+  metal: number
+  beam_hardening: number
+  partial_volume: number
+  ring: number
+}
+
+export interface CtAnalyzeResult {
+  has_artifact: boolean
+  artifact_types: CtArtifactTypes
+  artifact_volume_ratio: number
+  severity: CtArtifactSeverity
+  inference_ms: number
+}
+
 export interface CtHealthResult {
   ok?: boolean
   algoReady?: boolean
+  aiCtReady?: boolean
 }
 
 interface JavaLoadResponse {
@@ -116,6 +134,14 @@ export async function runCtFilter(
     timeout: UPLOAD_TIMEOUT_MS,
   })
   return mapFilterResult(data)
+}
+
+export async function analyzeCtVolume(volumeId: string): Promise<CtAnalyzeResult> {
+  return http<CtAnalyzeResult>({
+    url: `/ct-viewer/volume/${volumeId}/analyze`,
+    method: 'POST',
+    timeout: UPLOAD_TIMEOUT_MS,
+  })
 }
 
 export async function downloadCtVolume(volumeId: string, format: string) {

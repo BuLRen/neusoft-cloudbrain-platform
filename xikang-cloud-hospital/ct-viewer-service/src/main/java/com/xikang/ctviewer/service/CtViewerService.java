@@ -1,6 +1,7 @@
 package com.xikang.ctviewer.service;
 
 import com.xikang.common.exception.BusinessException;
+import com.xikang.ctviewer.client.AiCtClient;
 import com.xikang.ctviewer.client.CtViewerAlgoClient;
 import com.xikang.ctviewer.dto.FilterRequestDto;
 import com.xikang.ctviewer.dto.FilterResponseDto;
@@ -25,9 +26,14 @@ public class CtViewerService {
     private final VolumeStorageService storageService;
     private final VolumeMetaRepository metaRepository;
     private final CtViewerAlgoClient algoClient;
+    private final AiCtClient aiCtClient;
 
     public Map<String, Object> health() {
-        return Map.of("ok", true, "algoReady", algoClient.healthCheck());
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("ok", true);
+        status.put("algoReady", algoClient.healthCheck());
+        status.put("aiCtReady", aiCtClient.healthCheck());
+        return status;
     }
 
     public LoadResponseDto loadNrrd(MultipartFile file) {
@@ -163,6 +169,12 @@ public class CtViewerService {
         } catch (IOException ex) {
             throw new BusinessException(500, "读取导出文件失败", ex);
         }
+    }
+
+    public Map<String, Object> analyzeVolume(String volumeId) {
+        metaRepository.requireById(volumeId);
+        ExportFile exported = exportVolume(volumeId, "nii.gz");
+        return aiCtClient.analyze(exported.bytes(), exported.fileName());
     }
 
     @SuppressWarnings("unchecked")

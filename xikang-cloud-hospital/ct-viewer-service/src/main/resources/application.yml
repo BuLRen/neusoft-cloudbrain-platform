@@ -40,3 +40,7 @@ ct-viewer:
     base-url: ${CT_VIEWER_ALGO_URL:http://127.0.0.1:8106}
     connect-timeout-ms: 30000
     read-timeout-ms: 600000
+  ai-ct:
+    base-url: ${AI_CT_SERVICE_URL:http://127.0.0.1:8105}
+    connect-timeout-ms: 30000
+    read-timeout-ms: 180000

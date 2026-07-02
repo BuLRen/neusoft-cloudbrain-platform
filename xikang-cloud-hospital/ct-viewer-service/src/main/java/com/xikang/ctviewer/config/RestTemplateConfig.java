@@ -1,5 +1,6 @@
 package com.xikang.ctviewer.config;
 
+import com.xikang.ctviewer.config.CtViewerProperties.AiCt;
 import com.xikang.ctviewer.config.CtViewerProperties.Algo;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
@@ -17,6 +18,15 @@ public class RestTemplateConfig {
         return builder
             .setConnectTimeout(Duration.ofMillis(algo.getConnectTimeoutMs()))
             .setReadTimeout(Duration.ofMillis(algo.getReadTimeoutMs()))
+            .build();
+    }
+
+    @Bean
+    public RestTemplate aiCtRestTemplate(RestTemplateBuilder builder, CtViewerProperties properties) {
+        AiCt aiCt = properties.getAiCt();
+        return builder
+            .setConnectTimeout(Duration.ofMillis(aiCt.getConnectTimeoutMs()))
+            .setReadTimeout(Duration.ofMillis(aiCt.getReadTimeoutMs()))
             .build();
     }
 }

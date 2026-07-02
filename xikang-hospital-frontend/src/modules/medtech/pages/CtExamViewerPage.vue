@@ -1,29 +1,31 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElEmpty, ElIcon, ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowDown } from '@element-plus/icons-vue'
+import { ElAlert, ElButton, ElEmpty, ElMessage } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import CtViewerPanel from '@/modules/medtech/ct-viewer/components/CtViewerPanel.vue'
-import type { CtVolumeMeta } from '@/shared/api/modules/ctViewer'
-import {
-  saveCtDraft,
-  useCtCheckContext,
-} from '@/modules/medtech/composables/useCtCheckContext'
+import CtArtifactAnalysisDialog from '@/modules/medtech/ct-viewer/components/CtArtifactAnalysisDialog.vue'
+import type { CtAnalyzeResult, CtVolumeMeta } from '@/shared/api/modules/ctViewer'
+import { analyzeCtVolume, checkCtViewerHealth } from '@/shared/api/modules/ctViewer'
+import { useCtCheckContext } from '@/modules/medtech/composables/useCtCheckContext'
 import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 
 const route = useRoute()
 const router = useRouter()
 const viewerPanelRef = ref<InstanceType<typeof CtViewerPanel>>()
 const volumeMeta = ref<CtVolumeMeta | null>(null)
+const analyzing = ref(false)
+const analysisDialogVisible = ref(false)
+const analysisResult = ref<CtAnalyzeResult | null>(null)
+const analysisError = ref('')
+const aiCtReady = ref(false)
 
 const id = computed(() => Number(route.query.id || 0))
 
 const {
   loading,
   imagingBinding,
-  simulating,
   errorMessage,
-  simulateError,
   report,
   started,
   imagingVolumeId,
@@ -33,7 +35,6 @@ const {
   loadCheckContext,
   bindImaging,
   clearImaging,
-  runCtInfer,
 } = useCtCheckContext()
 
 const examTitle = computed(() => report.value?.techName || 'CT 影像检查')
@@ -67,17 +68,41 @@ function handleMetaUpdated(meta: CtVolumeMeta | null) {
   volumeMeta.value = meta
 }
 
-async function handleRunAnalysis() {
-  if (!id.value) return
-  const result = await runCtInfer(id.value)
-  if (!result) return
+async function refreshAiCtHealth() {
+  try {
+    const health = await checkCtViewerHealth()
+    aiCtReady.value = Boolean(health.aiCtReady)
+  } catch {
+    aiCtReady.value = false
+  }
+}
 
-  if (result.simulatedValues) {
-    saveCtDraft(id.value, { simulatedValues: result.simulatedValues, savedAt: Date.now() })
+async function handleRunAnalysis() {
+  if (!imagingVolumeId.value || !canInfer.value) return
+
+  await refreshAiCtHealth()
+  if (!aiCtReady.value) {
+    const message = 'CT 伪影分析服务未就绪，请先启动 ai-ct-service（默认端口 8105）'
+    analysisError.value = message
+    analysisResult.value = null
+    analysisDialogVisible.value = true
+    ElMessage.warning(message)
+    return
   }
 
-  ElMessage.success('CT 影像分析完成，请继续录入结果')
-  router.push({ path: '/medtech/check-start', query: { id: String(id.value), phase: 'submit' } })
+  analyzing.value = true
+  analysisError.value = ''
+  analysisResult.value = null
+  analysisDialogVisible.value = true
+
+  try {
+    analysisResult.value = await analyzeCtVolume(imagingVolumeId.value)
+  } catch (error) {
+    analysisError.value = error instanceof Error ? error.message : 'CT 影像分析失败，请稍后重试'
+    ElMessage.error(analysisError.value)
+  } finally {
+    analyzing.value = false
+  }
 }
 
 function goBack() {
@@ -85,6 +110,7 @@ function goBack() {
 }
 
 onMounted(() => {
+  void refreshAiCtHealth()
   if (!id.value) return
   void loadCheckContext(id.value)
 })
@@ -118,12 +144,11 @@ onMounted(() => {
           <ElButton
             class="ct-exam-btn-primary"
             type="primary"
-            :loading="simulating"
+            :loading="analyzing"
             :disabled="!canInfer"
             @click="handleRunAnalysis"
           >
             影像分析
-            <ElIcon class="ct-exam-btn-arrow"><ArrowDown /></ElIcon>
           </ElButton>
         </div>
       </div>
@@ -149,17 +174,17 @@ onMounted(() => {
           class="ct-exam-alert"
         />
         <ElAlert
-          v-if="simulateError"
-          type="warning"
-          :title="simulateError"
+          v-if="started && !hasImaging && !errorMessage"
+          type="info"
+          title="请先上传 DICOM 文件夹或 NRRD/NIfTI，完成阅片后再运行 CT 影像分析"
           show-icon
           :closable="false"
           class="ct-exam-alert"
         />
         <ElAlert
-          v-if="started && !hasImaging && !errorMessage"
-          type="info"
-          title="请先上传 DICOM 文件夹或 NRRD/NIfTI，完成阅片后再运行 CT 影像分析"
+          v-if="started && !aiCtReady && !errorMessage"
+          type="warning"
+          title="CT 伪影分析服务未就绪：请启动 ai-ct-service（端口 8105），再点击「影像分析」"
           show-icon
           :closable="false"
           class="ct-exam-alert"
@@ -179,6 +204,13 @@ onMounted(() => {
         </div>
       </template>
     </main>
+
+    <CtArtifactAnalysisDialog
+      v-model:visible="analysisDialogVisible"
+      :loading="analyzing"
+      :error-message="analysisError"
+      :result="analysisResult"
+    />
   </div>
 </template>
 
@@ -293,11 +325,6 @@ onMounted(() => {
 .ct-exam-btn-primary {
   font-weight: 600;
   padding-inline: 18px;
-}
-
-.ct-exam-btn-arrow {
-  margin-inline-start: 4px;
-  font-size: 12px;
 }
 
 .ct-exam-header__sub {

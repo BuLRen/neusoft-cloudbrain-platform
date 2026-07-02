@@ -55,6 +55,11 @@ public class CtViewerController {
         return Result.success(ctViewerService.applyFilter(request));
     }
 
+    @PostMapping("/volume/{volumeId}/analyze")
+    public Result<Map<String, Object>> analyze(@PathVariable String volumeId) {
+        return Result.success(ctViewerService.analyzeVolume(volumeId));
+    }
+
     @GetMapping("/volume/{volumeId}/save")
     public ResponseEntity<byte[]> saveVolume(
         @PathVariable String volumeId,
