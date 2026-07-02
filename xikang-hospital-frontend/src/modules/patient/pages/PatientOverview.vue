@@ -12,7 +12,7 @@ const medicalServices = [
   { key: 'payment', title: '我的账单', desc: '查看挂号、药品等费用明细，余额支付', icon: '💳', path: '/patient/payment' },
   { key: 'records', title: '电子病历', desc: '集中查看本次就诊形成的病历、医嘱和检查入口', icon: '📄', path: '/patient/records' },
   { key: 'prescription', title: '我的处方', desc: '查看医生开立的处方和用药信息', icon: '💊', path: '/patient/prescription' },
-  { key: 'followup', title: '随访管理', desc: '提交用药反馈，查看复诊和康复随访安排', icon: '📅', path: '/patient/followup' },
+  { key: 'followup', title: '随访管理', desc: '查看复诊提醒、上次看诊与医患沟通', icon: '📅', path: '/patient/followup' },
 ]
 
 const visitPreparations = [

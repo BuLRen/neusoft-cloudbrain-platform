@@ -206,35 +206,17 @@ public class RegistrationService {
         register.setPatientId(patientIdParam != null ? patientIdParam.longValue() : null);
         register.setSchedulingId(schedulingId);
 
-        // #region agent log
         Long maxRegisterId = registrationMapper.selectMaxId();
         Long nextSequenceValue = registrationMapper.selectNextSequenceValue();
-        try (var writer = new java.io.FileWriter("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-7f73ef.log", true)) {
-            writer.write("{\"sessionId\":\"7f73ef\",\"runId\":\"post-fix\",\"hypothesisId\":\"A\",\"location\":\"RegistrationService.java:createRegistration:beforeInsert\",\"message\":\"register id sequence state before insert\",\"data\":{\"maxRegisterId\":" + maxRegisterId + ",\"nextSequenceValue\":" + nextSequenceValue + ",\"registerIdBeforeInsert\":" + register.getId() + ",\"patientId\":" + patientIdParam + ",\"sequenceOutOfSync\":" + (nextSequenceValue <= maxRegisterId) + "},\"timestamp\":" + System.currentTimeMillis() + "}\n");
-        } catch (Exception ignored) {
-        }
-        // #endregion
 
         if (nextSequenceValue <= maxRegisterId) {
             Long syncedSequenceValue = registrationMapper.syncIdSequence();
             nextSequenceValue = syncedSequenceValue + 1;
             log.warn("register_id_seq 与表内最大 id 不一致，已自动同步 | maxId={}, syncedSeq={}", maxRegisterId, syncedSequenceValue);
-            // #region agent log
-            try (var writer = new java.io.FileWriter("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-7f73ef.log", true)) {
-                writer.write("{\"sessionId\":\"7f73ef\",\"runId\":\"post-fix\",\"hypothesisId\":\"A\",\"location\":\"RegistrationService.java:createRegistration:syncSequence\",\"message\":\"register id sequence synced before insert\",\"data\":{\"maxRegisterId\":" + maxRegisterId + ",\"syncedSequenceValue\":" + syncedSequenceValue + ",\"nextSequenceValueAfterSync\":" + nextSequenceValue + "},\"timestamp\":" + System.currentTimeMillis() + "}\n");
-            } catch (Exception ignored) {
-            }
-            // #endregion
         }
 
         registrationMapper.insert(register);
 
-        // #region agent log
-        try (var writer = new java.io.FileWriter("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-7f73ef.log", true)) {
-            writer.write("{\"sessionId\":\"7f73ef\",\"runId\":\"post-fix\",\"hypothesisId\":\"A\",\"location\":\"RegistrationService.java:createRegistration:afterInsert\",\"message\":\"register insert succeeded\",\"data\":{\"assignedRegisterId\":" + register.getId() + ",\"patientId\":" + patientIdParam + "},\"timestamp\":" + System.currentTimeMillis() + "}\n");
-        } catch (Exception ignored) {
-        }
-        // #endregion
         ExpenseRecord registrationFee = createRegistrationFee(register, patientIdParam, realName, registLevel, registMoney, operatorId);
         Map<String, Object> payment = tryBalancePayment(patientIdParam, registrationFee, registMoney);
         // 清理同一挂号单上重复的待缴费 REGISTRATION_FEE，避免前端再次"去缴费"或"取消挂号"时把多条一起扣/退

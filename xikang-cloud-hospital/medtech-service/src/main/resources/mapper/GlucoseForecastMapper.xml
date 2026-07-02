@@ -7,6 +7,7 @@
             SELECT 1
             FROM register r
             WHERE r.id = #{registerId}
+              AND r.deptment_id = 7
               AND (
                   EXISTS (
                       SELECT 1
@@ -43,10 +44,31 @@
         ORDER BY pho.observed_at ASC
     </select>
 
+    <select id="selectPatientObservationsForPrediction" resultType="map">
+        SELECT
+            to_char(pho.observed_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "observedAt",
+            MAX(CASE WHEN pho.metric_code = 'blood_glucose' THEN pho.metric_value END) AS "bloodGlucose",
+            MAX(CASE WHEN pho.metric_code = 'insulin_total' THEN pho.metric_value END) AS "insulinTotal",
+            MAX(CASE WHEN pho.metric_code = 'meal_flag' THEN pho.metric_value END) AS "mealFlag",
+            MAX(CASE WHEN pho.metric_code = 'exercise_flag' THEN pho.metric_value END) AS "exerciseFlag"
+        FROM patient_health_observation pho
+        WHERE pho.register_id = #{registerId}
+          AND pho.source_type = 'patient_report'
+        GROUP BY pho.observed_at
+        ORDER BY pho.observed_at ASC
+    </select>
+
     <delete id="deleteForecasts">
         DELETE FROM follow_up_metric_forecast
         WHERE register_id = #{registerId}
           AND metric_code = #{metricCode}
+    </delete>
+
+    <delete id="deleteForecastsBeforeOrEqual">
+        DELETE FROM follow_up_metric_forecast
+        WHERE register_id = #{registerId}
+          AND metric_code = #{metricCode}
+          AND forecast_at &lt;= #{cutoff}
     </delete>
 
     <insert id="insertForecast">

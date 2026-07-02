@@ -26,6 +26,10 @@ public interface HealthObservationMapper {
 
     List<Map<String, Object>> selectCheckResults(@Param("registerId") Long registerId);
 
+    LocalDateTime selectLatestPatientGlucoseObservationAt(@Param("registerId") Long registerId);
+
+    Double selectLatestPatientGlucoseValue(@Param("registerId") Long registerId);
+
     int insertObservation(
         @Param("registerId") Long registerId,
         @Param("observedAt") LocalDateTime observedAt,

@@ -1,18 +1,11 @@
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { useAuthStore } from '@/app/stores/auth'
 import { loginRoutePath } from '@/shared/constants/app'
+import { canRefreshSession, refreshAccessToken } from '@/shared/api/authRefresh'
 import type { ApiResult } from './result'
 
 const sessionExpiredMessage = '登录已过期，请重新登录'
 let sessionExpiredRedirecting = false
-let refreshPromise: Promise<void> | null = null
-
-const refreshClient = axios.create({
-  baseURL: '/api',
-  timeout: 15_000,
-  withCredentials: true,
-})
-
 export const blobClient = axios.create({
   baseURL: '/api',
   timeout: 60_000,
@@ -36,14 +29,10 @@ function forceRedirectToLogin() {
 }
 
 async function refreshSessionOnce() {
-  if (!refreshPromise) {
-    refreshPromise = refreshClient.post('/auth/refresh').then(() => undefined)
+  if (!canRefreshSession()) {
+    throw new Error(sessionExpiredMessage)
   }
-  try {
-    await refreshPromise
-  } finally {
-    refreshPromise = null
-  }
+  await refreshAccessToken()
 }
 
 async function parseBlobMessage(data: Blob): Promise<string> {

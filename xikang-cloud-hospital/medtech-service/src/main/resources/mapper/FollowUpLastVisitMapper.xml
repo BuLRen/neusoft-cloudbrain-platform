@@ -1,18 +1,74 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
 <mapper namespace="com.xikang.medtech.mapper.FollowUpLastVisitMapper">
 
+
+
     <select id="selectByRegisterId" resultType="map">
+
         SELECT
+
             s.register_id AS "registerId",
+
             s.visit_date AS "visitDate",
+
             s.diagnosis_summary AS "diagnosisSummary",
+
             s.professional_metrics AS "professionalMetrics",
+
             s.doctor_name AS "doctorName",
+
             s.department_name AS "departmentName",
+
+            s.source_medical_record_id AS "sourceMedicalRecordId",
+
+            s.prescription_summary AS "prescriptionSummary",
+
+            s.chief_complaint AS "chiefComplaint",
+
+            s.treatment_advice AS "treatmentAdvice",
+
+            s.lab_panel AS "labPanel",
+
             s.updated_at AS "updatedAt"
+
         FROM follow_up_last_visit_snapshot s
+
         WHERE s.register_id = #{registerId}
+
     </select>
 
+
+
+    <select id="selectLabItemsByRegisterId" resultType="map">
+
+        SELECT
+
+            l.metric_code AS "metricCode",
+
+            l.label AS "label",
+
+            l.metric_value AS "metricValue",
+
+            l.unit AS "unit",
+
+            l.ref_range AS "refRange",
+
+            l.abnormal_flag AS "abnormalFlag",
+
+            l.sort_order AS "sortOrder"
+
+        FROM follow_up_last_visit_lab_item l
+
+        WHERE l.register_id = #{registerId}
+
+        ORDER BY l.sort_order ASC, l.id ASC
+
+    </select>
+
+
+
 </mapper>
+

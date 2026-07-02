@@ -14,7 +14,15 @@ public interface GlucoseForecastMapper {
 
     List<Map<String, Object>> selectObservationsForPrediction(@Param("registerId") Long registerId);
 
+    List<Map<String, Object>> selectPatientObservationsForPrediction(@Param("registerId") Long registerId);
+
     int deleteForecasts(@Param("registerId") Long registerId, @Param("metricCode") String metricCode);
+
+    int deleteForecastsBeforeOrEqual(
+        @Param("registerId") Long registerId,
+        @Param("metricCode") String metricCode,
+        @Param("cutoff") java.time.LocalDateTime cutoff
+    );
 
     int insertForecast(Map<String, Object> row);
 

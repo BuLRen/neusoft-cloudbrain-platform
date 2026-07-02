@@ -27,6 +27,7 @@ public class FollowUpDashboardService {
     private final MedtechService medtechService;
     private final FollowUpProperties followUpProperties;
     private final FollowUpEnrollmentSyncService followUpEnrollmentSyncService;
+    private final FollowUpHistoryService historyService;
 
     public Map<String, Object> getContext(LocalDate targetDate, Long departmentIdOverride) {
         LocalDate date = targetDate != null ? targetDate : LocalDate.now();
@@ -211,6 +212,11 @@ public class FollowUpDashboardService {
         payload.put("note", request.get("note"));
 
         followUpDashboardMapper.insertDailyObservation(payload);
+        historyService.recordObservationConfirmed(
+            registerId,
+            MedtechAuthContext.employeeIdOrNull(),
+            request.get("note") != null ? String.valueOf(request.get("note")) : null
+        );
         return followUpDashboardMapper.selectDailyObservation(registerId, observationDate);
     }
 

@@ -45,6 +45,8 @@ import type {
   FollowUpPatientDetail,
   FollowUpPatientOption,
   FollowUpPatientProfile,
+  LastVisitLabItem,
+  LastVisitSnapshot,
 } from '@/shared/types/medtechFollowUp'
 
 const route = useRoute()
@@ -61,6 +63,9 @@ const loading = ref(false)
 const scheduling = ref(false)
 const enrolling = ref(false)
 const isGlucoseCohort = ref(false)
+const lastVisitSnapshot = ref<LastVisitSnapshot | null>(null)
+
+const VISIT_PRIORITY_KEYS = ['hba1c', 'fasting_glucose', 'postprandial_glucose', 'ldl_c']
 
 const selectedPatient = computed(() =>
   patients.value.find((item) => item.registerId === selectedRegisterId.value),
@@ -128,6 +133,43 @@ const allMetricDefs = computed(() =>
     (key) => latestMetrics.value.get(key)?.unit,
   ),
 )
+
+const visitKpiItems = computed(() => {
+  const snapshot = lastVisitSnapshot.value
+  if (!snapshot) return [] as Array<LastVisitLabItem & { key: string }>
+
+  const fromLab = (snapshot.labItems?.length ? snapshot.labItems : snapshot.labPanel ?? []).map((item) => ({
+    key: String(item.metricCode ?? item.code ?? item.label ?? ''),
+    label: item.label ?? item.metricCode ?? item.code ?? '指标',
+    metricValue: item.metricValue ?? item.value,
+    unit: item.unit,
+    refRange: item.refRange,
+    abnormalFlag: item.abnormalFlag ?? item.flag,
+  }))
+
+  let items = fromLab.filter((item) => item.key)
+  if (!items.length && snapshot.professionalMetrics) {
+    items = Object.entries(snapshot.professionalMetrics).map(([key, metric]) => ({
+      key,
+      label: metric.label ?? key,
+      metricValue: metric.value,
+      unit: metric.unit,
+      abnormalFlag: metric.abnormalFlag,
+    }))
+  }
+
+  const prioritized = VISIT_PRIORITY_KEYS.map((key) => items.find((item) => item.key === key)).filter(
+    (item): item is (typeof items)[number] => Boolean(item),
+  )
+  return (prioritized.length ? prioritized : items).slice(0, 6)
+})
+
+function visitFlagLabel(flag?: string) {
+  if (flag === 'high') return '偏高'
+  if (flag === 'low') return '偏低'
+  if (flag === 'critical') return '危急'
+  return '正常'
+}
 
 const selectedMetricDef = computed(() =>
   allMetricDefs.value.find((def) => def.key === selectedMetricKey.value),
@@ -341,7 +383,7 @@ async function loadPatientData() {
   loading.value = true
   try {
     const { from, to } = currentQueryRange()
-    const [profileRes, metricsRes, recordsRes, scheduleRes, observationRes, cohortRes] = await Promise.all([
+    const [profileRes, metricsRes, recordsRes, scheduleRes, observationRes, cohortRes, lastVisitRes] = await Promise.all([
       medtechFollowUpApi.getProfile(selectedRegisterId.value),
       medtechFollowUpApi.getMetrics(selectedRegisterId.value, { from, to }),
       medtechFollowUpApi.getRecords(selectedRegisterId.value),
@@ -352,6 +394,7 @@ async function loadPatientData() {
         observed: false,
       })),
       medtechFollowUpApi.isGlucoseCohort(selectedRegisterId.value).catch(() => ({ registerId: selectedRegisterId.value!, glucoseCohort: false })),
+      medtechFollowUpApi.getLastVisit(selectedRegisterId.value).catch(() => null),
     ])
     profile.value = profileRes
     metrics.value = metricsRes
@@ -359,6 +402,7 @@ async function loadPatientData() {
     scheduleScheduled.value = scheduleRes
     observedToday.value = Boolean(observationRes.observed)
     isGlucoseCohort.value = Boolean(cohortRes.glucoseCohort)
+    lastVisitSnapshot.value = lastVisitRes
     await renderCharts()
   } catch {
     ElMessage.error('加载患者疗效数据失败')
@@ -367,8 +411,8 @@ async function loadPatientData() {
   }
 }
 
-function goToDashboard() {
-  void router.push({ name: 'FollowUpDashboard' })
+function goToRecords() {
+  void router.push({ name: 'FollowUpRecords', query: selectedRegisterId.value ? { registerId: String(selectedRegisterId.value) } : {} })
 }
 
 async function handleConfirmObservation() {
@@ -474,7 +518,7 @@ void loadPatients().then(() => loadPatientData())
     description="基于模拟术后健康指标与随访反馈，按患者所患疾病匹配主视角图表，支持趋势筛查与加入每周访谈日程。"
   >
     <template #header-actions>
-      <ElButton class="outcome-header-back" @click="goToDashboard">返回仪表盘</ElButton>
+      <ElButton class="outcome-header-back" @click="goToRecords">查看随访记录</ElButton>
     </template>
 
     <GlassCard class="outcome-card" v-loading="loading">
@@ -550,30 +594,31 @@ void loadPatients().then(() => loadPatientData())
       <div class="kpi-section">
         <div class="kpi-section__head">
           <h3 class="kpi-section__title">健康指标概览</h3>
-          <span class="kpi-section__hint">点击卡片查看该指标历史趋势与明细</span>
+          <span class="kpi-section__hint">
+            来自上次在院看诊检验
+            <template v-if="lastVisitSnapshot?.visitDate">（{{ lastVisitSnapshot.visitDate }}）</template>
+          </span>
         </div>
-        <ElRow :gutter="16" class="kpi-row">
+        <ElRow v-if="visitKpiItems.length" :gutter="16" class="kpi-row">
           <ElCol
-            v-for="def in allMetricDefs"
-            :key="def.key"
+            v-for="item in visitKpiItems"
+            :key="item.key"
             :xs="12"
             :sm="8"
             :md="6"
             :lg="4"
           >
-            <button
-              type="button"
-              class="kpi-card kpi-card--clickable"
-              @click="openMetricDialog(def.key)"
-            >
-              <span class="kpi-card__label">{{ def.label }}</span>
+            <div class="kpi-card kpi-card--static kpi-card--visit">
+              <span class="kpi-card__label">{{ item.label }}</span>
               <strong class="kpi-card__value">
-                {{ latestMetrics.get(def.key)?.metricValue ?? '—' }}
-                <small>{{ latestMetrics.get(def.key)?.unit ?? def.unit }}</small>
+                {{ item.metricValue ?? '—' }}
+                <small>{{ item.unit }}</small>
               </strong>
-              <span class="kpi-card__date">{{ latestMetrics.get(def.key)?.recordDate ?? '暂无数据' }}</span>
-              <span class="kpi-card__action">查看历史</span>
-            </button>
+              <span class="kpi-card__date">
+                {{ item.refRange ? `参考 ${item.refRange}` : '院内检验' }}
+                · {{ visitFlagLabel(item.abnormalFlag) }}
+              </span>
+            </div>
           </ElCol>
           <ElCol :xs="12" :sm="8" :md="6" :lg="4">
             <div class="kpi-card kpi-card--static">
@@ -583,6 +628,7 @@ void loadPatients().then(() => loadPatientData())
             </div>
           </ElCol>
         </ElRow>
+        <ElEmpty v-else description="暂无上次看诊检验数据，请运行种子脚本" />
       </div>
     </GlassCard>
 

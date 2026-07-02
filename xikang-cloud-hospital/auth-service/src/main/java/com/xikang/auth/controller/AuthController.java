@@ -122,7 +122,7 @@ public class AuthController {
      * Refresh token
      */
     @PostMapping("/refresh")
-    public ResponseEntity<Result<Void>> refresh(
+    public ResponseEntity<Result<Map<String, Object>>> refresh(
             @CookieValue(value = REFRESH_COOKIE_NAME, required = false) String refreshToken
     ) {
         Map<String, String> refreshed = authService.refresh(refreshToken);
@@ -138,7 +138,11 @@ public class AuthController {
 
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.SET_COOKIE, accessCookie.toString());
-        return ResponseEntity.ok().headers(headers).body(Result.success("刷新成功", null));
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("token", accessToken);
+        body.put("accessToken", accessToken);
+        return ResponseEntity.ok().headers(headers).body(Result.success("刷新成功", body));
     }
 
     /**
@@ -146,18 +150,28 @@ public class AuthController {
      */
     @GetMapping("/me")
     public Result<Map<String, Object>> me(
-            @RequestHeader(value = "Authorization", required = false) String authHeader
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @CookieValue(value = ACCESS_COOKIE_NAME, required = false) String accessCookie
     ) {
-        // Try to get token from Authorization header first
+        String headerToken = extractBearerToken(authHeader);
         String token = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7);
+        if (headerToken != null && !headerToken.isBlank() && JwtUtils.validateToken(headerToken)) {
+            token = headerToken;
+        } else if (accessCookie != null && !accessCookie.isBlank() && JwtUtils.validateToken(accessCookie)) {
+            token = accessCookie;
         }
-        if (token == null) {
+        if (token == null || token.isBlank()) {
             return Result.error(401, "未授权");
         }
         Map<String, Object> result = authService.me(token);
         return Result.success(result);
+    }
+
+    private String extractBearerToken(String authHeader) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+        return null;
     }
 
     /**

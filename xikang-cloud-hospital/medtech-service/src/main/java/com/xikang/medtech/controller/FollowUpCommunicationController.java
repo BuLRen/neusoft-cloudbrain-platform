@@ -46,6 +46,14 @@ public class FollowUpCommunicationController {
         @PathVariable Long id,
         @RequestBody Map<String, Object> request
     ) {
+        String messageType = request.get("messageType") != null ? String.valueOf(request.get("messageType")) : "text";
+        if ("drug_card".equals(messageType) || "diagnosis_card".equals(messageType)) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> cardPayload = request.get("cardPayload") instanceof Map<?, ?> map
+                ? (Map<String, Object>) map
+                : null;
+            return Result.success(communicationService.sendDoctorCard(id, messageType, cardPayload));
+        }
         String content = request.get("content") != null ? String.valueOf(request.get("content")) : null;
         return Result.success(communicationService.sendDoctorMessage(id, content));
     }
@@ -122,5 +130,18 @@ public class FollowUpCommunicationController {
     @GetMapping("/patient/session/{registerId}")
     public Result<Map<String, Object>> getPatientSession(@PathVariable Long registerId) {
         return Result.success(communicationService.getPatientSession(registerId));
+    }
+
+    @GetMapping("/suggestions/drugs")
+    public Result<List<Map<String, Object>>> suggestDrugs(
+        @RequestParam Long registerId,
+        @RequestParam(required = false) String keyword
+    ) {
+        return Result.success(communicationService.suggestDrugs(registerId, keyword));
+    }
+
+    @GetMapping("/suggestions/diagnoses")
+    public Result<List<Map<String, Object>>> suggestDiagnoses(@RequestParam Long registerId) {
+        return Result.success(communicationService.suggestDiagnoses(registerId));
     }
 }

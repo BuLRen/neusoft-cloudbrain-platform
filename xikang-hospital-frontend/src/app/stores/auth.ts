@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { UserRole } from '@/shared/types/role'
 import { authApi } from '@/shared/api/modules/auth'
+import { canRefreshSession, refreshAccessToken } from '@/shared/api/authRefresh'
 
 export interface PatientInfo {
   patientId: number
@@ -53,9 +54,13 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       // 如果没有 token，直接返回
-      if (!token.value) {
+      if (!token.value && !canRefreshSession()) {
         sessionChecked.value = true
         return
+      }
+
+      if (!token.value && canRefreshSession()) {
+        await refreshAccessToken()
       }
 
       const data = await authApi.get<{
@@ -76,7 +81,32 @@ export const useAuthStore = defineStore('auth', () => {
         selectDefaultPatient()
       }
     } catch {
-      // 401 会由请求拦截器清理 session；网络异常则保留当前状态，等待下次请求重试
+      if (canRefreshSession()) {
+        try {
+          await refreshAccessToken()
+          const data = await authApi.get<{
+            userId: string
+            username: string
+            role: UserRole
+            realName: string
+            employeeId?: number
+            patients?: PatientInfo[]
+          }>('/auth/me', undefined, { skipErrorMessage: true })
+          if (data) {
+            userId.value = String(data.userId)
+            username.value = data.username || ''
+            role.value = data.role || 'admin'
+            realName.value = data.realName || (data.role === 'patient' ? '患者' : '未知用户')
+            employeeId.value = data.employeeId ?? null
+            patients.value = data.patients || []
+            selectDefaultPatient()
+            sessionChecked.value = true
+            return
+          }
+        } catch {
+          // fall through to warn
+        }
+      }
       console.warn('Session load failed, will retry on next request')
     } finally {
       sessionChecked.value = true

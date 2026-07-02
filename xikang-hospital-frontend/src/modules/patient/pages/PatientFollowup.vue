@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage, ElOption, ElSelect } from 'element-plus'
+import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElEmpty, ElMessage, ElOption, ElSelect } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import PatientCommunicationPanel from '@/modules/patient/components/PatientCommunicationPanel.vue'
 import PatientGlucoseEntryForm from '@/modules/patient/components/PatientGlucoseEntryForm.vue'
+import RevisitAdviceCard from '@/modules/patient/components/RevisitAdviceCard.vue'
 import LastVisitSnapshotPanel from '@/modules/medtech/follow-up/components/LastVisitSnapshotPanel.vue'
 import GlucoseForecastPanel from '@/modules/medtech/follow-up/components/GlucoseForecastPanel.vue'
 import { clinicalRecordApi, type ClinicalVisitSummary } from '@/shared/api/modules/clinicalRecord'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
+import { isEndocrineDepartment } from '@/shared/constants/followUpDepartments'
 import { useAuthStore } from '@/app/stores/auth'
 import type {
   PatientFollowUpPlanItem,
   PatientMedicationItem,
 } from '@/shared/types/medtechFollowUp'
 
+const router = useRouter()
 const authStore = useAuthStore()
 const activeTab = ref('lastVisit')
 const loading = ref(false)
@@ -24,7 +28,14 @@ const selectedRegisterId = ref<number | undefined>()
 const followupPlans = ref<PatientFollowUpPlanItem[]>([])
 const medications = ref<PatientMedicationItem[]>([])
 
-const patientId = computed(() => authStore.currentPatientId || authStore.currentPatient?.patientId)
+const patientId = computed(() => {
+  if (authStore.currentPatientId) return authStore.currentPatientId
+  if (authStore.currentPatient?.patientId) return authStore.currentPatient.patientId
+  const primary = authStore.patients.find((p) => p.isPrimary === 1) || authStore.patients[0]
+  return primary?.patientId
+})
+
+const visitsLoading = ref(false)
 
 const visitOptions = computed(() =>
   visits.value.map((item) => ({
@@ -33,10 +44,25 @@ const visitOptions = computed(() =>
   })),
 )
 
-const revisitForm = ref({ reason: '', urgency: 'normal' as 'normal' | 'urgent' })
-const revisitLoading = ref(false)
+const selectedVisit = computed(() =>
+  visits.value.find((item) => item.registerId === selectedRegisterId.value),
+)
 
-const glucosePanelKey = ref(0)
+const isEndocrineVisit = computed(() => isEndocrineDepartment(selectedVisit.value?.departmentId))
+
+const pageSubtitle = computed(() =>
+  isEndocrineVisit.value
+    ? '上次看诊、居家血糖、复诊提醒与医患沟通'
+    : '上次看诊、复诊提醒与医患沟通',
+)
+
+const revisitPlans = computed(() =>
+  followupPlans.value.filter(
+    (plan) => plan.followUpType === 'revisit' && plan.planStatus !== 'completed',
+  ),
+)
+
+const glucosePanelRef = ref<InstanceType<typeof GlucoseForecastPanel> | null>(null)
 
 function statusTone(status?: string) {
   if (status === 'completed') return 'success'
@@ -62,15 +88,49 @@ function planTitle(plan: PatientFollowUpPlanItem) {
   return typeMap[plan.followUpType ?? ''] ?? '随访计划'
 }
 
+function goToRegistration() {
+  void router.push('/patient/registration')
+}
+
 async function loadVisits() {
   if (!patientId.value) return
+  visitsLoading.value = true
   try {
     visits.value = await clinicalRecordApi.patientVisits(patientId.value)
     if (!selectedRegisterId.value && visits.value.length) {
       selectedRegisterId.value = visits.value[0]!.registerId
     }
+    if (!visits.value.length) {
+      await loadFallbackRegisterId()
+    }
   } catch {
     ElMessage.error('加载就诊记录失败')
+    await loadFallbackRegisterId()
+  } finally {
+    visitsLoading.value = false
+  }
+}
+
+async function loadFallbackRegisterId() {
+  if (!patientId.value || selectedRegisterId.value) return
+  try {
+    const plans = await medtechFollowUpApi.listPatientPlans({ patientId: patientId.value })
+    const registerId = plans[0]?.registerId
+    if (registerId) {
+      selectedRegisterId.value = registerId
+      visits.value = [
+        {
+          registerId,
+          departmentName: '随访科室',
+          visitDate: new Date().toISOString(),
+          archived: false,
+          patientVisible: true,
+          archiveStatus: 'pending',
+        },
+      ]
+    }
+  } catch {
+    // 由空状态提示用户
   }
 }
 
@@ -94,42 +154,7 @@ async function loadPortalData() {
 }
 
 async function onGlucoseSubmitted() {
-  glucosePanelKey.value += 1
-}
-
-async function submitRevisit() {
-  if (!revisitForm.value.reason.trim()) {
-    ElMessage.warning('请填写复诊原因')
-    return
-  }
-  if (!selectedRegisterId.value) {
-    ElMessage.warning('请先选择就诊记录')
-    return
-  }
-  revisitLoading.value = true
-  try {
-    await medtechFollowUpApi.submitRevisitRequest(
-      {
-        registerId: selectedRegisterId.value,
-        reason: revisitForm.value.reason.trim(),
-        urgency: revisitForm.value.urgency,
-      },
-      { patientId: patientId.value },
-    )
-    ElMessage.success('复诊申请已提交')
-    revisitForm.value = { reason: '', urgency: 'normal' }
-  } catch {
-    ElMessage.error('提交失败')
-  } finally {
-    revisitLoading.value = false
-  }
-}
-
-function goToCommunication(prefill?: string) {
-  activeTab.value = 'communication'
-  if (prefill) {
-    revisitForm.value.reason = prefill
-  }
+  await glucosePanelRef.value?.reloadAfterEntry()
 }
 
 async function markComplete(planId: number) {
@@ -143,18 +168,26 @@ async function markComplete(planId: number) {
 }
 
 watch(selectedRegisterId, () => {
+  if (activeTab.value === 'glucose' && !isEndocrineVisit.value) {
+    activeTab.value = 'lastVisit'
+  }
   void loadPortalData()
 })
+
+watch(
+  () => [authStore.sessionChecked, patientId.value] as const,
+  ([checked, pid]) => {
+    if (checked && pid) {
+      void loadVisits()
+    }
+  },
+  { immediate: true },
+)
 
 watch(activeTab, (tab) => {
   if (tab !== 'communication') {
     void loadPortalData()
   }
-})
-
-onMounted(async () => {
-  await loadVisits()
-  await loadPortalData()
 })
 </script>
 
@@ -163,7 +196,7 @@ onMounted(async () => {
     <GlassCard class="followup-tabs-card">
       <div class="tabs-header">
         <h2>随访管理</h2>
-        <p>上次看诊、居家血糖、复诊申请与医患沟通</p>
+        <p>{{ pageSubtitle }}</p>
       </div>
 
       <div class="register-picker">
@@ -182,11 +215,18 @@ onMounted(async () => {
         <button :class="['tab-btn', { active: activeTab === 'lastVisit' }]" @click="activeTab = 'lastVisit'">
           上次看诊
         </button>
-        <button :class="['tab-btn', { active: activeTab === 'glucose' }]" @click="activeTab = 'glucose'">
+        <button
+          v-if="isEndocrineVisit"
+          :class="['tab-btn', { active: activeTab === 'glucose' }]"
+          @click="activeTab = 'glucose'"
+        >
           血糖管理
         </button>
         <button :class="['tab-btn', { active: activeTab === 'revisit' }]" @click="activeTab = 'revisit'">
-          复诊与沟通
+          复诊提醒
+        </button>
+        <button :class="['tab-btn', { active: activeTab === 'communication' }]" @click="activeTab = 'communication'">
+          医患沟通
         </button>
         <button :class="['tab-btn', { active: activeTab === 'plans' }]" @click="activeTab = 'plans'">
           随访计划
@@ -202,10 +242,12 @@ onMounted(async () => {
       :register-id="selectedRegisterId"
       :patient-id="patientId"
       mode="patient"
-      compact
     />
+    <GlassCard v-else-if="activeTab === 'lastVisit'" v-loading="visitsLoading" class="empty-card">
+      <ElEmpty :description="patientId ? '暂无就诊记录，请联系随访护士' : '正在加载患者档案…'" />
+    </GlassCard>
 
-    <template v-if="activeTab === 'glucose' && selectedRegisterId">
+    <template v-if="activeTab === 'glucose' && selectedRegisterId && isEndocrineVisit">
       <PatientGlucoseEntryForm
         :register-id="selectedRegisterId"
         :patient-id="patientId"
@@ -213,41 +255,56 @@ onMounted(async () => {
       />
       <GlassCard class="glucose-card">
         <GlucoseForecastPanel
-          :key="glucosePanelKey"
+          ref="glucosePanelRef"
           :patient-id="patientId"
           :register-id="selectedRegisterId"
           mode="patient"
-          compact
-          @revisit="goToCommunication('根据血糖预测建议，申请复诊调整用药')"
+          @go-registration="goToRegistration"
         />
       </GlassCard>
     </template>
+    <GlassCard v-else-if="activeTab === 'glucose'" v-loading="visitsLoading" class="empty-card">
+      <ElEmpty :description="patientId ? '请先选择或等待加载就诊记录' : '正在加载患者档案…'" />
+    </GlassCard>
 
-    <GlassCard v-if="activeTab === 'revisit'" class="revisit-card">
-      <div class="section-header">
-        <h3>申请复诊</h3>
-      </div>
-      <div class="revisit-form">
-        <textarea
-          v-model="revisitForm.reason"
-          class="form-textarea"
-          rows="4"
-          placeholder="请描述复诊原因，如：血糖持续偏高、出现低血糖症状..."
-        />
-        <div class="urgency-row">
-          <label>
-            <input v-model="revisitForm.urgency" type="radio" value="normal" />
-            普通
-          </label>
-          <label>
-            <input v-model="revisitForm.urgency" type="radio" value="urgent" />
-            紧急
-          </label>
+    <template v-if="activeTab === 'revisit'">
+      <GlassCard v-if="selectedRegisterId" class="revisit-card" v-loading="loading">
+        <div class="section-header">
+          <h3>复诊提醒</h3>
         </div>
-        <button class="btn-primary" :disabled="revisitLoading" @click="submitRevisit">
-          {{ revisitLoading ? '提交中...' : '提交复诊申请' }}
-        </button>
-      </div>
+        <p class="revisit-notice">
+          随访系统仅提供复诊提醒，不参与挂号流程。如需到院复诊，请前往
+          <button type="button" class="link-btn" @click="goToRegistration">我的挂号</button>
+          自行预约。
+        </p>
+
+        <RevisitAdviceCard
+          :register-id="selectedRegisterId"
+          :patient-id="patientId"
+          :show-glucose-advice="isEndocrineVisit"
+          @go-registration="goToRegistration"
+        />
+
+        <div v-if="revisitPlans.length" class="revisit-plans">
+          <h4>随访计划中的复诊提醒</h4>
+          <div v-for="plan in revisitPlans" :key="plan.id" class="revisit-plan-item">
+            <StatusTag :tone="statusTone(plan.planStatus)">{{ statusText(plan.planStatus) }}</StatusTag>
+            <div class="revisit-plan-body">
+              <strong>{{ planTitle(plan) }}</strong>
+              <p v-if="plan.plannedDate">计划日期：{{ plan.plannedDate }}</p>
+              <p v-if="plan.contentTemplate" class="plan-content">{{ plan.contentTemplate }}</p>
+            </div>
+            <button class="btn-outline" @click="goToRegistration">前往预约挂号</button>
+          </div>
+        </div>
+        <ElEmpty v-else-if="!loading" description="暂无待完成的复诊提醒计划" />
+      </GlassCard>
+      <GlassCard v-else v-loading="visitsLoading" class="empty-card">
+        <ElEmpty :description="patientId ? '请先选择就诊记录' : '正在加载患者档案…'" />
+      </GlassCard>
+    </template>
+
+    <GlassCard v-if="activeTab === 'communication'" class="communication-card">
       <PatientCommunicationPanel />
     </GlassCard>
 
@@ -271,14 +328,15 @@ onMounted(async () => {
             <div class="plan-meta">
               <span v-if="plan.plannedDate">📅 {{ plan.plannedDate }}</span>
             </div>
+            <p v-if="plan.contentTemplate" class="plan-content">{{ plan.contentTemplate }}</p>
           </div>
           <div class="plan-actions">
             <button
               v-if="plan.followUpType === 'revisit' && plan.planStatus !== 'completed'"
               class="btn-outline"
-              @click="goToCommunication()"
+              @click="goToRegistration"
             >
-              申请复诊
+              前往预约挂号
             </button>
             <button
               v-if="plan.planStatus === 'pending' || plan.planStatus === 'overdue'"
@@ -386,11 +444,20 @@ onMounted(async () => {
   color: var(--color-primary);
 }
 
+.empty-card {
+  padding: var(--space-8);
+}
+
 .plans-card,
 .medications-card,
 .glucose-card,
-.revisit-card {
+.revisit-card,
+.communication-card {
   padding: var(--space-5);
+}
+
+.glucose-card :deep(.glucose-forecast__chart) {
+  min-height: 360px;
 }
 
 .section-header {
@@ -406,23 +473,59 @@ onMounted(async () => {
   margin: 0;
 }
 
-.revisit-form {
-  display: grid;
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
+.revisit-notice {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(59, 130, 246, 0.06);
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-.form-textarea {
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-primary);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}
+
+.revisit-plans {
+  margin-top: var(--space-5);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.revisit-plans h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.revisit-plan-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  font-family: inherit;
-  resize: vertical;
 }
 
-.urgency-row {
-  display: flex;
-  gap: var(--space-4);
+.revisit-plan-body {
+  flex: 1;
+}
+
+.revisit-plan-body p {
+  margin: var(--space-1) 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.plan-content {
+  margin-top: var(--space-2);
+  line-height: 1.5;
 }
 
 .plans-list,
@@ -456,12 +559,6 @@ onMounted(async () => {
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-md);
   cursor: pointer;
-}
-
-.btn-primary {
-  background: var(--color-primary);
-  color: white;
-  border: none;
 }
 
 .btn-outline {

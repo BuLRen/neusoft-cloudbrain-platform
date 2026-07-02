@@ -14,6 +14,8 @@ public interface UserAccountMapper {
 
     int insertMedtechAccount(Map<String, Object> row);
 
+    int insertFollowUpAccount(Map<String, Object> row);
+
     int updatePassword(@Param("userId") Long userId, @Param("password") String password);
 
     int updateStatus(@Param("userId") Long userId, @Param("status") Integer status);

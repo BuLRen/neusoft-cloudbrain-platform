@@ -133,6 +133,24 @@ public class HealthObservationService {
         return row;
     }
 
+    public LocalDateTime getLatestPatientGlucoseObservationAt(Long registerId) {
+        try {
+            return healthObservationMapper.selectLatestPatientGlucoseObservationAt(registerId);
+        } catch (DataAccessException ex) {
+            log.warn("读取最近居家血糖失败: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    public Double getLatestPatientGlucoseValue(Long registerId) {
+        try {
+            return healthObservationMapper.selectLatestPatientGlucoseValue(registerId);
+        } catch (DataAccessException ex) {
+            log.warn("读取最近居家血糖数值失败: {}", ex.getMessage());
+            return null;
+        }
+    }
+
     public int countRecentGlucoseReports(Long registerId, int hours) {
         LocalDate from = LocalDate.now().minusDays(Math.max(1, hours / 24 + 1));
         List<Map<String, Object>> rows = getMetrics(
