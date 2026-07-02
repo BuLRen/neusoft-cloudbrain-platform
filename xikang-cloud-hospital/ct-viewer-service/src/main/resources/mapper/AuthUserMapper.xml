@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.ctviewer.mapper.AuthUserMapper">
+
+    <select id="selectById" resultType="com.xikang.ctviewer.entity.AuthUser">
+        SELECT
+            u.id,
+            u.user_type AS userType,
+            u.employee_id AS employeeId,
+            u.status,
+            e.deptment_id AS departmentId,
+            d.dept_name AS departmentName
+        FROM users u
+        LEFT JOIN employee e ON e.id = u.employee_id
+        LEFT JOIN department d ON d.id = e.deptment_id
+        WHERE u.id = #{id}
+    </select>
+
+</mapper>

@@ -1,0 +1,55 @@
+/* CT 影像阅片器专用暗色主题（参考专业 PACS 工作站风格） */
+.ct-imaging-theme {
+  color-scheme: dark;
+  --ct-bg: #0b0e14;
+  --ct-bg-soft: #0f131c;
+  --ct-surface: #141a24;
+  --ct-surface-elevated: #1a2230;
+  --ct-panel: #121820;
+  --ct-border: rgba(255, 255, 255, 0.08);
+  --ct-border-strong: rgba(255, 255, 255, 0.14);
+  --ct-accent: #2a9d8f;
+  --ct-accent-hover: #38b5a5;
+  --ct-accent-soft: rgba(42, 157, 143, 0.16);
+  --ct-accent-glow: rgba(42, 157, 143, 0.35);
+  --ct-text: #e8edf4;
+  --ct-text-muted: #8b95a8;
+  --ct-text-dim: #5c6678;
+  --ct-success: #34d399;
+  --ct-warning: #fbbf24;
+  --ct-danger: #f87171;
+  --ct-canvas-bg: #05070d;
+  --ct-radius: 10px;
+  --ct-radius-lg: 14px;
+  --ct-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.ct-imaging-theme .el-button--primary {
+  --el-button-bg-color: var(--ct-accent);
+  --el-button-border-color: var(--ct-accent);
+  --el-button-hover-bg-color: var(--ct-accent-hover);
+  --el-button-hover-border-color: var(--ct-accent-hover);
+  --el-button-active-bg-color: #248f82;
+  --el-button-active-border-color: #248f82;
+}
+
+.ct-imaging-theme .el-slider {
+  --el-slider-main-bg-color: var(--ct-accent);
+  --el-slider-runway-bg-color: rgba(255, 255, 255, 0.1);
+}
+
+.ct-imaging-theme .el-input-number {
+  --el-fill-color-blank: var(--ct-surface-elevated);
+  --el-border-color: var(--ct-border-strong);
+  --el-text-color-regular: var(--ct-text);
+}
+
+.ct-imaging-theme .el-select {
+  --el-fill-color-blank: var(--ct-surface-elevated);
+  --el-border-color: var(--ct-border-strong);
+  --el-text-color-regular: var(--ct-text);
+}
+
+.ct-imaging-theme .el-form-item__label {
+  color: var(--ct-text-muted);
+}

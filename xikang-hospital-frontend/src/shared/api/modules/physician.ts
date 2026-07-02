@@ -1,4 +1,7 @@
+import { blobClient } from '../blobClient'
 import { http } from '../request'
+import type { CtAnalyzeResult, CtVolumeMeta } from './ctViewer'
+import type { ResultFormSchema } from '@/shared/types/resultForm'
 
 /** Dify 初步诊断 blocking 调用超时（与后端 read-timeout-ms 一致） */
 const PRELIMINARY_AI_TIMEOUT_MS = 5 * 60 * 1000
@@ -182,11 +185,19 @@ export interface AiExamAnalysis {
 export interface CheckResult {
   id: number
   techName: string
+  aiCategoryCode?: string
   checkPosition?: string
   checkResult?: string
   checkState?: string
   checkTime?: string
   checkRemark?: string
+  hasImaging?: boolean
+  imagingVolumeId?: string
+  imagingUploadedAt?: string
+  imagingSourceName?: string
+  imagingAnalyzedAt?: string
+  hasImagingAnalysis?: boolean
+  imagingAnalysisResult?: CtAnalyzeResult | null
   aiAnalysis?: AiExamAnalysis | null
 }
 
@@ -512,6 +523,20 @@ export const physicianApi = {
   },
   checkResults(registerId: number) {
     return http<CheckResult[]>({ url: '/physician/check-results', method: 'GET', params: { registerId } })
+  },
+  fetchCheckImagingNrrd(checkRequestId: number) {
+    return blobClient
+      .get<ArrayBuffer>(`/physician/check/${checkRequestId}/imaging/nrrd`, {
+        responseType: 'arraybuffer',
+        timeout: 10 * 60 * 1000,
+      })
+      .then((response) => response.data)
+  },
+  fetchCheckImagingMeta(checkRequestId: number) {
+    return http<CtVolumeMeta>({ url: `/physician/check/${checkRequestId}/imaging/meta`, method: 'GET' })
+  },
+  resolveCheckResultForm(checkRequestId: number) {
+    return http<ResultFormSchema>({ url: `/physician/check/${checkRequestId}/result-form`, method: 'GET' })
   },
   inspectionResults(registerId: number) {
     return http<InspectionResult[]>({ url: '/physician/inspection-results', method: 'GET', params: { registerId } })

@@ -1,0 +1,63 @@
+server:
+  port: 8099
+
+spring:
+  application:
+    name: ct-viewer-service
+  config:
+    import:
+      - optional:file:../.env
+      - optional:file:./.env
+      - optional:classpath:config/database.yml
+      - optional:file:../config/database.yml
+      - optional:file:./config/database.yml
+      - optional:file:../config/database-secrets.yml
+      - optional:file:./config/database-secrets.yml
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 2GB
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      timeout: 5000ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.xikang.ctviewer: DEBUG
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.xikang.ctviewer.entity
+  configuration:
+    map-underscore-to-camel-case: true
+
+jwt:
+  secret: ${JWT_SECRET:xikang-cloud-hospital-secret-key-for-jwt-token-generation}
+  defaultExpirationMs: 86400000
+
+ct-viewer:
+  work-dir: ${CT_VIEWER_WORK_DIR:./data/ct-viewer}
+  volume-ttl-seconds: ${CT_VIEWER_VOLUME_TTL:7200}
+  cleanup-interval-ms: 300000
+  algo:
+    base-url: ${CT_VIEWER_ALGO_URL:http://127.0.0.1:8106}
+    connect-timeout-ms: 30000
+    read-timeout-ms: 600000
+  ai-ct:
+    base-url: ${AI_CT_SERVICE_URL:http://127.0.0.1:8105}
+    connect-timeout-ms: 30000
+    read-timeout-ms: 180000
+  internal:
+    token: ${INTERNAL_SERVICE_TOKEN:${INTERNAL_AI_TOKEN:}}

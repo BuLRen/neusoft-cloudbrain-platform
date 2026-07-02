@@ -32,11 +32,13 @@ import MedtechItemsManagement from '@/modules/admin/pages/MedtechItemsManagement
 import OperationsCenter from '@/modules/admin/pages/OperationsCenter.vue'
 import PaymentBillManagement from '@/modules/admin/pages/PaymentBillManagement.vue'
 import PaymentBillChargePage from '@/modules/admin/pages/PaymentBillChargePage.vue'
+import CtImagingAuditPage from '@/modules/admin/pages/CtImagingAuditPage.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
 import PhysicianAiAssistantPage from '@/modules/physician/pages/PhysicianAiAssistantPage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
 import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.vue'
 import PhysicianResultsPage from '@/modules/physician/pages/PhysicianResultsPage.vue'
+import PhysicianCtExamPage from '@/modules/physician/pages/PhysicianCtExamPage.vue'
 import PhysicianDiagnosisPage from '@/modules/physician/pages/PhysicianDiagnosisPage.vue'
 import PhysicianPrescriptionPage from '@/modules/physician/pages/PhysicianPrescriptionPage.vue'
 import MedtechCheckQueuePage from '@/modules/medtech/pages/MedtechCheckQueuePage.vue'
@@ -138,6 +140,44 @@ const patientRoutes: RouteRecordRaw[] = [
   },
 ]
 
+const ctExamRoutes: RouteRecordRaw[] = [
+  {
+    path: '/medtech/ct-exam',
+    component: () => import('@/modules/medtech/layouts/CtExamLayout.vue'),
+    meta: { requiresAuth: true, roles: ['medtech', 'admin'], hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'MedtechCtExam',
+        component: () => import('@/modules/medtech/pages/CtExamViewerPage.vue'),
+        meta: { title: 'CT 影像检查', requiresAuth: true, roles: ['medtech', 'admin'], hidden: true },
+      },
+    ],
+  },
+]
+
+const physicianCtExamRoutes: RouteRecordRaw[] = [
+  {
+    path: '/physician/ct-exam',
+    component: () => import('@/modules/medtech/layouts/CtExamLayout.vue'),
+    meta: { requiresAuth: true, roles: ['physician', 'admin'], hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'PhysicianCtExam',
+        component: PhysicianCtExamPage,
+        meta: {
+          title: 'CT 阅片',
+          requiresAuth: true,
+          requiresEncounter: true,
+          roles: ['physician', 'admin'],
+          hidden: true,
+        },
+      },
+    ],
+  },
+]
+
 const placeholder = RoutePlaceholder
 
 export const routes: RouteRecordRaw[] = [
@@ -156,6 +196,8 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '全院候诊大屏', hidden: true },
   },
   ...patientRoutes,
+  ...ctExamRoutes,
+  ...physicianCtExamRoutes,
   {
     path: '/login',
     name: 'Login',
@@ -410,6 +452,12 @@ export const routes: RouteRecordRaw[] = [
             name: 'OperationsCenter',
             component: OperationsCenter,
             meta: { title: '运营中心', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'ct-imaging-audit',
+            name: 'CtImagingAudit',
+            component: CtImagingAuditPage,
+            meta: { title: 'CT 影像审计', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
             path: 'payment-bills',

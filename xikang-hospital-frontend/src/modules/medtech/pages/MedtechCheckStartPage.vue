@@ -11,6 +11,11 @@ import {
   resolveSimulationDisplayOutput,
   type SimulatedCheckStructuredOutput,
 } from '@/shared/types/simulatedCheckResult'
+import {
+  clearCtDraft,
+  isCtCheck,
+  loadCtDraft,
+} from '@/modules/medtech/composables/useCtCheckContext'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
 
 const route = useRoute()
@@ -30,19 +35,36 @@ const structuredOutput = ref<SimulatedCheckStructuredOutput | null>(null)
 const dialogVisible = ref(false)
 
 const id = computed(() => Number(route.query.id || 0))
-const isCt = computed(() => {
-  const code = report.value?.aiCategoryCode ?? ''
-  return code.startsWith('imaging_ct')
-})
-const canSimulate = computed(() => started.value && !loading.value && !simulating.value && report.value?.paid !== false)
+const phase = computed(() => String(route.query.phase || ''))
+const isSubmitPhase = computed(() => phase.value === 'submit')
+const isCt = computed(() => isCtCheck(report.value ?? {}))
+const isCtSubmit = computed(() => isCt.value && isSubmitPhase.value)
+
+const canSimulate = computed(
+  () =>
+    !isCt.value &&
+    started.value &&
+    !loading.value &&
+    !simulating.value &&
+    report.value?.paid !== false,
+)
 const canSubmit = computed(() => started.value && !!schema.value && !loading.value && !simulating.value && report.value?.paid !== false)
+
+const pageTitle = computed(() => (isCtSubmit.value ? '录入检查结果' : '开始检查'))
+const pageDescription = computed(() => {
+  if (isCtSubmit.value) {
+    return '确认 CT 影像分析结果，修改后提交检查报告。'
+  }
+  return '确认申请信息，运行模拟检查后录入并提交检查结果。'
+})
+
 function hasDisplayableStructuredOutput(data: SimulatedCheckStructuredOutput | null): boolean {
   if (!data) return false
   if ((data.resultItems?.length ?? 0) > 0) return true
   return !!data.conclusion?.trim() || !!data.checkName?.trim()
 }
 
-const canViewResult = computed(() => !isCt.value && hasDisplayableStructuredOutput(structuredOutput.value))
+const canViewResult = computed(() => hasDisplayableStructuredOutput(structuredOutput.value))
 const dialogTitle = computed(() =>
   structuredOutput.value?.checkName ? `${structuredOutput.value.checkName} 模拟结果` : '模拟检查结果',
 )
@@ -53,12 +75,32 @@ async function loadPage() {
   errorMessage.value = ''
   try {
     report.value = await medtechApi.checkReport(id.value)
+
+    if (isCtCheck(report.value) && !isSubmitPhase.value) {
+      router.replace({ path: '/medtech/ct-exam', query: { id: String(id.value) } })
+      return
+    }
+
     schema.value = await resultFormApi.resolveCheckForm({ checkRequestId: id.value })
     formValues.value = { ...(schema.value.existingValues ?? {}) }
 
     if (report.value.paid === false) {
       errorMessage.value = '患者尚未支付检查费，请提醒患者先完成缴费后再执行'
       started.value = false
+      return
+    }
+
+    if (isCtCheck(report.value) && isSubmitPhase.value) {
+      const draft = loadCtDraft(id.value)
+      if (draft?.simulatedValues) {
+        formValues.value = { ...formValues.value, ...draft.simulatedValues }
+      }
+      if (report.value.checkState !== '检查中') {
+        errorMessage.value = `当前状态为「${report.value.checkState ?? report.value.statusText ?? '未知'}」，无法录入结果`
+        started.value = false
+        return
+      }
+      started.value = true
       return
     }
 
@@ -83,9 +125,7 @@ async function runSimulation() {
   simulateError.value = ''
   structuredOutput.value = null
   try {
-    const result = isCt.value
-      ? await medtechApi.ctInferCheck(id.value)
-      : await medtechApi.simulateCheck(id.value, { normal_status: isNormal.value })
+    const result = await medtechApi.simulateCheck(id.value, { normal_status: isNormal.value })
 
     structuredOutput.value = resolveSimulationDisplayOutput(result, {
       defaultCheckName: report.value?.techName,
@@ -93,9 +133,7 @@ async function runSimulation() {
     if (result.simulatedValues) {
       formValues.value = { ...formValues.value, ...result.simulatedValues }
     }
-    if (isCt.value) {
-      ElMessage.success('CT 影像分析完成，请确认后提交')
-    } else if (result.source === 'workflow') {
+    if (result.source === 'workflow') {
       ElMessage.success('模拟检查完成（Dify 工作流），请确认后提交')
       openResultDialog()
     } else {
@@ -104,7 +142,7 @@ async function runSimulation() {
       openResultDialog()
     }
   } catch {
-    simulateError.value = isCt.value ? 'CT 影像分析失败，请稍后重试或手动录入' : '模拟检查失败，请稍后重试或手动录入'
+    simulateError.value = '模拟检查失败，请稍后重试或手动录入'
   } finally {
     simulating.value = false
   }
@@ -115,6 +153,10 @@ function openResultDialog() {
   dialogVisible.value = true
 }
 
+function goBackToCtExam() {
+  router.push({ path: '/medtech/ct-exam', query: { id: String(id.value) } })
+}
+
 async function submit() {
   if (!id.value || !schema.value) return
   const valid = await formRef.value?.validate()
@@ -123,6 +165,9 @@ async function submit() {
   loading.value = true
   try {
     await medtechApi.submitCheckResult(id.value, { values: formValues.value })
+    if (isCtSubmit.value) {
+      clearCtDraft(id.value)
+    }
     ElMessage.success('检查结果已提交')
     router.push('/medtech/check-queue')
   } finally {
@@ -139,8 +184,8 @@ onMounted(() => {
   <MedtechStepLayout
     :step="2"
     :total-steps="2"
-    title="开始检查"
-    description="确认申请信息，运行模拟检查或 CT 分析，录入并提交检查结果。"
+    :title="pageTitle"
+    :description="pageDescription"
     prev-path="/medtech/check-queue"
   >
     <ElEmpty v-if="!id" description="请从医技申请列表选择一条检查记录" />
@@ -168,23 +213,27 @@ onMounted(() => {
         </ElDescriptions>
       </section>
 
-      <section v-if="started && schema" class="action-section">
+      <section v-if="isCtSubmit && started" class="action-section">
+        <ElAlert
+          type="success"
+          title="CT 影像分析已完成，请确认下方结果并提交。"
+          show-icon
+          :closable="false"
+          class="section-alert"
+        />
+        <ElButton text type="primary" @click="goBackToCtExam">返回 CT 阅片页</ElButton>
+      </section>
+
+      <section v-if="started && schema && !isCt" class="action-section">
         <h3 class="section-title">检查执行</h3>
-        <p class="action-hint">
-          {{ isCt ? 'CT 影像使用专用分析引擎，不走工作流模拟。' : '运行模拟检查工作流生成初步结果，可在下方修改后提交。' }}
-        </p>
-        <div v-if="!isCt" class="simulate-options">
+        <p class="action-hint">运行模拟检查工作流生成初步结果，可在下方修改后提交。</p>
+        <div class="simulate-options">
           <span class="simulate-options__label">模拟为正常结果</span>
           <ElSwitch v-model="isNormal" :disabled="simulating" />
         </div>
         <div class="action-buttons">
-          <ElButton
-            type="primary"
-            :loading="simulating"
-            :disabled="!canSimulate"
-            @click="runSimulation"
-          >
-            {{ isCt ? '运行 CT 影像分析' : '运行模拟检查' }}
+          <ElButton type="primary" :loading="simulating" :disabled="!canSimulate" @click="runSimulation">
+            运行模拟检查
           </ElButton>
           <ElButton v-if="canViewResult" @click="openResultDialog">查看结果</ElButton>
         </div>

@@ -8,6 +8,7 @@ const props = defineProps<{
   fields: ResultFormField[]
   modelValue: Record<string, unknown>
   baseFieldCount?: number
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -76,15 +77,28 @@ watch(
 )
 
 async function validate() {
-  if (!formRef.value) return true
+  if (props.readonly || !formRef.value) return true
   return formRef.value.validate().then(() => true).catch(() => false)
+}
+
+function displayValue(fieldKey: string): string {
+  const raw = localModel[fieldKey]
+  if (raw == null || String(raw).trim() === '') return '-'
+  return String(raw)
 }
 
 defineExpose({ validate })
 </script>
 
 <template>
-  <ElForm ref="formRef" :model="localModel" :rules="rules" label-position="top" class="dynamic-result-form">
+  <ElForm
+    v-if="!readonly"
+    ref="formRef"
+    :model="localModel"
+    :rules="rules"
+    label-position="top"
+    class="dynamic-result-form"
+  >
     <section v-if="baseFields.length" class="dynamic-result-form__section">
       <h4 v-if="extensionFields.length" class="dynamic-result-form__section-title">基础字段</h4>
       <div class="dynamic-result-form__grid">
@@ -145,6 +159,35 @@ defineExpose({ validate })
       </div>
     </section>
   </ElForm>
+
+  <div v-else class="dynamic-result-form dynamic-result-form--readonly">
+    <section v-if="baseFields.length" class="dynamic-result-form__section">
+      <h4 v-if="extensionFields.length" class="dynamic-result-form__section-title">基础字段</h4>
+      <dl class="dynamic-result-form__readonly-list">
+        <div
+          v-for="field in baseFields"
+          :key="field.fieldKey"
+          class="dynamic-result-form__readonly-row"
+        >
+          <dt>{{ field.fieldLabel }}</dt>
+          <dd>{{ displayValue(field.fieldKey) }}</dd>
+        </div>
+      </dl>
+    </section>
+    <section v-if="extensionFields.length" class="dynamic-result-form__section">
+      <h4 class="dynamic-result-form__section-title">项目扩展字段</h4>
+      <dl class="dynamic-result-form__readonly-list">
+        <div
+          v-for="field in extensionFields"
+          :key="field.fieldKey"
+          class="dynamic-result-form__readonly-row"
+        >
+          <dt>{{ field.fieldLabel }}</dt>
+          <dd>{{ displayValue(field.fieldKey) }}</dd>
+        </div>
+      </dl>
+    </section>
+  </div>
 </template>
 
 <style scoped>
@@ -171,5 +214,24 @@ defineExpose({ validate })
 
 .dynamic-result-form__control {
   width: 100%;
+}
+
+.dynamic-result-form__readonly-list {
+  margin: 0;
+}
+
+.dynamic-result-form__readonly-row + .dynamic-result-form__readonly-row {
+  margin-block-start: var(--space-3);
+}
+
+.dynamic-result-form__readonly-row dt {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.dynamic-result-form__readonly-row dd {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  line-height: 1.55;
 }
 </style>

@@ -1,6 +1,5 @@
 package com.xikang.registration.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.registration.entity.Register;
 import com.xikang.registration.feign.AuthPatientFeignClient;
@@ -8,13 +7,9 @@ import com.xikang.registration.feign.PaymentFeignClient;
 import com.xikang.registration.mapper.RegistrationMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,14 +23,11 @@ import java.util.Map;
 public class AdminPaymentService {
 
     private static final String COUNTER_OPERATOR = "现场收费窗口";
-    private static final ObjectMapper DEBUG_OBJECT_MAPPER = new ObjectMapper();
-    private static final Path DEBUG_LOG_PATH = Path.of("/Users/zanderc/Code/neusoft-cloudbrain-platform/neusoft-cloudbrain-platform/.cursor/debug-02f0a8.log");
 
     private final PaymentFeignClient paymentFeignClient;
     private final AuthPatientFeignClient authPatientFeignClient;
     private final ChargeService chargeService;
     private final RegistrationMapper registrationMapper;
-    private final Environment environment;
 
     public Map<String, Object> listPaymentOrders(
         String keyword,
@@ -65,17 +57,7 @@ public class AdminPaymentService {
 
     /** 以挂号表 patient_id 为准，避免 payment 侧误用挂号号作为患者 ID。 */
     private void applyRegisterPatientInfo(Map<String, Object> detail, Long registerId) {
-        Object detailPatientIdBefore = detail.get("patientId");
         Register register = registrationMapper.selectById(registerId);
-        // region agent log
-        debugLog("initial", "H1,H3,H4", "AdminPaymentService.java:applyRegisterPatientInfo",
-            "registration resolved patient id from register", debugData(
-                "registerId", registerId,
-                "registerFound", register != null,
-                "registerPatientId", register != null ? register.getPatientId() : null,
-                "detailPatientIdBefore", detailPatientIdBefore
-            ));
-        // endregion
         if (register == null) {
             return;
         }
@@ -124,14 +106,6 @@ public class AdminPaymentService {
             return unwrapData(authPatientFeignClient.getBalance(patientId));
         } catch (BusinessException e) {
             if (e.getCode() == 404) {
-                // region agent log
-                debugLog("initial", "H1,H2,H3", "AdminPaymentService.java:fetchPatientBalanceOrZero",
-                    "registration auth balance returned patient missing", debugData(
-                        "patientId", patientId,
-                        "code", e.getCode(),
-                        "authServiceUrl", environment.getProperty("auth.service.url", "http://localhost:8081")
-                    ));
-                // endregion
                 log.warn("患者余额查询失败（患者档案不存在）| patientId={}", patientId);
                 Map<String, Object> fallback = new LinkedHashMap<>();
                 fallback.put("patientId", patientId);
@@ -167,15 +141,6 @@ public class AdminPaymentService {
         String operatorName
     ) {
         Integer patientId = requirePatientIdFromRegister(registerId);
-        // region agent log
-        debugLog("initial", "H1,H2,H3,H4", "AdminPaymentService.java:rechargeByRegister",
-            "registration recharge will call auth", debugData(
-                "registerId", registerId,
-                "patientId", patientId,
-                "authServiceUrl", environment.getProperty("auth.service.url", "http://localhost:8081"),
-                "activeProfiles", String.join(",", environment.getActiveProfiles())
-            ));
-        // endregion
         return rechargePatient(patientId, amount, remark, operatorId, operatorName);
     }
 
@@ -331,30 +296,6 @@ public class AdminPaymentService {
             return (List<Map<String, Object>>) (List<?>) list;
         }
         return List.of();
-    }
-
-    private static Map<String, Object> debugData(Object... values) {
-        Map<String, Object> data = new LinkedHashMap<>();
-        for (int i = 0; i + 1 < values.length; i += 2) {
-            data.put(String.valueOf(values[i]), values[i + 1]);
-        }
-        return data;
-    }
-
-    private static void debugLog(String runId, String hypothesisId, String location, String message, Map<String, Object> data) {
-        try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("sessionId", "02f0a8");
-            payload.put("runId", runId);
-            payload.put("hypothesisId", hypothesisId);
-            payload.put("location", location);
-            payload.put("message", message);
-            payload.put("data", data);
-            payload.put("timestamp", System.currentTimeMillis());
-            Files.writeString(DEBUG_LOG_PATH, DEBUG_OBJECT_MAPPER.writeValueAsString(payload) + System.lineSeparator(),
-                StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-        } catch (Exception ignored) {
-        }
     }
 
     @SuppressWarnings("unchecked")
