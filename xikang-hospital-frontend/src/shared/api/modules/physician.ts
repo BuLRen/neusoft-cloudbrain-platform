@@ -1,4 +1,7 @@
+import { blobClient } from '../blobClient'
 import { http } from '../request'
+import type { CtAnalyzeResult, CtVolumeMeta } from './ctViewer'
+import type { ResultFormSchema } from '@/shared/types/resultForm'
 
 /** Dify 初步诊断 blocking 调用超时（与后端 read-timeout-ms 一致） */
 const PRELIMINARY_AI_TIMEOUT_MS = 5 * 60 * 1000
@@ -182,11 +185,19 @@ export interface AiExamAnalysis {
 export interface CheckResult {
   id: number
   techName: string
+  aiCategoryCode?: string
   checkPosition?: string
   checkResult?: string
   checkState?: string
   checkTime?: string
   checkRemark?: string
+  hasImaging?: boolean
+  imagingVolumeId?: string
+  imagingUploadedAt?: string
+  imagingSourceName?: string
+  imagingAnalyzedAt?: string
+  hasImagingAnalysis?: boolean
+  imagingAnalysisResult?: CtAnalyzeResult | null
   aiAnalysis?: AiExamAnalysis | null
 }
 
@@ -513,6 +524,20 @@ export const physicianApi = {
   checkResults(registerId: number) {
     return http<CheckResult[]>({ url: '/physician/check-results', method: 'GET', params: { registerId } })
   },
+  fetchCheckImagingNrrd(checkRequestId: number) {
+    return blobClient
+      .get<ArrayBuffer>(`/physician/check/${checkRequestId}/imaging/nrrd`, {
+        responseType: 'arraybuffer',
+        timeout: 10 * 60 * 1000,
+      })
+      .then((response) => response.data)
+  },
+  fetchCheckImagingMeta(checkRequestId: number) {
+    return http<CtVolumeMeta>({ url: `/physician/check/${checkRequestId}/imaging/meta`, method: 'GET' })
+  },
+  resolveCheckResultForm(checkRequestId: number) {
+    return http<ResultFormSchema>({ url: `/physician/check/${checkRequestId}/result-form`, method: 'GET' })
+  },
   inspectionResults(registerId: number) {
     return http<InspectionResult[]>({ url: '/physician/inspection-results', method: 'GET', params: { registerId } })
   },
@@ -550,5 +575,47 @@ export const physicianApi = {
   },
   diagnosisSuggestions(registerId: number) {
     return http<W4Suggestion[]>({ url: '/physician/ai/diagnosis-suggestions', method: 'GET', params: { registerId }, skipErrorMessage: true })
+  },
+}
+
+// ==================== 叫号系统（设计文档 §4.1）====================
+
+export interface CallingResult {
+  registerId: number
+  patientName?: string
+  caseNumber?: string
+  callStatus?: number      // 0未叫/1已叫/2已应答/3过号
+  callRound?: number       // 1 或 2
+  calledTime?: string
+  answeredTime?: string
+  departmentId?: number
+  departmentName?: string
+  doctorId?: number
+  doctorName?: string
+  queueNumber?: number
+  waitingBefore?: number
+  hasCalling?: boolean     // 仅 currentCalling 接口返回
+}
+
+export const callingApi = {
+  /** 叫下一个 */
+  callNext() {
+    return http<CallingResult>({ url: '/physician/call/next', method: 'POST' })
+  },
+  /** 指定叫号（重叫过号常用） */
+  callSpecific(registerId: number) {
+    return http<CallingResult>({ url: `/physician/call/${registerId}`, method: 'POST' })
+  },
+  /** 患者应答（进诊室） */
+  answer(registerId: number) {
+    return http<CallingResult>({ url: `/physician/call/${registerId}/answer`, method: 'POST' })
+  },
+  /** 标记过号 */
+  pass(registerId: number) {
+    return http<CallingResult>({ url: `/physician/call/${registerId}/pass`, method: 'POST' })
+  },
+  /** 查当前叫号 */
+  currentCalling() {
+    return http<CallingResult>({ url: '/physician/call/current', method: 'GET' })
   },
 }

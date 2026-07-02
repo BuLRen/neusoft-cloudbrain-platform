@@ -208,12 +208,18 @@ public class CheckSimulationOutputMapper {
         Map<String, Object> values = new LinkedHashMap<>();
         String findings = asString(ctResult.get("resultText"));
         String impression = asString(ctResult.get("aiImpression"));
+        String conclusion = firstNonBlank(
+            asString(ctResult.get("aiConclusion")),
+            impression == null ? null : impression + " 建议结合临床综合判断。"
+        );
         if (findings != null) {
             values.put("findings", findings);
         }
         if (impression != null) {
             values.put("impression", impression);
-            values.put("conclusion", impression);
+        }
+        if (conclusion != null) {
+            values.put("conclusion", conclusion);
         }
         return values;
     }

@@ -1,6 +1,5 @@
 package com.xikang.physician.config;
 
-import com.xikang.physician.agent.InternalAiAuthInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -9,23 +8,28 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class PhysicianWebMvcConfig implements WebMvcConfigurer {
 
     private final PhysicianAuthInterceptor physicianAuthInterceptor;
-    private final InternalAiAuthInterceptor internalAiAuthInterceptor;
+    private final InternalServiceAuthInterceptor internalServiceAuthInterceptor;
+    private final InternalAgentContextInterceptor internalAgentContextInterceptor;
 
     public PhysicianWebMvcConfig(
         PhysicianAuthInterceptor physicianAuthInterceptor,
-        InternalAiAuthInterceptor internalAiAuthInterceptor
+        InternalServiceAuthInterceptor internalServiceAuthInterceptor,
+        InternalAgentContextInterceptor internalAgentContextInterceptor
     ) {
         this.physicianAuthInterceptor = physicianAuthInterceptor;
-        this.internalAiAuthInterceptor = internalAiAuthInterceptor;
+        this.internalServiceAuthInterceptor = internalServiceAuthInterceptor;
+        this.internalAgentContextInterceptor = internalAgentContextInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(internalAiAuthInterceptor)
-            .addPathPatterns("/api/physician/agent/tools/**");
+        registry.addInterceptor(internalServiceAuthInterceptor)
+            .addPathPatterns("/api/physician/internal/**");
+        registry.addInterceptor(internalAgentContextInterceptor)
+            .addPathPatterns("/api/physician/internal/**");
 
         registry.addInterceptor(physicianAuthInterceptor)
             .addPathPatterns("/api/physician/**")
-            .excludePathPatterns("/actuator/**", "/api/physician/agent/tools/**");
+            .excludePathPatterns("/actuator/**", "/api/physician/internal/**");
     }
 }

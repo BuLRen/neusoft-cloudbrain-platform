@@ -87,13 +87,22 @@ public class PaymentController {
     @GetMapping("/internal/items/by-register")
     public Result<Map<String, Object>> getItemByRegister(
             @RequestParam Long registerId,
-            @RequestParam String itemCode) {
-        List<Map<String, Object>> all = paymentService.queryRecords(null, registerId, null, null, null);
-        Map<String, Object> hit = all.stream()
-                .filter(m -> itemCode.equals(m.get("itemCode")))
-                .reduce((a, b) -> b) // 取最新一条
-                .orElse(null);
-        return Result.success(hit);
+            @RequestParam String itemCode,
+            @RequestParam(required = false) Long sourceId) {
+        return Result.success(paymentService.getItemByRegisterAndSource(registerId, itemCode, sourceId));
+    }
+
+    @GetMapping("/internal/check-paid/register/{registerId}")
+    public Result<Map<String, Object>> checkPaidByRegister(@PathVariable Long registerId) {
+        return Result.success(paymentService.checkPaidByRegister(registerId));
+    }
+
+    @GetMapping("/internal/check-paid/item")
+    public Result<Map<String, Object>> checkPaidByItem(
+            @RequestParam Long registerId,
+            @RequestParam String itemCode,
+            @RequestParam Long sourceId) {
+        return Result.success(paymentService.checkPaidByItem(registerId, itemCode, sourceId));
     }
 
     @GetMapping("/internal/items/summary")
@@ -137,6 +146,24 @@ public class PaymentController {
     public Result<List<Map<String, Object>>> dailyCharges(@RequestParam LocalDate startDate,
                                                           @RequestParam LocalDate endDate) {
         return Result.success(paymentService.dailyCharges(startDate, endDate));
+    }
+
+    @GetMapping("/internal/admin/orders")
+    public Result<Map<String, Object>> listAdminOrders(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long patientId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return Result.success(paymentService.listAdminOrders(
+            keyword, patientId, status, startDate, endDate, page, size));
+    }
+
+    @GetMapping("/internal/admin/orders/{registerId}")
+    public Result<Map<String, Object>> getAdminOrderDetail(@PathVariable Long registerId) {
+        return Result.success(paymentService.getOrderDetail(registerId));
     }
 
     // ============================================================

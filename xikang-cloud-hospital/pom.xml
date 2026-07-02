@@ -25,6 +25,7 @@
         <module>auth-service</module>
         <module>registration-service</module>
         <module>physician-service</module>
+        <module>physician-ai-service</module>
         <module>medtech-service</module>
         <module>pharmacy-service</module>
         <module>payment-service</module>
@@ -35,6 +36,7 @@
         <module>ai-diagnosis-service</module>
         <module>ai-pharmacy-service</module>
         <module>ai-catalog-service</module>
+        <module>ct-viewer-service</module>
     </modules>
 
     <properties>

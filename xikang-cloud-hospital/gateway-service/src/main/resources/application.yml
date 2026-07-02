@@ -20,6 +20,14 @@ spring:
           uri: lb://registration-service
           predicates:
             - Path=/api/registration/**
+        - id: physician-ai-service-copilot
+          uri: lb://physician-ai-service
+          predicates:
+            - Path=/api/physician/copilot/**
+        - id: physician-ai-service-ai
+          uri: lb://physician-ai-service
+          predicates:
+            - Path=/api/physician/ai/**
         - id: physician-service
           uri: lb://physician-service
           predicates:
@@ -28,6 +36,10 @@ spring:
           uri: lb://medtech-service
           predicates:
             - Path=/api/medtech/**
+        - id: ct-viewer-service
+          uri: lb://ct-viewer-service
+          predicates:
+            - Path=/api/ct-viewer/**
         - id: pharmacy-service
           uri: lb://pharmacy-service
           predicates:

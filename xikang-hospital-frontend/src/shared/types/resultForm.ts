@@ -37,6 +37,19 @@ export interface ResultPayload {
   legacyText?: string
 }
 
+const CT_FIELD_LABELS: Record<string, string> = {
+  findings: '所见',
+  impression: '印象',
+  conclusion: '结论',
+}
+
+export function resolveResultFieldLabel(categoryCode: string | undefined, fieldKey: string): string {
+  if (categoryCode === 'imaging_ct' || fieldKey in CT_FIELD_LABELS) {
+    return CT_FIELD_LABELS[fieldKey] ?? fieldKey
+  }
+  return fieldKey
+}
+
 export function parseResultPayload(raw?: string | null): ResultPayload | null {
   if (!raw?.trim()) return null
   const trimmed = raw.trim()
@@ -79,6 +92,16 @@ export function formatPrimaryResultSummary(
     return String(primary).trim()
   }
 
+  if (payload.categoryCode === 'imaging_ct' && payload.values) {
+    for (const key of ['conclusion', 'impression', 'findings'] as const) {
+      const value = payload.values[key]
+      if (value != null && String(value).trim()) {
+        const text = String(value).trim()
+        return text.length > 80 ? `${text.slice(0, 80)}…` : text
+      }
+    }
+  }
+
   if (raw?.trim().startsWith('{')) {
     try {
       const data = JSON.parse(raw.trim()) as Record<string, unknown>
@@ -104,7 +127,12 @@ export function resultPayloadEntries(raw?: string | null): Array<{ key: string; 
     return [{ key: 'checkResult', label: '检查结果', value: payload.legacyText }]
   }
   const values = payload.values ?? {}
+  const categoryCode = payload.categoryCode
   return Object.entries(values)
     .filter(([, value]) => value != null && String(value).trim())
-    .map(([key, value]) => ({ key, label: key, value: String(value) }))
+    .map(([key, value]) => ({
+      key,
+      label: resolveResultFieldLabel(categoryCode, key),
+      value: String(value),
+    }))
 }

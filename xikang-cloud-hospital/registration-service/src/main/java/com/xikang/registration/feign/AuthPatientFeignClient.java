@@ -5,7 +5,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -14,8 +16,18 @@ import java.util.Map;
 @FeignClient(name = "auth-service", url = "${auth.service.url:http://localhost:8081}")
 public interface AuthPatientFeignClient {
 
+    @GetMapping("/api/patient/search")
+    Map<String, Object> searchPatients(@RequestParam("keyword") String keyword,
+                                       @RequestParam(value = "limit", defaultValue = "20") int limit);
+
     @GetMapping("/api/patient/{patientId}")
     Map<String, Object> getPatient(@PathVariable("patientId") Integer patientId);
+
+    @GetMapping("/api/patient/{patientId}/balance")
+    Map<String, Object> getBalance(@PathVariable("patientId") Integer patientId);
+
+    @PostMapping("/api/patient/{patientId}/balance/recharge")
+    Map<String, Object> rechargeBalance(@PathVariable("patientId") Integer patientId, @RequestBody Map<String, Object> body);
 
     @PostMapping("/api/patient/{patientId}/balance/deduct")
     Map<String, Object> deductBalance(@PathVariable("patientId") Integer patientId, @RequestBody Map<String, Object> body);

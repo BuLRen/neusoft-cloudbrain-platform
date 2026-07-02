@@ -269,6 +269,10 @@ const scheduleLoading = ref(false)
 const scheduleDate = ref(formatDate(new Date()))
 const defaultSettleCategoryId = ref<number>()
 
+// 挂号向导日期选择器最小值：禁止选今天之前的日期（过去日期不能挂号）
+// 用计算属性保证页面长时间开着也能自动更新到"今天"
+const todayStr = computed(() => formatDate(new Date()))
+
 function formatDate(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -917,7 +921,43 @@ async function onScheduleDateChange() {
   await loadAvailableSchedules()
 }
 
+/**
+ * 判断某条排班的就诊时段是否已过。
+ * 后端爽约判定 / 挂号校验都用同一套规则：
+ *   上午号 → 当天 12:00 截止
+ *   下午号 → 当天 18:00 截止
+ *   其他   → 当天 22:00 兜底
+ *
+ * 前端置灰用同一套规则，避免"前端能点，后端拒"的体验断层。
+ */
+function isScheduleExpired(schedule: any): boolean {
+  if (!schedule?.workDate) return false
+  // workDate 形如 "2026-07-02"，可能带时间，统一只取日期部分
+  const dayStr = String(schedule.workDate).slice(0, 10)
+  const today = new Date()
+  const todayStr = today.toISOString().slice(0, 10)
+
+  // 未来日期 → 永远不过期
+  if (dayStr > todayStr) return false
+
+  // 过去日期 → 已过期
+  if (dayStr < todayStr) return true
+
+  // 当天 → 按时段判定
+  const hour = today.getHours()
+  const slot = schedule.timeSlot
+  if (slot === '上午') return hour >= 12
+  if (slot === '下午') return hour >= 18
+  // 兜底（系统无晚上号，万一出现按 22 点处理）
+  return hour >= 22
+}
+
 function selectSchedule(schedule: any) {
+  // 过期时段拦截（与置灰显示配合，防误点）
+  if (isScheduleExpired(schedule)) {
+    ElMessage.warning('该时段已过截止时间，无法挂号')
+    return
+  }
   if (!schedule.registLevelId) {
     ElMessage.warning('该排班缺少挂号级别，暂不能选择')
     return
@@ -1386,7 +1426,13 @@ const showSuccessCard = computed(() => {
 
         <div class="schedule-filter">
           <label>就诊日期</label>
-          <input v-model="scheduleDate" class="form-input" type="date" @change="onScheduleDateChange" />
+          <input
+            v-model="scheduleDate"
+            class="form-input"
+            type="date"
+            :min="todayStr"
+            @change="onScheduleDateChange"
+          />
           <button class="btn-outline" :disabled="scheduleLoading" @click="loadAvailableSchedules">
             {{ scheduleLoading ? '加载中...' : '刷新排班' }}
           </button>
@@ -1400,7 +1446,10 @@ const showSuccessCard = computed(() => {
             v-for="schedule in availableSchedules"
             :key="schedule.id"
             class="schedule-item"
-            :class="{ 'is-selected': selectedSchedule?.id === schedule.id }"
+            :class="{
+              'is-selected': selectedSchedule?.id === schedule.id,
+              'is-disabled': isScheduleExpired(schedule),
+            }"
             @click="selectSchedule(schedule)"
           >
             <div class="schedule-main">
@@ -1415,7 +1464,10 @@ const showSuccessCard = computed(() => {
               </div>
             </div>
             <div class="schedule-status">
-              <StatusTag :tone="schedule.availableQuota > 10 ? 'success' : 'warning'">
+              <StatusTag v-if="isScheduleExpired(schedule)" tone="danger">
+                已过期
+              </StatusTag>
+              <StatusTag v-else :tone="schedule.availableQuota > 10 ? 'success' : 'warning'">
                 剩余 {{ schedule.availableQuota }} 个号
               </StatusTag>
               <span v-if="selectedSchedule?.id === schedule.id" class="selected-badge">已选</span>
@@ -2845,6 +2897,18 @@ const showSuccessCard = computed(() => {
   border-color: transparent;
   background: linear-gradient(135deg, rgba(31, 140, 255, 0.06) 0%, rgba(47, 216, 196, 0.04) 100%);
   box-shadow: 0 0 0 2px var(--color-primary), 0 8px 20px rgba(31, 140, 255, 0.18);
+}
+
+/* 过期时段：置灰显示但保留可见，让用户知道该时段存在但已过截止时间 */
+.schedule-item.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+.schedule-item.is-disabled:hover {
+  border-color: var(--color-border);
+  transform: none;
+  box-shadow: var(--shadow-sm);
 }
 
 .schedule-main {

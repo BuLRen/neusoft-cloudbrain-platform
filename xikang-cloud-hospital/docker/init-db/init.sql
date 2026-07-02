@@ -471,6 +471,7 @@ CREATE TABLE expense_record (
     operator_id     BIGINT          DEFAULT NULL,
     operator_name   VARCHAR(64)     DEFAULT NULL,
     remark          VARCHAR(255)    DEFAULT NULL,
+    source_id       INTEGER         DEFAULT NULL,
     create_time     TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT chk_expense_record_status CHECK (status IN (0, 1, 2, 3)),
@@ -482,8 +483,23 @@ CREATE INDEX idx_expense_record_register_id ON expense_record(register_id);
 CREATE INDEX idx_expense_record_patient_id ON expense_record(patient_id);
 CREATE INDEX idx_expense_record_status ON expense_record(status);
 
+CREATE UNIQUE INDEX uq_expense_record_check_fee
+    ON expense_record (register_id, source_id)
+    WHERE item_code = 'CHECK_FEE';
+
+CREATE UNIQUE INDEX uq_expense_record_inspection_fee
+    ON expense_record (register_id, source_id)
+    WHERE item_code = 'INSPECTION_FEE';
+
+CREATE UNIQUE INDEX uq_expense_record_disposal_fee
+    ON expense_record (register_id, source_id)
+    WHERE item_code = 'DISPOSAL_FEE';
+
+CREATE INDEX idx_expense_record_patient_status ON expense_record(patient_id, status);
+
 COMMENT ON TABLE expense_record IS '费用记录表';
 COMMENT ON COLUMN expense_record.status IS '费用状态: 0-待缴费, 1-已缴费, 2-已退款, 3-已作废';
+COMMENT ON COLUMN expense_record.source_id IS '业务来源ID（check_request.id / inspection_request.id / disposal_request.id）';
 
 -- ============================================================
 -- 表: patient_balance_transaction (患者余额流水表)
@@ -579,6 +595,9 @@ CREATE TABLE check_request (
     check_result            TEXT            DEFAULT NULL,
     check_state             VARCHAR(64)     NOT NULL DEFAULT '待检查',
     check_remark            VARCHAR(512)    DEFAULT NULL,
+    imaging_volume_id       VARCHAR(64)     DEFAULT NULL,
+    imaging_uploaded_at     TIMESTAMP       DEFAULT NULL,
+    imaging_source_name     VARCHAR(255)    DEFAULT NULL,
 
     CONSTRAINT fk_check_request_register
         FOREIGN KEY (register_id) REFERENCES register(id),
@@ -600,6 +619,9 @@ CREATE INDEX idx_check_request_medtech_id ON check_request(medical_technology_id
 
 COMMENT ON TABLE check_request IS '检查申请表';
 COMMENT ON COLUMN check_request.check_state IS '状态: 待检查 → 检查中 → 已完成 / 已归档';
+COMMENT ON COLUMN check_request.imaging_volume_id IS 'ct-viewer-service 返回的 volumeId';
+COMMENT ON COLUMN check_request.imaging_uploaded_at IS '影像绑定时间';
+COMMENT ON COLUMN check_request.imaging_source_name IS '上传来源文件名或 DICOM 序列描述';
 
 -- ============================================================
 -- 表: inspection_request (检验申请表)

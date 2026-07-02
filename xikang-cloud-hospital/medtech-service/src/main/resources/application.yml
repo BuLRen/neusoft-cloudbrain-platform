@@ -39,6 +39,13 @@ logging:
 
     com.xikang.medtech: DEBUG
 
+services:
+  payment-service:
+    url: ${PAYMENT_SERVICE_URL:http://localhost:8096}
+  ct-viewer-service:
+    url: ${CT_VIEWER_SERVICE_URL:http://localhost:8099}
+    internal-token: ${INTERNAL_SERVICE_TOKEN:${INTERNAL_AI_TOKEN:}}
+
 # =============================================================================
 # 业务配置：Dify AI 工作流（模拟检查/检验）
 # =============================================================================

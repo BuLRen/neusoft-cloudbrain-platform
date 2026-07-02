@@ -10,6 +10,8 @@
     <select id="selectBasicByIds" resultType="java.util.LinkedHashMap">
         SELECT
             r.id AS "registerId",
+            r.patient_id AS "patientId",
+            r.real_name AS "patientName",
             d.dept_name AS "departmentName",
             e.realname AS "doctorName",
             r.visit_date AS "visitDate"

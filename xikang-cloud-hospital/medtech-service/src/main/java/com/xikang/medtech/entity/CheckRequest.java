@@ -25,6 +25,11 @@ public class CheckRequest implements Serializable {
     private LocalDateTime creationTime;
     private Long checkEmployeeId;
     private Long inputcheckEmployeeId;
+    private String imagingVolumeId;
+    private LocalDateTime imagingUploadedAt;
+    private String imagingSourceName;
+    private String imagingAnalysisResult;
+    private LocalDateTime imagingAnalyzedAt;
 
     // JOIN 展示字段
     private String caseNumber;

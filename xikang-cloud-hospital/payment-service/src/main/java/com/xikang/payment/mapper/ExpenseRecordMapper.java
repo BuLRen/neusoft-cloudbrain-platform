@@ -38,6 +38,12 @@ public interface ExpenseRecordMapper {
      */
     ExpenseRecord selectRegistrationFeeByRegisterId(Long registerId);
 
+    ExpenseRecord selectByRegisterSourceAndItemCode(@Param("registerId") Long registerId,
+                                                    @Param("sourceId") Long sourceId,
+                                                    @Param("itemCode") String itemCode);
+
+    List<ExpenseRecord> selectPendingByRegisterIdAll(Long registerId);
+
     /**
      * 多条件查询（v3.2 §4.2 internal/records）：patientId/registerId/status/timeRange 任选。
      */
@@ -46,6 +52,14 @@ public interface ExpenseRecordMapper {
                                      @Param("status") Integer status,
                                      @Param("startTime") LocalDateTime startTime,
                                      @Param("endTime") LocalDateTime endTime);
+
+    /**
+     * 管理员订单列表：按 create_time 过滤与关键词搜索（患者姓名 / 挂号号）。
+     */
+    List<ExpenseRecord> selectForAdminOrderList(@Param("keyword") String keyword,
+                                                @Param("patientId") Long patientId,
+                                                @Param("startTime") LocalDateTime startTime,
+                                                @Param("endTime") LocalDateTime endTime);
 
     /**
      * 幂等 INSERT：

@@ -1,6 +1,7 @@
 package com.xikang.physician.service;
 
 import com.xikang.common.exception.BusinessException;
+import com.xikang.common.agent.AgentToolExecutionContext;
 import com.xikang.physician.context.PhysicianAuthContext;
 import com.xikang.physician.mapper.ClinicalRecordMapper;
 import com.xikang.physician.mapper.PhysicianMapper;
@@ -102,6 +103,9 @@ public class ClinicalRecordService {
             return getVisitTimeline(registerId);
         }
         Long employeeId = PhysicianAuthContext.employeeIdOrNull();
+        if (employeeId == null && AgentToolExecutionContext.isActive()) {
+            employeeId = AgentToolExecutionContext.getDoctorId();
+        }
         clinicalRecordMapper.archiveRegister(registerId, employeeId);
         syncProfileOnArchive(header);
         return getVisitTimeline(registerId);
@@ -110,6 +114,18 @@ public class ClinicalRecordService {
     private void assertRegisterAccess(Long registerId) {
         if (registerId == null) {
             throw new BusinessException(400, "挂号记录不存在");
+        }
+        if (AgentToolExecutionContext.isActive()) {
+            Long ownerEmployeeId = physicianMapper.selectRegisterEmployeeId(registerId);
+            if (ownerEmployeeId == null) {
+                throw new BusinessException(400, "挂号记录不存在");
+            }
+            Long contextDoctorId = AgentToolExecutionContext.getDoctorId();
+            if (contextDoctorId != null && !PhysicianAuthContext.isAdminAllAccess()
+                && !ownerEmployeeId.equals(contextDoctorId)) {
+                throw new BusinessException(403, "无权访问该患者");
+            }
+            return;
         }
         if (PhysicianAuthContext.isAdminAllAccess()) {
             return;

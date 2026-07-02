@@ -11,6 +11,7 @@ export interface MedicalTechnologyItem {
   priceType?: string
   deptmentId?: number
   deptName?: string
+  aiCategoryCode?: string
 }
 
 export interface DepartmentOption {
@@ -26,6 +27,7 @@ export type ExaminationItemPayload = {
   techType: 'check' | 'inspection' | 'disposal'
   priceType?: string
   deptmentId?: number
+  aiCategoryCode?: string
 }
 
 export const adminApi = {

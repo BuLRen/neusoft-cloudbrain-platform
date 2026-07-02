@@ -1,0 +1,93 @@
+server:
+  port: 8097
+
+spring:
+  application:
+    name: physician-ai-service
+  config:
+    import:
+      - optional:file:../.env
+      - optional:file:./.env
+      - optional:classpath:config/database.yml
+      - optional:file:../config/database.yml
+      - optional:file:./config/database.yml
+      - optional:file:../config/database-secrets.yml
+      - optional:file:./config/database-secrets.yml
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-chat}
+          temperature: 0.3
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_DISCOVERY_ENABLED:false}
+        register-enabled: ${NACOS_DISCOVERY_ENABLED:false}
+      config:
+        enabled: false
+    service-registry:
+      auto-registration:
+        enabled: ${NACOS_DISCOVERY_ENABLED:false}
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.xikang.physician.copilot.entity,com.xikang.physician.agent.entity
+  configuration:
+    map-underscore-to-camel-case: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.xikang.physician: DEBUG
+
+services:
+  physician-service:
+    url: ${PHYSICIAN_SERVICE_URL:http://localhost:8092}
+
+xikang:
+  ai:
+    dify:
+      enabled: ${DIFY_ENABLED:true}
+      base-url: ${DIFY_BASE_URL:http://localhost}
+      base-url-preliminary: ${DIFY_BASE_URL_PRELIMINARY:https://api.dify.ai}
+      connect-timeout-ms: ${DIFY_CONNECT_TIMEOUT_MS:30000}
+      read-timeout-ms: ${DIFY_READ_TIMEOUT_MS:300000}
+      api-key-preliminary: ${DIFY_API_KEY_PRELIMINARY:}
+      api-key: ${DIFY_API_KEY:}
+      workflow-preliminary: ${DIFY_WORKFLOW_PRELIMINARY:true}
+      preliminary-output-keys:
+        output-structured: ${DIFY_PRELIM_OUTPUT_ROOT:output_structured}
+        diagnosis-text: ${DIFY_PRELIM_OUTPUT_DIAGNOSIS_TEXT:answer}
+        suggested-diseases: ${DIFY_PRELIM_OUTPUT_SUGGESTED_DISEASES:diseaseDetail}
+        diagnosis-basis: ${DIFY_PRELIM_OUTPUT_BASIS:}
+        confidence: ${DIFY_PRELIM_OUTPUT_CONFIDENCE:}
+        parse-json-from-text: true
+      workflow-w2: ${DIFY_WORKFLOW_W2:true}
+      api-key-w2: ${DIFY_API_KEY_W2:}
+      w2-output-keys:
+        output-root: ${DIFY_W2_OUTPUT_ROOT:}
+      workflow-w1: ${DIFY_WORKFLOW_W1:}
+      workflow-w2b: ${DIFY_WORKFLOW_W2B:}
+      workflow-w3: ${DIFY_WORKFLOW_W3:}
+      api-key-w3: ${DIFY_API_KEY_W3:}
+      workflow-w4: ${DIFY_WORKFLOW_W4:true}
+      api-key-w4: ${DIFY_API_KEY_W4:}
+      workflow-w5: ${DIFY_WORKFLOW_W5:true}
+      api-key-w5: ${DIFY_API_KEY_W5:}
+      agent-api-key: ${DIFY_AGENT_API_KEY:}
+      agent-base-url: ${DIFY_AGENT_BASE_URL:${DIFY_BASE_URL:http://localhost}}
+      ct-inference-url: ${CT_INFERENCE_URL:}
+  internal:
+    ai:
+      token: ${INTERNAL_AI_TOKEN:}

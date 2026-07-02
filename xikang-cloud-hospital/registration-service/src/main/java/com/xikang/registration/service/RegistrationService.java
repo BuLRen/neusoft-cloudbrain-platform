@@ -47,6 +47,13 @@ public class RegistrationService {
     private final RefundService refundService;
     private final PaymentFeignClient paymentFeignClient;
 
+    // 时段截止小时（24h）：超过这个时间，该时段未报到即视为爽约
+    // 上午号 → 12:00 截止，下午号 → 18:00 截止
+    // 系统无晚上号，兜底用 22:00
+    private static final int NOON_DEADLINE_HOUR_AM = 12;
+    private static final int NOON_DEADLINE_HOUR_PM = 18;
+    private static final int NOON_DEADLINE_HOUR_FALLBACK = 22;
+
     // 用于生成病历号
     private static final AtomicLong caseCounter = new AtomicLong(System.currentTimeMillis() % 100000);
 
@@ -432,6 +439,17 @@ public class RegistrationService {
         result.put("registerId", id);
         result.put("patientName", register.getRealName());
 
+        // 关联字段：科室名 / 医生名 / 就诊日期 / 时段 / 挂号级别
+        // 复用 toMap 私有方法，内部用 selectById 关联 department/employee/regist_level 表
+        Map<String, Object> detail = toMap(register);
+        result.put("departmentId", register.getDeptmentId());
+        result.put("doctorId", register.getEmployeeId());
+        result.put("departmentName", detail.get("departmentName"));
+        result.put("doctorName", detail.get("physicianName"));
+        result.put("visitDate", detail.get("visitDate"));
+        result.put("noon", detail.get("noon"));
+        result.put("registLevelName", detail.get("registLevelName"));
+
         // 幂等：已报到直接返回原号序
         if (register.getCheckInTime() != null) {
             int before = registrationMapper.countWaitingBefore(id);
@@ -524,6 +542,35 @@ public class RegistrationService {
         if (!timeSlot.equals(visitTime)) {
             throw new BusinessException(400, "排班时段与就诊时段不一致");
         }
+
+        // 时段未过校验：禁止挂"今天且已过截止时间"的号
+        // 例：现在 2026-07-02 13:00，挂今天上午号 → 拒绝
+        LocalDateTime deadline = computeMissDeadline(visitDate.atStartOfDay(), timeSlot);
+        if (LocalDateTime.now().isAfter(deadline)) {
+            throw new BusinessException(400, "该时段已过截止时间，无法挂号（" + timeSlot + " 截止于 " + deadline.toLocalTime() + "）");
+        }
+    }
+
+    /**
+     * 计算挂号记录的"爽约截止时刻"。
+     * 业务规则：
+     *   - 上午号：当天 12:00 之前未报到 → 爽约
+     *   - 下午号：当天 18:00 之前未报到 → 爽约
+     *   - 其他（兜底）：当天 22:00
+     *
+     * 公共方法，挂号校验、爽约定时任务、报到接口均复用本方法，
+     * 保证判定口径一致。
+     *
+     * @param visitDate 挂号记录的 visit_date（实际存当天 00:00:00）
+     * @param noon      时段字符串："上午" / "下午" / 其他
+     */
+    public static LocalDateTime computeMissDeadline(LocalDateTime visitDate, String noon) {
+        int hour = switch (noon == null ? "" : noon) {
+            case "上午" -> NOON_DEADLINE_HOUR_AM;
+            case "下午" -> NOON_DEADLINE_HOUR_PM;
+            default -> NOON_DEADLINE_HOUR_FALLBACK;
+        };
+        return visitDate.toLocalDate().atTime(hour, 0);
     }
 
     private void deductScheduleQuota(Long schedulingId, Long registerId) {

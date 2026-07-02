@@ -30,11 +30,15 @@ import UserPermissionManagement from '@/modules/admin/pages/UserPermissionManage
 import PersonnelManagement from '@/modules/admin/pages/PersonnelManagement.vue'
 import MedtechItemsManagement from '@/modules/admin/pages/MedtechItemsManagement.vue'
 import OperationsCenter from '@/modules/admin/pages/OperationsCenter.vue'
+import PaymentBillManagement from '@/modules/admin/pages/PaymentBillManagement.vue'
+import PaymentBillChargePage from '@/modules/admin/pages/PaymentBillChargePage.vue'
+import CtImagingAuditPage from '@/modules/admin/pages/CtImagingAuditPage.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
 import PhysicianAiAssistantPage from '@/modules/physician/pages/PhysicianAiAssistantPage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
 import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.vue'
 import PhysicianResultsPage from '@/modules/physician/pages/PhysicianResultsPage.vue'
+import PhysicianCtExamPage from '@/modules/physician/pages/PhysicianCtExamPage.vue'
 import PhysicianDiagnosisPage from '@/modules/physician/pages/PhysicianDiagnosisPage.vue'
 import PhysicianPrescriptionPage from '@/modules/physician/pages/PhysicianPrescriptionPage.vue'
 import MedtechCheckQueuePage from '@/modules/medtech/pages/MedtechCheckQueuePage.vue'
@@ -49,6 +53,8 @@ import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
 import NotFoundPage from '@/modules/error/NotFoundPage.vue'
+import ScanCheckinPage from '@/modules/registration/pages/ScanCheckinPage.vue'
+import CallingBoardPage from '@/modules/registration/pages/CallingBoardPage.vue'
 
 // 患者端独立布局路由（不经过 AppShell）
 const patientRoutes: RouteRecordRaw[] = [
@@ -134,10 +140,64 @@ const patientRoutes: RouteRecordRaw[] = [
   },
 ]
 
+const ctExamRoutes: RouteRecordRaw[] = [
+  {
+    path: '/medtech/ct-exam',
+    component: () => import('@/modules/medtech/layouts/CtExamLayout.vue'),
+    meta: { requiresAuth: true, roles: ['medtech', 'admin'], hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'MedtechCtExam',
+        component: () => import('@/modules/medtech/pages/CtExamViewerPage.vue'),
+        meta: { title: 'CT 影像检查', requiresAuth: true, roles: ['medtech', 'admin'], hidden: true },
+      },
+    ],
+  },
+]
+
+const physicianCtExamRoutes: RouteRecordRaw[] = [
+  {
+    path: '/physician/ct-exam',
+    component: () => import('@/modules/medtech/layouts/CtExamLayout.vue'),
+    meta: { requiresAuth: true, roles: ['physician', 'admin'], hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'PhysicianCtExam',
+        component: PhysicianCtExamPage,
+        meta: {
+          title: 'CT 阅片',
+          requiresAuth: true,
+          requiresEncounter: true,
+          roles: ['physician', 'admin'],
+          hidden: true,
+        },
+      },
+    ],
+  },
+]
+
 const placeholder = RoutePlaceholder
 
 export const routes: RouteRecordRaw[] = [
+  // 报到机：扫码 → /check-in → 渲染报到卡片 + SSE 实时叫号
+  {
+    path: '/test-checkin',
+    name: 'ScanCheckin',
+    component: ScanCheckinPage,
+    meta: { title: '报到机', hidden: true },
+  },
+  // 候诊叫号大屏：全院大屏，免登录，订阅 SSE /stream/global
+  {
+    path: '/calling-board',
+    name: 'CallingBoard',
+    component: CallingBoardPage,
+    meta: { title: '全院候诊大屏', hidden: true },
+  },
   ...patientRoutes,
+  ...ctExamRoutes,
+  ...physicianCtExamRoutes,
   {
     path: '/login',
     name: 'Login',
@@ -386,6 +446,24 @@ export const routes: RouteRecordRaw[] = [
             name: 'OperationsCenter',
             component: OperationsCenter,
             meta: { title: '运营中心', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'ct-imaging-audit',
+            name: 'CtImagingAudit',
+            component: CtImagingAuditPage,
+            meta: { title: 'CT 影像审计', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'payment-bills',
+            name: 'PaymentBillManagement',
+            component: PaymentBillManagement,
+            meta: { title: '支付账单', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'payment-bills/:registerId',
+            name: 'PaymentBillCharge',
+            component: PaymentBillChargePage,
+            meta: { title: '现场收费', roles: ['admin'], requiresAuth: true, owner: 'B', hidden: true },
           },
           {
             path: 'users',

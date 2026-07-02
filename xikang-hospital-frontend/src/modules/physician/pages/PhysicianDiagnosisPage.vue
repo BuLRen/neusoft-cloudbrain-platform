@@ -237,6 +237,9 @@ async function submitDiagnosis() {
     })
     ElMessage.success('确诊已保存')
     await loadMedicalRecord()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '保存确诊失败'
+    ElMessage.error(msg)
   } finally {
     loading.value = false
   }

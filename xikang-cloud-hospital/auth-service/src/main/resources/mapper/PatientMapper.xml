@@ -102,4 +102,18 @@
         UPDATE patient SET delmark = 1, update_time = NOW() WHERE id = #{id}
     </delete>
 
+    <select id="searchByKeyword" resultMap="BaseResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        WHERE delmark = 1
+          AND (
+              real_name ILIKE CONCAT('%', #{keyword}, '%')
+              OR phone ILIKE CONCAT('%', #{keyword}, '%')
+              OR CAST(id AS TEXT) LIKE CONCAT('%', #{keyword}, '%')
+          )
+        ORDER BY real_name ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
 </mapper>
