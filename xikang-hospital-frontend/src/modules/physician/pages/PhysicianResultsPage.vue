@@ -230,10 +230,13 @@ onMounted(() => {
           </ElTableColumn>
           <ElTableColumn label="状态" width="120">
             <template #default="{ row }">
-              <span class="state-badge" :data-tone="resolveStateTone(row.checkState)">
-                <span class="state-badge__dot" aria-hidden="true" />
-                {{ row.checkState }}
-              </span>
+              <div class="state-cell">
+                <span class="state-badge" :data-tone="resolveStateTone(row.checkState)">
+                  <span class="state-badge__dot" aria-hidden="true" />
+                  {{ row.checkState }}
+                </span>
+                <ElTag v-if="row.hasImaging" type="info" size="small" class="state-cell__imaging">影像已采集</ElTag>
+              </div>
             </template>
           </ElTableColumn>
           <ElTableColumn label="结果摘要" min-width="280">
@@ -563,6 +566,17 @@ onMounted(() => {
 .state-badge[data-tone='success'] {
   color: var(--color-success);
   background: rgba(32, 180, 134, 0.14);
+}
+
+.state-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.state-cell__imaging {
+  margin: 0;
 }
 
 .result-summary {

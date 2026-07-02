@@ -182,11 +182,15 @@ export interface AiExamAnalysis {
 export interface CheckResult {
   id: number
   techName: string
+  aiCategoryCode?: string
   checkPosition?: string
   checkResult?: string
   checkState?: string
   checkTime?: string
   checkRemark?: string
+  hasImaging?: boolean
+  imagingVolumeId?: string
+  imagingUploadedAt?: string
   aiAnalysis?: AiExamAnalysis | null
 }
 

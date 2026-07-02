@@ -136,10 +136,27 @@ const patientRoutes: RouteRecordRaw[] = [
   },
 ]
 
+const ctExamRoutes: RouteRecordRaw[] = [
+  {
+    path: '/medtech/ct-exam',
+    component: () => import('@/modules/medtech/layouts/CtExamLayout.vue'),
+    meta: { requiresAuth: true, roles: ['medtech', 'admin'], hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'MedtechCtExam',
+        component: () => import('@/modules/medtech/pages/CtExamViewerPage.vue'),
+        meta: { title: 'CT 影像检查', requiresAuth: true, roles: ['medtech', 'admin'], hidden: true },
+      },
+    ],
+  },
+]
+
 const placeholder = RoutePlaceholder
 
 export const routes: RouteRecordRaw[] = [
   ...patientRoutes,
+  ...ctExamRoutes,
   {
     path: '/login',
     name: 'Login',
@@ -265,7 +282,7 @@ export const routes: RouteRecordRaw[] = [
             path: 'ct-viewer',
             name: 'MedtechCtViewer',
             component: () => import('@/modules/medtech/pages/CtDicomViewerPage.vue'),
-            meta: { title: 'CT 影像查看', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
+            meta: { title: 'CT 影像演示', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam' },
           },
         ],
       },

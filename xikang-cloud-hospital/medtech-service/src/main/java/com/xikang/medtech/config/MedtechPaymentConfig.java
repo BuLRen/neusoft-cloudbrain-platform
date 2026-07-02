@@ -17,4 +17,12 @@ public class MedtechPaymentConfig {
                 .setReadTimeout(Duration.ofSeconds(3))
                 .build();
     }
+
+    @Bean
+    public RestTemplate ctViewerRestTemplate(RestTemplateBuilder builder) {
+        return builder
+                .setConnectTimeout(Duration.ofSeconds(3))
+                .setReadTimeout(Duration.ofSeconds(10))
+                .build();
+    }
 }

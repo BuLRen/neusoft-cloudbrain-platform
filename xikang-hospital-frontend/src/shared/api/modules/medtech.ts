@@ -21,6 +21,10 @@ export interface MedtechApplication {
   payStatus?: number
   payStatusText?: string
   feeAmount?: number
+  hasImaging?: boolean
+  imagingVolumeId?: string
+  imagingUploadedAt?: string
+  imagingSourceName?: string
 }
 
 export interface CheckApplication extends MedtechApplication {
@@ -76,6 +80,14 @@ export interface CheckSimulationResult {
 export interface ArchiveRequest {
   reason: string
   remark?: string
+}
+
+export interface CheckImagingInfo {
+  checkRequestId?: number
+  volumeId?: string
+  uploadedAt?: string
+  sourceName?: string
+  hasImaging?: boolean
 }
 
 export interface MedtechProfile {
@@ -172,6 +184,15 @@ export const medtechApi = {
       method: 'POST',
       timeout: CHECK_SIMULATE_TIMEOUT_MS,
     })
+  },
+  getCheckImaging(id: number) {
+    return http<CheckImagingInfo>({ url: `/medtech/check/${id}/imaging`, method: 'GET' })
+  },
+  bindCheckImaging(id: number, data: { volumeId: string; sourceName?: string }) {
+    return http<CheckImagingInfo>({ url: `/medtech/check/${id}/imaging`, method: 'PUT', data })
+  },
+  clearCheckImaging(id: number) {
+    return http<void>({ url: `/medtech/check/${id}/imaging`, method: 'DELETE' })
   },
   startInspection(id: number, operatorInfo?: Record<string, unknown>) {
     return http<void>({ url: `/medtech/inspection/start/${id}`, method: 'PUT', data: operatorInfo })

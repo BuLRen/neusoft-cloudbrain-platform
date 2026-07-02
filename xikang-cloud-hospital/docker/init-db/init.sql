@@ -595,6 +595,9 @@ CREATE TABLE check_request (
     check_result            TEXT            DEFAULT NULL,
     check_state             VARCHAR(64)     NOT NULL DEFAULT '待检查',
     check_remark            VARCHAR(512)    DEFAULT NULL,
+    imaging_volume_id       VARCHAR(64)     DEFAULT NULL,
+    imaging_uploaded_at     TIMESTAMP       DEFAULT NULL,
+    imaging_source_name     VARCHAR(255)    DEFAULT NULL,
 
     CONSTRAINT fk_check_request_register
         FOREIGN KEY (register_id) REFERENCES register(id),
@@ -616,6 +619,9 @@ CREATE INDEX idx_check_request_medtech_id ON check_request(medical_technology_id
 
 COMMENT ON TABLE check_request IS '检查申请表';
 COMMENT ON COLUMN check_request.check_state IS '状态: 待检查 → 检查中 → 已完成 / 已归档';
+COMMENT ON COLUMN check_request.imaging_volume_id IS 'ct-viewer-service 返回的 volumeId';
+COMMENT ON COLUMN check_request.imaging_uploaded_at IS '影像绑定时间';
+COMMENT ON COLUMN check_request.imaging_source_name IS '上传来源文件名或 DICOM 序列描述';
 
 -- ============================================================
 -- 表: inspection_request (检验申请表)

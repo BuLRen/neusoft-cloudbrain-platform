@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
@@ -88,6 +89,14 @@ public class CtViewerService {
     public byte[] getVolumeNrrd(String volumeId) {
         VolumeMetaDto meta = metaRepository.requireById(volumeId);
         return storageService.readNrrdBytes(meta);
+    }
+
+    public Map<String, Object> getVolumeMeta(String volumeId) {
+        VolumeMetaDto meta = metaRepository.requireById(volumeId);
+        Map<String, Object> result = new LinkedHashMap<>(meta.toFrontendMeta());
+        result.put("volume_id", meta.getVolumeId());
+        result.put("source_name", meta.getSourceName());
+        return result;
     }
 
     public FilterResponseDto applyFilter(FilterRequestDto request) {

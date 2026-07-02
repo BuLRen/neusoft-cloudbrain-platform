@@ -45,6 +45,11 @@ public class CtViewerController {
             .body(payload);
     }
 
+    @GetMapping("/volume/{volumeId}/meta")
+    public Result<Map<String, Object>> getVolumeMeta(@PathVariable String volumeId) {
+        return Result.success(ctViewerService.getVolumeMeta(volumeId));
+    }
+
     @PostMapping("/filter")
     public Result<FilterResponseDto> filter(@RequestBody FilterRequestDto request) {
         return Result.success(ctViewerService.applyFilter(request));

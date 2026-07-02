@@ -1,12 +1,14 @@
 package com.xikang.medtech.ai;
 
 import com.xikang.common.exception.BusinessException;
+import com.xikang.medtech.util.CtCategoryResolver;
 import com.xikang.medtech.entity.CheckRequest;
 import com.xikang.medtech.entity.InspectionRequest;
 import com.xikang.medtech.entity.MedicalTechnology;
 import com.xikang.medtech.mapper.CheckRequestMapper;
 import com.xikang.medtech.mapper.InspectionRequestMapper;
 import com.xikang.medtech.mapper.MedicalTechnologyMapper;
+import com.xikang.medtech.service.MedtechService;
 import com.xikang.medtech.service.ResultFormService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +34,7 @@ public class CheckSimulationService {
     private final CheckSimulationOutputMapper outputMapper;
     private final CheckSimulationContextBuilder contextBuilder;
     private final CtInferenceService ctInferenceService;
+    private final MedtechService medtechService;
 
     public Map<String, Object> simulateCheck(Long checkRequestId, Map<String, Object> requestBody) {
         CheckContext ctx = requireInProgressCheckContext(checkRequestId);
@@ -87,10 +90,8 @@ public class CheckSimulationService {
     }
 
     public Map<String, Object> inferCtCheck(Long checkRequestId) {
-        CheckContext ctx = requireInProgressCheckContext(checkRequestId);
-        if (!isCtCategory(ctx.aiCategoryCode())) {
-            throw new BusinessException(400, "当前检查项目不是 CT 影像，请使用模拟检查");
-        }
+        CheckRequest request = medtechService.requireCtImagingContext(checkRequestId, true);
+        CheckContext ctx = toCheckContext(request);
 
         Map<String, Object> schema = resultFormService.resolveByCheckRequestId(checkRequestId);
         @SuppressWarnings("unchecked")
@@ -103,6 +104,7 @@ public class CheckSimulationService {
         ctInput.put("examName", ctx.technology().getTechName());
         ctInput.put("bodyPart", ctx.aiCategoryCode().contains("brain") ? "brain" : "chest");
         ctInput.put("randomSeed", ctx.request().getRegisterId());
+        ctInput.put("volumeId", request.getImagingVolumeId());
 
         Map<String, Object> ctResult = ctInferenceService.infer(ctInput);
         Map<String, Object> simulatedValues = outputMapper.mapCtInferenceToFormValues(ctResult);
@@ -204,6 +206,18 @@ public class CheckSimulationService {
         if (!"检查中".equals(request.getCheckState())) {
             throw new BusinessException(400, "请先开始检查后再运行模拟");
         }
+        medtechService.assertCheckDepartmentAccess(request.getMedicalTechnologyId());
+        MedicalTechnology technology = medicalTechnologyMapper.selectById(request.getMedicalTechnologyId());
+        if (technology == null) {
+            throw new BusinessException(404, "检查项目不存在");
+        }
+        if (!"check".equals(technology.getTechType())) {
+            throw new BusinessException(400, "当前申请不是检查类型");
+        }
+        return new CheckContext(request, technology);
+    }
+
+    private CheckContext toCheckContext(CheckRequest request) {
         MedicalTechnology technology = medicalTechnologyMapper.selectById(request.getMedicalTechnologyId());
         if (technology == null) {
             throw new BusinessException(404, "检查项目不存在");
@@ -337,8 +351,11 @@ public class CheckSimulationService {
 
     private record CheckContext(CheckRequest request, MedicalTechnology technology) {
         String aiCategoryCode() {
-            String code = technology.getAiCategoryCode();
-            return code == null ? "" : code;
+            return CtCategoryResolver.resolve(
+                    technology.getAiCategoryCode(),
+                    technology.getTechCode(),
+                    technology.getTechName()
+            );
         }
     }
 

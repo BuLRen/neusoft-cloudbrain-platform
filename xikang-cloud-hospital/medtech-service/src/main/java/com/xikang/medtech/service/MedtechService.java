@@ -2,11 +2,13 @@ package com.xikang.medtech.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
+import com.xikang.medtech.client.CtViewerClient;
 import com.xikang.medtech.client.PaymentClient;
 import com.xikang.medtech.client.PhysicianW3Client;
 import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.entity.*;
 import com.xikang.medtech.mapper.*;
+import com.xikang.medtech.util.CtCategoryResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ public class MedtechService {
     private final ObjectMapper objectMapper;
     private final PhysicianW3Client physicianW3Client;
     private final PaymentClient paymentClient;
+    private final CtViewerClient ctViewerClient;
 
     // ==================== 检查相关 ====================
 
@@ -143,6 +146,83 @@ public class MedtechService {
         assertRequestDepartmentAccess(request.getMedicalTechnologyId());
         String remark = buildArchiveRemark(archiveData);
         checkRequestMapper.updateArchive(id, "已归档", remark);
+    }
+
+    /**
+     * 获取检查单绑定的 CT 影像信息
+     */
+    public Map<String, Object> getCheckImaging(Long id) {
+        CheckRequest request = checkRequestMapper.selectById(id);
+        if (request == null) {
+            throw new BusinessException(404, "检查申请不存在");
+        }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        return buildImagingMap(request);
+    }
+
+    /**
+     * 绑定 CT 影像 volume 到检查单
+     */
+    @Transactional
+    public Map<String, Object> bindCheckImaging(Long id, Map<String, Object> body) {
+        CheckRequest request = requireCtImagingContext(id, false);
+        String volumeId = trimToNull(body != null ? (String) body.get("volumeId") : null);
+        if (volumeId == null) {
+            throw new BusinessException(400, "请提供 volumeId");
+        }
+        ctViewerClient.assertVolumeExists(volumeId);
+        String sourceName = trimToNull(body != null ? (String) body.get("sourceName") : null);
+        LocalDateTime uploadedAt = LocalDateTime.now();
+        checkRequestMapper.updateImaging(id, volumeId, uploadedAt, sourceName);
+        request.setImagingVolumeId(volumeId);
+        request.setImagingUploadedAt(uploadedAt);
+        request.setImagingSourceName(sourceName);
+        log.info("绑定 CT 影像 | checkRequestId={} volumeId={}", id, volumeId);
+        return buildImagingMap(request);
+    }
+
+    /**
+     * 清除检查单 CT 影像绑定（检查中可重新上传）
+     */
+    @Transactional
+    public void clearCheckImaging(Long id) {
+        requireCtImagingContext(id, false);
+        checkRequestMapper.clearImaging(id);
+        log.info("清除 CT 影像绑定 | checkRequestId={}", id);
+    }
+
+    /**
+     * CT 影像业务上下文校验（供 ct-infer 等调用）
+     *
+     * @param requireBoundVolume 是否要求已绑定 volume
+     */
+    public CheckRequest requireCtImagingContext(Long checkRequestId, boolean requireBoundVolume) {
+        CheckRequest request = checkRequestMapper.selectById(checkRequestId);
+        if (request == null) {
+            throw new BusinessException(404, "检查申请不存在");
+        }
+        if (!"检查中".equals(request.getCheckState())) {
+            throw new BusinessException(400, "当前状态不允许操作 CT 影像");
+        }
+        if (!CtCategoryResolver.isCt(
+                request.getAiCategoryCode(),
+                request.getTechCode(),
+                request.getTechName())) {
+            throw new BusinessException(400, "当前检查项目不是 CT 影像");
+        }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        paymentClient.assertItemPaid(request.getRegisterId(), "CHECK_FEE", checkRequestId, "检查费");
+        if (requireBoundVolume && !hasImaging(request)) {
+            throw new BusinessException(400, "请先上传并绑定 CT 影像后再进行分析");
+        }
+        return request;
+    }
+
+    /**
+     * 校验医技科室权限（供模拟/推理服务调用）
+     */
+    public void assertCheckDepartmentAccess(Long medicalTechnologyId) {
+        assertRequestDepartmentAccess(medicalTechnologyId);
     }
 
     // ==================== 检验相关 ====================
@@ -611,13 +691,17 @@ public class MedtechService {
         map.put("patientName", request.getPatientName());
         map.put("techName", request.getTechName());
         map.put("techCode", request.getTechCode());
-        map.put("aiCategoryCode", request.getAiCategoryCode());
+        map.put("aiCategoryCode", CtCategoryResolver.resolve(
+                request.getAiCategoryCode(),
+                request.getTechCode(),
+                request.getTechName()));
         map.put("position", request.getCheckPosition());
         map.put("info", request.getCheckInfo());
         map.put("statusText", request.getCheckState());
         map.put("checkState", request.getCheckState());
         map.put("checkTime", request.getCheckTime());
         map.put("creationTime", request.getCreationTime());
+        appendImagingFields(map, request);
         return map;
     }
 
@@ -629,6 +713,27 @@ public class MedtechService {
         map.put("checkRemark", request.getCheckRemark());
         map.put("resultPayload", resultFormService.parseResultPayload(request.getCheckResult()));
         map.put("resultSummary", resultFormService.buildResultSummary(request.getCheckResult()));
+        return map;
+    }
+
+    private static boolean hasImaging(CheckRequest request) {
+        return request.getImagingVolumeId() != null && !request.getImagingVolumeId().isBlank();
+    }
+
+    private static void appendImagingFields(Map<String, Object> map, CheckRequest request) {
+        map.put("imagingVolumeId", request.getImagingVolumeId());
+        map.put("imagingUploadedAt", request.getImagingUploadedAt());
+        map.put("imagingSourceName", request.getImagingSourceName());
+        map.put("hasImaging", hasImaging(request));
+    }
+
+    private Map<String, Object> buildImagingMap(CheckRequest request) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("checkRequestId", request.getId());
+        map.put("volumeId", request.getImagingVolumeId());
+        map.put("uploadedAt", request.getImagingUploadedAt());
+        map.put("sourceName", request.getImagingSourceName());
+        map.put("hasImaging", hasImaging(request));
         return map;
     }
 

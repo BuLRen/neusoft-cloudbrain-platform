@@ -99,6 +99,34 @@ public class MedtechController {
     }
 
     /**
+     * 获取检查单绑定的 CT 影像
+     */
+    @GetMapping("/check/{id}/imaging")
+    public Result<Map<String, Object>> getCheckImaging(@PathVariable Long id) {
+        return Result.success(medtechService.getCheckImaging(id));
+    }
+
+    /**
+     * 绑定 CT 影像 volume 到检查单
+     */
+    @PutMapping("/check/{id}/imaging")
+    public Result<Map<String, Object>> bindCheckImaging(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body) {
+        Map<String, Object> response = medtechService.bindCheckImaging(id, body);
+        return Result.success("CT 影像已绑定", response);
+    }
+
+    /**
+     * 清除检查单 CT 影像绑定
+     */
+    @DeleteMapping("/check/{id}/imaging")
+    public Result<Void> clearCheckImaging(@PathVariable Long id) {
+        medtechService.clearCheckImaging(id);
+        return Result.success("CT 影像绑定已清除", null);
+    }
+
+    /**
      * 解析检查结果录入表单 schema
      */
     @GetMapping("/check/result-form/resolve")
