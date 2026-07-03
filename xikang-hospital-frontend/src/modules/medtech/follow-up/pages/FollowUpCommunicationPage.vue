@@ -7,6 +7,7 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import CommunicationPatientList from '@/modules/medtech/follow-up/components/CommunicationPatientList.vue'
 import CommunicationThread from '@/modules/medtech/follow-up/components/CommunicationThread.vue'
 import CommunicationComposer from '@/modules/medtech/follow-up/components/CommunicationComposer.vue'
+import CommunicationCardPicker from '@/modules/medtech/follow-up/components/CommunicationCardPicker.vue'
 import CommunicationPatientBrief from '@/modules/medtech/follow-up/components/CommunicationPatientBrief.vue'
 import CaseSummaryReviewDialog from '@/modules/medtech/follow-up/components/CaseSummaryReviewDialog.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
@@ -33,6 +34,8 @@ const messages = ref<FollowUpCommunicationMessage[]>([])
 const brief = ref<FollowUpCommunicationPatientBrief | null>(null)
 const latestSummary = ref<FollowUpCaseSummary | null>(null)
 const summaryDialogVisible = ref(false)
+const cardPickerVisible = ref(false)
+const cardPickerMode = ref<'drug' | 'diagnosis'>('drug')
 
 const todayLabel = formatYmdWeekday(beijingTodayYmd())
 
@@ -120,6 +123,28 @@ async function handleSend(content: string) {
   }
 }
 
+async function handleSendCard(messageType: 'drug_card' | 'diagnosis_card', payload: Record<string, unknown>) {
+  if (!activeSession.value) return
+  sending.value = true
+  try {
+    await medtechFollowUpApi.sendDoctorCard(activeSession.value.id, messageType, payload)
+    await Promise.all([
+      loadMessages(activeSession.value.id),
+      loadSessions(),
+    ])
+    ElMessage.success('卡片已发送')
+  } catch {
+    ElMessage.error('发送卡片失败')
+  } finally {
+    sending.value = false
+  }
+}
+
+function openCardPicker(mode: 'drug' | 'diagnosis') {
+  cardPickerMode.value = mode
+  cardPickerVisible.value = true
+}
+
 async function handleGenerateSummary() {
   if (!activeSession.value) return
   generatingSummary.value = true
@@ -154,6 +179,10 @@ async function handleApproveSummary(payload: { doctorContent: string; sharedToPa
   } finally {
     approvingSummary.value = false
   }
+}
+
+async function handleSendRevisitReminder() {
+  await handleSend('【复诊提醒】建议您近期到院复诊，请通过患者端「我的挂号」自行预约。')
 }
 
 async function handleToggleAi(enabled: boolean) {
@@ -245,7 +274,11 @@ onActivated(() => {
               </ElButton>
             </div>
             <CommunicationThread class="comm-page__thread-messages" :messages="messages" :loading="messagesLoading" />
-            <CommunicationComposer :sending="sending" @send="handleSend" />
+            <CommunicationComposer
+              :sending="sending"
+              @send="handleSend"
+              @open-picker="openCardPicker"
+            />
           </div>
         </template>
         <template v-else>
@@ -262,6 +295,7 @@ onActivated(() => {
         @generate-summary="handleGenerateSummary"
         @open-outcome="openOutcome"
         @toggle-ai="handleToggleAi"
+        @send-revisit-reminder="handleSendRevisitReminder"
       />
     </div>
 
@@ -270,6 +304,13 @@ onActivated(() => {
       :summary="latestSummary"
       :saving="approvingSummary"
       @approve="handleApproveSummary"
+    />
+
+    <CommunicationCardPicker
+      v-model:visible="cardPickerVisible"
+      :register-id="activeSession?.registerId"
+      :mode="cardPickerMode"
+      @select="handleSendCard"
     />
   </div>
 </template>

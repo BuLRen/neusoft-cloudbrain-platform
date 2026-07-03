@@ -6,6 +6,7 @@ import com.xikang.auth.mapper.UserMapper;
 import com.xikang.auth.mapper.PatientMapper;
 import com.xikang.auth.mapper.UserPatientManagedMapper;
 import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
+import com.xikang.auth.dto.LoginRequest;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.utils.JwtUtils;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class AuthService {
     private final PatientMapper patientMapper;
     private final PatientService patientService;
     private final UserPatientManagedMapper userPatientManagedMapper;
+    private final CaptchaService captchaService;
 
     @Value("${jwt.accessExpirationMs:900000}")
     private long accessExpirationMs;
@@ -44,7 +46,11 @@ public class AuthService {
     /**
      * User login
      */
-    public Map<String, String> login(String username, String password) {
+    public Map<String, String> login(LoginRequest request) {
+        captchaService.validateAndConsume(request.getCaptchaId(), request.getCaptchaCode());
+
+        String username = request.getUsername();
+        String password = request.getPassword();
         log.info("User login attempt: {}", username);
 
         if (username == null || username.isBlank()) {
@@ -109,6 +115,9 @@ public class AuthService {
      * Refresh access token
      */
     public Map<String, String> refresh(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new BusinessException(401, "Refresh token 无效或已过期");
+        }
         if (!JwtUtils.validateToken(refreshToken)) {
             throw new BusinessException(401, "Refresh token 无效或已过期");
         }
@@ -309,7 +318,7 @@ public class AuthService {
 
     /**
      * Convert userType to role string
-     * 1: admin, 2: physician, 3: registration, 4: medtech, 5: pharmacy, 6: patient
+     * 1: admin, 2: physician, 3: registration, 4: medtech, 5: pharmacy, 6: patient, 7: followup
      */
     private String convertUserTypeToRole(Integer userType) {
         if (userType == null) {
@@ -321,6 +330,7 @@ public class AuthService {
             case 3 -> "registration";
             case 4 -> "medtech";
             case 5 -> "pharmacy";
+            case 7 -> "followup";
             default -> "patient";
         };
     }

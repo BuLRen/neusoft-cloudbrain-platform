@@ -1,5 +1,5 @@
 
-export type UserRole = 'admin' | 'physician' | 'registration' | 'medtech' | 'pharmacy' | 'patient'
+export type UserRole = 'admin' | 'physician' | 'registration' | 'medtech' | 'pharmacy' | 'patient' | 'followup'
 
 export interface RoleOption {
   label: string
@@ -13,5 +13,6 @@ export const roleOptions: RoleOption[] = [
   { label: '挂号收费员', value: 'registration', description: '挂号、收费、退费' },
   { label: '医技人员', value: 'medtech', description: '检查、检验、处置执行' },
   { label: '药房人员', value: 'pharmacy', description: '发药、退药、药库' },
+  { label: '随访人员', value: 'followup', description: '随访工作台、疗效评估、医患沟通' },
   { label: '患者', value: 'patient', description: '导诊、预问诊、随访' },
 ]

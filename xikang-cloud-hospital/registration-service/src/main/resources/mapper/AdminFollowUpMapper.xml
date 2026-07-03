@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.AdminFollowUpMapper">
+
+    <sql id="FollowUp_Employee_Base">
+        FROM employee e
+        INNER JOIN department d ON d.id = e.deptment_id AND d.dept_type = '临床科室'
+        LEFT JOIN users u ON u.employee_id = e.id AND u.user_type = 7
+        WHERE (
+            NOT EXISTS (SELECT 1 FROM users ux WHERE ux.employee_id = e.id)
+            OR EXISTS (SELECT 1 FROM users uf WHERE uf.employee_id = e.id AND uf.user_type = 7)
+        )
+    </sql>
+
+    <sql id="FollowUp_Employee_Filters">
+        <if test="includeDisabled == null or includeDisabled == false">
+            AND e.delmark = 0
+        </if>
+        <if test="departmentId != null">
+            AND e.deptment_id = #{departmentId}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND e.realname ILIKE CONCAT('%', #{keyword}, '%')
+        </if>
+    </sql>
+
+    <select id="countFollowUpEmployees" resultType="long">
+        SELECT COUNT(DISTINCT e.id)
+        <include refid="FollowUp_Employee_Base"/>
+        <include refid="FollowUp_Employee_Filters"/>
+    </select>
+
+    <select id="selectFollowUpEmployeePage" resultType="com.xikang.registration.dto.FollowUpAdminView">
+        SELECT DISTINCT ON (e.id)
+            e.id,
+            e.deptment_id AS deptmentId,
+            d.dept_name AS deptName,
+            e.realname,
+            e.delmark,
+            u.id AS userId,
+            u.username,
+            u.status AS accountStatus
+        <include refid="FollowUp_Employee_Base"/>
+        <include refid="FollowUp_Employee_Filters"/>
+        ORDER BY e.id, e.deptment_id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="selectFollowUpEmployeeById" resultType="com.xikang.registration.dto.FollowUpAdminView">
+        SELECT
+            e.id,
+            e.deptment_id AS deptmentId,
+            d.dept_name AS deptName,
+            e.realname,
+            e.delmark,
+            u.id AS userId,
+            u.username,
+            u.status AS accountStatus
+        FROM employee e
+        INNER JOIN department d ON d.id = e.deptment_id AND d.dept_type = '临床科室'
+        LEFT JOIN users u ON u.employee_id = e.id AND u.user_type = 7
+        WHERE e.id = #{id}
+    </select>
+
+</mapper>

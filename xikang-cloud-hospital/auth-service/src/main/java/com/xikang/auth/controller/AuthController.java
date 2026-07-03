@@ -2,7 +2,10 @@ package com.xikang.auth.controller;
 
 import com.xikang.auth.service.AuthService;
 import com.xikang.auth.service.PatientService;
+import com.xikang.auth.service.CaptchaService;
 import com.xikang.auth.entity.Patient;
+import com.xikang.auth.dto.LoginRequest;
+import com.xikang.auth.dto.CaptchaResponse;
 import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
 import com.xikang.common.utils.JwtUtils;
 import com.xikang.common.result.Result;
@@ -30,15 +33,24 @@ public class AuthController {
 
     private final AuthService authService;
     private final PatientService patientService;
+    private final CaptchaService captchaService;
+
+    /**
+     * Get login captcha image
+     */
+    @GetMapping("/captcha")
+    public Result<CaptchaResponse> captcha() {
+        return Result.success(captchaService.generate());
+    }
 
     /**
      * User login
      */
     @PostMapping("/login")
-    public ResponseEntity<Result<Map<String, Object>>> login(@RequestBody Map<String, String> loginRequest) {
-        String username = loginRequest.get("username");
-        String password = loginRequest.get("password");
-        Map<String, String> tokens = authService.login(username, password);
+    public ResponseEntity<Result<Map<String, Object>>> login(@RequestBody LoginRequest loginRequest) {
+        Map<String, String> tokens = authService.login(loginRequest);
+
+        String username = loginRequest.getUsername();
 
         String accessToken = tokens.get("accessToken");
         String refreshToken = tokens.get("refreshToken");
@@ -122,7 +134,7 @@ public class AuthController {
      * Refresh token
      */
     @PostMapping("/refresh")
-    public ResponseEntity<Result<Void>> refresh(
+    public ResponseEntity<Result<Map<String, Object>>> refresh(
             @CookieValue(value = REFRESH_COOKIE_NAME, required = false) String refreshToken
     ) {
         Map<String, String> refreshed = authService.refresh(refreshToken);
@@ -138,7 +150,11 @@ public class AuthController {
 
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.SET_COOKIE, accessCookie.toString());
-        return ResponseEntity.ok().headers(headers).body(Result.success("刷新成功", null));
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("token", accessToken);
+        body.put("accessToken", accessToken);
+        return ResponseEntity.ok().headers(headers).body(Result.success("刷新成功", body));
     }
 
     /**
@@ -146,18 +162,28 @@ public class AuthController {
      */
     @GetMapping("/me")
     public Result<Map<String, Object>> me(
-            @RequestHeader(value = "Authorization", required = false) String authHeader
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @CookieValue(value = ACCESS_COOKIE_NAME, required = false) String accessCookie
     ) {
-        // Try to get token from Authorization header first
+        String headerToken = extractBearerToken(authHeader);
         String token = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7);
+        if (headerToken != null && !headerToken.isBlank() && JwtUtils.validateToken(headerToken)) {
+            token = headerToken;
+        } else if (accessCookie != null && !accessCookie.isBlank() && JwtUtils.validateToken(accessCookie)) {
+            token = accessCookie;
         }
-        if (token == null) {
+        if (token == null || token.isBlank()) {
             return Result.error(401, "未授权");
         }
         Map<String, Object> result = authService.me(token);
         return Result.success(result);
+    }
+
+    private String extractBearerToken(String authHeader) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+        return null;
     }
 
     /**

@@ -1,5 +1,6 @@
 
 import type { RouteRecordRaw } from 'vue-router'
+import { getAccessToken } from '@/shared/auth/tokenStorage'
 import AppShell from '@/app/layouts/AppShell.vue'
 import DashboardHome from '@/modules/dashboard/DashboardHome.vue'
 import LoginPage from '@/modules/auth/LoginPage.vue'
@@ -32,11 +33,13 @@ import MedtechItemsManagement from '@/modules/admin/pages/MedtechItemsManagement
 import OperationsCenter from '@/modules/admin/pages/OperationsCenter.vue'
 import PaymentBillManagement from '@/modules/admin/pages/PaymentBillManagement.vue'
 import PaymentBillChargePage from '@/modules/admin/pages/PaymentBillChargePage.vue'
+import CtImagingAuditPage from '@/modules/admin/pages/CtImagingAuditPage.vue'
 import PhysicianQueuePage from '@/modules/physician/pages/PhysicianQueuePage.vue'
 import PhysicianAiAssistantPage from '@/modules/physician/pages/PhysicianAiAssistantPage.vue'
 import PhysicianRecordPage from '@/modules/physician/pages/PhysicianRecordPage.vue'
 import PhysicianOrdersPage from '@/modules/physician/pages/PhysicianOrdersPage.vue'
 import PhysicianResultsPage from '@/modules/physician/pages/PhysicianResultsPage.vue'
+import PhysicianCtExamPage from '@/modules/physician/pages/PhysicianCtExamPage.vue'
 import PhysicianDiagnosisPage from '@/modules/physician/pages/PhysicianDiagnosisPage.vue'
 import PhysicianPrescriptionPage from '@/modules/physician/pages/PhysicianPrescriptionPage.vue'
 import MySchedulePage from '@/modules/physician/pages/MySchedulePage.vue'
@@ -46,8 +49,8 @@ import MedtechCheckResultPage from '@/modules/medtech/pages/MedtechCheckResultPa
 import MedtechInspectionStartPage from '@/modules/medtech/pages/MedtechInspectionStartPage.vue'
 import MedtechDisposalStartPage from '@/modules/medtech/pages/MedtechDisposalStartPage.vue'
 import OutcomeAssessmentPage from '@/modules/medtech/follow-up/pages/OutcomeAssessmentPage.vue'
-import FollowUpDashboardPage from '@/modules/medtech/follow-up/pages/FollowUpDashboardPage.vue'
 import FollowUpCommunicationPage from '@/modules/medtech/follow-up/pages/FollowUpCommunicationPage.vue'
+import FollowUpRecordsPage from '@/modules/medtech/follow-up/pages/FollowUpRecordsPage.vue'
 import RouteGroupView from '@/shared/components/RouteGroupView.vue'
 import RoutePlaceholder from '@/shared/components/RoutePlaceholder.vue'
 import ForbiddenPage from '@/modules/error/ForbiddenPage.vue'
@@ -139,6 +142,44 @@ const patientRoutes: RouteRecordRaw[] = [
   },
 ]
 
+const ctExamRoutes: RouteRecordRaw[] = [
+  {
+    path: '/medtech/ct-exam',
+    component: () => import('@/modules/medtech/layouts/CtExamLayout.vue'),
+    meta: { requiresAuth: true, roles: ['medtech', 'admin'], hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'MedtechCtExam',
+        component: () => import('@/modules/medtech/pages/CtExamViewerPage.vue'),
+        meta: { title: 'CT 影像检查', requiresAuth: true, roles: ['medtech', 'admin'], hidden: true },
+      },
+    ],
+  },
+]
+
+const physicianCtExamRoutes: RouteRecordRaw[] = [
+  {
+    path: '/physician/ct-exam',
+    component: () => import('@/modules/medtech/layouts/CtExamLayout.vue'),
+    meta: { requiresAuth: true, roles: ['physician', 'admin'], hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'PhysicianCtExam',
+        component: PhysicianCtExamPage,
+        meta: {
+          title: 'CT 阅片',
+          requiresAuth: true,
+          requiresEncounter: true,
+          roles: ['physician', 'admin'],
+          hidden: true,
+        },
+      },
+    ],
+  },
+]
+
 const placeholder = RoutePlaceholder
 
 export const routes: RouteRecordRaw[] = [
@@ -157,6 +198,8 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '全院候诊大屏', hidden: true },
   },
   ...patientRoutes,
+  ...ctExamRoutes,
+  ...physicianCtExamRoutes,
   {
     path: '/login',
     name: 'Login',
@@ -170,7 +213,7 @@ export const routes: RouteRecordRaw[] = [
       // 动态重定向，根据是否有 token 决定目标页面
       // 未登录 -> /login
       // 已登录 -> /dashboard（完整逻辑在 guard.ts 中处理患者角色）
-      const token = localStorage.getItem('access_token')
+      const token = getAccessToken()
       if (!token) {
         return '/login'
       }
@@ -284,45 +327,39 @@ export const routes: RouteRecordRaw[] = [
         path: 'follow-up',
         name: 'FollowUp',
         component: RouteGroupView,
-        redirect: '/follow-up/dashboard',
-        meta: { title: '随访系统', description: '疗效评估、医患沟通、随访计划与记录', icon: 'Calendar', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up' },
+        redirect: '/follow-up/outcome',
+        meta: { title: '随访系统', description: '疗效评估、医患沟通、随访记录', icon: 'Calendar', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up' },
         children: [
-          {
-            path: 'dashboard',
-            name: 'FollowUpDashboard',
-            component: FollowUpDashboardPage,
-            meta: { title: '随访工作台', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 1 },
-          },
           {
             path: 'outcome',
             name: 'FollowUpOutcome',
             component: OutcomeAssessmentPage,
-            meta: { title: '疗效评估', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 2 },
+            meta: { title: '疗效评估', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 1 },
           },
           {
             path: 'communication',
             name: 'FollowUpCommunication',
             component: FollowUpCommunicationPage,
-            meta: { title: '医患沟通', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 3 },
+            meta: { title: '医患沟通', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 2 },
           },
           {
             path: 'plans',
             name: 'FollowUpPlans',
             component: RoutePlaceholder,
-            meta: { title: '随访计划', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 4 },
+            meta: { title: '随访计划', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 3, hidden: true },
           },
           {
             path: 'records',
             name: 'FollowUpRecords',
-            component: RoutePlaceholder,
-            meta: { title: '随访记录', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 5 },
+            component: FollowUpRecordsPage,
+            meta: { title: '随访记录', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 3 },
           },
         ],
       },
       {
         path: 'medtech/follow-up/:subpath(.*)',
-        redirect: (to) => `/follow-up/${String(to.params.subpath || 'dashboard')}`,
-        meta: { hidden: true, roles: ['medtech', 'admin'], requiresAuth: true },
+        redirect: (to) => `/follow-up/${String(to.params.subpath || 'outcome')}`,
+        meta: { hidden: true, roles: ['medtech', 'followup', 'admin'], requiresAuth: true },
       },
       {
         path: 'pharmacy',
@@ -411,6 +448,12 @@ export const routes: RouteRecordRaw[] = [
             name: 'OperationsCenter',
             component: OperationsCenter,
             meta: { title: '运营中心', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'ct-imaging-audit',
+            name: 'CtImagingAudit',
+            component: CtImagingAuditPage,
+            meta: { title: 'CT 影像审计', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
             path: 'payment-bills',

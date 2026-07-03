@@ -16,6 +16,7 @@ public class AdminEmployeeAccountHelper {
 
     public static final String PHYSICIAN_DEFAULT_PASSWORD = "doctor123";
     public static final String MEDTECH_DEFAULT_PASSWORD = "medtech123";
+    public static final String FOLLOWUP_DEFAULT_PASSWORD = "followup123";
 
     private final EmployeeMapper employeeMapper;
     private final UserAccountMapper userAccountMapper;
@@ -40,20 +41,38 @@ public class AdminEmployeeAccountHelper {
         return employee;
     }
 
+    public Employee insertFollowUpEmployee(String realname, Long deptmentId) {
+        Employee employee = new Employee();
+        employee.setRealname(realname.trim());
+        employee.setDeptmentId(deptmentId);
+        employee.setRegistLevelId(null);
+        employee.setDelmark(0);
+        employeeMapper.insert(employee);
+        return employee;
+    }
+
     public String createPhysicianAccount(Long employeeId, String realname, String username, String password) {
-        return createAccount(employeeId, realname, username, password, true);
+        return createAccount(employeeId, realname, username, password, "physician");
     }
 
     public String createMedtechAccount(Long employeeId, String realname, String username, String password) {
-        return createAccount(employeeId, realname, username, password, false);
+        return createAccount(employeeId, realname, username, password, "medtech");
+    }
+
+    public String createFollowUpAccount(Long employeeId, String realname, String username, String password) {
+        return createAccount(employeeId, realname, username, password, "followup");
     }
 
     public String createPhysicianAccountWithPrefix(Long employeeId, String realname, String password) {
-        return createAccountWithPrefix(employeeId, realname, "doc", password, true);
+        return createAccountWithPrefix(employeeId, realname, "doc", password, "physician");
     }
 
     public String createMedtechAccountWithPrefix(Long employeeId, String realname, String password) {
-        return createAccountWithPrefix(employeeId, realname, "tech", password, false);
+        return createAccountWithPrefix(employeeId, realname, "tech", password, "medtech");
+    }
+
+    public String createFollowUpAccountWithPrefix(Long employeeId, String realname, String password) {
+        return createAccountWithPrefix(employeeId, realname, "followup", password, "followup");
     }
 
     private String createAccountWithPrefix(
@@ -61,10 +80,10 @@ public class AdminEmployeeAccountHelper {
         String realname,
         String prefix,
         String password,
-        boolean physician
+        String accountType
     ) {
         String username = prefix + "_" + employeeId;
-        return createAccount(employeeId, realname, username, password, physician);
+        return createAccount(employeeId, realname, username, password, accountType);
     }
 
     private String createAccount(
@@ -72,27 +91,35 @@ public class AdminEmployeeAccountHelper {
         String realname,
         String username,
         String password,
-        boolean physician
+        String accountType
     ) {
         if (username == null || username.isBlank()) {
-            username = (physician ? "doc_" : "tech_") + employeeId;
+            username = switch (accountType) {
+                case "physician" -> "doc_" + employeeId;
+                case "followup" -> "followup_" + employeeId;
+                default -> "tech_" + employeeId;
+            };
         }
         username = username.trim();
         if (userAccountMapper.countByUsername(username) > 0) {
             throw new BusinessException(409, "用户名已存在：" + username);
         }
         if (password == null || password.isBlank()) {
-            password = physician ? PHYSICIAN_DEFAULT_PASSWORD : MEDTECH_DEFAULT_PASSWORD;
+            password = switch (accountType) {
+                case "physician" -> PHYSICIAN_DEFAULT_PASSWORD;
+                case "followup" -> FOLLOWUP_DEFAULT_PASSWORD;
+                default -> MEDTECH_DEFAULT_PASSWORD;
+            };
         }
         Map<String, Object> row = new HashMap<>();
         row.put("username", username);
         row.put("password", password);
         row.put("realName", realname);
         row.put("employeeId", employeeId);
-        if (physician) {
-            userAccountMapper.insertPhysicianAccount(row);
-        } else {
-            userAccountMapper.insertMedtechAccount(row);
+        switch (accountType) {
+            case "physician" -> userAccountMapper.insertPhysicianAccount(row);
+            case "followup" -> userAccountMapper.insertFollowUpAccount(row);
+            default -> userAccountMapper.insertMedtechAccount(row);
         }
         return username;
     }

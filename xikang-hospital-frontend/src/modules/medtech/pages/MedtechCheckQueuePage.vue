@@ -18,6 +18,7 @@ import {
 import { medtechApi, type MedtechApplication, type MedtechProfile, type MedtechTechType } from '@/shared/api/modules/medtech'
 import MedtechApplicationDetailDialog from '../components/MedtechApplicationDetailDialog.vue'
 import MedtechArchiveDialog from '../components/MedtechArchiveDialog.vue'
+import { isCtCheck } from '@/modules/medtech/composables/useCtCheckContext'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
 
 type StatusTab = 'pending' | 'inProgress' | 'finished'
@@ -176,6 +177,10 @@ function goExecute(row: MedtechApplication) {
     }
     return
   }
+  if (isCtApplication(row)) {
+    router.push({ path: '/medtech/ct-exam', query: { id: String(row.id) } })
+    return
+  }
   router.push({ path: EXECUTE_PATH[row.techType], query: { id: String(row.id) } })
 }
 
@@ -196,6 +201,10 @@ function onStatusTabChange() {
 
 function onTypeFilterChange() {
   void loadApplications()
+}
+
+function isCtApplication(row: MedtechApplication) {
+  return row.techType === 'check' && isCtCheck(row)
 }
 
 function onArchived() {
@@ -283,6 +292,8 @@ onMounted(() => {
               <span class="status-cell__exec">{{ row.statusText || '—' }}</span>
               <ElTag v-if="row.paid === true" type="success" size="small">已缴费</ElTag>
               <ElTag v-else-if="row.paid === false" type="warning" size="small">未缴费</ElTag>
+              <ElTag v-if="isCtApplication(row)" type="primary" size="small" effect="plain">CT</ElTag>
+              <ElTag v-if="isCtApplication(row) && row.hasImaging" type="info" size="small">已上传影像</ElTag>
             </div>
           </template>
         </ElTableColumn>

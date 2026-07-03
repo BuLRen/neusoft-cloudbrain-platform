@@ -27,6 +27,13 @@ import {
   type ExaminationItemPayload,
   type MedicalTechnologyItem,
 } from '@/shared/api/modules/admin'
+import {
+  MEDTECH_CHECK_CATEGORY_OPTIONS,
+  MEDTECH_INSPECTION_CATEGORY_OPTIONS,
+  aiCategoryLabel,
+  defaultAiCategoryForTechType,
+  isCtCategoryCode,
+} from '@/modules/medtech/constants/medtechCategory'
 
 const { embedded = false } = defineProps<{ embedded?: boolean }>()
 
@@ -66,6 +73,7 @@ const form = reactive<ExaminationItemPayload>({
   techType: 'check',
   priceType: '检查费',
   deptmentId: undefined,
+  aiCategoryCode: 'general_check',
 })
 
 const formRules = {
@@ -101,12 +109,26 @@ function resetForm() {
   form.techType = 'check'
   form.priceType = '检查费'
   form.deptmentId = undefined
+  form.aiCategoryCode = 'general_check'
+}
+
+function categoryOptionsForType(type: ExaminationItemPayload['techType']) {
+  if (type === 'inspection') return MEDTECH_INSPECTION_CATEGORY_OPTIONS
+  if (type === 'check') return MEDTECH_CHECK_CATEGORY_OPTIONS
+  return []
 }
 
 function onTechTypeChange(type: ExaminationItemPayload['techType']) {
-  if (type === 'check') form.priceType = '检查费'
-  else if (type === 'inspection') form.priceType = '检验费'
-  else form.priceType = '处置费'
+  if (type === 'check') {
+    form.priceType = '检查费'
+    form.aiCategoryCode = defaultAiCategoryForTechType('check')
+  } else if (type === 'inspection') {
+    form.priceType = '检验费'
+    form.aiCategoryCode = defaultAiCategoryForTechType('inspection')
+  } else {
+    form.priceType = '处置费'
+    form.aiCategoryCode = undefined
+  }
 }
 
 async function loadDepartments() {
@@ -172,6 +194,7 @@ function openEdit(row: MedicalTechnologyItem) {
   form.techType = row.techType
   form.priceType = row.priceType || ''
   form.deptmentId = row.deptmentId
+  form.aiCategoryCode = row.aiCategoryCode || defaultAiCategoryForTechType(row.techType)
   dialogVisible.value = true
 }
 
@@ -288,6 +311,14 @@ onMounted(() => {
             <ElTag size="small" :type="techTypeTag(castItem(row).techType)">{{ techTypeLabel(castItem(row).techType) }}</ElTag>
           </template>
         </ElTableColumn>
+        <ElTableColumn label="业务子类" min-width="128" show-overflow-tooltip>
+          <template #default="{ row }">
+            <ElTag v-if="isCtCategoryCode(castItem(row).aiCategoryCode)" type="primary" size="small" effect="plain">
+              CT
+            </ElTag>
+            {{ aiCategoryLabel(castItem(row).aiCategoryCode) }}
+          </template>
+        </ElTableColumn>
         <ElTableColumn prop="techFormat" label="规格" width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ castItem(row).techFormat || '—' }}</template>
         </ElTableColumn>
@@ -343,6 +374,19 @@ onMounted(() => {
             <ElOption label="检验" value="inspection" />
             <ElOption label="处置" value="disposal" />
           </ElSelect>
+        </ElFormItem>
+        <ElFormItem v-if="form.techType === 'check' || form.techType === 'inspection'" label="业务子类">
+          <ElSelect v-model="form.aiCategoryCode" class="check-admin__field-full" placeholder="选择业务子类">
+            <ElOption
+              v-for="option in categoryOptionsForType(form.techType)"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </ElSelect>
+          <p class="check-admin__hint">
+            CT 影像项目请选择「CT 影像」分类，执行检查时将进入全屏阅片页。
+          </p>
         </ElFormItem>
         <ElFormItem label="规格">
           <ElInput v-model="form.techFormat" placeholder="如 平扫" maxlength="64" />
@@ -404,6 +448,13 @@ onMounted(() => {
 
 .check-admin__field-full {
   width: 100%;
+}
+
+.check-admin__hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  line-height: 1.5;
 }
 
 .check-admin__pagination {

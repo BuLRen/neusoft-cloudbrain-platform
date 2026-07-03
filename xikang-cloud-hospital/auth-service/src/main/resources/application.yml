@@ -17,6 +17,16 @@ spring:
       - optional:file:./config/database.yml
       - optional:file:../config/database-secrets.yml
       - optional:file:./config/database-secrets.yml
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 1
+      timeout: 5000ms
+
+captcha:
+  ttl-seconds: 180
+  length: 4
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml

@@ -105,6 +105,7 @@
             m.sender_type AS "senderType",
             m.message_type AS "messageType",
             m.content AS "content",
+            m.card_payload AS "cardPayload",
             m.summary_id AS "summaryId",
             m.workflow_run_id AS "workflowRunId",
             m.creation_time AS "creationTime"
@@ -120,10 +121,10 @@
 
     <insert id="insertMessage" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO follow_up_communication_message (
-            session_id, sender_type, message_type, content, summary_id, workflow_run_id
+            session_id, sender_type, message_type, content, card_payload, summary_id, workflow_run_id
         ) VALUES (
             #{sessionId}, #{senderType}, COALESCE(#{messageType}, 'text'),
-            #{content}, #{summaryId}, #{workflowRunId}
+            #{content}, #{cardPayloadJson}::jsonb, #{summaryId}, #{workflowRunId}
         )
     </insert>
 
@@ -212,14 +213,14 @@
 
     <select id="selectRecentFollowUpRecords" resultType="map">
         SELECT
-            fr.id AS "id",
-            fr.symptom_relief AS "symptomRelief",
-            fr.patient_feedback AS "patientFeedback",
-            fr.ai_assessment AS "aiAssessment",
-            fr.follow_up_time AS "followUpTime"
-        FROM ai_follow_up_record fr
-        WHERE fr.register_id = #{registerId}
-        ORDER BY fr.follow_up_time DESC NULLS LAST, fr.id DESC
+            e.id AS "id",
+            e.payload->>'symptomRelief' AS "symptomRelief",
+            e.summary AS "patientFeedback",
+            e.occurred_at AS "followUpTime"
+        FROM follow_up_history_event e
+        WHERE e.register_id = #{registerId}
+          AND e.event_type = 'patient_feedback'
+        ORDER BY e.occurred_at DESC NULLS LAST, e.id DESC
         LIMIT #{limit}
     </select>
 

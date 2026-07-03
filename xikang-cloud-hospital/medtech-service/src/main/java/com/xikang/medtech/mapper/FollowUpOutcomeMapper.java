@@ -10,7 +10,10 @@ import java.util.Map;
 @Mapper
 public interface FollowUpOutcomeMapper {
 
-    List<Map<String, Object>> selectFollowUpPatients(@Param("visitState") Integer visitState);
+    List<Map<String, Object>> selectFollowUpPatients(
+        @Param("visitState") Integer visitState,
+        @Param("departmentId") Long departmentId
+    );
 
     Map<String, Object> selectPatientProfile(@Param("registerId") Long registerId);
 

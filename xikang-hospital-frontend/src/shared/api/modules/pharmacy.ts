@@ -1,5 +1,6 @@
 import { http } from '../request'
 import axios from 'axios'
+import { getAccessToken } from '@/shared/auth/tokenStorage'
 
 // PDF 下载专用客户端：responseType=blob，自动携带 JWT token
 const blobClient = axios.create({
@@ -8,7 +9,7 @@ const blobClient = axios.create({
   withCredentials: true,
 })
 blobClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token') || ''
+  const token = getAccessToken()
   if (token) {
     config.headers.set('Authorization', `Bearer ${token}`)
   }

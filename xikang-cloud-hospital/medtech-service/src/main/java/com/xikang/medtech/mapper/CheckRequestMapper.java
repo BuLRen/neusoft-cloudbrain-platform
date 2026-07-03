@@ -41,4 +41,19 @@ public interface CheckRequestMapper {
         @Param("checkState") String checkState,
         @Param("checkRemark") String checkRemark
     );
+
+    int updateImaging(
+        @Param("id") Long id,
+        @Param("imagingVolumeId") String imagingVolumeId,
+        @Param("imagingUploadedAt") java.time.LocalDateTime imagingUploadedAt,
+        @Param("imagingSourceName") String imagingSourceName
+    );
+
+    int updateImagingAnalysis(
+        @Param("id") Long id,
+        @Param("imagingAnalysisResult") String imagingAnalysisResult,
+        @Param("imagingAnalyzedAt") java.time.LocalDateTime imagingAnalyzedAt
+    );
+
+    int clearImaging(@Param("id") Long id);
 }

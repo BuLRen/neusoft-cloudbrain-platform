@@ -10,4 +10,6 @@ import java.util.Map;
 public interface FollowUpLastVisitMapper {
 
     Map<String, Object> selectByRegisterId(@Param("registerId") Long registerId);
+
+    List<Map<String, Object>> selectLabItemsByRegisterId(@Param("registerId") Long registerId);
 }

@@ -59,11 +59,18 @@ async function loadCommunication() {
   if (!registerId.value) return
   loading.value = true
   try {
-    const sessionRes = await medtechFollowUpApi.getPatientCommunicationSession(registerId.value)
+    const sessionRes = await medtechFollowUpApi.getPatientCommunicationSession(registerId.value, {
+      patientId: patientId.value,
+    })
     session.value = sessionRes
     const [summaryRes, messagesRes] = await Promise.all([
-      medtechFollowUpApi.getSharedCaseSummary(registerId.value).catch(() => null),
-      medtechFollowUpApi.listCommunicationMessages(sessionRes.id, { limit: 200 }),
+      medtechFollowUpApi
+        .getPatientSharedCaseSummary(registerId.value, { patientId: patientId.value })
+        .catch(() => null),
+      medtechFollowUpApi.listPatientCommunicationMessages(registerId.value, {
+        patientId: patientId.value,
+        limit: 200,
+      }),
     ])
     sharedSummary.value = summaryRes?.exists === false ? null : summaryRes
     messages.value = messagesRes.items ?? []
@@ -83,7 +90,10 @@ async function sendMessage() {
   try {
     await medtechFollowUpApi.sendPatientMessage(session.value.id, text, true)
     draft.value = ''
-    const page = await medtechFollowUpApi.listCommunicationMessages(session.value.id, { limit: 200 })
+    const page = await medtechFollowUpApi.listPatientCommunicationMessages(registerId.value!, {
+      patientId: patientId.value,
+      limit: 200,
+    })
     messages.value = page.items ?? []
   } catch {
     // 统一错误提示
@@ -109,7 +119,7 @@ onMounted(async () => {
     <div class="patient-comm__head">
       <div>
         <h3>医患沟通</h3>
-        <p>查看医生发布的病例总结，并就随访与用药问题与医生或 AI 助手交流。</p>
+        <p>查看医生发布的病例总结，并就随访与用药问题与医生或 AI 助手交流。请勿通过此处申请复诊，复诊请使用「我的挂号」自行预约。</p>
       </div>
       <ElSelect
         v-if="visitOptions.length > 1"
