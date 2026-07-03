@@ -27,6 +27,7 @@ import {
 } from '@/shared/types/simulatedCheckResult'
 import { buildLabReportContextFromMedtech, canExportLabReport } from '@/shared/types/labReportPdf'
 import { useLabReportExport } from '@/shared/composables/useLabReportExport'
+import { restoreMedtechSimulationDraft } from '@/modules/medtech/composables/useMedtechSimulationDraft'
 import { ElAlert, ElButton, ElDialog, ElEmpty, ElIcon, ElMessage, ElSwitch } from 'element-plus'
 
 const route = useRoute()
@@ -95,6 +96,14 @@ async function loadPage() {
       report.value = { ...report.value, inspectionState: '检验中', statusText: '检验中' }
     }
     started.value = report.value.inspectionState === '检验中'
+
+    const restored = restoreMedtechSimulationDraft(report.value.inspectionResult, report.value.techName)
+    if (restored.structuredOutput) {
+      structuredOutput.value = restored.structuredOutput
+    }
+    if (restored.isNormal != null) {
+      isNormal.value = restored.isNormal
+    }
   } catch (err) {
     report.value = null
     schema.value = null

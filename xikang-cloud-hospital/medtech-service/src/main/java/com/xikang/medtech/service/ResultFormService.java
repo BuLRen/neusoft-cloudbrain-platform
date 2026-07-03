@@ -153,6 +153,54 @@ public class ResultFormService {
         }
     }
 
+    /**
+     * 模拟工作流完成后写入草稿（不改变申请状态）。
+     */
+    public String buildSimulationDraftPayload(Long medicalTechnologyId, Map<String, Object> simulationData) {
+        MedicalTechnology tech = requireMedtechTechnology(medicalTechnologyId);
+        Map<String, Object> schema = buildResolvedSchema(tech);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) schema.get("fields");
+
+        Map<String, Object> resultData = new LinkedHashMap<>();
+        if (simulationData.get("simulatedValues") instanceof Map<?, ?> simulatedValues) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> valuesMap = (Map<String, Object>) simulatedValues;
+            resultData.put("values", valuesMap);
+        }
+        Map<String, Object> values = extractDraftValues(resultData, fields, tech.getTechType());
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("schemaVersion", 1);
+        payload.put("draft", true);
+        payload.put("categoryCode", schema.get("categoryCode"));
+        payload.put("medicalTechnologyId", tech.getId());
+        payload.put("techCode", tech.getTechCode());
+        payload.put("techName", tech.getTechName());
+        payload.put("simulatedAt", LocalDateTime.now().toString());
+        if (simulationData.get("source") != null) {
+            payload.put("simulationSource", simulationData.get("source"));
+        }
+        if (simulationData.get("workflowRunId") != null) {
+            payload.put("workflowRunId", simulationData.get("workflowRunId"));
+        }
+        payload.put("values", values);
+        if (simulationData.get("structuredOutput") != null) {
+            payload.put("structuredOutput", simulationData.get("structuredOutput"));
+        }
+
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(500, "模拟草稿序列化失败");
+        }
+    }
+
+    public boolean isDraftPayload(String storedResult) {
+        Map<String, Object> payload = parseResultPayload(storedResult);
+        return payload != null && Boolean.TRUE.equals(payload.get("draft"));
+    }
+
     public Map<String, Object> parseResultPayload(String checkResult) {
         if (checkResult == null || checkResult.isBlank()) {
             return null;
@@ -263,6 +311,57 @@ public class ResultFormService {
             boolean required = Boolean.TRUE.equals(field.get("required"));
             Object normalized = normalizeValue(raw, fieldType, required, String.valueOf(field.get("fieldLabel")));
             values.put(fieldKey, normalized);
+        }
+
+        if ("inspection".equals(techType) && !values.containsKey("inspectionResult")) {
+            String legacy = firstNonBlank(
+                (String) resultData.get("inspectionResult"),
+                (String) resultData.get("result")
+            );
+            if (legacy != null) {
+                values.put("inspectionResult", legacy);
+            }
+        }
+
+        return values;
+    }
+
+    private Map<String, Object> extractDraftValues(
+        Map<String, Object> resultData,
+        List<Map<String, Object>> fields,
+        String techType
+    ) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> inputValues = resultData.get("values") instanceof Map<?, ?> map
+            ? (Map<String, Object>) map
+            : Map.of();
+
+        Map<String, Object> values = new LinkedHashMap<>();
+        for (Map<String, Object> field : fields) {
+            String fieldKey = String.valueOf(field.get("fieldKey"));
+            Object raw = inputValues.get(fieldKey);
+            if (raw == null && ("checkResult".equals(fieldKey) || "result".equals(fieldKey))) {
+                raw = firstNonBlank(
+                    (String) resultData.get("checkResult"),
+                    (String) resultData.get("result")
+                );
+            }
+            if (raw == null && ("inspectionResult".equals(fieldKey) || "result".equals(fieldKey))) {
+                raw = firstNonBlank(
+                    (String) resultData.get("inspectionResult"),
+                    (String) resultData.get("result")
+                );
+            }
+            if (raw == null && "checkRemark".equals(fieldKey)) {
+                raw = resultData.get("checkRemark");
+            }
+            if (raw == null && "inspectionRemark".equals(fieldKey)) {
+                raw = resultData.get("inspectionRemark");
+            }
+            if (raw == null || (raw instanceof String text && text.isBlank())) {
+                continue;
+            }
+            values.put(fieldKey, raw instanceof String text ? text.trim() : raw);
         }
 
         if ("inspection".equals(techType) && !values.containsKey("inspectionResult")) {

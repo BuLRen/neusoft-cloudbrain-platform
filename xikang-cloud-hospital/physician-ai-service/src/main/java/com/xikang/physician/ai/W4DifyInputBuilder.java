@@ -102,10 +102,15 @@ public class W4DifyInputBuilder {
         if (rows == null || rows.isEmpty()) {
             return "";
         }
+        String stateKey = "checkResult".equals(resultKey) ? "checkState" : "inspectionState";
         List<String> lines = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             Object result = row.get(resultKey);
             if (result == null || String.valueOf(result).trim().isEmpty()) {
+                continue;
+            }
+            String state = String.valueOf(row.getOrDefault(stateKey, "")).trim();
+            if (!"已完成".equals(state) && !"已归档".equals(state)) {
                 continue;
             }
             String techName = textOrEmpty(row, "techName");

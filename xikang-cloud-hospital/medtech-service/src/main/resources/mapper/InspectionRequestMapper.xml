@@ -101,6 +101,10 @@
         WHERE id = #{id}
     </update>
 
+    <update id="updateSimulationDraft">
+        UPDATE inspection_request SET inspection_result = #{inspectionResult} WHERE id = #{id}
+    </update>
+
     <update id="updateArchive">
         UPDATE inspection_request
         SET inspection_state = #{inspectionState},

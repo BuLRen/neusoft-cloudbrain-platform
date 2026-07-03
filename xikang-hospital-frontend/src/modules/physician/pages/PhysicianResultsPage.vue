@@ -39,6 +39,7 @@ import { buildLabReportContextFromPhysician } from '@/shared/types/labReportPdf'
 import { buildCtDiagnosisReportPdfContext } from '@/shared/types/ctReportPdf'
 import {
   hasExportableLabReportPayload,
+  isDraftResultPayload,
   resolveStructuredOutputFromPayload,
   type SimulatedCheckStructuredOutput,
 } from '@/shared/types/simulatedCheckResult'
@@ -126,16 +127,19 @@ async function loadResults() {
   }
 }
 
-function hasResultPayload(raw: unknown): boolean {
+function hasResultPayload(raw: unknown, state?: string): boolean {
   if (raw == null) return false
   const text = String(raw).trim()
-  return text.length > 0 && text !== 'null' && text !== 'undefined'
+  if (text.length === 0 || text === 'null' || text === 'undefined') return false
+  if (isDraftResultPayload(text)) return false
+  if (state && !isExamTerminalState(state)) return false
+  return true
 }
 
 const hasAnalyzableResults = computed(() => {
-  const checks = checkResults.value.some(row => hasResultPayload(row.checkResult))
-  const inspections = inspectionResults.value.some(
-    row => row.inspectionState !== '已归档' && hasResultPayload(row.inspectionResult),
+  const checks = checkResults.value.some(row => hasResultPayload(row.checkResult, row.checkState))
+  const inspections = inspectionResults.value.some(row =>
+    hasResultPayload(row.inspectionResult, row.inspectionState),
   )
   return checks || inspections
 })
@@ -278,7 +282,7 @@ function canViewCtImaging(row: CheckResult): boolean {
 }
 
 function canViewCtReport(row: CheckResult): boolean {
-  return Boolean(isCtImagingResult(row) && row.checkState === '已完成' && hasResultPayload(row.checkResult))
+  return Boolean(isCtImagingResult(row) && row.checkState === '已完成' && hasResultPayload(row.checkResult, row.checkState))
 }
 
 function openCtReportDialog(row: CheckResult) {

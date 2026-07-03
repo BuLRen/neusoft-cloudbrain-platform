@@ -16,6 +16,7 @@ import {
   isCtCheck,
   loadCtDraft,
 } from '@/modules/medtech/composables/useCtCheckContext'
+import { restoreMedtechSimulationDraft } from '@/modules/medtech/composables/useMedtechSimulationDraft'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
 
 const route = useRoute()
@@ -109,6 +110,14 @@ async function loadPage() {
       report.value = { ...report.value, checkState: '检查中', statusText: '检查中' }
     }
     started.value = report.value.checkState === '检查中'
+
+    const restored = restoreMedtechSimulationDraft(report.value.checkResult, report.value.techName)
+    if (restored.structuredOutput) {
+      structuredOutput.value = restored.structuredOutput
+    }
+    if (restored.isNormal != null) {
+      isNormal.value = restored.isNormal
+    }
   } catch (err) {
     report.value = null
     schema.value = null
@@ -164,7 +173,10 @@ async function submit() {
 
   loading.value = true
   try {
-    await medtechApi.submitCheckResult(id.value, { values: formValues.value })
+    await medtechApi.submitCheckResult(id.value, {
+      values: formValues.value,
+      structuredOutput: structuredOutput.value ?? undefined,
+    })
     if (isCtSubmit.value) {
       clearCtDraft(id.value)
     }

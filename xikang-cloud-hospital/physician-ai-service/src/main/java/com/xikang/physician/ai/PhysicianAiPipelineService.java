@@ -1094,7 +1094,7 @@ public class PhysicianAiPipelineService {
     private List<Map<String, Object>> buildAllResults(Long registerId) {
         List<Map<String, Object>> all = new ArrayList<>();
         for (Map<String, Object> row : physicianClinicalClient.getCheckResults(registerId)) {
-            if (row.get("checkResult") == null) {
+            if (!isTerminalExamResult(row, "checkState", "checkResult")) {
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
@@ -1105,7 +1105,7 @@ public class PhysicianAiPipelineService {
             all.add(item);
         }
         for (Map<String, Object> row : physicianClinicalClient.getInspectionResults(registerId)) {
-            if (row.get("inspectionResult") == null) {
+            if (!isTerminalExamResult(row, "inspectionState", "inspectionResult")) {
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
@@ -1116,6 +1116,14 @@ public class PhysicianAiPipelineService {
             all.add(item);
         }
         return all;
+    }
+
+    private static boolean isTerminalExamResult(Map<String, Object> row, String stateKey, String resultKey) {
+        if (row.get(resultKey) == null) {
+            return false;
+        }
+        String state = String.valueOf(row.getOrDefault(stateKey, "")).trim();
+        return "已完成".equals(state) || "已归档".equals(state);
     }
 
     private Map<String, Object> loadW3Output(Long registerId) {

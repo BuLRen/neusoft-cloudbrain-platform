@@ -55,13 +55,15 @@ public class CheckSimulationService {
         );
         String user = "check-" + checkRequestId;
 
-        return runWorkflowSimulation(
+        Map<String, Object> response = runWorkflowSimulation(
             checkRequestId,
             inputs,
             user,
             fields,
             "Check simulate"
         );
+        persistCheckSimulationDraft(checkRequestId, response);
+        return response;
     }
 
     public Map<String, Object> simulateInspection(Long inspectionRequestId, Map<String, Object> requestBody) {
@@ -81,13 +83,15 @@ public class CheckSimulationService {
         );
         String user = "inspection-" + inspectionRequestId;
 
-        return runWorkflowSimulation(
+        Map<String, Object> response = runWorkflowSimulation(
             inspectionRequestId,
             inputs,
             user,
             fields,
             "Inspection simulate"
         );
+        persistInspectionSimulationDraft(inspectionRequestId, response);
+        return response;
     }
 
     public Map<String, Object> inferCtCheck(Long checkRequestId) {
@@ -371,6 +375,22 @@ public class CheckSimulationService {
         Map<String, Object> structured = outputMapper.extractStructuredOutput(outputs);
         Object warning = structured.get("_validationWarning");
         return warning instanceof String text && !text.isBlank();
+    }
+
+    private void persistCheckSimulationDraft(Long checkRequestId, Map<String, Object> response) {
+        try {
+            medtechService.saveCheckSimulationDraft(checkRequestId, response);
+        } catch (Exception ex) {
+            log.warn("检查模拟草稿持久化失败 | checkRequestId={}", checkRequestId, ex);
+        }
+    }
+
+    private void persistInspectionSimulationDraft(Long inspectionRequestId, Map<String, Object> response) {
+        try {
+            medtechService.saveInspectionSimulationDraft(inspectionRequestId, response);
+        } catch (Exception ex) {
+            log.warn("检验模拟草稿持久化失败 | inspectionRequestId={}", inspectionRequestId, ex);
+        }
     }
 
     private record DifyInvocation(
