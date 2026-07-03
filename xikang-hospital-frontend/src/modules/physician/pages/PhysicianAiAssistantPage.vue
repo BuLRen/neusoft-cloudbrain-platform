@@ -10,10 +10,29 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
+  ElOption,
   ElScrollbar,
+  ElSelect,
 } from 'element-plus'
-import { CircleCheck, CircleClose, Delete, MagicStick, Plus, Promotion, User } from '@element-plus/icons-vue'
-import GlassCard from '@/shared/components/GlassCard.vue'
+import {
+  ArrowLeft,
+  ArrowRight,
+  CircleCheck,
+  CircleClose,
+  Delete,
+  Document,
+  Grid,
+  Headset,
+  MagicStick,
+  Paperclip,
+  Plus,
+  Promotion,
+  QuestionFilled,
+  Refresh,
+  Search,
+  StarFilled,
+  User,
+} from '@element-plus/icons-vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import MarkdownContent from '../components/MarkdownContent.vue'
 import AiConsultSummaryCard from '../components/AiConsultSummaryCard.vue'
@@ -25,7 +44,7 @@ import { copilotApi } from '@/shared/api/modules/copilot'
 import { physicianApi, type MedicalRecord, type PhysicianPatient } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
 import { useAuthStore } from '@/app/stores/auth'
-import { PHYSICIAN_ASSISTANT, PHYSICIAN_QUEUE, visitStateLabel } from '../constants/visitState'
+import { PHYSICIAN_ASSISTANT, PHYSICIAN_QUEUE, VISIT_STATE, visitStateLabel } from '../constants/visitState'
 import { usePhysicianPatientSelectStore } from '@/app/stores/physicianPatientSelect'
 import type {
   AgentAction,
@@ -80,6 +99,80 @@ const composerPrompts = [
   '推荐需要补充哪些检查？',
   '帮我把预问诊内容补充到病历中',
 ]
+
+const onboardingCards = [
+  {
+    title: '调取工作流',
+    description: '运行初步诊断、检查推荐等工作流，快速获取 AI 辅助结论',
+    prompt: '请根据当前患者信息运行初步诊断与检查推荐工作流',
+  },
+  {
+    title: '补充病历',
+    description: '根据口述或预问诊信息，生成并补充病历草案',
+    prompt: '帮我把预问诊内容补充到病历中，并生成病历草案',
+  },
+  {
+    title: '查询检查项目',
+    description: '在医技目录中检索检查检验项目，辅助开立申请',
+    prompt: '请检索适合当前病情的检查检验项目并说明理由',
+  },
+] as const
+
+const knowledgeBaseItems = [
+  { label: '临床指南库', count: '1,248 条' },
+  { label: '检验参考值库', count: '860 条' },
+  { label: '药品说明书', count: '2,310 条' },
+  { label: '影像知识库', count: '420 条' },
+] as const
+
+const workflowCatalog = [
+  { id: 'w1', label: 'W1 病历结构化', prompt: '请运行病历结构化工作流' },
+  { id: 'w2', label: 'W2 检查推荐', prompt: '请运行检查推荐工作流' },
+  { id: 'w3', label: 'W3 结果解读', prompt: '请运行结果解读工作流' },
+  { id: 'w4', label: 'W4 确诊推理', prompt: '请运行确诊推理工作流' },
+  { id: 'w5', label: 'W5 智能荐药', prompt: '请运行智能荐药工作流' },
+] as const
+
+const recommendedActions = ref([...composerPrompts.slice(0, 4)])
+
+const draftCharCount = computed(() => draft.value.length)
+
+const patientStatusItems = computed(() => {
+  if (!patient.value) return []
+  const visit = visitStateLabel(patient.value.visitState)
+  const hasRecord = Boolean(medicalRecord.value?.readme?.trim())
+  const hasPrevisit = Boolean(patient.value.hasAiConsultation)
+  const examDone =
+    patient.value.visitState === VISIT_STATE.EXAM_COMPLETED ||
+    patient.value.visitState === VISIT_STATE.ENDED
+
+  return [
+    { label: '就诊状态', value: visit.text, tone: visit.tone },
+    { label: '检查检验', value: examDone ? '已完成' : '未完成', tone: examDone ? 'success' : 'warning' },
+    { label: '患者病历', value: hasRecord ? '已填写' : '未填写', tone: hasRecord ? 'success' : 'warning' },
+    { label: 'AI 预问诊', value: hasPrevisit ? '有记录' : '无记录', tone: hasPrevisit ? 'success' : 'neutral' },
+  ]
+})
+
+const medicalRecordDraftPreview = computed(() => {
+  if (!medicalRecord.value) return ''
+  const parts = [
+    medicalRecord.value.readme,
+    medicalRecord.value.present,
+    medicalRecord.value.proposal,
+  ].filter(Boolean)
+  return parts.join('\n\n').trim()
+})
+
+function refreshRecommendedActions() {
+  const shuffled = [...composerPrompts].sort(() => Math.random() - 0.5)
+  recommendedActions.value = shuffled.slice(0, 4)
+}
+
+function handleSessionSelect(sessionId: number | string) {
+  const id = typeof sessionId === 'string' ? Number(sessionId) : sessionId
+  if (Number.isFinite(id)) void switchSession(id)
+}
 
 function applyComposerPrompt(text: string) {
   if (loading.value || !currentSessionId.value) return
@@ -554,1114 +647,1152 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="copilot-page u-page-grid">
-    <div v-if="!registerId" class="copilot-empty">
-      <GlassCard>
+  <div class="agent-shell">
+    <div v-if="!registerId" class="agent-empty">
+      <div class="agent-card agent-empty__card">
         <ElEmpty description="请先选择患者后再使用 AI 助手">
           <ElButton type="primary" @click="goSelectPatient">选择患者</ElButton>
         </ElEmpty>
-      </GlassCard>
+      </div>
     </div>
 
-    <div v-else class="copilot-grid">
-      <aside class="copilot-context">
-        <GlassCard class="copilot-context__card">
-          <div class="copilot-context__head">
-            <h3>患者上下文</h3>
-            <StatusTag v-if="patient" :tone="visitStateLabel(patient.visitState).tone">
-              {{ visitStateLabel(patient.visitState).text }}
-            </StatusTag>
+    <template v-else>
+      <header class="agent-topbar">
+        <div class="agent-topbar__left">
+          <ElButton class="agent-topbar__back" text :icon="ArrowLeft" @click="goQueue">返回</ElButton>
+          <span class="agent-topbar__logo" aria-hidden="true"><ElIcon><StarFilled /></ElIcon></span>
+          <div class="agent-topbar__brand">
+            <strong>临床 Agent</strong>
+            <small>门诊诊疗 Copilot</small>
           </div>
-          <div v-if="patient" class="copilot-context__profile">
-            <span class="copilot-context__avatar"><ElIcon :size="22"><User /></ElIcon></span>
-            <div>
-              <strong>{{ patient.realName }}</strong>
-              <p>{{ patient.caseNumber }} · {{ patient.gender }} · {{ patient.age ?? '-' }}岁</p>
+          <span class="agent-topbar__status">
+            <span class="agent-topbar__status-dot" aria-hidden="true" />
+            在线 / 就绪
+          </span>
+        </div>
+
+        <div class="agent-topbar__center">
+          <ElSelect
+            v-if="sessions.length"
+            :model-value="currentSessionId ?? undefined"
+            class="agent-topbar__session-select"
+            placeholder="选择对话"
+            @change="handleSessionSelect"
+          >
+            <ElOption
+              v-for="session in sessions"
+              :key="session.id"
+              :label="session.title"
+              :value="session.id"
+            />
+          </ElSelect>
+          <span v-else class="agent-topbar__session-fallback">新对话</span>
+        </div>
+
+        <div class="agent-topbar__right">
+          <span class="agent-topbar__user">
+            <ElIcon><User /></ElIcon>
+            {{ authStore.realName || '医生' }}
+          </span>
+          <ElButton class="agent-topbar__action" :icon="Search" @click="goQueue">待诊接诊</ElButton>
+          <ElButton
+            class="agent-topbar__action"
+            :disabled="!registerId || !currentSessionId"
+            @click="clearHistory"
+          >
+            清空
+          </ElButton>
+          <ElButton class="agent-topbar__action agent-topbar__action--icon" circle :icon="QuestionFilled" />
+        </div>
+      </header>
+
+      <div class="agent-body">
+        <aside class="agent-panel agent-panel--left">
+          <div class="agent-card agent-card--panel">
+            <div class="agent-panel__head">
+              <h3>患者上下文</h3>
+              <StatusTag v-if="patient" :tone="visitStateLabel(patient.visitState).tone">
+                {{ visitStateLabel(patient.visitState).text }}
+              </StatusTag>
+            </div>
+
+            <div v-if="patient" class="agent-patient">
+              <span class="agent-patient__avatar"><ElIcon :size="22"><User /></ElIcon></span>
+              <div class="agent-patient__info">
+                <strong>{{ patient.realName }}</strong>
+                <p>{{ patient.caseNumber }} · {{ patient.gender || '-' }} · {{ patient.age ?? '-' }}岁</p>
+              </div>
+            </div>
+
+            <div class="agent-sessions" v-loading="sessionsLoading">
+              <div class="agent-sessions__head">
+                <h4>对话列表</h4>
+                <ElButton type="primary" link :icon="Plus" @click="createNewSession">新建</ElButton>
+              </div>
+              <ul v-if="sessions.length" class="agent-sessions__list">
+                <li
+                  v-for="session in sessions"
+                  :key="session.id"
+                  class="agent-sessions__item"
+                  :class="{ 'is-active': session.id === currentSessionId }"
+                >
+                  <button type="button" class="agent-sessions__btn" @click="switchSession(session.id)">
+                    <span class="agent-sessions__title" :title="session.title">{{ session.title }}</span>
+                    <span class="agent-sessions__time">{{ formatSessionTime(session.updatedAt) }}</span>
+                  </button>
+                  <ElButton
+                    v-if="sessions.length > 1"
+                    type="danger"
+                    link
+                    :icon="Delete"
+                    aria-label="删除对话"
+                    @click.stop="deleteSession(session)"
+                  />
+                </li>
+              </ul>
+              <p v-else class="agent-sessions__empty">暂无对话，点击新建开始</p>
             </div>
           </div>
 
-          <div class="copilot-sessions" v-loading="sessionsLoading">
-            <div class="copilot-sessions__head">
-              <h4>对话列表</h4>
-              <ElButton type="primary" link :icon="Plus" @click="createNewSession">新建</ElButton>
-            </div>
-            <ul v-if="sessions.length" class="copilot-sessions__list">
-              <li
-                v-for="session in sessions"
-                :key="session.id"
-                class="copilot-sessions__item"
-                :class="{ 'is-active': session.id === currentSessionId }"
-              >
-                <button type="button" class="copilot-sessions__btn" @click="switchSession(session.id)">
-                  <span class="copilot-sessions__title" :title="session.title">{{ session.title }}</span>
-                  <span class="copilot-sessions__time">{{ formatSessionTime(session.updatedAt) }}</span>
-                </button>
-                <ElButton
-                  v-if="sessions.length > 1"
-                  type="danger"
-                  link
-                  :icon="Delete"
-                  aria-label="删除对话"
-                  @click.stop="deleteSession(session)"
-                />
-              </li>
-            </ul>
-            <p v-else class="copilot-sessions__empty">暂无对话，点击新建开始</p>
-          </div>
-
-          <div class="copilot-context__tabs" role="tablist" aria-label="患者资料">
+          <div class="agent-context-actions">
             <button
               type="button"
-              role="tab"
-              class="copilot-context__tab"
+              class="agent-context-actions__btn"
               :class="{ 'is-active': contextPanel === 'ai-consult' }"
-              :aria-selected="contextPanel === 'ai-consult'"
               @click="toggleContextPanel('ai-consult')"
             >
-              AI 预问诊
+              <ElIcon><MagicStick /></ElIcon>
+              <span>AI 预问诊</span>
             </button>
             <button
               type="button"
-              role="tab"
-              class="copilot-context__tab"
+              class="agent-context-actions__btn"
               :class="{ 'is-active': contextPanel === 'medical-record' }"
-              :aria-selected="contextPanel === 'medical-record'"
               @click="toggleContextPanel('medical-record')"
             >
-              患者病历
+              <ElIcon><Document /></ElIcon>
+              <span>患者病历</span>
             </button>
           </div>
 
-          <div v-if="contextPanel" class="copilot-context__panel">
+          <div v-if="contextPanel" class="agent-card agent-card--panel agent-context-panel">
             <AiConsultSummaryCard
               v-if="contextPanel === 'ai-consult'"
               :summary="patient?.aiConsultSummary"
               :has-ai-consultation="patient?.hasAiConsultation"
-              class="copilot-context__summary"
             />
             <MedicalRecordSummaryCard
               v-else
               :record="medicalRecord"
               :loading="medicalRecordLoading"
-              class="copilot-context__summary"
             />
           </div>
-        </GlassCard>
-      </aside>
+        </aside>
 
-      <section class="copilot-chat">
-        <GlassCard class="copilot-chat__card">
-          <div class="copilot-chat__toolbar">
-            <div class="copilot-chat__brand">
-              <span class="copilot-chat__brand-icon"><ElIcon><MagicStick /></ElIcon></span>
-              <div>
-                <strong>临床 Agent</strong>
-                <small>门诊诊疗 Copilot</small>
-              </div>
+        <main class="agent-main">
+          <div v-if="patient" class="agent-card agent-patient-banner">
+            <div class="agent-patient-banner__title">
+              <strong>当前患者：{{ patient.realName }}</strong>
+              <span>{{ patient.gender || '-' }} · 门诊</span>
             </div>
-            <span class="copilot-chat__session">{{ currentSession?.title || '新对话' }}</span>
-            <div class="copilot-chat__ops">
-              <span class="copilot-chat__doctor"><ElIcon><User /></ElIcon>{{ authStore.realName || '医生' }}</span>
-              <ElButton size="small" @click="goQueue">待诊接诊</ElButton>
-              <ElButton size="small" :disabled="!registerId || !currentSessionId" @click="clearHistory">清空</ElButton>
+            <div class="agent-patient-banner__stats">
+              <div
+                v-for="item in patientStatusItems"
+                :key="item.label"
+                class="agent-patient-banner__stat"
+                :class="`is-${item.tone}`"
+              >
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
             </div>
           </div>
 
-          <ElScrollbar ref="chatScrollRef" class="copilot-chat__scroll" v-loading="historyLoading">
-            <div v-if="!messages.length" class="copilot-chat__welcome">
-              <p>你好，我是 Dify 临床 Copilot。你可以询问病情、检验解读、鉴别诊断；需要时会自动调用初步诊断、检查推荐等工作流工具。</p>
-              <div class="copilot-chat__quick">
-                <button
-                  v-for="item in composerPrompts"
-                  :key="item"
-                  type="button"
-                  class="copilot-chat__quick-btn"
-                  @click="sendMessage(item)"
-                >
-                  {{ item }}
-                </button>
-              </div>
-            </div>
-
-            <div
-              v-for="(msg, index) in messages"
-              :key="index"
-              class="copilot-chat__bubble"
-              :class="`is-${msg.role}`"
-            >
-              <template v-if="msg.role === 'assistant'">
-                <p v-if="msg.agentStatus" class="copilot-chat__agent-status">
-                  <span class="copilot-chat__spinner" aria-hidden="true" />
-                  {{ msg.agentStatus }}
+          <div class="agent-card agent-chat">
+            <ElScrollbar ref="chatScrollRef" class="agent-chat__scroll" v-loading="historyLoading">
+              <div v-if="!messages.length" class="agent-chat__welcome">
+                <p class="agent-chat__welcome-lead">
+                  你好，我是 Dify 临床 Copilot。当前患者信息如下，你希望我先做什么？
                 </p>
-                <MarkdownContent v-if="msg.content" :source="msg.content" />
-                <p
-                  v-else-if="!msg.agentStatus && isStreaming(index)"
-                  class="copilot-chat__agent-status"
-                >
-                  <span class="copilot-chat__spinner" aria-hidden="true" />
-                  正在生成…
-                </p>
-                <AgentActionCard
-                  v-for="(action, actionIndex) in msg.actions"
-                  :key="`${index}-${actionIndex}`"
-                  :action="action"
-                  :status="getActionStatus(index, actionIndex)"
-                  @confirm="handleActionConfirm(index, actionIndex, action)"
-                  @dismiss="handleActionDismiss(index, actionIndex)"
-                />
-                <AgentConfirmCard
-                  v-for="(confirm, confirmIndex) in msg.confirms"
-                  :key="`confirm-${index}-${confirmIndex}`"
-                  :action="confirm"
-                  :status="getConfirmStatus(index, confirmIndex)"
-                  @confirm="(payload) => handleConfirmSubmit(index, confirmIndex, confirm, payload)"
-                  @dismiss="handleConfirmDismiss(index, confirmIndex)"
-                />
-                <ElCollapse
-                  v-if="msg.agentThoughts?.length"
-                  class="copilot-agent-thoughts"
-                >
-                  <ElCollapseItem title="工具调用记录" name="thoughts">
-                    <ul>
-                      <li v-for="(thought, ti) in msg.agentThoughts" :key="ti">
-                        <strong v-if="thought.tool">{{ friendlyToolName(thought.tool) }}</strong>
-                        <span v-if="thought.thought">{{ formatThoughtPreview(thought.thought) }}</span>
-                      </li>
-                    </ul>
-                  </ElCollapseItem>
-                </ElCollapse>
-              </template>
-
-              <template v-else-if="msg.role === 'action_result'">
-                <div class="copilot-action-result">
-                  <div class="copilot-action-result__head">
-                    <ElIcon :class="msg.actionResult?.success ? 'is-success' : 'is-error'">
-                      <CircleCheck v-if="msg.actionResult?.success" />
-                      <CircleClose v-else />
-                    </ElIcon>
-                    <div>
-                      <strong>{{ msg.actionResult?.label || '工作流执行' }}</strong>
-                      <p>{{ msg.actionResult?.summary || msg.content }}</p>
+                <div class="agent-onboarding">
+                  <button
+                    v-for="(card, index) in onboardingCards"
+                    :key="card.title"
+                    type="button"
+                    class="agent-onboarding__card"
+                    @click="sendMessage(card.prompt)"
+                  >
+                    <span class="agent-onboarding__index">{{ index + 1 }}</span>
+                    <div class="agent-onboarding__body">
+                      <strong>{{ card.title }}</strong>
+                      <p>{{ card.description }}</p>
                     </div>
-                  </div>
-                  <ElCollapse v-if="msg.actionResult?.rawData" class="copilot-action-result__detail">
-                    <ElCollapseItem title="查看完整结果" name="detail">
-                      <pre>{{ JSON.stringify(msg.actionResult.rawData, null, 2) }}</pre>
+                    <ElIcon class="agent-onboarding__arrow"><ArrowRight /></ElIcon>
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-for="(msg, index) in messages"
+                :key="index"
+                class="agent-chat__bubble"
+                :class="`is-${msg.role}`"
+              >
+                <template v-if="msg.role === 'assistant'">
+                  <p v-if="msg.agentStatus" class="agent-chat__agent-status">
+                    <span class="agent-chat__spinner" aria-hidden="true" />
+                    {{ msg.agentStatus }}
+                  </p>
+                  <MarkdownContent v-if="msg.content" :source="msg.content" />
+                  <p
+                    v-else-if="!msg.agentStatus && isStreaming(index)"
+                    class="agent-chat__agent-status"
+                  >
+                    <span class="agent-chat__spinner" aria-hidden="true" />
+                    正在生成…
+                  </p>
+                  <AgentActionCard
+                    v-for="(action, actionIndex) in msg.actions"
+                    :key="`${index}-${actionIndex}`"
+                    :action="action"
+                    :status="getActionStatus(index, actionIndex)"
+                    @confirm="handleActionConfirm(index, actionIndex, action)"
+                    @dismiss="handleActionDismiss(index, actionIndex)"
+                  />
+                  <AgentConfirmCard
+                    v-for="(confirm, confirmIndex) in msg.confirms"
+                    :key="`confirm-${index}-${confirmIndex}`"
+                    :action="confirm"
+                    :status="getConfirmStatus(index, confirmIndex)"
+                    @confirm="(payload) => handleConfirmSubmit(index, confirmIndex, confirm, payload)"
+                    @dismiss="handleConfirmDismiss(index, confirmIndex)"
+                  />
+                  <ElCollapse
+                    v-if="msg.agentThoughts?.length"
+                    class="agent-agent-thoughts"
+                  >
+                    <ElCollapseItem title="工具调用记录" name="thoughts">
+                      <ul>
+                        <li v-for="(thought, ti) in msg.agentThoughts" :key="ti">
+                          <strong v-if="thought.tool">{{ friendlyToolName(thought.tool) }}</strong>
+                          <span v-if="thought.thought">{{ formatThoughtPreview(thought.thought) }}</span>
+                        </li>
+                      </ul>
                     </ElCollapseItem>
                   </ElCollapse>
+                </template>
+
+                <template v-else-if="msg.role === 'action_result'">
+                  <div class="agent-action-result">
+                    <div class="agent-action-result__head">
+                      <ElIcon :class="msg.actionResult?.success ? 'is-success' : 'is-error'">
+                        <CircleCheck v-if="msg.actionResult?.success" />
+                        <CircleClose v-else />
+                      </ElIcon>
+                      <div>
+                        <strong>{{ msg.actionResult?.label || '工作流执行' }}</strong>
+                        <p>{{ msg.actionResult?.summary || msg.content }}</p>
+                      </div>
+                    </div>
+                    <ElCollapse v-if="msg.actionResult?.rawData" class="agent-action-result__detail">
+                      <ElCollapseItem title="查看完整结果" name="detail">
+                        <pre>{{ JSON.stringify(msg.actionResult.rawData, null, 2) }}</pre>
+                      </ElCollapseItem>
+                    </ElCollapse>
+                  </div>
+                </template>
+
+                <p v-else>{{ msg.content }}</p>
+              </div>
+            </ElScrollbar>
+
+            <div class="agent-composer">
+              <div v-if="currentSessionId" class="agent-composer__suggestions">
+                <span class="agent-composer__suggestions-label">快捷提问</span>
+                <div class="agent-composer__suggestions-list">
+                  <button
+                    v-for="item in composerPrompts"
+                    :key="`composer-${item}`"
+                    type="button"
+                    class="agent-composer__suggestion-btn"
+                    :disabled="loading"
+                    @click="applyComposerPrompt(item)"
+                  >
+                    {{ item }}
+                  </button>
                 </div>
-              </template>
+              </div>
 
-              <p v-else>{{ msg.content }}</p>
-            </div>
-          </ElScrollbar>
-
-          <div class="copilot-chat__composer-area">
-            <div v-if="currentSessionId" class="copilot-chat__suggestions">
-              <span class="copilot-chat__suggestions-label">快捷提问</span>
-              <div class="copilot-chat__suggestions-list">
-                <button
-                  v-for="item in composerPrompts"
-                  :key="`composer-${item}`"
-                  type="button"
-                  class="copilot-chat__suggestion-btn"
-                  :disabled="loading"
-                  @click="applyComposerPrompt(item)"
-                >
-                  {{ item }}
-                </button>
+              <div class="agent-composer__input-wrap">
+                <ElInput
+                  ref="composerInputRef"
+                  v-model="draft"
+                  type="textarea"
+                  :rows="3"
+                  resize="none"
+                  :disabled="!currentSessionId || loading"
+                  placeholder="输入临床问题，例如：帮我智能分析初步诊断"
+                  @keydown.enter.exact.prevent="sendMessage()"
+                />
+                <div class="agent-composer__toolbar">
+                  <div class="agent-composer__tools">
+                    <button type="button" class="agent-composer__tool" aria-label="附件"><ElIcon><Paperclip /></ElIcon></button>
+                    <button type="button" class="agent-composer__tool" aria-label="语音"><ElIcon><Headset /></ElIcon></button>
+                    <button type="button" class="agent-composer__tool" aria-label="工具"><ElIcon><Grid /></ElIcon></button>
+                  </div>
+                  <div class="agent-composer__actions">
+                    <span class="agent-composer__count">{{ draftCharCount }} / 1000</span>
+                    <ElButton
+                      v-if="loading"
+                      type="danger"
+                      plain
+                      @click="stopGeneration"
+                    >
+                      停止
+                    </ElButton>
+                    <ElButton
+                      class="agent-composer__send"
+                      type="primary"
+                      :loading="loading"
+                      :disabled="!currentSessionId || loading"
+                      :icon="Promotion"
+                      @click="sendMessage()"
+                    >
+                      发送
+                    </ElButton>
+                  </div>
+                </div>
               </div>
             </div>
-
-            <div class="copilot-chat__composer">
-              <ElInput
-                ref="composerInputRef"
-                v-model="draft"
-                type="textarea"
-                :rows="3"
-                resize="none"
-                :disabled="!currentSessionId || loading"
-                placeholder="输入临床问题，例如：帮我智能分析初步诊断"
-                @keydown.enter.exact.prevent="sendMessage()"
-              />
-              <ElButton
-                v-if="loading"
-                type="danger"
-                plain
-                @click="stopGeneration"
-              >
-                停止
-              </ElButton>
-              <ElButton
-                type="primary"
-                :loading="loading"
-                :disabled="!currentSessionId || loading"
-                :icon="Promotion"
-                @click="sendMessage()"
-              >
-                发送
-              </ElButton>
-            </div>
           </div>
-        </GlassCard>
-      </section>
-    </div>
+        </main>
+
+        <aside class="agent-panel agent-panel--right">
+          <div class="agent-card agent-card--panel">
+            <div class="agent-side__head">
+              <h3>工作流</h3>
+            </div>
+            <ul class="agent-workflow-list">
+              <li v-for="item in workflowCatalog" :key="item.id">
+                <button type="button" class="agent-workflow-list__btn" @click="sendMessage(item.prompt)">
+                  <span>{{ item.label }}</span>
+                  <span class="agent-workflow-list__status">未运行</span>
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <div class="agent-card agent-card--panel">
+            <div class="agent-side__head">
+              <h3>知识库</h3>
+            </div>
+            <ul class="agent-knowledge-list">
+              <li v-for="item in knowledgeBaseItems" :key="item.label">
+                <span>{{ item.label }}</span>
+                <em>{{ item.count }}</em>
+              </li>
+            </ul>
+          </div>
+
+          <div class="agent-card agent-card--panel">
+            <div class="agent-side__head">
+              <h3>病历草稿</h3>
+            </div>
+            <p v-if="medicalRecordDraftPreview" class="agent-draft-preview">{{ medicalRecordDraftPreview }}</p>
+            <p v-else class="agent-draft-empty">对话中生成的病历草案将显示在这里</p>
+          </div>
+
+          <div class="agent-card agent-card--panel">
+            <div class="agent-side__head">
+              <h3>推荐动作</h3>
+              <ElButton link :icon="Refresh" @click="refreshRecommendedActions">换一换</ElButton>
+            </div>
+            <ul class="agent-recommend-list">
+              <li v-for="item in recommendedActions" :key="item">
+                <button type="button" @click="sendMessage(item)">{{ item }}</button>
+              </li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.copilot-grid {
-  display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: var(--space-4);
-  min-height: 560px;
-}
-
-.copilot-context__card,
-.copilot-chat__card {
-  height: 100%;
-  padding: var(--space-5);
-}
-
-.copilot-context__head {
+.agent-shell {
+  --agent-bg: #0a0f18;
+  --agent-surface: #111926;
+  --agent-surface-2: #162030;
+  --agent-border: rgba(148, 163, 184, 0.14);
+  --agent-text: #e8eef7;
+  --agent-muted: #8b9cb3;
+  --agent-accent: #20c2d3;
+  --agent-accent-soft: rgba(32, 194, 211, 0.12);
+  --agent-success: #34d399;
+  --agent-warning: #fbbf24;
+  color-scheme: dark;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-block-end: var(--space-4);
+  flex-direction: column;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(32, 194, 211, 0.08), transparent 28%),
+    radial-gradient(circle at 88% 12%, rgba(59, 130, 246, 0.08), transparent 24%),
+    var(--agent-bg);
+  color: var(--agent-text);
 }
 
-.copilot-context__head h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.copilot-context__profile {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  margin-block-end: var(--space-4);
-}
-
-.copilot-context__avatar {
+.agent-empty {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  flex: 1;
+  padding: 24px;
+}
+
+.agent-empty__card {
+  width: min(480px, 100%);
+  padding: 32px;
+}
+
+.agent-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 360px) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--agent-border);
+  background: rgba(10, 15, 24, 0.92);
+  backdrop-filter: blur(12px);
+}
+
+.agent-topbar__left,
+.agent-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.agent-topbar__right {
+  justify-content: flex-end;
+}
+
+.agent-topbar__back {
+  color: var(--agent-muted);
+}
+
+.agent-topbar__logo {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--agent-accent);
+  background: var(--agent-accent-soft);
+}
+
+.agent-topbar__brand strong {
+  display: block;
+  font-size: 15px;
+}
+
+.agent-topbar__brand small {
+  display: block;
+  margin-top: 2px;
+  color: var(--agent-muted);
+  font-size: 11px;
+}
+
+.agent-topbar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.1);
+  color: #86efac;
+  font-size: 12px;
+}
+
+.agent-topbar__status-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
+  background: #34d399;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.8);
 }
 
-.copilot-context__profile p,
-.copilot-context__hint,
-.copilot-context__note {
-  margin: 4px 0 0;
-  color: var(--color-text-muted);
+.agent-topbar__center {
+  min-width: 0;
+}
+
+.agent-topbar__session-select {
+  width: 100%;
+}
+
+.agent-topbar__session-select :deep(.el-select__wrapper) {
+  background: var(--agent-surface);
+  box-shadow: inset 0 0 0 1px var(--agent-border);
+}
+
+.agent-topbar__session-fallback {
+  display: block;
+  text-align: center;
+  color: var(--agent-muted);
   font-size: 13px;
-  line-height: 1.6;
 }
 
-.copilot-sessions {
-  margin-block-end: var(--space-4);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: #f8fafc;
-  box-shadow: inset 0 0 0 1px var(--color-border);
+.agent-topbar__user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--agent-surface);
+  color: var(--agent-muted);
+  font-size: 12px;
 }
 
-.copilot-sessions__head {
+.agent-topbar__action {
+  --el-button-bg-color: var(--agent-surface);
+  --el-button-border-color: var(--agent-border);
+  --el-button-text-color: var(--agent-text);
+  --el-button-hover-bg-color: var(--agent-surface-2);
+  --el-button-hover-border-color: rgba(32, 194, 211, 0.35);
+  --el-button-hover-text-color: var(--agent-accent);
+}
+
+.agent-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 300px;
+  gap: 14px;
+  min-height: 0;
+  padding: 14px;
+}
+
+.agent-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.agent-panel--left {
+  overflow: hidden;
+}
+
+.agent-panel--right {
+  overflow-y: auto;
+}
+
+.agent-card {
+  border: 1px solid var(--agent-border);
+  border-radius: 14px;
+  background: rgba(17, 25, 38, 0.88);
+  backdrop-filter: blur(10px);
+}
+
+.agent-card--panel {
+  padding: 14px;
+}
+
+.agent-panel__head,
+.agent-side__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-block-end: var(--space-2);
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.copilot-sessions__head h4 {
+.agent-panel__head h3,
+.agent-side__head h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--color-text);
 }
 
-.copilot-sessions__list {
+.agent-patient {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--agent-surface-2);
+}
+
+.agent-patient__avatar {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  color: var(--agent-accent);
+  background: var(--agent-accent-soft);
+}
+
+.agent-patient__info p {
+  margin: 4px 0 0;
+  color: var(--agent-muted);
+  font-size: 12px;
+}
+
+.agent-sessions__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.agent-sessions__head h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-sessions__list {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 180px;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.copilot-sessions__item {
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-1);
-  min-width: 0;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-.copilot-sessions__item.is-active {
-  background: var(--color-primary-soft);
-}
-
-.copilot-sessions__btn {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-  padding: 8px 10px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.copilot-sessions__title {
-  width: 100%;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.copilot-sessions__time {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--color-text-muted);
-}
-
-.copilot-sessions__empty {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.copilot-context__summary {
-  margin-block-end: var(--space-4);
-}
-
-.copilot-context__note {
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: #f8fafc;
-  box-shadow: inset 0 0 0 1px var(--color-border);
-}
-
-.copilot-chat__card {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
-}
-
-.copilot-chat__toolbar {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-3);
-  margin-block-end: var(--space-3);
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
-
-.copilot-chat__session {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-  font-weight: 500;
-  color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.copilot-chat__scroll {
-  flex: 1 1 0;
-  min-height: 0;
-  height: 0;
-  margin-block-end: var(--space-4);
-  overflow: hidden;
-}
-
-.copilot-chat__scroll :deep(.el-scrollbar) {
-  height: 100%;
-}
-
-.copilot-chat__scroll :deep(.el-scrollbar__wrap) {
-  overflow-x: hidden;
-}
-
-.copilot-chat__composer {
-  flex-shrink: 0;
-}
-
-.copilot-chat__welcome p {
-  color: var(--color-text-muted);
-  line-height: 1.7;
-}
-
-.copilot-chat__quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-block-start: var(--space-4);
-}
-
-.copilot-chat__quick-btn {
-  padding: 8px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.7);
-  color: var(--color-text);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.copilot-chat__quick-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary-strong);
-}
-
-.copilot-chat__bubble {
-  max-width: 88%;
-  margin-block-end: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  line-height: 1.7;
-  font-size: 14px;
-}
-
-.copilot-chat__bubble.is-user {
-  margin-inline-start: auto;
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
-}
-
-.copilot-chat__bubble.is-assistant {
-  background: #f8fafc;
-  box-shadow: inset 0 0 0 1px var(--color-border);
-}
-
-.copilot-chat__agent-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 8px;
-  font-size: 12px;
-  color: var(--el-color-primary);
-}
-
-.copilot-chat__spinner {
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--el-color-primary);
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: copilot-spin 0.7s linear infinite;
-  flex-shrink: 0;
-}
-
-@keyframes copilot-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.copilot-agent-thoughts {
-  margin-top: 8px;
-}
-
-.copilot-agent-thoughts ul {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.copilot-chat__bubble.is-action_result {
-  background: linear-gradient(180deg, rgba(236, 253, 245, 0.6) 0%, rgba(255, 255, 255, 0.95) 100%);
-  box-shadow: inset 0 0 0 1px rgba(110, 231, 183, 0.4);
-}
-
-.copilot-action-result__head {
-  display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
-}
-
-.copilot-action-result__head strong {
-  display: block;
-  font-size: 14px;
-}
-
-.copilot-action-result__head p {
-  margin: 4px 0 0;
-  color: var(--color-text-muted);
-  line-height: 1.6;
-}
-
-.copilot-action-result__head .el-icon {
-  margin-top: 2px;
-  font-size: 18px;
-}
-
-.copilot-action-result__head .el-icon.is-success {
-  color: #059669;
-}
-
-.copilot-action-result__head .el-icon.is-error {
-  color: #dc2626;
-}
-
-.copilot-action-result__detail {
-  margin-block-start: var(--space-3);
-  border: none;
-}
-
-.copilot-action-result__detail pre {
-  margin: 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: #f8fafc;
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-x: auto;
-  max-height: 240px;
-}
-
-.copilot-chat__composer {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--space-3);
-  align-items: end;
-}
-
-@media (max-width: 960px) {
-  .copilot-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.copilot-page {
-  --copilot-blue: #2f8df7;
-  --copilot-blue-soft: #e8f3ff;
-  --copilot-blue-softer: #f5faff;
-  --copilot-green: #14a978;
-  --copilot-green-soft: #ecfff7;
-  --copilot-line: rgba(72, 118, 169, 0.14);
-  --copilot-shadow: 0 16px 42px rgba(49, 105, 171, 0.1);
-  display: flex;
-  flex-direction: column;
-  max-width: 1180px;
-  height: calc(100dvh - 112px);
-  max-height: calc(100dvh - 112px);
-  min-height: 0;
-  padding: 10px;
-  overflow: hidden;
-  border-radius: 24px;
-  background:
-    radial-gradient(circle at 18% 8%, rgba(47, 141, 247, 0.13), transparent 32%),
-    linear-gradient(180deg, #f7fbff 0%, #eef7ff 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
-}
-
-.copilot-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: minmax(230px, 270px) minmax(0, 1fr);
-  gap: 14px;
-  min-height: 0;
-  height: 100%;
-  max-height: 100%;
-  align-items: stretch;
-}
-
-.copilot-context,
-.copilot-chat {
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
-}
-
-.copilot-context__card,
-.copilot-chat__card {
-  border: 1px solid rgba(214, 231, 247, 0.92);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: var(--copilot-shadow);
-  backdrop-filter: blur(18px) saturate(1.2);
-}
-
-.copilot-context__card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  height: 100%;
-  max-height: 100%;
-  min-height: 0;
-  min-width: 0;
-  padding: 16px;
-  overflow: hidden;
-  border-radius: 22px;
-}
-
-.copilot-context__head {
-  margin-block-end: 0;
-  flex-shrink: 0;
-  min-width: 0;
-}
-
-.copilot-context__head h3 {
-  font-size: 15px;
-  color: #23415f;
-}
-
-.copilot-context__profile {
-  margin-block-end: 0;
-  padding: 12px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #f9fcff 0%, #eef7ff 100%);
-  box-shadow: inset 0 0 0 1px rgba(206, 226, 245, 0.78);
-  min-width: 0;
-  flex-shrink: 0;
-}
-
-.copilot-context__profile > div {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.copilot-context__profile p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.copilot-context__avatar {
-  width: 42px;
-  height: 42px;
-  color: #0b7cdf;
-  background: #dff0ff;
-  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.9);
-}
-
-.copilot-sessions {
-  margin-block-end: 0;
-  padding: 0;
-  background: transparent;
-  box-shadow: none;
-  min-width: 0;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.copilot-sessions__head {
-  padding-inline: 2px;
-}
-
-.copilot-sessions__list {
   display: grid;
   gap: 8px;
-  max-height: 196px;
-  overflow-x: hidden;
+  max-height: 220px;
   overflow-y: auto;
 }
 
-.copilot-sessions__item {
-  border-radius: 14px;
-  background: #f7fbff;
-  box-shadow: inset 0 0 0 1px rgba(215, 231, 246, 0.86);
-  min-width: 0;
-  overflow: hidden;
+.agent-sessions__item {
+  display: flex;
+  align-items: stretch;
+  border-radius: 10px;
+  background: var(--agent-surface-2);
+  box-shadow: inset 0 0 0 1px var(--agent-border);
 }
 
-.copilot-sessions__item.is-active {
-  background: #e9f4ff;
-  box-shadow: inset 0 0 0 1px rgba(91, 164, 243, 0.28);
+.agent-sessions__item.is-active {
+  box-shadow: inset 0 0 0 1px rgba(32, 194, 211, 0.45);
+  background: rgba(32, 194, 211, 0.08);
 }
 
-.copilot-sessions__btn {
+.agent-sessions__btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--agent-text);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
 }
 
-.copilot-sessions__item :deep(.el-button) {
-  flex-shrink: 0;
-  align-self: center;
+.agent-sessions__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
 }
 
-.copilot-context__summary {
-  margin-block-end: 0;
+.agent-sessions__time {
+  color: var(--agent-muted);
+  font-size: 11px;
 }
 
-.copilot-context__tabs {
+.agent-sessions__empty {
+  margin: 0;
+  color: var(--agent-muted);
+  font-size: 12px;
+}
+
+.agent-context-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  flex-shrink: 0;
 }
 
-.copilot-context__tab {
-  padding: 8px 10px;
-  border: none;
-  border-radius: 12px;
-  background: #f7fbff;
-  box-shadow: inset 0 0 0 1px rgba(215, 231, 246, 0.86);
-  color: #5a728a;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard);
-}
-
-.copilot-context__tab:hover {
-  color: #2a5f91;
-  background: #eef7ff;
-}
-
-.copilot-context__tab.is-active {
-  color: #0b7cdf;
-  background: #e9f4ff;
-  box-shadow: inset 0 0 0 1px rgba(91, 164, 243, 0.32);
-}
-
-.copilot-context__panel {
-  flex: 1;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.copilot-context__panel :deep(.ai-consult-card),
-.copilot-context__panel :deep(.record-card) {
-  padding: 12px;
-  border-radius: 16px;
-}
-
-.copilot-context__panel :deep(.ai-consult-grid),
-.copilot-context__panel :deep(.record-card__grid) {
-  grid-template-columns: 1fr;
-  gap: 8px;
-}
-
-.copilot-context__panel :deep(.ai-consult-item),
-.copilot-context__panel :deep(.record-card__item) {
-  padding: 10px 12px;
-}
-
-.copilot-context__note,
-.copilot-context__hint {
-  margin: 0;
-  padding: 12px;
-  border-radius: 16px;
-  background: #f7fbff;
-  box-shadow: inset 0 0 0 1px rgba(215, 231, 246, 0.86);
-  flex-shrink: 0;
-  overflow-wrap: anywhere;
-}
-
-.copilot-chat__card {
+.agent-context-actions__btn {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  max-height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid var(--agent-border);
+  border-radius: 12px;
+  background: var(--agent-surface-2);
+  color: var(--agent-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.agent-context-actions__btn:hover,
+.agent-context-actions__btn.is-active {
+  border-color: rgba(32, 194, 211, 0.45);
+  color: var(--agent-accent);
+  background: var(--agent-accent-soft);
+}
+
+.agent-context-panel {
+  flex: 1;
   min-height: 0;
-  padding: 0;
-  overflow: hidden;
-  border-radius: 24px;
+  overflow: auto;
 }
 
-.copilot-chat__toolbar {
-  flex-shrink: 0;
-  margin-block-end: 0;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--copilot-line);
-  background: rgba(255, 255, 255, 0.78);
+.agent-context-panel :deep(.ai-consult-card),
+.agent-context-panel :deep(.record-card) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--agent-text);
 }
 
-.copilot-chat__brand,
-.copilot-chat__ops,
-.copilot-chat__doctor {
+.agent-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.agent-patient-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
 }
 
-.copilot-chat__brand {
-  min-width: 190px;
-  color: #21476c;
+.agent-patient-banner__title strong {
+  display: block;
+  font-size: 15px;
 }
 
-.copilot-chat__brand-icon {
+.agent-patient-banner__title span {
+  color: var(--agent-muted);
+  font-size: 12px;
+}
+
+.agent-patient-banner__stats {
   display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  color: var(--copilot-blue);
-  background: #e5f2ff;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  flex: 1;
 }
 
-.copilot-chat__brand strong {
-  display: block;
-  font-size: 14px;
+.agent-patient-banner__stat {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--agent-surface-2);
+  text-align: center;
 }
 
-.copilot-chat__brand small {
+.agent-patient-banner__stat span {
   display: block;
-  margin-top: 2px;
-  color: #8ba0b6;
+  color: var(--agent-muted);
   font-size: 11px;
 }
 
-.copilot-chat__session {
+.agent-patient-banner__stat strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.agent-patient-banner__stat.is-success strong { color: var(--agent-success); }
+.agent-patient-banner__stat.is-warning strong { color: var(--agent-warning); }
+.agent-patient-banner__stat.is-primary strong { color: var(--agent-accent); }
+
+.agent-chat {
   flex: 1;
-  min-width: 0;
-  color: #243c55;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.copilot-chat__doctor {
-  padding: 5px 9px;
-  border-radius: 999px;
-  color: #5a728a;
-  background: #f3f8fe;
-}
-
-.copilot-chat__scroll {
-  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  height: 0;
-  margin-block-end: 0;
-  padding: 16px 18px 8px;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(247, 251, 255, 0.62), rgba(255, 255, 255, 0.9)),
-    repeating-linear-gradient(0deg, transparent 0 31px, rgba(224, 238, 250, 0.32) 32px);
 }
 
-.copilot-chat__scroll :deep(.el-scrollbar) {
+.agent-chat__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+}
+
+.agent-chat__scroll :deep(.el-scrollbar) {
   height: 100%;
 }
 
-.copilot-chat__scroll :deep(.el-scrollbar__wrap) {
+.agent-chat__scroll :deep(.el-scrollbar__wrap) {
   overflow-x: hidden;
 }
 
-.copilot-chat__welcome {
-  padding: 18px;
-  border-radius: 20px;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px var(--copilot-line);
-}
-
-.copilot-chat__welcome p {
-  margin: 0;
-  color: var(--color-text-muted);
+.agent-chat__welcome-lead {
+  margin: 0 0 14px;
+  color: var(--agent-muted);
   line-height: 1.7;
 }
 
-.copilot-chat__quick-btn {
-  border-color: #d5e8fb;
-  background: #f6fbff;
-  color: #2a5f91;
+.agent-onboarding {
+  display: grid;
+  gap: 10px;
 }
 
-.copilot-chat__bubble {
-  position: relative;
-  max-width: min(680px, 100%);
-  margin-block-end: 14px;
+.agent-onboarding__card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--agent-border);
+  border-radius: 12px;
+  background: var(--agent-surface-2);
+  color: var(--agent-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.agent-onboarding__card:hover {
+  border-color: rgba(32, 194, 211, 0.45);
+  background: rgba(32, 194, 211, 0.06);
+}
+
+.agent-onboarding__index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--agent-accent-soft);
+  color: var(--agent-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.agent-onboarding__body p {
+  margin: 4px 0 0;
+  color: var(--agent-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agent-onboarding__arrow {
+  color: var(--agent-muted);
+}
+
+.agent-chat__bubble {
+  max-width: min(760px, 96%);
+  margin-bottom: 14px;
   padding: 12px 16px;
-  border-radius: 18px;
+  border-radius: 14px;
   line-height: 1.75;
-  box-shadow: 0 8px 22px rgba(54, 96, 143, 0.06);
   overflow-wrap: anywhere;
 }
 
-.copilot-chat__bubble.is-user {
-  margin-inline: auto 0;
-  padding: 10px 16px 10px 42px;
-  color: #1f5c91;
-  background: #dceeff;
-  box-shadow: inset 0 0 0 1px rgba(119, 183, 246, 0.28);
+.agent-chat__bubble.is-user {
+  margin-inline-start: auto;
+  color: #d9f7ff;
+  background: rgba(32, 194, 211, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(32, 194, 211, 0.28);
 }
 
-.copilot-chat__bubble.is-user::before {
-  content: "";
-  position: absolute;
-  inset-block-start: 9px;
-  inset-inline-start: 14px;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 36%, #2f8df7 0 4px, transparent 4.5px),
-    radial-gradient(circle at 50% 78%, #2f8df7 0 7px, transparent 7.5px),
-    rgba(255, 255, 255, 0.86);
+.agent-chat__bubble.is-assistant {
+  background: var(--agent-surface-2);
+  box-shadow: inset 0 0 0 1px var(--agent-border);
 }
 
-.copilot-chat__bubble.is-assistant {
-  max-width: min(760px, 96%);
-  background: #fff;
-  box-shadow:
-    0 10px 28px rgba(54, 96, 143, 0.07),
-    inset 0 0 0 1px rgba(216, 231, 247, 0.9);
+.agent-chat__bubble.is-action_result {
+  background: rgba(52, 211, 153, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.24);
 }
 
-.copilot-chat__bubble.is-action_result {
-  max-width: min(760px, 96%);
-  background: var(--copilot-green-soft);
-  box-shadow: inset 0 0 0 1px rgba(40, 186, 132, 0.26);
-}
-
-.copilot-chat__agent-status {
-  width: fit-content;
+.agent-chat__agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
   padding: 6px 10px;
   border-radius: 999px;
-  color: #2777c9;
-  background: #edf7ff;
+  color: var(--agent-accent);
+  background: var(--agent-accent-soft);
+  font-size: 12px;
 }
 
-.copilot-agent-thoughts {
-  margin-top: 12px;
-  border-radius: 14px;
-  background: #f8fbff;
+.agent-chat__spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--agent-accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: agent-spin 0.7s linear infinite;
 }
 
-.copilot-chat__composer-area {
-  flex-shrink: 0;
-  border-top: 1px solid var(--copilot-line);
-  background: rgba(255, 255, 255, 0.92);
+@keyframes agent-spin {
+  to { transform: rotate(360deg); }
 }
 
-.copilot-chat__suggestions {
+.agent-agent-thoughts {
+  margin-top: 10px;
+  border: none;
+  background: rgba(10, 15, 24, 0.5);
+  border-radius: 10px;
+}
+
+.agent-agent-thoughts :deep(.el-collapse-item__header) {
+  background: transparent;
+  color: var(--agent-muted);
+  border-bottom-color: var(--agent-border);
+}
+
+.agent-agent-thoughts ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--agent-muted);
+  font-size: 12px;
+}
+
+.agent-action-result__head {
   display: flex;
+  gap: 12px;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 18px 0;
 }
 
-.copilot-chat__suggestions-label {
+.agent-action-result__head p {
+  margin: 4px 0 0;
+  color: var(--agent-muted);
+}
+
+.agent-action-result__head .el-icon.is-success { color: var(--agent-success); }
+.agent-action-result__head .el-icon.is-error { color: #f87171; }
+
+.agent-action-result__detail pre {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(10, 15, 24, 0.6);
+  color: var(--agent-muted);
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.agent-composer {
+  border-top: 1px solid var(--agent-border);
+  background: rgba(10, 15, 24, 0.72);
+}
+
+.agent-composer__suggestions {
+  display: flex;
+  gap: 10px;
+  padding: 10px 16px 0;
+}
+
+.agent-composer__suggestions-label {
   flex-shrink: 0;
   padding-top: 6px;
-  color: #8ba0b6;
+  color: var(--agent-muted);
   font-size: 12px;
   font-weight: 600;
 }
 
-.copilot-chat__suggestions-list {
+.agent-composer__suggestions-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  min-width: 0;
 }
 
-.copilot-chat__suggestion-btn {
+.agent-composer__suggestion-btn {
   padding: 6px 12px;
-  border: 1px solid #d5e8fb;
+  border: 1px solid var(--agent-border);
   border-radius: 999px;
-  background: #f6fbff;
-  color: #2a5f91;
+  background: var(--agent-surface-2);
+  color: var(--agent-muted);
   font-size: 12px;
-  line-height: 1.4;
   cursor: pointer;
-  transition:
-    border-color var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
 }
 
-.copilot-chat__suggestion-btn:hover:not(:disabled) {
-  border-color: #8ec5fa;
-  background: #e9f4ff;
-  color: #0b7cdf;
+.agent-composer__suggestion-btn:hover:not(:disabled) {
+  border-color: rgba(32, 194, 211, 0.45);
+  color: var(--agent-accent);
 }
 
-.copilot-chat__suggestion-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.agent-composer__input-wrap {
+  padding: 10px 16px 14px;
 }
 
-.copilot-chat__composer {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 10px;
-  align-items: end;
-  padding: 10px 18px 16px;
-}
-
-.copilot-chat__composer :deep(.el-textarea__inner) {
-  min-height: 44px !important;
+.agent-composer__input-wrap :deep(.el-textarea__inner) {
+  min-height: 88px !important;
   padding: 12px 14px;
-  border-radius: 14px;
-  background: #fbfdff;
-  box-shadow: inset 0 0 0 1px #d7e8f7;
+  border: 1px solid var(--agent-border);
+  border-radius: 12px;
+  background: var(--agent-surface-2);
+  color: var(--agent-text);
+  box-shadow: none;
 }
 
-.copilot-chat__composer .el-button {
-  min-height: 44px;
-  border-radius: 14px;
+.agent-composer__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.agent-composer__tools {
+  display: flex;
+  gap: 8px;
+}
+
+.agent-composer__tool {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--agent-border);
+  border-radius: 10px;
+  background: var(--agent-surface-2);
+  color: var(--agent-muted);
+  cursor: pointer;
+}
+
+.agent-composer__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-composer__count {
+  color: var(--agent-muted);
+  font-size: 12px;
+}
+
+.agent-composer__send {
+  --el-button-bg-color: var(--agent-accent);
+  --el-button-border-color: var(--agent-accent);
+  --el-button-hover-bg-color: #1ab0c0;
+  --el-button-hover-border-color: #1ab0c0;
+  min-height: 40px;
+  border-radius: 10px;
+}
+
+.agent-workflow-list,
+.agent-knowledge-list,
+.agent-recommend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.agent-workflow-list__btn,
+.agent-recommend-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--agent-border);
+  border-radius: 10px;
+  background: var(--agent-surface-2);
+  color: var(--agent-text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-workflow-list__status {
+  color: var(--agent-muted);
+  font-size: 11px;
+}
+
+.agent-knowledge-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--agent-surface-2);
+  font-size: 12px;
+}
+
+.agent-knowledge-list em {
+  color: var(--agent-muted);
+  font-style: normal;
+  font-size: 11px;
+}
+
+.agent-draft-preview,
+.agent-draft-empty {
+  margin: 0;
+  color: var(--agent-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.agent-side__head :deep(.el-button) {
+  color: var(--agent-muted);
+}
+
+.agent-chat :deep(.markdown-content) {
+  color: var(--agent-text);
+  background: rgba(10, 15, 24, 0.45);
+  border-color: var(--agent-border);
+}
+
+.agent-chat :deep(.agent-action-card),
+.agent-chat :deep(.agent-confirm-card) {
+  border-color: var(--agent-border);
+  background: rgba(10, 15, 24, 0.55);
+  color: var(--agent-text);
+}
+
+.agent-chat :deep(.agent-action-card__title p),
+.agent-chat :deep(.agent-confirm-card__title p),
+.agent-chat :deep(.agent-action-card__reason),
+.agent-chat :deep(.agent-confirm-card__reason),
+.agent-chat :deep(.agent-confirm-card__hint) {
+  color: var(--agent-muted);
+}
+
+@media (max-width: 1280px) {
+  .agent-body {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+
+  .agent-panel--right {
+    display: none;
+  }
 }
 
 @media (max-width: 960px) {
-  .copilot-page {
-    height: auto;
-    max-height: none;
-    overflow: visible;
-  }
-
-  .copilot-grid {
-    height: auto;
-    max-height: none;
-    min-height: 720px;
-  }
-
-  .copilot-context__card,
-  .copilot-chat__card {
-    height: auto;
-    max-height: none;
-  }
-
-  .copilot-chat__scroll {
-    flex: 1;
-    height: auto;
-    min-height: 360px;
-  }
-}
-
-@media (max-width: 720px) {
-  .copilot-chat__toolbar,
-  .copilot-chat__ops {
-    flex-wrap: wrap;
-  }
-
-  .copilot-chat__brand,
-  .copilot-chat__session {
-    min-width: 0;
-    flex: 1 1 100%;
-    text-align: left;
-  }
-
-  .copilot-chat__composer-area .copilot-chat__composer {
+  .agent-topbar {
     grid-template-columns: 1fr;
+  }
+
+  .agent-body {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .agent-panel--left {
+    max-height: none;
+  }
+
+  .agent-patient-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .agent-patient-banner__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>
