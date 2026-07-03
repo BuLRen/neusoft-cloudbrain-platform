@@ -1,6 +1,7 @@
 package com.xikang.physician.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xikang.common.exception.BusinessException;
 import com.xikang.physician.mapper.PhysicianAiMapper;
 import com.xikang.physician.client.PhysicianClinicalClient;
 import org.slf4j.Logger;
@@ -181,6 +182,18 @@ public class PhysicianAiPipelineService {
         return output;
     }
 
+    public Map<String, Object> getW2Status(Long registerId) {
+        Map<String, Object> w2Output = loadW2Output(registerId);
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("registerId", registerId);
+        boolean hasRecommendations = !listOfMaps(w2Output.get("recommendedExaminations")).isEmpty();
+        boolean hasAssessment = !String.valueOf(w2Output.getOrDefault("preliminaryAssessment", "")).trim().isEmpty()
+            || !String.valueOf(w2Output.getOrDefault("notRecommendedNote", "")).trim().isEmpty();
+        status.put("completed", hasRecommendations || hasAssessment);
+        status.put("w2Output", w2Output);
+        return status;
+    }
+
     private Map<String, Object> runW2ViaDify(Long registerId, List<Map<String, Object>> availableExaminations) {
         try {
             Map<String, Object> clinicalContext = w2ClinicalContextBuilder.build(registerId);
@@ -337,6 +350,8 @@ public class PhysicianAiPipelineService {
             return mapped;
         } catch (DifyWorkflowException ex) {
             throw ex;
+        } catch (BusinessException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("W3 registerId={} Dify call failed: {}", registerId, ex.toString());
             throw new DifyWorkflowException("W3 结果解读工作流调用失败，请稍后重试");
@@ -354,6 +369,20 @@ public class PhysicianAiPipelineService {
         status.put("overallAnalysis", w3Output.get("overallAnalysis"));
         status.put("explicitNonDiagnosis", true);
         status.put("w3Output", w3Output);
+        return status;
+    }
+
+    public Map<String, Object> getW4Status(Long registerId) {
+        Map<String, Object> w4Output = loadW4Output(registerId);
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("registerId", registerId);
+        boolean hasSuggestions = !listOfMaps(w4Output.get("suggestions")).isEmpty();
+        boolean hasFallback = !listOfMaps(w4Output.get("fallbackSuggestions")).isEmpty();
+        boolean hasSummary = !String.valueOf(w4Output.getOrDefault("clinicalSummaryForDoctor", "")).trim().isEmpty();
+        boolean hasWarnings = !listOfStrings(w4Output.get("warningSigns")).isEmpty();
+        boolean hasDifferential = !listOfMaps(w4Output.get("differentialDiagnosis")).isEmpty();
+        status.put("completed", hasSuggestions || hasFallback || hasSummary || hasWarnings || hasDifferential);
+        status.put("w4Output", w4Output);
         return status;
     }
 
@@ -838,6 +867,66 @@ public class PhysicianAiPipelineService {
             row.put("modelId", modelId);
             physicianAiMapper.insertExamSuggestion(row);
         }
+        persistW2AiLog(registerId, output);
+    }
+
+    private void persistW2AiLog(Long registerId, Map<String, Object> output) {
+        if (registerId == null) {
+            return;
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("notRecommendedNote", output.get("notRecommendedNote"));
+        meta.put("unmatchedSuggestions", output.get("unmatchedSuggestions"));
+        meta.put("workflowRunId", output.get("workflowRunId"));
+
+        Map<String, Object> log = new HashMap<>();
+        log.put("registerId", registerId);
+        log.put("sourceType", "w2_recommend");
+        log.put("aiDiagnosis", output.get("preliminaryAssessment"));
+        log.put("modelId", output.get("modelId"));
+        log.put("doctorModification", JsonMapUtils.toJson(meta));
+        physicianAiMapper.insertAiMedicalRecordLog(log);
+    }
+
+    private Map<String, Object> loadW2Output(Long registerId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("preliminaryAssessment", "");
+        out.put("recommendedExaminations", List.of());
+        out.put("notRecommendedNote", "");
+        out.put("unmatchedSuggestions", List.of());
+
+        Map<String, Object> log = physicianAiMapper.selectLatestAiMedicalRecordLogBySourceType(registerId, "w2_recommend");
+        if (log != null) {
+            out.put("preliminaryAssessment", String.valueOf(log.getOrDefault("aiDiagnosis", "")).trim());
+            out.put("modelId", log.get("modelId"));
+            Object rawMeta = log.get("doctorModification");
+            if (rawMeta instanceof String text && !text.isBlank()) {
+                Map<String, Object> meta = JsonMapUtils.asMap(text);
+                out.put("notRecommendedNote", String.valueOf(meta.getOrDefault("notRecommendedNote", "")).trim());
+                out.put("unmatchedSuggestions", listOfMaps(meta.get("unmatchedSuggestions")));
+                out.put("workflowRunId", meta.get("workflowRunId"));
+            }
+        }
+
+        List<Map<String, Object>> recommendations = new ArrayList<>();
+        for (Map<String, Object> suggestion : physicianAiMapper.selectExamSuggestions(registerId)) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("techId", suggestion.get("techId"));
+            item.put("techName", suggestion.get("techName"));
+            item.put("techType", suggestion.get("suggestType"));
+            item.put("reason", suggestion.get("suggestReason"));
+            item.put("priority", suggestion.getOrDefault("priority", 1));
+            recommendations.add(item);
+        }
+        out.put("recommendedExaminations", recommendations);
+
+        if (String.valueOf(out.get("preliminaryAssessment")).trim().isEmpty() && !recommendations.isEmpty()) {
+            String fallback = loadLatestPreliminaryAssessment(registerId);
+            if (!fallback.isEmpty()) {
+                out.put("preliminaryAssessment", fallback);
+            }
+        }
+        return out;
     }
 
     private String resolveW2ModelIdLabel() {
@@ -972,15 +1061,18 @@ public class PhysicianAiPipelineService {
         String status = String.valueOf(output.getOrDefault("status", "success")).trim().toLowerCase();
         if ("fallback".equals(status)) {
             log.info("W4 registerId={} status=fallback, skip ai_diagnosis_suggestion persist", registerId);
+            persistW4AiLog(registerId, output);
             return;
         }
 
         List<Map<String, Object>> suggestions = listOfMaps(output.get("suggestions"));
         if (suggestions.isEmpty() && "empty".equals(status)) {
             physicianAiMapper.deleteDiagnosisSuggestionsByRegisterId(registerId);
+            persistW4AiLog(registerId, output);
             return;
         }
         if (suggestions.isEmpty()) {
+            persistW4AiLog(registerId, output);
             return;
         }
 
@@ -990,6 +1082,78 @@ public class PhysicianAiPipelineService {
         for (Map<String, Object> item : suggestions) {
             insertDiagnosisSuggestion(registerId, item, order++, modelId);
         }
+        persistW4AiLog(registerId, output);
+    }
+
+    private void persistW4AiLog(Long registerId, Map<String, Object> output) {
+        if (registerId == null) {
+            return;
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("status", output.get("status"));
+        meta.put("differentialDiagnosis", output.get("differentialDiagnosis"));
+        meta.put("warningSigns", output.get("warningSigns"));
+        meta.put("fallbackSuggestions", output.get("fallbackSuggestions"));
+        meta.put("searchAdvice", output.get("searchAdvice"));
+        meta.put("workflowRunId", output.get("workflowRunId"));
+
+        Map<String, Object> log = new HashMap<>();
+        log.put("registerId", registerId);
+        log.put("sourceType", "w4_diagnose");
+        log.put("aiDiagnosis", output.get("clinicalSummaryForDoctor"));
+        log.put("modelId", output.get("modelId"));
+        log.put("doctorModification", JsonMapUtils.toJson(meta));
+        physicianAiMapper.insertAiMedicalRecordLog(log);
+    }
+
+    private Map<String, Object> loadW4Output(Long registerId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("registerId", registerId);
+        out.put("status", "success");
+        out.put("suggestions", List.of());
+        out.put("fallbackSuggestions", List.of());
+        out.put("clinicalSummaryForDoctor", "");
+        out.put("differentialDiagnosis", List.of());
+        out.put("warningSigns", List.of());
+        out.put("searchAdvice", "");
+
+        Map<String, Object> log = physicianAiMapper.selectLatestAiMedicalRecordLogBySourceType(registerId, "w4_diagnose");
+        if (log != null) {
+            out.put("clinicalSummaryForDoctor", String.valueOf(log.getOrDefault("aiDiagnosis", "")).trim());
+            out.put("modelId", log.get("modelId"));
+            Object rawMeta = log.get("doctorModification");
+            if (rawMeta instanceof String text && !text.isBlank()) {
+                Map<String, Object> meta = JsonMapUtils.asMap(text);
+                String status = String.valueOf(meta.getOrDefault("status", "success")).trim();
+                if (!status.isEmpty()) {
+                    out.put("status", status);
+                }
+                out.put("differentialDiagnosis", listOfMaps(meta.get("differentialDiagnosis")));
+                out.put("warningSigns", listOfStrings(meta.get("warningSigns")));
+                out.put("fallbackSuggestions", listOfMaps(meta.get("fallbackSuggestions")));
+                out.put("searchAdvice", String.valueOf(meta.getOrDefault("searchAdvice", "")).trim());
+                out.put("workflowRunId", meta.get("workflowRunId"));
+            }
+        }
+
+        List<Map<String, Object>> suggestions = new ArrayList<>();
+        for (Map<String, Object> row : physicianAiMapper.selectDiagnosisSuggestions(registerId)) {
+            Map<String, Object> item = new LinkedHashMap<>(row);
+            String diseaseName = String.valueOf(item.getOrDefault("diseaseName", "")).trim();
+            if (!diseaseName.isEmpty()) {
+                item.put("diagnosisName", diseaseName);
+            }
+            suggestions.add(item);
+        }
+        out.put("suggestions", suggestions);
+
+        if (suggestions.isEmpty() && listOfMaps(out.get("fallbackSuggestions")).isEmpty()
+            && String.valueOf(out.get("clinicalSummaryForDoctor")).trim().isEmpty()) {
+            out.put("status", "");
+        } else if (!suggestions.isEmpty() && String.valueOf(out.getOrDefault("status", "")).trim().isEmpty()) {
+            out.put("status", "success");
+        }
+        return out;
     }
 
     private void insertDiagnosisSuggestion(Long registerId, Map<String, Object> item, int sortOrder, String modelId) {
@@ -1022,7 +1186,7 @@ public class PhysicianAiPipelineService {
     private List<Map<String, Object>> buildAllResults(Long registerId) {
         List<Map<String, Object>> all = new ArrayList<>();
         for (Map<String, Object> row : physicianClinicalClient.getCheckResults(registerId)) {
-            if (row.get("checkResult") == null) {
+            if (!isTerminalExamResult(row, "checkState", "checkResult")) {
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
@@ -1033,7 +1197,7 @@ public class PhysicianAiPipelineService {
             all.add(item);
         }
         for (Map<String, Object> row : physicianClinicalClient.getInspectionResults(registerId)) {
-            if (row.get("inspectionResult") == null) {
+            if (!isTerminalExamResult(row, "inspectionState", "inspectionResult")) {
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
@@ -1044,6 +1208,14 @@ public class PhysicianAiPipelineService {
             all.add(item);
         }
         return all;
+    }
+
+    private static boolean isTerminalExamResult(Map<String, Object> row, String stateKey, String resultKey) {
+        if (row.get(resultKey) == null) {
+            return false;
+        }
+        String state = String.valueOf(row.getOrDefault(stateKey, "")).trim();
+        return "已完成".equals(state) || "已归档".equals(state);
     }
 
     private Map<String, Object> loadW3Output(Long registerId) {
@@ -1108,12 +1280,12 @@ public class PhysicianAiPipelineService {
             Map<String, Object> out = new LinkedHashMap<>(fromPre.isEmpty() ? Map.of() : fromPre);
             out.put("registerId", registerId);
             if (register != null) {
-                out.put("patientInfo", Map.of(
-                    "realName", register.get("realName"),
-                    "gender", register.get("gender"),
-                    "age", register.get("age"),
-                    "caseNumber", register.get("caseNumber")
-                ));
+                Map<String, Object> patientInfo = new LinkedHashMap<>();
+                patientInfo.put("realName", register.get("realName"));
+                patientInfo.put("gender", register.get("gender"));
+                patientInfo.put("age", register.get("age"));
+                patientInfo.put("caseNumber", register.get("caseNumber"));
+                out.put("patientInfo", patientInfo);
             }
             out.put("chiefComplaint", record.get("readme"));
             out.put("presentIllness", record.get("present"));

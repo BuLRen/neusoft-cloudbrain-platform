@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElAlert, ElButton, ElForm, ElFormItem, ElIcon, ElInput, ElMessage } from 'element-plus'
-import { CircleCheck, DocumentChecked, Select, VideoPlay } from '@element-plus/icons-vue'
+import { onBeforeRouteLeave } from 'vue-router'
+import { ElAlert, ElButton, ElDialog, ElForm, ElFormItem, ElIcon, ElInput, ElMessage, ElTag } from 'element-plus'
+import { CircleCheck, DocumentChecked, EditPen, Select, VideoPlay } from '@element-plus/icons-vue'
 import {
   physicianApi,
   type Disease,
@@ -10,7 +11,7 @@ import {
   type W4Output,
   type W4Suggestion,
 } from '@/shared/api/modules/physician'
-import { suggestionDisplayName } from '@/shared/types/w4Result'
+import { mapDiagnosisSuggestionsToW4Output, suggestionDisplayName } from '@/shared/types/w4Result'
 import { useEncounterStore } from '@/app/stores/encounter'
 import DiseaseSearchSelect from '../components/DiseaseSearchSelect.vue'
 import W4DiagnosisPanel from '../components/W4DiagnosisPanel.vue'
@@ -19,10 +20,23 @@ import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 const CURE_MAX = 500
 const CAREFUL_MAX = 300
 
+interface DiagnosisSnapshot {
+  diagnosis: string
+  icdCode: string
+  cure: string
+  careful: string
+  primaryDiseaseId?: number
+  differentialDiseaseIds: number[]
+}
+
+type LeaveAction = 'stay' | 'discard' | 'draft' | 'submit'
+
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
 
 const loading = ref(false)
+const leaveDialogVisible = ref(false)
+let leaveResolver: ((proceed: boolean) => void) | null = null
 const medicalRecordId = ref<number | undefined>()
 const primaryDisease = ref<Disease | null>(null)
 const differentialDiseases = ref<Disease[]>([])
@@ -39,6 +53,52 @@ const diagnosisForm = reactive({
   primaryDiseaseId: undefined as number | undefined,
   differentialDiseaseIds: [] as number[],
 })
+
+const savedSnapshot = ref<DiagnosisSnapshot>({
+  diagnosis: '',
+  icdCode: '',
+  cure: '',
+  careful: '',
+  primaryDiseaseId: undefined,
+  differentialDiseaseIds: [],
+})
+
+function sortedDiseaseIds(ids: number[]) {
+  return [...ids].sort((a, b) => a - b)
+}
+
+function syncSavedSnapshot() {
+  savedSnapshot.value = {
+    diagnosis: diagnosisForm.diagnosis,
+    icdCode: diagnosisForm.icdCode,
+    cure: diagnosisForm.cure,
+    careful: diagnosisForm.careful,
+    primaryDiseaseId: diagnosisForm.primaryDiseaseId,
+    differentialDiseaseIds: sortedDiseaseIds(diagnosisForm.differentialDiseaseIds),
+  }
+}
+
+const diagnosisDirty = computed(() => {
+  const saved = savedSnapshot.value
+  return (
+    diagnosisForm.diagnosis !== saved.diagnosis
+    || diagnosisForm.icdCode !== saved.icdCode
+    || diagnosisForm.cure !== saved.cure
+    || diagnosisForm.careful !== saved.careful
+    || diagnosisForm.primaryDiseaseId !== saved.primaryDiseaseId
+    || sortedDiseaseIds(diagnosisForm.differentialDiseaseIds).join(',')
+      !== saved.differentialDiseaseIds.join(',')
+  )
+})
+
+const hasDiagnosisDraftContent = computed(
+  () =>
+    Boolean(diagnosisForm.diagnosis.trim())
+    || Boolean(diagnosisForm.cure.trim())
+    || Boolean(diagnosisForm.careful.trim())
+    || Boolean(diagnosisForm.primaryDiseaseId)
+    || diagnosisForm.differentialDiseaseIds.length > 0,
+)
 
 const w3Completed = computed(() => Boolean(w3Status.value?.completed))
 const w3ClinicalImpression = computed(
@@ -66,6 +126,22 @@ function resetDiagnosisForm() {
   diagnosisForm.differentialDiseaseIds = []
   primaryDisease.value = null
   differentialDiseases.value = []
+  syncSavedSnapshot()
+}
+
+function buildDiagnosisPayload() {
+  const diseaseIds = [
+    ...(diagnosisForm.primaryDiseaseId ? [diagnosisForm.primaryDiseaseId] : []),
+    ...diagnosisForm.differentialDiseaseIds,
+  ]
+  return {
+    registerId: registerId.value,
+    medicalRecordId: medicalRecordId.value,
+    diagnosis: diagnosisForm.diagnosis,
+    cure: diagnosisForm.cure,
+    careful: diagnosisForm.careful,
+    diseaseIds,
+  }
 }
 
 async function loadMedicalRecord() {
@@ -99,6 +175,7 @@ async function loadMedicalRecord() {
       diagnosisForm.icdCode = ''
       diagnosisForm.differentialDiseaseIds = []
     }
+    syncSavedSnapshot()
   } catch {
     medicalRecordId.value = undefined
   }
@@ -126,6 +203,21 @@ async function loadHistorySuggestions() {
   } catch {
     historySuggestions.value = []
   }
+}
+
+async function loadW4OutputFromServer(id: number) {
+  try {
+    const status = await physicianApi.w4Status(id)
+    if (status.completed && status.w4Output) {
+      w4Output.value = status.w4Output
+      historySuggestions.value = status.w4Output.suggestions ?? []
+      return
+    }
+  } catch {
+    // 兼容尚未部署 w4/status 的后端
+  }
+  await loadHistorySuggestions()
+  w4Output.value = mapDiagnosisSuggestionsToW4Output(historySuggestions.value)
 }
 
 function onPrimarySelect(diseases: Disease[]) {
@@ -200,7 +292,7 @@ async function runW4() {
   try {
     w4Output.value = await physicianApi.aiW4(registerId.value)
     if (w4Output.value?.status !== 'fallback') {
-      await loadHistorySuggestions()
+      historySuggestions.value = w4Output.value?.suggestions ?? []
     }
     ElMessage.success('W4 诊断建议已生成')
   } finally {
@@ -208,55 +300,129 @@ async function runW4() {
   }
 }
 
-async function submitDiagnosis() {
-  if (!registerId.value) return
+async function persistDiagnosis(): Promise<boolean> {
+  if (!registerId.value) return false
   if (!medicalRecordId.value) {
     ElMessage.warning('请先完成病历书写后再保存确诊')
-    return
+    return false
   }
   if (!diagnosisForm.diagnosis.trim()) {
     ElMessage.warning('请填写确诊病名')
-    return
+    return false
   }
-  const diseaseIds = [
-    ...(diagnosisForm.primaryDiseaseId ? [diagnosisForm.primaryDiseaseId] : []),
-    ...diagnosisForm.differentialDiseaseIds,
-  ]
-  if (!diseaseIds.length) {
+  const payload = buildDiagnosisPayload()
+  if (!payload.diseaseIds.length) {
     ElMessage.warning('建议从疾病库搜索并选择对应疾病，以便规范编码')
   }
   loading.value = true
   try {
-    await physicianApi.submitDiagnosis({
-      registerId: registerId.value,
-      medicalRecordId: medicalRecordId.value,
-      diagnosis: diagnosisForm.diagnosis,
-      cure: diagnosisForm.cure,
-      careful: diagnosisForm.careful,
-      diseaseIds,
-    })
-    ElMessage.success('确诊已保存')
-    await loadMedicalRecord()
+    await physicianApi.submitDiagnosis(payload)
+    syncSavedSnapshot()
+    return true
   } catch (err) {
     const msg = err instanceof Error ? err.message : '保存确诊失败'
     ElMessage.error(msg)
+    return false
   } finally {
     loading.value = false
   }
 }
 
-watch(registerId, () => {
+async function persistDiagnosisDraft(): Promise<boolean> {
+  if (!registerId.value) return false
+  if (!medicalRecordId.value) {
+    ElMessage.warning('请先完成病历书写后再保存草稿')
+    return false
+  }
+  if (!hasDiagnosisDraftContent.value) {
+    ElMessage.warning('请至少填写一项确诊信息后再保存草稿')
+    return false
+  }
+  loading.value = true
+  try {
+    await physicianApi.saveDiagnosisDraft(buildDiagnosisPayload())
+    syncSavedSnapshot()
+    return true
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '保存草稿失败'
+    ElMessage.error(msg)
+    return false
+  } finally {
+    loading.value = false
+  }
+}
+
+async function submitDiagnosis() {
+  const saved = await persistDiagnosis()
+  if (saved) {
+    ElMessage.success('确诊已保存')
+    await loadMedicalRecord()
+  }
+}
+
+async function saveDiagnosisDraft() {
+  const saved = await persistDiagnosisDraft()
+  if (saved) {
+    ElMessage.success('确诊草稿已保存')
+  }
+}
+
+function confirmLeaveBeforeNavigate(): Promise<boolean> {
+  if (!diagnosisDirty.value) return Promise.resolve(true)
+  leaveDialogVisible.value = true
+  return new Promise((resolve) => {
+    leaveResolver = resolve
+  })
+}
+
+function onLeaveDialogClosed() {
+  if (leaveResolver) {
+    leaveResolver(false)
+    leaveResolver = null
+  }
+}
+
+async function resolveLeave(action: LeaveAction) {
+  leaveDialogVisible.value = false
+  if (action === 'stay') {
+    leaveResolver?.(false)
+    leaveResolver = null
+    return
+  }
+  if (action === 'discard') {
+    leaveResolver?.(true)
+    leaveResolver = null
+    return
+  }
+  const saved = action === 'draft' ? await persistDiagnosisDraft() : await persistDiagnosis()
+  if (saved) {
+    ElMessage.success(action === 'draft' ? '确诊草稿已保存' : '确诊已保存')
+  }
+  leaveResolver?.(saved)
+  leaveResolver = null
+}
+
+onBeforeRouteLeave((_to, _from, next) => {
+  void confirmLeaveBeforeNavigate().then((proceed) => {
+    next(proceed)
+  })
+})
+
+watch(registerId, (id) => {
   w4Output.value = null
+  historySuggestions.value = []
   showW3Detail.value = false
   void loadMedicalRecord()
   void loadW3Status()
-  void loadHistorySuggestions()
+  if (id) void loadW4OutputFromServer(id)
 })
 
 onMounted(() => {
   void loadMedicalRecord()
   void loadW3Status()
-  void loadHistorySuggestions()
+  if (registerId.value) {
+    void loadW4OutputFromServer(registerId.value)
+  }
 })
 </script>
 
@@ -264,7 +430,6 @@ onMounted(() => {
   <PhysicianStepLayout
     group-label="门诊诊疗"
     title="门诊确诊"
-    description="先查看 W4 AI 诊断参考，再从疾病库搜索并确认最终确诊。"
     prev-path="/physician/results"
     next-path="/physician/prescription"
   >
@@ -302,6 +467,10 @@ onMounted(() => {
           <ElIcon><VideoPlay /></ElIcon>
           运行 AI 诊断建议工作流
         </ElButton>
+        <ElButton :loading="loading" @click="saveDiagnosisDraft">
+          <ElIcon><EditPen /></ElIcon>
+          保存草稿
+        </ElButton>
         <ElButton type="primary" :loading="loading" @click="submitDiagnosis">
           <ElIcon><Select /></ElIcon>
           保存确诊
@@ -314,6 +483,10 @@ onMounted(() => {
         <ElButton :loading="loading" @click="runW4">
           <ElIcon><VideoPlay /></ElIcon>
           运行 AI 诊断建议工作流
+        </ElButton>
+        <ElButton :loading="loading" @click="saveDiagnosisDraft">
+          <ElIcon><EditPen /></ElIcon>
+          保存草稿
         </ElButton>
         <ElButton type="primary" :loading="loading" @click="submitDiagnosis">
           <ElIcon><Select /></ElIcon>
@@ -331,8 +504,11 @@ onMounted(() => {
 
     <section class="doctor-confirm">
       <div class="doctor-confirm__head">
-        <h3 class="doctor-confirm__title">医生确认</h3>
-        <p class="doctor-confirm__subtitle">请确认最终诊断并完善诊疗信息。</p>
+        <div class="doctor-confirm__title-row">
+          <h3 class="doctor-confirm__title">医生确认</h3>
+          <ElTag v-if="diagnosisDirty" type="warning" effect="plain" size="small">有未保存修改</ElTag>
+        </div>
+        <p class="doctor-confirm__subtitle">请确认最终诊断并完善诊疗信息。可先保存草稿，稍后再正式保存确诊。</p>
       </div>
       <ElForm label-position="top" class="diagnosis-form">
         <div class="diagnosis-form__col">
@@ -390,8 +566,37 @@ onMounted(() => {
         </div>
       </ElForm>
       <p class="doctor-confirm__footer">AI 建议仅供参考，最终诊断由医生确认并保存。</p>
+      <div class="doctor-confirm__actions">
+        <ElButton :loading="loading" @click="saveDiagnosisDraft">
+          <ElIcon><EditPen /></ElIcon>
+          保存草稿
+        </ElButton>
+        <ElButton type="primary" :loading="loading" @click="submitDiagnosis">
+          <ElIcon><Select /></ElIcon>
+          保存确诊
+        </ElButton>
+      </div>
     </section>
   </PhysicianStepLayout>
+
+  <ElDialog
+    v-model="leaveDialogVisible"
+    title="未保存的确诊信息"
+    width="480px"
+    align-center
+    :close-on-click-modal="false"
+    @closed="onLeaveDialogClosed"
+  >
+    <p class="leave-dialog__text">您有未保存的修改，离开前请选择处理方式。</p>
+    <template #footer>
+      <div class="leave-dialog__footer">
+        <ElButton @click="resolveLeave('stay')">继续编辑</ElButton>
+        <ElButton @click="resolveLeave('discard')">不保存</ElButton>
+        <ElButton type="warning" :loading="loading" @click="resolveLeave('draft')">保存草稿</ElButton>
+        <ElButton type="primary" :loading="loading" @click="resolveLeave('submit')">保存确诊</ElButton>
+      </div>
+    </template>
+  </ElDialog>
 </template>
 
 <style scoped>
@@ -487,6 +692,12 @@ onMounted(() => {
   margin-block-end: var(--space-4);
 }
 
+.doctor-confirm__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .doctor-confirm__title {
   margin: 0;
   font-size: 17px;
@@ -529,6 +740,27 @@ onMounted(() => {
   color: var(--color-ai);
   font-size: 13px;
   text-align: center;
+}
+
+.doctor-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+}
+
+.leave-dialog__text {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.7;
+}
+
+.leave-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 @media (max-width: 900px) {

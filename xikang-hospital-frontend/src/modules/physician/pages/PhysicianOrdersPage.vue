@@ -36,6 +36,12 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import ClinicalContextPanel from '../components/ClinicalContextPanel.vue'
 import MedicalTechnologyPicker from '../components/MedicalTechnologyPicker.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
+import {
+  clearOrderBasketDraft,
+  loadOrderBasketDraft,
+  saveOrderBasketDraft,
+  type OrderBasketItem,
+} from '../composables/usePhysicianOrderBasketDraft'
 
 type TechType = MedicalTechnology['techType']
 
@@ -46,11 +52,7 @@ interface RequestDraft {
   remark: string
 }
 
-interface BasketItem extends RequestDraft {
-  techName: string
-  techType: TechType
-  deptName?: string
-}
+interface BasketItem extends OrderBasketItem {}
 
 const TECH_TYPE_LABEL: Record<TechType, string> = {
   check: '检查',
@@ -95,14 +97,56 @@ function resolveDeptName(techId?: number, fallback?: string) {
   return techCatalog.value.find((item) => item.id === techId)?.deptName
 }
 
+function mapExamSuggestionsToW2Output(suggestions: Record<string, unknown>[]): W2Output | null {
+  if (!suggestions.length) return null
+  return {
+    recommendedExaminations: suggestions.map((item) => ({
+      techId: Number(item.techId),
+      techName: String(item.techName ?? ''),
+      techType: String(item.suggestType ?? 'check'),
+      reason: String(item.suggestReason ?? ''),
+      priority: Number(item.priority ?? 1),
+    })),
+  }
+}
+
+async function loadW2OutputFromServer(id: number) {
+  try {
+    const status = await physicianApi.w2Status(id)
+    if (status.completed) {
+      w2Output.value = status.w2Output ?? null
+      return
+    }
+  } catch {
+    // 兼容尚未部署 w2/status 的后端
+  }
+  const suggestions = await physicianApi.examSuggestions(id)
+  w2Output.value = mapExamSuggestionsToW2Output(suggestions)
+}
+
+function hydrateBasketDeptNames() {
+  if (!requestBasket.value.length || !techCatalog.value.length) return
+  requestBasket.value = requestBasket.value.map((item) => ({
+    ...item,
+    deptName: item.deptName || resolveDeptName(item.medicalTechnologyId),
+  }))
+}
+
+function loadRequestBasketForRegister(id: number | null) {
+  requestBasket.value = id ? loadOrderBasketDraft(id) : []
+  hydrateBasketDeptNames()
+}
+
 async function loadClinicalContext() {
   if (!registerId.value) {
     medicalRecord.value = null
+    w2Output.value = null
     return
   }
   contextLoading.value = true
   try {
     medicalRecord.value = await physicianApi.medicalRecord(registerId.value)
+    await loadW2OutputFromServer(registerId.value)
   } finally {
     contextLoading.value = false
   }
@@ -175,6 +219,10 @@ async function submitTechnologyRequest() {
 
   requestBasket.value = []
 
+  if (registerId.value) {
+    clearOrderBasketDraft(registerId.value)
+  }
+
   const submittedExam = checkItems.length > 0 || inspectionItems.length > 0
   const paymentHint = '请提醒患者前往支付中心完成缴费，缴费后医技科室方可执行。'
   if (!submittedExam) {
@@ -234,8 +282,22 @@ async function runW2() {
   }
 }
 
-watch(registerId, () => {
+watch(registerId, (id) => {
+  loadRequestBasketForRegister(id)
   void loadClinicalContext()
+}, { immediate: true })
+
+watch(
+  requestBasket,
+  (items) => {
+    if (!registerId.value) return
+    saveOrderBasketDraft(registerId.value, items)
+  },
+  { deep: true },
+)
+
+watch(techCatalog, () => {
+  hydrateBasketDeptNames()
 })
 
 watch(
@@ -247,7 +309,6 @@ watch(
 
 onMounted(() => {
   void loadTechCatalog()
-  void loadClinicalContext()
 })
 </script>
 

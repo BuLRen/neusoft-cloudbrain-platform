@@ -384,6 +384,17 @@ public class PhysicianService {
         Long registerId = physicianMapper.selectRegisterIdByMedicalRecordId(toLong(request.get("medicalRecordId")));
         assertRegisterAccess(registerId);
         paymentClient.assertAllPaid(registerId);
+        persistDiagnosisFields(request);
+    }
+
+    @Transactional
+    public void saveDiagnosisDraft(Map<String, Object> request) {
+        Long registerId = physicianMapper.selectRegisterIdByMedicalRecordId(toLong(request.get("medicalRecordId")));
+        assertRegisterAccess(registerId);
+        persistDiagnosisFields(request);
+    }
+
+    private void persistDiagnosisFields(Map<String, Object> request) {
         physicianMapper.updateDiagnosis(request);
         Long medicalRecordId = toLong(request.get("medicalRecordId"));
         syncRecordDiseases(medicalRecordId, diseaseIds(request));

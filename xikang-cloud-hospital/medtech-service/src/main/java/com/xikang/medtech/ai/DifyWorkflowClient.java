@@ -14,6 +14,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -106,6 +107,8 @@ public class DifyWorkflowClient {
         body.put("inputs", inputs == null ? Map.of() : inputs);
         body.put("response_mode", "blocking");
         body.put("user", user == null || user.isBlank() ? "medtech-service" : user);
+
+        log.debug("Dify workflow inputs keys={}", inputs == null ? List.of() : inputs.keySet());
 
         try {
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);

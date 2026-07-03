@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import {
-  ElAlert,
   ElButton,
   ElIcon,
   ElInput,
@@ -14,8 +14,10 @@ import {
 import {
   CirclePlusFilled,
   Clock,
+  Cpu,
   DocumentChecked,
   EditPen,
+  MagicStick,
   Monitor,
   Pouring,
   Tickets,
@@ -29,7 +31,6 @@ import {
   type PreliminaryAiMeta,
 } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
-import GlassCard from '@/shared/components/GlassCard.vue'
 import PreliminaryDiagnosisPanel from '../components/PreliminaryDiagnosisPanel.vue'
 import PreliminaryModelDrawer from '../components/PreliminaryModelDrawer.vue'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
@@ -38,7 +39,7 @@ import {
   findPreliminaryAiModel,
 } from '../constants/preliminary-ai-models'
 
-type PreliminaryInputSource = 'current_record' | 'pre_consultation' | 'natural_language'
+type PreliminaryInputSource = 'current_record' | 'natural_language'
 
 interface RecordFieldConfig {
   key: 'readme' | 'present' | 'presentTreat' | 'history' | 'allergy' | 'physique' | 'proposal'
@@ -112,19 +113,62 @@ const preliminaryForm = reactive({
 const aiMeta = ref<PreliminaryAiMeta>({})
 const aiSnapshot = ref({ aiReasoningText: '', doctorDiagnosis: '' })
 
+type RecordSnapshot = Pick<
+  typeof recordForm,
+  'readme' | 'present' | 'presentTreat' | 'history' | 'allergy' | 'physique' | 'proposal'
+>
+
+const savedRecordSnapshot = ref<RecordSnapshot>({
+  readme: '',
+  present: '',
+  presentTreat: '',
+  history: '',
+  allergy: '',
+  physique: '',
+  proposal: '',
+})
+
+const savedPreliminarySnapshot = ref({ doctorDiagnosis: '', aiReasoningText: '' })
+
+function syncSavedSnapshots() {
+  savedRecordSnapshot.value = {
+    readme: recordForm.readme,
+    present: recordForm.present,
+    presentTreat: recordForm.presentTreat,
+    history: recordForm.history,
+    allergy: recordForm.allergy,
+    physique: recordForm.physique,
+    proposal: recordForm.proposal,
+  }
+  savedPreliminarySnapshot.value = {
+    doctorDiagnosis: preliminaryForm.doctorDiagnosis,
+    aiReasoningText: preliminaryForm.aiReasoningText,
+  }
+  aiSnapshot.value = {
+    aiReasoningText: preliminaryForm.aiReasoningText,
+    doctorDiagnosis: preliminaryForm.doctorDiagnosis,
+  }
+}
+
+const recordDirty = computed(() =>
+  (Object.keys(savedRecordSnapshot.value) as (keyof RecordSnapshot)[]).some(
+    (key) => recordForm[key] !== savedRecordSnapshot.value[key],
+  ),
+)
+
+const preliminaryDirty = computed(
+  () =>
+    preliminaryForm.doctorDiagnosis.trim() !== savedPreliminarySnapshot.value.doctorDiagnosis.trim() ||
+    preliminaryForm.aiReasoningText.trim() !== savedPreliminarySnapshot.value.aiReasoningText.trim(),
+)
+
+const hasUnsavedChanges = computed(() => recordDirty.value || preliminaryDirty.value)
+
 const hasPreliminaryAiResult = computed(
   () =>
     Boolean(aiMeta.value.aiDiagnosis) ||
     Boolean(aiMeta.value.suggestedDiseases?.length) ||
     Boolean(preliminaryForm.aiReasoningText.trim()),
-)
-
-const hasPreConsultation = computed(
-  () =>
-    Boolean(
-      encounterStore.aiConsultSummary?.aiSummary ||
-        encounterStore.aiConsultSummary?.chiefComplaint,
-    ),
 )
 
 const doctorModified = computed(() => {
@@ -177,17 +221,6 @@ function buildRecordText(): string {
   return parts.join('\n')
 }
 
-function buildPreConsultationText(): string {
-  const summary = encounterStore.aiConsultSummary
-  if (!summary) return ''
-  return [
-    summary.chiefComplaint && `主诉：${summary.chiefComplaint}`,
-    summary.aiSummary && `摘要：${summary.aiSummary}`,
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
 function resolvePreliminaryPayload(): { text: string; preHandle: boolean } | null {
   if (!registerId.value) return null
   if (preliminaryInputSource.value === 'natural_language') {
@@ -197,14 +230,6 @@ function resolvePreliminaryPayload(): { text: string; preHandle: boolean } | nul
       return null
     }
     return { text, preHandle: false }
-  }
-  if (preliminaryInputSource.value === 'pre_consultation') {
-    const text = buildPreConsultationText()
-    if (!text) {
-      ElMessage.warning('当前患者暂无预问诊摘要')
-      return null
-    }
-    return { text, preHandle: true }
   }
   const text = buildRecordText()
   if (!text.trim()) {
@@ -239,10 +264,7 @@ function applyMedicalRecord(record: MedicalRecord | null) {
   }
 
   aiMeta.value = meta || {}
-  aiSnapshot.value = {
-    aiReasoningText: preliminaryForm.aiReasoningText,
-    doctorDiagnosis: preliminaryForm.doctorDiagnosis,
-  }
+  syncSavedSnapshots()
 }
 
 async function loadContext() {
@@ -309,8 +331,8 @@ async function generatePreliminaryDiagnosis() {
   }
 }
 
-async function saveMedicalRecord() {
-  if (!registerId.value) return
+async function persistMedicalRecord(): Promise<boolean> {
+  if (!registerId.value) return false
   const payload = {
     registerId: registerId.value,
     readme: recordForm.readme,
@@ -322,22 +344,34 @@ async function saveMedicalRecord() {
     proposal: recordForm.proposal,
   }
 
-  if (recordForm.id) {
-    await physicianApi.updateMedicalRecord(recordForm.id, payload)
-    ElMessage.success('病历已更新')
-  } else {
-    const result = await physicianApi.createMedicalRecord(payload)
-    recordForm.id = result.id
-    ElMessage.success('病历已创建')
+  try {
+    if (recordForm.id) {
+      await physicianApi.updateMedicalRecord(recordForm.id, payload)
+    } else {
+      const result = await physicianApi.createMedicalRecord(payload)
+      recordForm.id = result.id
+    }
+    syncSavedSnapshots()
+    return true
+  } catch {
+    return false
   }
 }
 
-async function savePreliminaryDiagnosis() {
-  if (!registerId.value) return
+async function saveMedicalRecord() {
+  const wasCreate = !recordForm.id
+  const saved = await persistMedicalRecord()
+  if (saved) {
+    ElMessage.success(wasCreate ? '病历已创建' : '病历已更新')
+  }
+}
+
+async function persistPreliminaryDiagnosis(): Promise<boolean> {
+  if (!registerId.value) return false
   const confirmed = preliminaryForm.doctorDiagnosis.trim()
   if (!confirmed) {
     ElMessage.warning('请填写医生确认的初步诊断')
-    return
+    return false
   }
   preliminaryLoading.value = true
   try {
@@ -346,12 +380,63 @@ async function savePreliminaryDiagnosis() {
       preliminaryDiagnosis: confirmed,
       suggestedDiseaseNames: suggestedDiseaseNamesForSave(confirmed),
     })
-    ElMessage.success('初步诊断已保存')
     await loadContext()
+    return true
+  } catch {
+    return false
   } finally {
     preliminaryLoading.value = false
   }
 }
+
+async function savePreliminaryDiagnosis() {
+  const saved = await persistPreliminaryDiagnosis()
+  if (saved) {
+    ElMessage.success('初步诊断已保存')
+  }
+}
+
+function unsavedLeaveMessage(): string {
+  const parts: string[] = []
+  if (recordDirty.value) parts.push('病历')
+  if (preliminaryDirty.value) parts.push('初步诊断')
+  return `您有未保存的${parts.join('、')}，离开前是否保存？`
+}
+
+async function persistUnsavedChanges(): Promise<boolean> {
+  if (recordDirty.value) {
+    const saved = await persistMedicalRecord()
+    if (!saved) return false
+  }
+  if (preliminaryDirty.value) {
+    const saved = await persistPreliminaryDiagnosis()
+    if (!saved) return false
+  }
+  return true
+}
+
+async function confirmLeaveBeforeNavigate(): Promise<boolean> {
+  if (!hasUnsavedChanges.value) return true
+
+  try {
+    await ElMessageBox.confirm(unsavedLeaveMessage(), '未保存的更改', {
+      distinguishCancelAndClose: true,
+      confirmButtonText: '保存并离开',
+      cancelButtonText: '不保存',
+      type: 'warning',
+    })
+    return persistUnsavedChanges()
+  } catch (action) {
+    if (action === 'cancel') return true
+    return false
+  }
+}
+
+onBeforeRouteLeave((_to, _from, next) => {
+  void confirmLeaveBeforeNavigate().then((proceed) => {
+    next(proceed)
+  })
+})
 
 watch(registerId, () => {
   void loadContext()
@@ -368,13 +453,14 @@ onMounted(() => {
     title="病历与初步诊断"
     prev-path="/physician/queue"
     next-path="/physician/orders"
+    content-variant="split"
   >
     <div class="record-page">
-      <GlassCard class="record-page__card patient-record">
+      <section class="record-card patient-record">
         <header class="patient-record__header">
           <div class="patient-record__intro">
             <div class="patient-record__logo" aria-hidden="true">
-              <ElIcon :size="26"><Tickets /></ElIcon>
+              <ElIcon :size="24"><Tickets /></ElIcon>
             </div>
             <div>
               <h2 class="patient-record__title">患者病历</h2>
@@ -400,7 +486,7 @@ onMounted(() => {
             :class="{ 'patient-record__field--full': field.fullWidth }"
           >
             <label class="patient-record__label" :for="`record-${field.key}`">
-              <ElIcon class="patient-record__label-icon" :size="18">
+              <ElIcon class="patient-record__label-icon" :size="16">
                 <component :is="field.icon" />
               </ElIcon>
               <span>{{ field.label }}</span>
@@ -416,75 +502,124 @@ onMounted(() => {
             />
           </section>
         </div>
-      </GlassCard>
+      </section>
 
-      <GlassCard class="record-page__card record-page__card--preliminary">
-        <h2 class="record-page__title">AI 初步诊断</h2>
-        <ElAlert
-          type="warning"
-          :closable="false"
-          show-icon
-          title="AI 初步诊断为辅助参考，非最终确诊，须医生审核后保存。"
-          class="record-page__alert"
-        />
+      <section class="record-card ai-panel" :class="{ 'ai-panel--has-results': hasPreliminaryAiResult }">
+        <div class="ai-panel__controls">
+          <header class="ai-panel__header">
+            <div class="ai-panel__intro">
+              <div class="ai-panel__logo" aria-hidden="true">
+                <ElIcon :size="22"><Cpu /></ElIcon>
+              </div>
+              <h2 class="ai-panel__title">AI 初步诊断</h2>
+            </div>
+          </header>
 
-        <div class="record-page__toolbar">
-          <ElRadioGroup v-model="preliminaryInputSource">
-            <ElRadio value="current_record">当前病历</ElRadio>
-            <ElRadio value="pre_consultation" :disabled="!hasPreConsultation">预问诊摘要</ElRadio>
-            <ElRadio value="natural_language">患者自然语言</ElRadio>
-          </ElRadioGroup>
-        </div>
 
-        <ElInput
-          v-if="preliminaryInputSource === 'natural_language'"
-          v-model="naturalLanguageText"
-          type="textarea"
-          :rows="3"
-          placeholder="粘贴患者口述或语音转写……"
-          class="record-page__long-text"
-        />
 
-        <div class="record-page__toolbar record-page__toolbar--actions">
-          <ElButton @click="modelDrawerVisible = true">
-            模型：{{ selectedAiModelLabel }}
-          </ElButton>
-          <ElButton type="primary" :loading="preliminaryLoading" @click="generatePreliminaryDiagnosis">
-            生成初步诊断
-          </ElButton>
-          <ElButton :loading="preliminaryLoading" @click="savePreliminaryDiagnosis">保存初步诊断</ElButton>
-          <ElTag v-if="doctorModified" type="warning">医生已修改</ElTag>
-          <ElTag v-else-if="aiMeta.aiDiagnosis" type="info">AI 生成</ElTag>
+          <div class="ai-panel__source">
+            <ElRadioGroup v-model="preliminaryInputSource" class="ai-panel__radios">
+              <ElRadio value="current_record">当前病历</ElRadio>
+              <ElRadio value="natural_language">患者自然语言</ElRadio>
+            </ElRadioGroup>
+          </div>
+
+          <ElInput
+            v-if="preliminaryInputSource === 'natural_language'"
+            v-model="naturalLanguageText"
+            type="textarea"
+            :rows="3"
+            placeholder="粘贴患者口述或语音转写……"
+            class="ai-panel__long-text"
+          />
+
+          <div class="ai-panel__toolbar">
+            <ElButton class="ai-panel__model-btn" @click="modelDrawerVisible = true">
+              {{ selectedAiModelLabel }}
+            </ElButton>
+            <div class="ai-panel__toolbar-btns">
+              <ElButton
+                type="primary"
+                class="ai-panel__generate-btn"
+                :loading="preliminaryLoading"
+                @click="generatePreliminaryDiagnosis"
+              >
+                <ElIcon><MagicStick /></ElIcon>
+                生成初步诊断
+              </ElButton>
+              <ElButton
+                class="ai-panel__save-btn"
+                :loading="preliminaryLoading"
+                @click="savePreliminaryDiagnosis"
+              >
+                保存初步诊断
+              </ElButton>
+            </div>
+          </div>
         </div>
 
         <PreliminaryModelDrawer v-model:visible="modelDrawerVisible" v-model:model="selectedAiModel" />
 
-        <PreliminaryDiagnosisPanel
-          v-model:doctor-diagnosis="preliminaryForm.doctorDiagnosis"
-          v-model:ai-reasoning-text="preliminaryForm.aiReasoningText"
-          :ai-meta="aiMeta"
-          :has-ai-result="hasPreliminaryAiResult"
-        />
-      </GlassCard>
+        <div class="ai-panel__body">
+          <PreliminaryDiagnosisPanel
+            v-model:doctor-diagnosis="preliminaryForm.doctorDiagnosis"
+            v-model:ai-reasoning-text="preliminaryForm.aiReasoningText"
+            :ai-meta="aiMeta"
+            :has-ai-result="hasPreliminaryAiResult"
+          />
+        </div>
+      </section>
     </div>
   </PhysicianStepLayout>
 </template>
 
 <style scoped>
 .record-page {
+  --record-sticky-top: calc(var(--header-height) + var(--space-6));
+  --record-panel-max-height: calc(100vh - var(--record-sticky-top) - 120px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.record-card {
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(31, 73, 125, 0.06);
+}
+
+.patient-record {
+  position: sticky;
+  top: var(--record-sticky-top);
+  align-self: start;
+  max-height: var(--record-panel-max-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ai-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  min-height: 0;
 }
 
-.record-page__card {
-  padding: var(--space-5);
+.ai-panel--has-results {
+  max-height: var(--record-panel-max-height);
 }
 
-.record-page__title {
-  margin: 0 0 var(--space-4);
-  font-size: var(--font-size-lg);
-  font-weight: 600;
+.ai-panel__controls {
+  flex-shrink: 0;
+}
+
+.ai-panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .patient-record__header {
@@ -495,7 +630,7 @@ onMounted(() => {
   gap: var(--space-4);
   margin-block-end: var(--space-5);
   padding-block-end: var(--space-5);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: 1px solid #e8edf3;
 }
 
 .patient-record__intro {
@@ -510,16 +645,16 @@ onMounted(() => {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  inline-size: 52px;
-  block-size: 52px;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-success) 22%, var(--color-primary-soft));
-  color: var(--color-success);
+  inline-size: 48px;
+  block-size: 48px;
+  border-radius: 12px;
+  background: #e8f8ef;
+  color: #52c41a;
 }
 
 .patient-record__title {
   margin: 0;
-  font-size: var(--font-size-xl, 1.25rem);
+  font-size: 1.125rem;
   font-weight: 700;
   line-height: 1.3;
   color: var(--color-text);
@@ -527,7 +662,7 @@ onMounted(() => {
 
 .patient-record__subtitle {
   margin: var(--space-1) 0 0;
-  font-size: var(--font-size-sm, 0.875rem);
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
   line-height: 1.5;
 }
@@ -535,8 +670,16 @@ onMounted(() => {
 .patient-record__save {
   flex-shrink: 0;
   padding-inline: var(--space-5);
-  border-radius: var(--radius-md);
+  border-radius: 8px;
+  background: #2f73f6;
+  border-color: #2f73f6;
   box-shadow: none;
+}
+
+.patient-record__save:hover,
+.patient-record__save:focus {
+  background: #2563eb;
+  border-color: #2563eb;
 }
 
 .patient-record__save-icon {
@@ -557,10 +700,10 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-block-end: var(--space-3);
-  font-size: var(--font-size-base, 1rem);
+  margin-block-end: var(--space-2);
+  font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-primary);
+  color: #2f73f6;
   cursor: default;
 }
 
@@ -569,11 +712,11 @@ onMounted(() => {
 }
 
 .patient-record__input :deep(.el-textarea__inner) {
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-control);
-  font-size: var(--font-size-base, 1rem);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 0.875rem;
   line-height: 1.65;
   color: var(--color-text);
   box-shadow: none;
@@ -583,16 +726,172 @@ onMounted(() => {
 }
 
 .patient-record__input :deep(.el-textarea__inner::placeholder) {
-  color: var(--color-text-soft);
+  color: #a0aec0;
 }
 
 .patient-record__input :deep(.el-textarea__inner:hover) {
-  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border-strong));
+  border-color: #cbd5e1;
 }
 
 .patient-record__input :deep(.el-textarea__inner:focus) {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-soft);
+  border-color: #2f73f6;
+  box-shadow: 0 0 0 3px rgba(47, 115, 246, 0.12);
+}
+
+.ai-panel__header {
+  margin-block-end: var(--space-4);
+}
+
+.ai-panel__intro {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ai-panel__logo {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: 12px;
+  background: #eef4ff;
+  color: #2f73f6;
+}
+
+.ai-panel__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.ai-panel__alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-block-end: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+.ai-panel__alert-icon {
+  flex-shrink: 0;
+  margin-block-start: 2px;
+  color: #f59e0b;
+}
+
+.ai-panel__source {
+  margin-block-end: var(--space-4);
+}
+
+.ai-panel__radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.ai-panel__radios :deep(.el-radio__label) {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.ai-panel__radios :deep(.el-radio__input.is-checked + .el-radio__label) {
+  color: #2f73f6;
+  font-weight: 600;
+}
+
+.ai-panel__long-text {
+  margin-block-end: var(--space-4);
+}
+
+.ai-panel__long-text :deep(.el-textarea__inner) {
+  border-radius: 8px;
+  border-color: #e2e8f0;
+}
+
+.ai-panel__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-block-end: 0;
+  padding-block-end: var(--space-4);
+  border-block-end: 1px solid #e8edf3;
+}
+
+.ai-panel__model-btn {
+  width: 100%;
+  justify-content: flex-start;
+  border-radius: 8px;
+  border-color: #e2e8f0;
+  color: var(--color-text);
+  font-size: 0.8125rem;
+}
+
+.ai-panel__toolbar-btns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.ai-panel__toolbar-btns :deep(.el-button) {
+  width: 100%;
+  margin: 0;
+}
+
+.ai-panel__generate-btn {
+  border-radius: 8px;
+  background: #2f73f6;
+  border-color: #2f73f6;
+  box-shadow: none;
+}
+
+.ai-panel__generate-btn:hover,
+.ai-panel__generate-btn:focus {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.ai-panel__save-btn {
+  border-radius: 8px;
+  border-color: #2f73f6;
+  color: #2f73f6;
+  background: #fff;
+}
+
+.ai-panel__save-btn:hover,
+.ai-panel__save-btn:focus {
+  color: #2563eb;
+  border-color: #2563eb;
+  background: #f0f7ff;
+}
+
+.ai-panel__tags {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+@media (max-width: 1100px) {
+  .record-page {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-record {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .ai-panel--has-results {
+    max-height: min(72vh, 720px);
+  }
 }
 
 @media (max-width: 900px) {
@@ -603,34 +902,5 @@ onMounted(() => {
   .patient-record__field--full {
     grid-column: auto;
   }
-}
-
-.record-page__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-  margin-block-end: var(--space-3);
-}
-
-.record-page__alert {
-  margin-block-end: var(--space-4);
-}
-
-.record-page__long-text {
-  margin-block-end: var(--space-3);
-}
-
-.record-page__toolbar--actions {
-  align-items: center;
-}
-
-.record-page__toolbar--actions :deep(.el-button--primary) {
-  background: var(--el-color-primary);
-  box-shadow: none;
-}
-
-.record-page__toolbar--actions :deep(.el-button:hover:not(.is-disabled)) {
-  transform: none;
 }
 </style>

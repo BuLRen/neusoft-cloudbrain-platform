@@ -150,6 +150,12 @@ public class PhysicianController {
         return Result.success("确诊提交成功", null);
     }
 
+    @PostMapping("/diagnosis/draft")
+    public Result<Void> saveDiagnosisDraft(@RequestBody Map<String, Object> request) {
+        physicianService.saveDiagnosisDraft(request);
+        return Result.success("确诊草稿已保存", null);
+    }
+
     @GetMapping("/diagnosis/{registrationId}")
     public Result<Object> getDiagnosisList(@PathVariable Long registrationId) {
         return Result.success(physicianService.getDiagnosisList(registrationId));

@@ -39,6 +39,7 @@ import { buildLabReportContextFromPhysician } from '@/shared/types/labReportPdf'
 import { buildCtDiagnosisReportPdfContext } from '@/shared/types/ctReportPdf'
 import {
   hasExportableLabReportPayload,
+  isDraftResultPayload,
   resolveStructuredOutputFromPayload,
   type SimulatedCheckStructuredOutput,
 } from '@/shared/types/simulatedCheckResult'
@@ -47,6 +48,14 @@ import type { ResultFormSchema } from '@/shared/types/resultForm'
 import { hasW3Content } from '@/shared/types/w3Result'
 
 type StateTone = 'primary' | 'success' | 'warning' | 'neutral'
+
+interface IncompleteExamRow {
+  techName: string
+  category: '检查' | '检验'
+  state: string
+}
+
+const TERMINAL_EXAM_STATES = new Set(['已完成', '已归档'])
 
 const encounterStore = useEncounterStore()
 const router = useRouter()
@@ -75,6 +84,8 @@ const ctReportDialogVisible = ref(false)
 const ctReportDialogRow = ref<CheckResult | null>(null)
 const ctReportSchema = ref<ResultFormSchema | null>(null)
 const ctReportSchemaLoading = ref(false)
+const incompleteConfirmVisible = ref(false)
+let incompleteConfirmResolver: ((proceed: boolean) => void) | null = null
 
 const qcSeverityLabel: Record<string, string> = {
   clean: '无伪影',
@@ -116,19 +127,71 @@ async function loadResults() {
   }
 }
 
-function hasResultPayload(raw: unknown): boolean {
+function hasResultPayload(raw: unknown, state?: string): boolean {
   if (raw == null) return false
   const text = String(raw).trim()
-  return text.length > 0 && text !== 'null' && text !== 'undefined'
+  if (text.length === 0 || text === 'null' || text === 'undefined') return false
+  if (isDraftResultPayload(text)) return false
+  if (state && !isExamTerminalState(state)) return false
+  return true
 }
 
 const hasAnalyzableResults = computed(() => {
-  const checks = checkResults.value.some(row => hasResultPayload(row.checkResult))
-  const inspections = inspectionResults.value.some(
-    row => row.inspectionState !== '已归档' && hasResultPayload(row.inspectionResult),
+  const checks = checkResults.value.some(row => hasResultPayload(row.checkResult, row.checkState))
+  const inspections = inspectionResults.value.some(row =>
+    hasResultPayload(row.inspectionResult, row.inspectionState),
   )
   return checks || inspections
 })
+
+function isExamTerminalState(state?: string): boolean {
+  return TERMINAL_EXAM_STATES.has(state ?? '')
+}
+
+const incompleteExamRows = computed<IncompleteExamRow[]>(() => {
+  const rows: IncompleteExamRow[] = []
+  for (const row of checkResults.value) {
+    if (!isExamTerminalState(row.checkState)) {
+      rows.push({
+        techName: row.techName || '检查项目',
+        category: '检查',
+        state: row.checkState || '未完成',
+      })
+    }
+  }
+  for (const row of inspectionResults.value) {
+    if (!isExamTerminalState(row.inspectionState)) {
+      rows.push({
+        techName: row.techName || '检验项目',
+        category: '检验',
+        state: row.inspectionState || '未完成',
+      })
+    }
+  }
+  return rows
+})
+
+const hasIncompleteExams = computed(() => incompleteExamRows.value.length > 0)
+
+function closeIncompleteConfirm(proceed: boolean) {
+  incompleteConfirmVisible.value = false
+  incompleteConfirmResolver?.(proceed)
+  incompleteConfirmResolver = null
+}
+
+function onIncompleteConfirmDialogClosed() {
+  if (incompleteConfirmResolver) {
+    closeIncompleteConfirm(false)
+  }
+}
+
+function confirmRunW3WhenIncomplete(): Promise<boolean> {
+  if (!hasIncompleteExams.value) return Promise.resolve(true)
+  incompleteConfirmVisible.value = true
+  return new Promise((resolve) => {
+    incompleteConfirmResolver = resolve
+  })
+}
 
 async function runW3() {
   if (!registerId.value) return
@@ -136,6 +199,7 @@ async function runW3() {
     ElMessage.warning('暂无检查检验结果可供解读，请等待项目完成后再运行 W3')
     return
   }
+  if (!(await confirmRunW3WhenIncomplete())) return
   w3Loading.value = true
   try {
     w3Output.value = await physicianApi.aiW3(registerId.value)
@@ -218,7 +282,7 @@ function canViewCtImaging(row: CheckResult): boolean {
 }
 
 function canViewCtReport(row: CheckResult): boolean {
-  return Boolean(isCtImagingResult(row) && row.checkState === '已完成' && hasResultPayload(row.checkResult))
+  return Boolean(isCtImagingResult(row) && row.checkState === '已完成' && hasResultPayload(row.checkResult, row.checkState))
 }
 
 function openCtReportDialog(row: CheckResult) {
@@ -500,6 +564,35 @@ onMounted(() => {
       </div>
     </section>
   </PhysicianStepLayout>
+
+  <ElDialog
+    v-model="incompleteConfirmVisible"
+    title="检查尚未全部完成"
+    width="560px"
+    align-center
+    class="incomplete-exam-dialog"
+    @closed="onIncompleteConfirmDialogClosed"
+  >
+    <p class="incomplete-exam-dialog__lead">
+      以下检查/检验尚未全部完成，基于当前已有结果运行分析可能不完整，是否仍要运行？
+    </p>
+    <ElTable :data="incompleteExamRows" class="incomplete-exam-dialog__table" stripe size="small">
+      <ElTableColumn prop="techName" label="项目" min-width="168" />
+      <ElTableColumn prop="category" label="类型" width="80" />
+      <ElTableColumn label="状态" width="112">
+        <template #default="{ row }">
+          <span class="state-badge" :data-tone="resolveStateTone(row.state)">
+            <span class="state-badge__dot" aria-hidden="true" />
+            {{ row.state }}
+          </span>
+        </template>
+      </ElTableColumn>
+    </ElTable>
+    <template #footer>
+      <ElButton @click="closeIncompleteConfirm(false)">取消</ElButton>
+      <ElButton type="primary" @click="closeIncompleteConfirm(true)">仍要运行</ElButton>
+    </template>
+  </ElDialog>
 
   <ElDialog
     v-model="inspectionDialogVisible"
@@ -878,5 +971,25 @@ onMounted(() => {
     width: 100%;
     justify-content: flex-end;
   }
+}
+</style>
+
+<style>
+.incomplete-exam-dialog__lead {
+  margin: 0 0 var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+}
+
+.incomplete-exam-dialog__table {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.incomplete-exam-dialog__table .el-table__header th {
+  background: var(--color-table-header);
+  color: var(--color-text-muted);
+  font-weight: 600;
 }
 </style>

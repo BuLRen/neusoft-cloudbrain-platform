@@ -81,6 +81,17 @@ export function isSimilarToPrimary(primary?: W4Suggestion, candidate?: W4Suggest
   return false
 }
 
+export function mapDiagnosisSuggestionsToW4Output(suggestions?: W4Suggestion[]): W4Output | null {
+  if (!suggestions?.length) return null
+  return {
+    status: 'success',
+    suggestions: suggestions.map((item) => ({
+      ...item,
+      diagnosisName: item.diagnosisName || item.diseaseName,
+    })),
+  }
+}
+
 export function hasW4PanelContent(liveOutput?: W4Output | null, savedSuggestions?: W4Suggestion[]): boolean {
   if (liveOutput) {
     return Boolean(

@@ -261,6 +261,40 @@ public class MedtechService {
         assertRequestDepartmentAccess(medicalTechnologyId);
     }
 
+    /**
+     * 持久化检查模拟工作流草稿（仅更新 check_result，不改变状态）
+     */
+    @Transactional
+    public void saveCheckSimulationDraft(Long checkRequestId, Map<String, Object> simulationData) {
+        CheckRequest request = checkRequestMapper.selectById(checkRequestId);
+        if (request == null || !"检查中".equals(request.getCheckState())) {
+            return;
+        }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        String payload = resultFormService.buildSimulationDraftPayload(
+            request.getMedicalTechnologyId(),
+            simulationData
+        );
+        checkRequestMapper.updateSimulationDraft(checkRequestId, payload);
+    }
+
+    /**
+     * 持久化检验模拟工作流草稿（仅更新 inspection_result，不改变状态）
+     */
+    @Transactional
+    public void saveInspectionSimulationDraft(Long inspectionRequestId, Map<String, Object> simulationData) {
+        InspectionRequest request = inspectionRequestMapper.selectById(inspectionRequestId);
+        if (request == null || !"检验中".equals(request.getInspectionState())) {
+            return;
+        }
+        assertRequestDepartmentAccess(request.getMedicalTechnologyId());
+        String payload = resultFormService.buildSimulationDraftPayload(
+            request.getMedicalTechnologyId(),
+            simulationData
+        );
+        inspectionRequestMapper.updateSimulationDraft(inspectionRequestId, payload);
+    }
+
     // ==================== 检验相关 ====================
 
     /**
