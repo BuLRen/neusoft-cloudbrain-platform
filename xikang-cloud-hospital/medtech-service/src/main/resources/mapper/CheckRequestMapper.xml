@@ -133,6 +133,10 @@
         WHERE id = #{id}
     </update>
 
+    <update id="updateSimulationDraft">
+        UPDATE check_request SET check_result = #{checkResult} WHERE id = #{id}
+    </update>
+
     <update id="clearImaging">
         UPDATE check_request
         SET imaging_volume_id = NULL,

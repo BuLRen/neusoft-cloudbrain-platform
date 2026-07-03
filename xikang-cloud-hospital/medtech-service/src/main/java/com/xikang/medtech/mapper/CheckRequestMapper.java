@@ -56,4 +56,6 @@ public interface CheckRequestMapper {
     );
 
     int clearImaging(@Param("id") Long id);
+
+    int updateSimulationDraft(@Param("id") Long id, @Param("checkResult") String checkResult);
 }

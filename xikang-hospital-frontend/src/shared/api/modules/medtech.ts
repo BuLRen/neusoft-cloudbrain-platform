@@ -163,7 +163,14 @@ export const medtechApi = {
   },
   submitCheckResult(
     id: number,
-    data: { values?: Record<string, unknown>; result?: string; checkResult?: string; checkRemark?: string; aiAnalysis?: string },
+    data: {
+      values?: Record<string, unknown>
+      result?: string
+      checkResult?: string
+      checkRemark?: string
+      aiAnalysis?: string
+      structuredOutput?: SimulatedCheckStructuredOutput
+    },
   ) {
     return http<Record<string, unknown>>({ url: `/medtech/check/result/${id}`, method: 'PUT', data })
   },

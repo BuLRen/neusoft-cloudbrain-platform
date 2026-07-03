@@ -1,19 +1,29 @@
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppHeader from './AppHeader.vue'
 import AppSidebar from './AppSidebar.vue'
 import PhysicianPatientSelectDialog from '@/modules/physician/components/PhysicianPatientSelectDialog.vue'
+
+const route = useRoute()
+const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppSidebar />
-    <main class="app-shell__main">
-      <AppHeader />
-      <section class="app-shell__content">
-        <RouterView />
-      </section>
-    </main>
+  <div class="app-shell" :class="{ 'app-shell--fullscreen': isFullscreen }">
+    <template v-if="isFullscreen">
+      <RouterView />
+    </template>
+    <template v-else>
+      <AppSidebar />
+      <main class="app-shell__main">
+        <AppHeader />
+        <section class="app-shell__content">
+          <RouterView />
+        </section>
+      </main>
+    </template>
     <PhysicianPatientSelectDialog />
   </div>
 </template>
@@ -25,6 +35,12 @@ import PhysicianPatientSelectDialog from '@/modules/physician/components/Physici
   gap: var(--shell-gap);
   min-height: 100vh;
   padding: var(--shell-gap);
+}
+
+.app-shell--fullscreen {
+  display: block;
+  min-height: 100dvh;
+  padding: 0;
 }
 
 .app-shell__main {

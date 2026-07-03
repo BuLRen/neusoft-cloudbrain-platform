@@ -131,4 +131,20 @@
             #{registerId}, #{sourceType}, #{aiReadme}, #{aiPresent}, #{aiHistory}, #{aiAllergy}, #{aiPhysique}, #{aiDiagnosis}, #{modelId}, #{doctorModification}
         )
     </insert>
+
+    <select id="selectLatestAiMedicalRecordLogBySourceType" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            source_type AS "sourceType",
+            ai_diagnosis AS "aiDiagnosis",
+            model_id AS "modelId",
+            doctor_modification AS "doctorModification",
+            generation_time AS "generationTime"
+        FROM ai_medical_record_log
+        WHERE register_id = #{registerId}
+          AND source_type = #{sourceType}
+        ORDER BY generation_time DESC, id DESC
+        LIMIT 1
+    </select>
 </mapper>

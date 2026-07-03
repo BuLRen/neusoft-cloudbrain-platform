@@ -22,7 +22,10 @@ public class PhysicianAiWebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(internalAiAuthInterceptor)
-            .addPathPatterns("/api/physician/agent/tools/**");
+            .addPathPatterns(
+                "/api/physician/agent/tools/**",
+                "/api/medtech/internal/**"
+            );
 
         registry.addInterceptor(physicianAuthInterceptor)
             .addPathPatterns("/api/physician/**")

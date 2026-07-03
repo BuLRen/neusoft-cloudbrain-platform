@@ -13,5 +13,7 @@ declare module 'vue-router' {
     group?: 'attending' | 'exam' | 'follow-up'
     step?: number
     owner?: 'A' | 'B' | '共同'
+    requiresEncounter?: boolean
+    fullscreen?: boolean
   }
 }

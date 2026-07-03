@@ -43,4 +43,6 @@ public interface InspectionRequestMapper {
         @Param("inspectionState") String inspectionState,
         @Param("inspectionRemark") String inspectionRemark
     );
+
+    int updateSimulationDraft(@Param("id") Long id, @Param("inspectionResult") String inspectionResult);
 }

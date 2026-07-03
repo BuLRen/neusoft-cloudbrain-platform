@@ -279,7 +279,7 @@ export const routes: RouteRecordRaw[] = [
             path: 'assistant',
             name: 'PhysicianAssistant',
             component: PhysicianAiAssistantPage,
-            meta: { title: 'AI 助手', roles: ['physician', 'admin'], requiresAuth: true, requiresEncounter: true, owner: 'A', group: 'attending' },
+            meta: { title: 'AI 助手', roles: ['physician', 'admin'], requiresAuth: true, requiresEncounter: true, fullscreen: true, owner: 'A', group: 'attending' },
           },
         ],
       },

@@ -202,6 +202,17 @@ export function hasExportableLabReportPayload(raw?: string | null): boolean {
   return Boolean(structured && (structured.resultItems?.length ?? 0) > 0)
 }
 
+/** 判断是否为医技模拟工作流草稿（未完成提交） */
+export function isDraftResultPayload(raw?: string | null): boolean {
+  if (!raw?.trim().startsWith('{')) return false
+  try {
+    const payload = JSON.parse(raw) as Record<string, unknown>
+    return payload.draft === true
+  } catch {
+    return false
+  }
+}
+
 export function statusTone(status: string): 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'high' || status === 'abnormal' || status === 'positive') return 'danger'
   if (status === 'low') return 'warning'

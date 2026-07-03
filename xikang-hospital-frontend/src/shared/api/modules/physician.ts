@@ -248,6 +248,12 @@ export interface W2Output {
   modelId?: string
 }
 
+export interface W2Status {
+  registerId?: number
+  completed: boolean
+  w2Output?: W2Output
+}
+
 export interface W3IndicatorRow {
   itemCode?: string
   itemName: string
@@ -319,6 +325,12 @@ export interface W4Output {
   searchAdvice?: string
   workflowRunId?: string
   modelId?: string
+}
+
+export interface W4Status {
+  registerId?: number
+  completed: boolean
+  w4Output?: W4Output
 }
 
 export interface W5Suggestion {
@@ -457,6 +469,14 @@ export const physicianApi = {
       timeout: W2_AI_TIMEOUT_MS,
     })
   },
+  w2Status(registerId: number) {
+    return http<W2Status>({
+      url: '/physician/ai/w2/status',
+      method: 'GET',
+      params: { registerId },
+      skipErrorMessage: true,
+    })
+  },
   aiW2b(registerId: number, autoCreateRequests = true) {
     return http<{ simulatedResults: Record<string, unknown>[] }>({
       url: '/physician/ai/w2b/simulate',
@@ -481,6 +501,14 @@ export const physicianApi = {
       method: 'POST',
       data: { registerId },
       timeout: W4_AI_TIMEOUT_MS,
+    })
+  },
+  w4Status(registerId: number) {
+    return http<W4Status>({
+      url: '/physician/ai/w4/status',
+      method: 'GET',
+      params: { registerId },
+      skipErrorMessage: true,
     })
   },
   aiW5(registerId: number) {
@@ -543,6 +571,9 @@ export const physicianApi = {
   },
   submitDiagnosis(data: Record<string, unknown>) {
     return http<void>({ url: '/physician/diagnosis', method: 'POST', data })
+  },
+  saveDiagnosisDraft(data: Record<string, unknown>) {
+    return http<void>({ url: '/physician/diagnosis/draft', method: 'POST', data })
   },
   drugs(keyword?: string) {
     return http<Drug[]>({ url: '/physician/drugs', method: 'GET', params: { keyword } })

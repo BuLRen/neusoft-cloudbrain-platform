@@ -34,7 +34,7 @@ spring:
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml
-  type-aliases-package: com.xikang.physician.copilot.entity,com.xikang.physician.agent.entity
+  type-aliases-package: com.xikang.physician.copilot.entity,com.xikang.physician.agent.entity,com.xikang.physician.simulation.entity
   configuration:
     map-underscore-to-camel-case: true
 

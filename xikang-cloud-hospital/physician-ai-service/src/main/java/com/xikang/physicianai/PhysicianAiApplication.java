@@ -14,7 +14,8 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @MapperScan({
     "com.xikang.physician.mapper",
     "com.xikang.physician.agent.mapper",
-    "com.xikang.physician.copilot.mapper"
+    "com.xikang.physician.copilot.mapper",
+    "com.xikang.physician.simulation.mapper"
 })
 @EnableFeignClients(basePackages = "com.xikang.physician.feign")
 @EnableAsync
