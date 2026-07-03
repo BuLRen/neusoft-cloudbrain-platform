@@ -1,6 +1,7 @@
 package com.xikang.physician.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xikang.common.exception.BusinessException;
 import com.xikang.physician.mapper.PhysicianAiMapper;
 import com.xikang.physician.client.PhysicianClinicalClient;
 import org.slf4j.Logger;
@@ -348,6 +349,8 @@ public class PhysicianAiPipelineService {
             );
             return mapped;
         } catch (DifyWorkflowException ex) {
+            throw ex;
+        } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
             log.warn("W3 registerId={} Dify call failed: {}", registerId, ex.toString());
@@ -1188,12 +1191,12 @@ public class PhysicianAiPipelineService {
             Map<String, Object> out = new LinkedHashMap<>(fromPre.isEmpty() ? Map.of() : fromPre);
             out.put("registerId", registerId);
             if (register != null) {
-                out.put("patientInfo", Map.of(
-                    "realName", register.get("realName"),
-                    "gender", register.get("gender"),
-                    "age", register.get("age"),
-                    "caseNumber", register.get("caseNumber")
-                ));
+                Map<String, Object> patientInfo = new LinkedHashMap<>();
+                patientInfo.put("realName", register.get("realName"));
+                patientInfo.put("gender", register.get("gender"));
+                patientInfo.put("age", register.get("age"));
+                patientInfo.put("caseNumber", register.get("caseNumber"));
+                out.put("patientInfo", patientInfo);
             }
             out.put("chiefComplaint", record.get("readme"));
             out.put("presentIllness", record.get("present"));
