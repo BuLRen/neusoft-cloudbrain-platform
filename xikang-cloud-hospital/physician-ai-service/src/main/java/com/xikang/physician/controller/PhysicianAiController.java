@@ -125,6 +125,14 @@ public class PhysicianAiController {
         return Result.success("W3 异步解读已触发", null);
     }
 
+    @GetMapping("/w4/status")
+    public Result<Map<String, Object>> getW4Status(@RequestParam Long registerId) {
+        if (registerId == null) {
+            return Result.error("registerId 不能为空");
+        }
+        return Result.success(pipelineService.getW4Status(registerId));
+    }
+
     @PostMapping("/w4/diagnose")
     public Result<Map<String, Object>> runW4(@RequestBody Map<String, Object> request) {
         try {

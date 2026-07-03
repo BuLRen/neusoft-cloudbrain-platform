@@ -327,6 +327,12 @@ export interface W4Output {
   modelId?: string
 }
 
+export interface W4Status {
+  registerId?: number
+  completed: boolean
+  w4Output?: W4Output
+}
+
 export interface W5Suggestion {
   id?: number
   drugId?: number
@@ -497,6 +503,14 @@ export const physicianApi = {
       timeout: W4_AI_TIMEOUT_MS,
     })
   },
+  w4Status(registerId: number) {
+    return http<W4Status>({
+      url: '/physician/ai/w4/status',
+      method: 'GET',
+      params: { registerId },
+      skipErrorMessage: true,
+    })
+  },
   aiW5(registerId: number) {
     return http<W5Output>({
       url: '/physician/ai/w5/recommend-drugs',
@@ -557,6 +571,9 @@ export const physicianApi = {
   },
   submitDiagnosis(data: Record<string, unknown>) {
     return http<void>({ url: '/physician/diagnosis', method: 'POST', data })
+  },
+  saveDiagnosisDraft(data: Record<string, unknown>) {
+    return http<void>({ url: '/physician/diagnosis/draft', method: 'POST', data })
   },
   drugs(keyword?: string) {
     return http<Drug[]>({ url: '/physician/drugs', method: 'GET', params: { keyword } })
