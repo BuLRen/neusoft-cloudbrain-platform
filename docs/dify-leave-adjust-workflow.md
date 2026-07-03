@@ -86,7 +86,7 @@ curl -X POST 'https://api.dify.ai/v1/workflows/run' \
 
 ---
 
-## 三、节点 2：LLM 理解请假语义
+## 三、节点 2：LLM 理解请假语义（结构化输出）
 
 ### 3.1 节点配置
 
@@ -96,6 +96,7 @@ curl -X POST 'https://api.dify.ai/v1/workflows/run' \
 | 模型 | gpt-4o-mini（或同等） |
 | Temperature | 0.3 |
 | Max Tokens | 200 |
+| **结构化输出** | **✅ 开启** |
 
 ### 3.2 SYSTEM Prompt
 
@@ -118,16 +119,66 @@ curl -X POST 'https://api.dify.ai/v1/workflows/run' \
 影响患者数：{{#start.affected_count#}}
 ```
 
-### 3.4 输出
+### 3.4 结构化输出 Schema（开结构化输出后必填）
 
-节点变量名：`severity_json`（string 类型，内容是 JSON 字符串）
+开启"结构化输出"开关后，把下面的 JSON Schema 粘到 Dify 的 schema 配置框：
 
-示例输出：
+```json
+{
+  "type": "object",
+  "properties": {
+    "severity": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "严重程度：病假+急诊/手术/重症=high；普通病事假=medium；公假其他=low"
+    },
+    "urgency": {
+      "type": "string",
+      "enum": ["today", "tomorrow", "scheduled"],
+      "description": "紧急度：请假日期是今天=today，明天=tomorrow，其他=scheduled"
+    },
+    "impact_level": {
+      "type": "string",
+      "enum": ["critical", "normal"],
+      "description": "影响级别：affected_count>10=critical，否则 normal"
+    }
+  },
+  "required": ["severity", "urgency", "impact_level"],
+  "additionalProperties": false
+}
+```
+
+**Schema 作用**：
+- ✅ 强制 LLM 输出合法 JSON（不会输出多余文字、不会漏字段）
+- ✅ 字段值限定在 enum 范围（LLM 不会乱写 severity=super-high 之类）
+- ✅ `additionalProperties: false` 阻止 LLM 加私货字段
+
+### 3.5 输出变量
+
+**重要**：Dify 的 LLM 节点输出变量名**永远叫 `text`**，不管开不开结构化输出都一样。
+
+| 变量名 | 类型 | 说明 |
+|--------|------|------|
+| `llm_understand.text` | String | 内容是合法 JSON 字符串（结构化输出保证） |
+
+**下游引用**：`{{#llm_understand.text#}}`
+
+> ⚠️ **不要去找 `severity_json` 这个变量**——Dify 不支持给 LLM 节点自定义输出变量名。结构化输出只是**约束 LLM 的输出格式**，输出变量还是 `text`。
+
+### 3.6 示例输出（`llm_understand.text` 的内容）
+
 ```json
 {"severity":"medium","urgency":"tomorrow","impact_level":"critical"}
 ```
 
-> **设计说明**：这一步是**可选的语义分析**，给后续推理节点提供上下文。如果嫌流程长，可以删除这一节点，把 severity 判断直接在节点 5 的 prompt 里做。
+### 3.7 双重保险
+
+| 层 | 保障 | 说明 |
+|----|------|------|
+| 第 1 层 | 结构化输出 Schema | Dify 调 OpenAI 时强制走 JSON Mode，LLM 输出合法 JSON |
+| 第 2 层 | 节点 6 守门员 | 即使结构化输出偶尔失效，Code 节点正则 + 字段校验也能兜住 |
+
+> **设计说明**：结构化输出是**前置约束**，节点 6 守门员是**后置兜底**，两层防护让 LLM 输出格式永远不会破坏业务。
 
 ---
 
@@ -339,12 +390,14 @@ def main(http_result: dict, leave_summary: str, affected_count: str, candidates_
 ```
 {{#code_compress.context_text#}}
 
-可选参考：请假严重程度 = {{#llm_understand.severity_json#}}
+可选参考：请假严重程度 = {{#llm_understand.text#}}
 ```
+
+> **说明**：`{{#llm_understand.text#}}` 是节点 2 结构化输出的 JSON 字符串（内容如 `{"severity":"medium","urgency":"tomorrow","impact_level":"critical"}`），LLM 能读懂。
 
 ### 6.4 输出
 
-节点变量名：`recommend_text`（string 类型，内容是 JSON 字符串）
+节点变量名：`llm_recommend.text`（string 类型，Dify 自动产出）
 
 ### 6.5 输出示例
 
@@ -375,6 +428,7 @@ def main(http_result: dict, leave_summary: str, affected_count: str, candidates_
 |--------|------|
 | `llm_output` | `llm_recommend.text`（节点 5 的文本输出） |
 | `candidates_brief` | `start.candidates_brief`（开始节点的候选清单） |
+| `severity_text` | `llm_understand.text`（节点 2 结构化输出的 severity JSON） |
 
 ### 7.3 代码
 
@@ -383,41 +437,50 @@ import json
 import re
 
 
-def main(llm_output: str, candidates_brief: str) -> dict:
-    """校验 LLM 输出，失败降级到候选首位"""
-    
+def main(llm_output: str, candidates_brief: str, severity_text: str) -> dict:
+    """校验 LLM 推荐输出 + 透传严重程度"""
+
+    # 0. 解析 severity（节点 2 结构化输出，已经是合法 JSON 字符串）
+    severity_info = {}
+    try:
+        if severity_text:
+            severity_info = json.loads(severity_text)
+    except Exception as e:
+        severity_info = {"parse_error": f"severity 解析失败: {e}"}
+
     # 1. 提取 JSON 块（防止 LLM 输出带 markdown ```json 包裹）
     m = re.search(r'\{[^{}]*\}', llm_output or "", re.DOTALL)
     if not m:
-        return _fallback(candidates_brief, "LLM 输出无 JSON 块")
-    
+        return _fallback(candidates_brief, "LLM 输出无 JSON 块", severity_info)
+
     try:
         result = json.loads(m.group())
     except Exception as e:
-        return _fallback(candidates_brief, f"JSON 解析失败: {e}")
-    
+        return _fallback(candidates_brief, f"JSON 解析失败: {e}", severity_info)
+
     # 2. 从 candidates_brief 提取合法 ID 集合
     #    格式：name(id,...)|name(id,...)
     valid_ids = set(re.findall(r'\((\d+),', candidates_brief or ""))
     sid = str(result.get("substitute_id", "")).strip()
-    
+
     if sid not in valid_ids:
-        return _fallback(candidates_brief, f"substitute_id={sid} 不在候选清单 {valid_ids}")
-    
+        return _fallback(candidates_brief, f"substitute_id={sid} 不在候选清单 {valid_ids}", severity_info)
+
     # 3. 必填字段校验
     required = ("substitute_id", "substitute_name", "reason")
     for k in required:
         if not result.get(k):
-            return _fallback(candidates_brief, f"必填字段 {k} 缺失")
-    
+            return _fallback(candidates_brief, f"必填字段 {k} 缺失", severity_info)
+
     result["source"] = "ai"
+    result["severity_info"] = severity_info  # 透传严重程度
     return {
         "result": json.dumps(result, ensure_ascii=False),
         "source": "ai"
     }
 
 
-def _fallback(candidates_brief: str, error_msg: str) -> dict:
+def _fallback(candidates_brief: str, error_msg: str, severity_info: dict) -> dict:
     """降级：候选清单第一个"""
     m = re.search(r'([^|(]+)\((\d+),', candidates_brief or "")
     if m:
@@ -427,7 +490,8 @@ def _fallback(candidates_brief: str, error_msg: str) -> dict:
             "adjust_type": "临时替班",
             "reason": f"AI 推理失败({error_msg})，默认候选首位",
             "patient_notification": "您的预约时间有调整，医院将尽快联系您",
-            "source": "fallback"
+            "source": "fallback",
+            "severity_info": severity_info
         }
         return {
             "result": json.dumps(fb, ensure_ascii=False),
@@ -460,7 +524,7 @@ def _fallback(candidates_brief: str, error_msg: str) -> dict:
 |--------|------|
 | `result` | `code_validate.result` |
 | `source` | `code_validate.source` |
-| `severity` | `llm_understand.severity_json` |
+| `severity` | `llm_understand.text`（节点 2 结构化输出的 JSON 字符串） |
 
 ### 8.2 最终响应结构
 
@@ -592,6 +656,8 @@ valid_ids = 空集合
 | 1 | **多节点编排可视化** | 7 节点串联，Dify 画布一目了然 |
 | 2 | **HTTP 回调机制** | 节点 3 拉后端最新数据，Dify 不缓存业务 |
 | 3 | **Code 节点压缩** | 节点 4 把 5KB JSON 压成 500 字符短文本，提升 LLM 质量 |
-| 4 | **防幻觉正则校验** | 节点 6 用 `r'\((\d+),'` 从 candidates_brief 提取合法 ID |
-| 5 | **降级容错** | 节点 6 校验失败自动降级到候选首位，业务不中断 |
-| 6 | **JSON-in-String 协议** | 开始节点全 string，结束节点输出 string，规避 Dify 类型限制 |
+| 4 | **结构化输出 Schema** | 节点 2 用 JSON Schema 强约束 LLM 输出，enum 限定枚举值 |
+| 5 | **防幻觉正则校验** | 节点 6 用 `r'\((\d+),'` 从 candidates_brief 提取合法 ID |
+| 6 | **降级容错** | 节点 6 校验失败自动降级到候选首位，业务不中断 |
+| 7 | **JSON-in-String 协议** | 开始节点全 string，结束节点输出 string，规避 Dify 类型限制 |
+| 8 | **双层防护** | 结构化输出（前置）+ 守门员 Code（后置），LLM 输出格式永不破坏业务 |
