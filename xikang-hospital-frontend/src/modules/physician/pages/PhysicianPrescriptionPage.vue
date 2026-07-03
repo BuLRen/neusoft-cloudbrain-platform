@@ -29,16 +29,16 @@ import { useEncounterStore } from '@/app/stores/encounter'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 import DrugSearchPicker from '../components/DrugSearchPicker.vue'
 import W5PrescriptionPanel from '../components/W5PrescriptionPanel.vue'
+import {
+  clearPrescriptionBasketDraft,
+  loadPrescriptionBasketDraft,
+  savePrescriptionBasketDraft,
+  type PrescriptionBasketItem,
+} from '../composables/usePhysicianPrescriptionBasketDraft'
 
 interface PrescriptionDraftForm {
   drugUsage: string
   drugNumber: number
-}
-
-interface PrescriptionBasketItem extends PrescriptionDraftForm {
-  drugId: number
-  drugName: string
-  drugPrice: number
 }
 
 const router = useRouter()
@@ -210,6 +210,10 @@ async function maybeArchiveVisit(id: number) {
   }
 }
 
+function loadPrescriptionBasketForRegister(id: number | null) {
+  prescriptionBasket.value = id ? loadPrescriptionBasketDraft(id) : []
+}
+
 function removeBasketItem(index: number) {
   prescriptionBasket.value.splice(index, 1)
 }
@@ -244,6 +248,7 @@ async function submitPrescription() {
     await physicianApi.createPrescription(payload)
     await maybeArchiveVisit(currentRegisterId)
     prescriptionBasket.value = []
+    clearPrescriptionBasketDraft(currentRegisterId)
     await loadPrescriptions()
     encounterStore.clearEncounter()
     ElMessage.success('处方已提交，看诊已结束')
@@ -268,6 +273,8 @@ async function endVisitWithoutPrescription() {
   try {
     await physicianApi.endVisit(currentRegisterId)
     await maybeArchiveVisit(currentRegisterId)
+    prescriptionBasket.value = []
+    clearPrescriptionBasketDraft(currentRegisterId)
     encounterStore.clearEncounter()
     ElMessage.success('看诊已结束')
     await router.push('/physician/queue')
@@ -287,12 +294,22 @@ async function removePrescriptionItem(id: number) {
   }
 }
 
-watch(registerId, () => {
+watch(registerId, (id) => {
+  loadPrescriptionBasketForRegister(id)
   w5Output.value = null
   void loadPrescriptions()
   void loadConfirmedDiagnosis()
   void loadSavedW5Suggestions()
-})
+}, { immediate: true })
+
+watch(
+  prescriptionBasket,
+  (items) => {
+    if (!registerId.value) return
+    savePrescriptionBasketDraft(registerId.value, items)
+  },
+  { deep: true },
+)
 
 onMounted(() => {
   void Promise.all([loadPrescriptions(), loadConfirmedDiagnosis(), loadSavedW5Suggestions()])
