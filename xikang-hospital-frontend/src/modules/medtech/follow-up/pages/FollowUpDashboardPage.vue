@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElButton, ElEmpty, ElMessage, ElTag } from 'element-plus'
 import PageHeader from '@/shared/components/PageHeader.vue'
@@ -28,6 +28,8 @@ const context = ref<FollowUpDashboardContext | null>(null)
 const patients = ref<FollowUpDashboardPatient[]>([])
 const schedules = ref<FollowUpDayScheduleItem[]>([])
 const myShifts = ref<FollowUpStaffShift[]>([])
+const communicationUnread = ref(0)
+let unreadTimer: ReturnType<typeof setInterval> | undefined
 
 const todayYmd = beijingTodayYmd()
 const todayLabel = formatYmdWeekday(todayYmd)
@@ -203,12 +205,27 @@ async function onShiftChangeSubmitted() {
   await loadDashboard()
 }
 
+async function loadCommunicationUnread() {
+  try {
+    const summary = await medtechFollowUpApi.getDoctorCommunicationUnreadSummary()
+    communicationUnread.value = summary.totalUnread ?? 0
+  } catch {
+    communicationUnread.value = 0
+  }
+}
+
 watch([calendarYear, calendarMonth], () => {
   void loadSchedules()
 })
 
 onMounted(() => {
   void loadDashboard()
+  void loadCommunicationUnread()
+  unreadTimer = setInterval(() => void loadCommunicationUnread(), 30_000)
+})
+
+onUnmounted(() => {
+  if (unreadTimer) clearInterval(unreadTimer)
 })
 
 onActivated(() => {
@@ -336,6 +353,7 @@ onActivated(() => {
         :context="context"
         :target-date="todayYmd"
         :contact-stats="contactStats"
+        :communication-unread="communicationUnread"
       />
     </div>
 

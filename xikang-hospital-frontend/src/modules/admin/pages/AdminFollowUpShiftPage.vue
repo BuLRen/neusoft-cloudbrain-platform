@@ -57,7 +57,12 @@ const unassignedPatients = ref<FollowUpDashboardPatient[]>([])
 const followUpNurses = ref<FollowUpAdminRecord[]>([])
 const assignSelections = ref<Record<number, number | undefined>>({})
 const assigningId = ref<number | null>(null)
-const aiTask = ref<{ status: string; message?: string; percent?: number } | null>(null)
+const aiTask = ref<{
+  status: string
+  message?: string
+  percent?: number
+  result?: { source?: string; shiftCount?: number; taskCount?: number }
+} | null>(null)
 
 const filter = reactive({
   departmentId: undefined as number | undefined,
@@ -139,8 +144,17 @@ function pollAiTask() {
     if (task.status === 'success' || task.status === 'failed' || task.status === 'idle') {
       window.clearInterval(timer)
       if (task.status === 'success') {
-        ElMessage.success('AI 排班生成完成')
+        const source = task.result?.source
+        const detail =
+          source === 'dify'
+            ? '（Dify 工作流）'
+            : source === 'rule_based'
+              ? '（规则降级）'
+              : ''
+        ElMessage.success(`${task.message ?? 'AI 排班生成完成'}${detail}`)
         await loadData()
+      } else if (task.status === 'failed') {
+        ElMessage.error(task.message || 'AI 排班生成失败')
       }
     }
   }, 2000)
@@ -266,7 +280,11 @@ onMounted(async () => {
 
       <div v-if="aiTask?.status === 'running'" class="ai-banner">
         <ElProgress :percentage="aiTask.percent ?? 30" :stroke-width="8" />
-        <span>{{ aiTask.message ?? '生成中…' }}</span>
+        <span>{{ aiTask.message ?? '正在调用 Dify 工作流…' }}</span>
+      </div>
+
+      <div v-else-if="aiTask?.status === 'failed'" class="ai-banner ai-banner--failed">
+        <span>{{ aiTask.message ?? 'AI 排班生成失败' }}</span>
       </div>
 
       <p v-if="plan" class="plan-meta">
@@ -408,6 +426,11 @@ onMounted(async () => {
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--color-bg-soft);
+}
+
+.ai-banner--failed {
+  color: var(--el-color-danger);
+  background: color-mix(in srgb, var(--el-color-danger) 8%, var(--color-bg-soft));
 }
 
 .plan-meta {

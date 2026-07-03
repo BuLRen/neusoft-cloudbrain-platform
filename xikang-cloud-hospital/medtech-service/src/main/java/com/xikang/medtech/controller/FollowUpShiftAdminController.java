@@ -1,6 +1,8 @@
 package com.xikang.medtech.controller;
 
+import com.xikang.common.exception.BusinessException;
 import com.xikang.common.result.Result;
+import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.service.FollowUpMonitoringService;
 import com.xikang.medtech.service.FollowUpShiftAiTaskService;
 import com.xikang.medtech.service.FollowUpShiftChangeService;
@@ -23,11 +25,18 @@ public class FollowUpShiftAdminController {
     private final FollowUpShiftAiTaskService aiTaskService;
     private final FollowUpMonitoringService monitoringService;
 
+    private void requireAdmin() {
+        if (!MedtechAuthContext.isAdminAllAccess()) {
+            throw new BusinessException(403, "仅管理员可操作随访排班管理");
+        }
+    }
+
     @GetMapping("/plan")
     public Result<Map<String, Object>> getPlan(
         @RequestParam Long departmentId,
         @RequestParam String month
     ) {
+        requireAdmin();
         return Result.success(scheduleService.getPlan(departmentId, month));
     }
 
@@ -37,11 +46,13 @@ public class FollowUpShiftAdminController {
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
+        requireAdmin();
         return Result.success(scheduleService.listDepartmentShifts(departmentId, from, to));
     }
 
     @PostMapping("/ai-generate")
     public Result<Map<String, Object>> aiGenerate(@RequestBody Map<String, Object> request) {
+        requireAdmin();
         Long departmentId = Long.valueOf(String.valueOf(request.get("departmentId")));
         String month = String.valueOf(request.get("month"));
         String departmentName = request.get("departmentName") != null
@@ -55,11 +66,13 @@ public class FollowUpShiftAdminController {
         @RequestParam Long departmentId,
         @RequestParam String month
     ) {
+        requireAdmin();
         return Result.success(aiTaskService.getActive(departmentId, month));
     }
 
     @PostMapping("/publish/{planId}")
     public Result<Map<String, Object>> publish(@PathVariable Long planId) {
+        requireAdmin();
         return Result.success("排班已发布", scheduleService.publishPlan(planId));
     }
 
@@ -67,11 +80,13 @@ public class FollowUpShiftAdminController {
     public Result<List<Map<String, Object>>> pendingChangeRequests(
         @RequestParam(required = false) Long departmentId
     ) {
+        requireAdmin();
         return Result.success(changeService.listPendingRequests(departmentId));
     }
 
     @GetMapping("/change-requests/count")
     public Result<Integer> pendingCount(@RequestParam(required = false) Long departmentId) {
+        requireAdmin();
         return Result.success(changeService.countPendingRequests(departmentId));
     }
 
@@ -80,6 +95,7 @@ public class FollowUpShiftAdminController {
         @PathVariable Long id,
         @RequestBody(required = false) Map<String, Object> body
     ) {
+        requireAdmin();
         String note = body != null && body.get("adminNote") != null ? String.valueOf(body.get("adminNote")) : null;
         return Result.success("已同意调班", changeService.reviewRequest(id, true, note));
     }
@@ -89,12 +105,14 @@ public class FollowUpShiftAdminController {
         @PathVariable Long id,
         @RequestBody(required = false) Map<String, Object> body
     ) {
+        requireAdmin();
         String note = body != null && body.get("adminNote") != null ? String.valueOf(body.get("adminNote")) : null;
         return Result.success("已驳回调班", changeService.reviewRequest(id, false, note));
     }
 
     @PostMapping("/monitoring/assign")
     public Result<Map<String, Object>> assignMonitoring(@RequestBody Map<String, Object> request) {
+        requireAdmin();
         Long registerId = request.get("registerId") != null ? Long.valueOf(String.valueOf(request.get("registerId"))) : null;
         Long employeeId = request.get("employeeId") != null ? Long.valueOf(String.valueOf(request.get("employeeId"))) : null;
         Long departmentId = request.get("departmentId") != null ? Long.valueOf(String.valueOf(request.get("departmentId"))) : null;
@@ -105,11 +123,13 @@ public class FollowUpShiftAdminController {
     public Result<List<Map<String, Object>>> pendingTransferRequests(
         @RequestParam(required = false) Long departmentId
     ) {
+        requireAdmin();
         return Result.success(monitoringService.listPendingTransferRequests(departmentId));
     }
 
     @GetMapping("/monitoring/transfer-requests/count")
     public Result<Integer> pendingTransferCount(@RequestParam(required = false) Long departmentId) {
+        requireAdmin();
         return Result.success(monitoringService.countPendingTransferRequests(departmentId));
     }
 
@@ -118,6 +138,7 @@ public class FollowUpShiftAdminController {
         @PathVariable Long id,
         @RequestBody(required = false) Map<String, Object> body
     ) {
+        requireAdmin();
         String note = body != null && body.get("adminNote") != null ? String.valueOf(body.get("adminNote")) : null;
         return Result.success("已同意调换", monitoringService.reviewTransferRequest(id, true, note));
     }
@@ -127,6 +148,7 @@ public class FollowUpShiftAdminController {
         @PathVariable Long id,
         @RequestBody(required = false) Map<String, Object> body
     ) {
+        requireAdmin();
         String note = body != null && body.get("adminNote") != null ? String.valueOf(body.get("adminNote")) : null;
         return Result.success("已驳回调换", monitoringService.reviewTransferRequest(id, false, note));
     }

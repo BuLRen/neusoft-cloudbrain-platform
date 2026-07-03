@@ -10,12 +10,13 @@ import {
   ElUpload,
   type UploadRequestOptions,
 } from 'element-plus'
+import { adminFollowUpApi } from '@/shared/api/modules/adminFollowUp'
 import { adminMedtechApi } from '@/shared/api/modules/adminMedtech'
 import { adminPhysicianApi } from '@/shared/api/modules/adminPhysician'
 import type { PersonnelImportResult, PersonnelListFilters } from '@/shared/types/adminPersonnel'
 
 const props = defineProps<{
-  kind: 'physician' | 'medtech'
+  kind: 'physician' | 'medtech' | 'followup'
   filters: PersonnelListFilters
 }>()
 
@@ -29,7 +30,12 @@ const importLoading = ref(false)
 const resultVisible = ref(false)
 const importResult = ref<PersonnelImportResult | null>(null)
 
-const api = props.kind === 'physician' ? adminPhysicianApi : adminMedtechApi
+const api =
+  props.kind === 'physician'
+    ? adminPhysicianApi
+    : props.kind === 'medtech'
+      ? adminMedtechApi
+      : adminFollowUpApi
 
 function formatErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback

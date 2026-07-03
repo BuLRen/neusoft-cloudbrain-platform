@@ -65,6 +65,26 @@ public final class PersonnelExcelWriter {
         }
     }
 
+    public static byte[] writeFollowUpTemplate(List<Department> departments) {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet dataSheet = workbook.createSheet("导入数据");
+            writeHeaderRow(workbook, dataSheet, new String[] { "姓名*", "临床科室*" });
+            writeExampleRow(dataSheet, new String[] { "王护士", "内分泌科" });
+
+            Sheet dictSheet = workbook.createSheet("字典说明");
+            writeHeaderRow(workbook, dictSheet, new String[] { "临床科室" });
+            for (int i = 0; i < departments.size(); i++) {
+                Row row = dictSheet.createRow(i + 1);
+                row.createCell(0).setCellValue(departments.get(i).getName());
+            }
+            autosize(dataSheet, 2);
+            autosize(dictSheet, 1);
+            return toBytes(workbook);
+        } catch (IOException ex) {
+            throw new IllegalStateException("生成 Excel 失败", ex);
+        }
+    }
+
     public static byte[] writePhysicianExport(List<String[]> rows) {
         return writeExport(new String[] {
             "员工ID", "姓名", "科室", "挂号级别", "档案状态", "登录账号", "账号状态"
@@ -74,6 +94,12 @@ public final class PersonnelExcelWriter {
     public static byte[] writeMedtechExport(List<String[]> rows) {
         return writeExport(new String[] {
             "员工ID", "姓名", "医技科室", "档案状态", "登录账号", "账号状态"
+        }, rows);
+    }
+
+    public static byte[] writeFollowUpExport(List<String[]> rows) {
+        return writeExport(new String[] {
+            "员工ID", "姓名", "临床科室", "档案状态", "登录账号", "账号状态"
         }, rows);
     }
 

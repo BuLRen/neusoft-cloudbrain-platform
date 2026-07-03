@@ -548,4 +548,43 @@ export const medtechFollowUpApi = {
       params,
     })
   },
+
+  getDoctorCommunicationUnreadSummary(params?: { departmentId?: number }) {
+    return http<{ totalUnread: number; byRegisterId: Array<{ registerId: number; unreadCount: number }> }>({
+      url: `${communicationBase}/unread-summary`,
+      method: 'GET',
+      params,
+    })
+  },
+
+  markDoctorCommunicationRead(sessionId: number) {
+    return http<{ sessionId: number; marked: boolean }>({
+      url: `${communicationBase}/sessions/${sessionId}/mark-read`,
+      method: 'POST',
+    })
+  },
+
+  getPatientCommunicationUnreadSummary(registerId: number, params?: { patientId?: number }) {
+    return http<{ registerId: number; totalUnread: number }>({
+      url: `${patientPortalBase}/communication/unread-summary`,
+      method: 'GET',
+      params: { registerId, ...params },
+    })
+  },
+
+  markPatientCommunicationRead(registerId: number, params?: { patientId?: number }) {
+    return http<{ registerId: number; marked: boolean }>({
+      url: `${patientPortalBase}/communication/sessions/${registerId}/mark-read`,
+      method: 'POST',
+      params,
+    })
+  },
+
+  backfillEnrollment(payload?: { batchSize?: number; maxBatches?: number }) {
+    return http<Record<string, unknown>>({
+      url: '/medtech/follow-up/admin/backfill/enrollment',
+      method: 'POST',
+      data: payload ?? {},
+    })
+  },
 }

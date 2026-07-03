@@ -292,6 +292,7 @@ export interface FollowUpCommunicationSession {
   age?: number
   priorityLevel?: FollowUpPriorityLevel
   patientMessageCount?: number
+  unreadCount?: number
   lastMessagePreview?: string
   lastMessageTime?: string
 }

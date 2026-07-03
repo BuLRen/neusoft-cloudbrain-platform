@@ -248,6 +248,59 @@ public class FollowUpCommunicationService {
         return session;
     }
 
+    public Map<String, Object> getDoctorUnreadSummary(Long departmentIdOverride) {
+        Long departmentId = resolveDepartmentId(departmentIdOverride);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalUnread", communicationMapper.countDoctorUnreadTotal(departmentId));
+        summary.put("byRegisterId", communicationMapper.selectDoctorUnreadByRegister(departmentId));
+        return summary;
+    }
+
+    @Transactional
+    public Map<String, Object> markDoctorSessionRead(Long sessionId) {
+        getSession(sessionId);
+        Long latestMessageId = communicationMapper.selectLatestMessageId(sessionId);
+        if (latestMessageId != null) {
+            communicationMapper.markDoctorRead(sessionId, latestMessageId);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("marked", true);
+        result.put("lastReadMessageId", latestMessageId);
+        return result;
+    }
+
+    public Map<String, Object> getPatientUnreadSummary(Long registerId) {
+        if (registerId == null) {
+            throw new BusinessException("registerId 不能为空");
+        }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("registerId", registerId);
+        summary.put("totalUnread", communicationMapper.countPatientUnread(registerId));
+        return summary;
+    }
+
+    @Transactional
+    public Map<String, Object> markPatientSessionRead(Long registerId) {
+        Map<String, Object> session = communicationMapper.selectSessionByRegisterId(registerId);
+        if (session == null || session.isEmpty()) {
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("registerId", registerId);
+            empty.put("marked", false);
+            return empty;
+        }
+        Long sessionId = toLong(session.get("id"));
+        Long latestMessageId = communicationMapper.selectLatestMessageId(sessionId);
+        if (latestMessageId != null) {
+            communicationMapper.markPatientRead(registerId, latestMessageId);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+        result.put("marked", true);
+        result.put("lastReadMessageId", latestMessageId);
+        return result;
+    }
+
     private Map<String, Object> mapCaseSummary(Map<String, Object> row) {
         if (row == null || row.isEmpty()) {
             return Map.of("exists", false);

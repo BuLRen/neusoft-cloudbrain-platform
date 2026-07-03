@@ -66,4 +66,23 @@ public interface FollowUpShiftMapper {
     int updateChangeRequestStatus(Map<String, Object> payload);
 
     int countPendingChangeRequests(@Param("departmentId") Long departmentId);
+
+    Map<String, Object> selectShiftInPlanByEmployeeAndDate(
+        @Param("planId") Long planId,
+        @Param("employeeId") Long employeeId,
+        @Param("workDate") LocalDate workDate
+    );
+
+    Map<String, Object> selectContactTaskByRegisterAndWorkDate(
+        @Param("registerId") Long registerId,
+        @Param("workDate") LocalDate workDate
+    );
+
+    List<Map<String, Object>> selectShiftsWithTaskCounts(
+        @Param("departmentId") Long departmentId,
+        @Param("from") LocalDate from,
+        @Param("to") LocalDate to
+    );
+
+    int countContactTasksByShiftId(@Param("shiftId") Long shiftId);
 }

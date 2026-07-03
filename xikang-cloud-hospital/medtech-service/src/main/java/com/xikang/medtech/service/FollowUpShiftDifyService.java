@@ -25,6 +25,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class FollowUpShiftDifyService {
 
+    public static final String SOURCE_DIFY = "dify";
+    public static final String SOURCE_RULE_BASED = "rule_based";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyy-MM");
 
@@ -39,6 +42,52 @@ public class FollowUpShiftDifyService {
         }
         List<Map<String, Object>> patients = shiftMapper.selectPatientsForShiftPlanning(departmentId);
 
+        Map<String, Object> inputs = buildWorkflowInputs(departmentId, departmentName, month, staff, patients);
+
+        if (difyAiProperties.isFollowUpShiftScheduleEnabled()) {
+            try {
+                log.info(
+                    "调用 Dify 随访排班工作流 dept={} month={} staff={} patients={}",
+                    departmentId,
+                    month,
+                    staff.size(),
+                    patients.size()
+                );
+                DifyWorkflowRunResult result = difyWorkflowClient.runFollowUpShiftScheduleBlocking(
+                    inputs,
+                    "medtech-shift-" + departmentId,
+                    "shift-" + departmentId + "-" + month
+                );
+                Map<String, Object> parsed = parseDifyOutput(result.getOutputs());
+                validateShiftPayload(parsed);
+                parsed.put("source", SOURCE_DIFY);
+                log.info(
+                    "Dify 随访排班成功 dept={} month={} shifts={} runId={}",
+                    departmentId,
+                    month,
+                    countShifts(parsed),
+                    result.getWorkflowRunId()
+                );
+                return parsed;
+            } catch (Exception ex) {
+                log.warn("Dify shift schedule failed, fallback to rule-based: {}", ex.getMessage());
+            }
+        } else {
+            log.info("Dify 随访排班未启用，使用规则排班 dept={} month={}", departmentId, month);
+        }
+
+        Map<String, Object> fallback = buildRuleBasedShifts(month, staff, patients);
+        fallback.put("source", SOURCE_RULE_BASED);
+        return fallback;
+    }
+
+    private Map<String, Object> buildWorkflowInputs(
+        Long departmentId,
+        String departmentName,
+        String month,
+        List<Map<String, Object>> staff,
+        List<Map<String, Object>> patients
+    ) {
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("department_id", String.valueOf(departmentId));
         inputs.put("department_name", departmentName != null ? departmentName : "");
@@ -49,23 +98,11 @@ public class FollowUpShiftDifyService {
             "workdays_per_week", 5,
             "min_contact_interval_days", 1,
             "deadline_days", 180,
-            "max_patients_per_day", 8
+            "max_patients_per_day", 8,
+            "max_shift_imbalance", 2
         )));
         inputs.put("holidays_json", "[]");
-
-        if (difyAiProperties.isFollowUpShiftScheduleEnabled()) {
-            try {
-                DifyWorkflowRunResult result = difyWorkflowClient.runFollowUpShiftScheduleBlocking(
-                    inputs,
-                    "medtech-shift-" + departmentId,
-                    "shift-" + month
-                );
-                return parseDifyOutput(result.getOutputs());
-            } catch (Exception ex) {
-                log.warn("Dify shift schedule failed, fallback to rule-based: {}", ex.getMessage());
-            }
-        }
-        return buildRuleBasedShifts(month, staff, patients);
+        return inputs;
     }
 
     private Map<String, Object> toStaffPayload(Map<String, Object> staff) {
@@ -81,17 +118,58 @@ public class FollowUpShiftDifyService {
         if (outputs == null || outputs.isEmpty()) {
             throw new RuntimeException("Dify 未返回有效输出");
         }
+
         Object raw = outputs.get("validated_shifts_json");
+        if (raw == null) {
+            raw = outputs.get("validatedShiftsJson");
+        }
         if (raw == null) {
             raw = outputs.get("text");
         }
+
+        Map<String, Object> parsed;
         if (raw instanceof String text) {
-            return MAPPER.readValue(text, new TypeReference<Map<String, Object>>() {});
+            String trimmed = text.trim();
+            if (trimmed.isEmpty()) {
+                throw new RuntimeException("Dify 返回空的 validated_shifts_json");
+            }
+            parsed = MAPPER.readValue(trimmed, new TypeReference<Map<String, Object>>() {});
+        } else if (raw instanceof Map<?, ?> map) {
+            parsed = (Map<String, Object>) map;
+        } else {
+            throw new RuntimeException("无法解析 Dify 排班输出，outputs keys=" + outputs.keySet());
         }
-        if (raw instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
+
+        if (parsed.containsKey("shifts")) {
+            return parsed;
         }
-        throw new RuntimeException("无法解析 Dify 排班输出");
+
+        Object nested = parsed.get("validated_shifts_json");
+        if (nested == null) {
+            nested = parsed.get("validatedShiftsJson");
+        }
+        if (nested instanceof String nestedText) {
+            return MAPPER.readValue(nestedText.trim(), new TypeReference<Map<String, Object>>() {});
+        }
+        if (nested instanceof Map<?, ?> nestedMap) {
+            return (Map<String, Object>) nestedMap;
+        }
+
+        throw new RuntimeException("Dify 输出缺少 shifts 数组");
+    }
+
+    @SuppressWarnings("unchecked")
+    private void validateShiftPayload(Map<String, Object> payload) {
+        Object shifts = payload.get("shifts");
+        if (!(shifts instanceof List<?> list) || list.isEmpty()) {
+            throw new RuntimeException("Dify 返回的 shifts 为空");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private int countShifts(Map<String, Object> payload) {
+        Object shifts = payload.get("shifts");
+        return shifts instanceof List<?> list ? list.size() : 0;
     }
 
     private Map<String, Object> buildRuleBasedShifts(

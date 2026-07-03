@@ -51,16 +51,20 @@ public class FollowUpShiftAiTaskService {
         executor.submit(() -> {
             try {
                 record.percent = 40;
-                record.message = "调用 AI 工作流";
+                record.message = "调用 Dify 工作流 WF-FollowUp-Shift-01";
                 Map<String, Object> generated = difyService.generateShifts(departmentId, departmentName, month);
+                String source = String.valueOf(generated.getOrDefault("source", "unknown"));
                 record.percent = 80;
                 record.message = "保存排班数据";
                 Map<String, Object> saved = scheduleService.persistGeneratedPlan(
                     departmentId, month, generated, true
                 );
+                saved.put("source", source);
                 record.status = STATUS_SUCCESS;
                 record.percent = 100;
-                record.message = "排班生成完成";
+                record.message = "dify".equals(source)
+                    ? "Dify 工作流排班生成完成"
+                    : "规则排班生成完成（Dify 未启用或调用失败）";
                 record.result = saved;
             } catch (Exception ex) {
                 log.warn("Follow-up shift AI task failed: {}", ex.getMessage());

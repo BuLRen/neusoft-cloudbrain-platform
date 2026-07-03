@@ -69,6 +69,13 @@ public interface FollowUpDashboardMapper {
 
     Map<String, Object> selectEnrollmentByRegisterId(@Param("registerId") Long registerId);
 
+    List<Long> selectEligibleRegisterIdsNotEnrolled(
+        @Param("limit") int limit,
+        @Param("offset") int offset
+    );
+
+    int countEligibleRegisterIdsNotEnrolled();
+
     int claimMonitoring(@Param("registerId") Long registerId, @Param("employeeId") Long employeeId);
 
     int claimMonitoringProfile(@Param("registerId") Long registerId, @Param("employeeId") Long employeeId);

@@ -202,6 +202,16 @@ public class FollowUpPatientPortalService {
         return followUpCommunicationService.getSharedCaseSummary(targetRegisterId);
     }
 
+    public Map<String, Object> getPatientUnreadSummary(Long patientId, Long registerId) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        return followUpCommunicationService.getPatientUnreadSummary(targetRegisterId);
+    }
+
+    public Map<String, Object> markPatientSessionRead(Long patientId, Long registerId) {
+        Long targetRegisterId = requireAccessibleRegister(resolvePatientId(patientId), registerId);
+        return followUpCommunicationService.markPatientSessionRead(targetRegisterId);
+    }
+
     private void requireEndocrineVisit(Long registerId) {
         Integer departmentId = followUpClinicalMapper.selectRegisterDepartmentId(registerId);
         if (!FollowUpDepartmentConstants.isEndocrine(departmentId)) {

@@ -80,10 +80,26 @@ public class DifyWorkflowClient {
     }
 
     public DifyWorkflowRunResult runFollowUpShiftScheduleBlocking(Map<String, Object> inputs, String user, String traceId) {
+        if (!properties.isDifyBaseConfigured()) {
+            throw new DifyWorkflowException("Dify 未启用或未配置 base-url");
+        }
         String apiKey = properties.resolveFollowUpShiftScheduleApiKey();
         if (apiKey.isBlank()) {
             throw new DifyWorkflowException("随访排班 API Key 未配置");
         }
+        log.info("Dify follow-up shift schedule blocking request traceId={} baseUrl={}", traceId, properties.getBaseUrl());
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
+    public DifyWorkflowRunResult runFollowUpEnqueueBlocking(Map<String, Object> inputs, String user, String traceId) {
+        if (!properties.isDifyBaseConfigured()) {
+            throw new DifyWorkflowException("Dify 未启用或未配置 base-url");
+        }
+        String apiKey = properties.resolveFollowUpEnqueueApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("随访入队排班 API Key 未配置");
+        }
+        log.info("Dify follow-up enqueue blocking request traceId={} baseUrl={}", traceId, properties.getBaseUrl());
         return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
     }
 

@@ -80,6 +80,12 @@ async function applyDeepLinkSelection() {
 async function selectSession(session: FollowUpCommunicationSession) {
   activeSession.value = session
   await Promise.all([loadMessages(session.id), loadBrief(session.registerId)])
+  try {
+    await medtechFollowUpApi.markDoctorCommunicationRead(session.id)
+    session.unreadCount = 0
+  } catch {
+    // ignore mark-read errors
+  }
 }
 
 async function loadMessages(sessionId: number) {

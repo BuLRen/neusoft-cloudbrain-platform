@@ -10,6 +10,7 @@ import type { FollowUpDashboardContext } from '@/shared/types/medtechFollowUp'
 const props = defineProps<{
   context: FollowUpDashboardContext | null
   targetDate: string
+  communicationUnread?: number
   contactStats?: {
     myMonitoring?: number
     contacted?: number
@@ -82,6 +83,7 @@ const contactStats = computed(() => props.contactStats ?? {})
         </ElButton>
         <ElButton plain @click="router.push('/follow-up/communication')">
           医患沟通
+          <span v-if="(communicationUnread ?? 0) > 0" class="follow-up-sidebar__badge">{{ communicationUnread }}</span>
         </ElButton>
       </div>
     </GlassCard>
@@ -163,5 +165,21 @@ const contactStats = computed(() => props.contactStats ?? {})
 .follow-up-sidebar__actions {
   display: grid;
   gap: var(--space-2);
+}
+
+.follow-up-sidebar__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-inline-start: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-danger, #e74c3c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 </style>

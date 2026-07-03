@@ -254,4 +254,60 @@
         </if>
     </select>
 
+    <select id="selectShiftInPlanByEmployeeAndDate" resultType="map">
+        SELECT
+            s.id AS "id",
+            s.plan_id AS "planId",
+            s.employee_id AS "employeeId",
+            s.work_date AS "workDate",
+            s.status AS "status"
+        FROM follow_up_staff_shift s
+        WHERE s.plan_id = #{planId}
+          AND s.employee_id = #{employeeId}
+          AND s.work_date = #{workDate}
+          AND s.status != 'cancelled'
+        LIMIT 1
+    </select>
+
+    <select id="selectContactTaskByRegisterAndWorkDate" resultType="map">
+        SELECT
+            t.id AS "id",
+            t.shift_id AS "shiftId",
+            t.register_id AS "registerId",
+            s.work_date AS "workDate"
+        FROM follow_up_shift_contact_task t
+        INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
+        WHERE t.register_id = #{registerId}
+          AND s.work_date = #{workDate}
+        LIMIT 1
+    </select>
+
+    <select id="selectShiftsWithTaskCounts" resultType="map">
+        SELECT
+            s.id AS "shiftId",
+            s.plan_id AS "planId",
+            p.month AS "month",
+            p.status AS "planStatus",
+            s.employee_id AS "employeeId",
+            e.realname AS "employeeName",
+            s.work_date AS "workDate",
+            (
+                SELECT COUNT(*) FROM follow_up_shift_contact_task t
+                WHERE t.shift_id = s.id
+            ) AS "taskCount"
+        FROM follow_up_staff_shift s
+        INNER JOIN follow_up_shift_plan p ON p.id = s.plan_id
+        LEFT JOIN employee e ON e.id = s.employee_id
+        WHERE s.department_id = #{departmentId}
+          AND s.work_date &gt;= #{from}
+          AND s.work_date &lt;= #{to}
+          AND s.status != 'cancelled'
+          AND p.status IN ('draft', 'published')
+        ORDER BY s.work_date ASC, s.id ASC
+    </select>
+
+    <select id="countContactTasksByShiftId" resultType="int">
+        SELECT COUNT(*) FROM follow_up_shift_contact_task WHERE shift_id = #{shiftId}
+    </select>
+
 </mapper>

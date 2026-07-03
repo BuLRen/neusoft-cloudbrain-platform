@@ -478,16 +478,43 @@
 
     <select id="selectEnrollmentByRegisterId" resultType="map">
         SELECT
-            fp.register_id AS "registerId",
-            fp.department_id AS "departmentId",
-            fp.priority_level AS "priorityLevel",
-            fp.interview_interval_days AS "interviewIntervalDays",
-            fp.observation_interval_days AS "observationIntervalDays",
-            fp.enrolled_at AS "enrolledAt",
-            true AS "enrolled"
-        FROM follow_up_patient_profile fp
-        WHERE fp.register_id = #{registerId}
+            r.id AS "registerId",
+            COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id) AS "departmentId",
+            COALESCE(fe.priority_level, fp.priority_level, 'normal') AS "priorityLevel",
+            COALESCE(fe.interview_interval_days, fp.interview_interval_days, 7) AS "interviewIntervalDays",
+            COALESCE(fe.observation_interval_days, fp.observation_interval_days, 1) AS "observationIntervalDays",
+            COALESCE(fe.enrolled_at, fp.enrolled_at) AS "enrolledAt",
+            (fe.status = 'active') AS "enrolled"
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE r.id = #{registerId}
         LIMIT 1
+    </select>
+
+    <select id="selectEligibleRegisterIdsNotEnrolled" resultType="long">
+        SELECT r.id
+        FROM register r
+        WHERE
+        <include refid="eligibleRegisterCondition"/>
+          AND NOT EXISTS (
+              SELECT 1 FROM follow_up_enrollment fe
+              WHERE fe.register_id = r.id AND fe.status = 'active'
+          )
+        ORDER BY r.id ASC
+        LIMIT #{limit}
+        OFFSET #{offset}
+    </select>
+
+    <select id="countEligibleRegisterIdsNotEnrolled" resultType="int">
+        SELECT COUNT(*)
+        FROM register r
+        WHERE
+        <include refid="eligibleRegisterCondition"/>
+          AND NOT EXISTS (
+              SELECT 1 FROM follow_up_enrollment fe
+              WHERE fe.register_id = r.id AND fe.status = 'active'
+          )
     </select>
 
 </mapper>
