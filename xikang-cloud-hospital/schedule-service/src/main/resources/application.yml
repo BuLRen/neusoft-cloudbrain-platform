@@ -26,6 +26,8 @@ dify:
   api-key: ${DIFY_API_KEY_SCHEDULE:}                     # 必填，格式 app-xxxx；读 .env 中的排班专用 key
   base-url: ${DIFY_BASE_URL_SCHEDULE:http://43.139.102.203}  # Dify 部署地址（勿带 /v1，代码会自动拼）
   timeout-ms: ${DIFY_TIMEOUT_MS:660000}                  # blocking 模式下要够长（11 分钟，覆盖月度排班 10 分钟上限）
+  leave-adjust-api-key: ${DIFY_LEAVE_ADJUST_API_KEY:}   # 替班工作流独立 API Key（为空时回退到 api-key）
+  callback-token: ${DIFY_CALLBACK_TOKEN:schedule-internal-2026}  # Dify HTTP 节点回调简单鉴权 token
 
 # 号源预警阈值
 quota:

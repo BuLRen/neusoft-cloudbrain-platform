@@ -1,21 +1,27 @@
 package com.xikang.schedule.controller;
 
+import com.xikang.schedule.entity.DoctorSchedule;
 import com.xikang.schedule.entity.LeaveRequest;
 import com.xikang.schedule.entity.ScheduleAdjustRequest;
 import com.xikang.schedule.service.LeaveRequestService;
 import com.xikang.schedule.service.ScheduleAdjustService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 请假管理 Controller
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/schedule")
 @RequiredArgsConstructor
@@ -23,6 +29,10 @@ public class LeaveController {
 
     private final LeaveRequestService leaveRequestService;
     private final ScheduleAdjustService scheduleAdjustService;
+
+    /** Dify HTTP 节点回调时的简单鉴权 token（防止外部恶意调用） */
+    @Value("${dify.callback-token:schedule-internal-2026}")
+    private String difyCallbackToken;
 
     // ==================== 请假申请 API ====================
 
@@ -140,6 +150,76 @@ public class LeaveController {
                 departmentId, leaveDate, timeSlot, excludePhysicianId);
 
         return success(substitutes);
+    }
+
+    // ==================== Dify 回调：上下文聚合 API ====================
+
+    /**
+     * 上下文聚合端点（Dify HTTP 节点调用）
+     * <p>给 Dify 替班工作流的节点 3 用，返回请假详情 + 候选医生 + 影响患者 + 科室规则。
+     * <p>简单 token 鉴权（X-Dify-Token header），防止外部恶意调用。
+     */
+    @GetMapping("/adjust/context")
+    public Map<String, Object> getAdjustContext(
+            @RequestParam Long leaveId,
+            @RequestHeader(value = "X-Dify-Token", required = false) String token) {
+
+        if (!difyCallbackToken.equals(token)) {
+            log.warn("Dify 回调鉴权失败：leaveId={}, tokenPresent={}", leaveId, token != null);
+            return error("鉴权失败");
+        }
+
+        LeaveRequest leave = leaveRequestService.getById(leaveId);
+        if (leave == null) {
+            return error("请假记录不存在");
+        }
+
+        // 查找对应排班（拿到 departmentId / usedQuota）
+        DoctorSchedule schedule = leaveRequestService.findScheduleForLeave(leaveId);
+        if (schedule == null) {
+            return error("未找到对应排班");
+        }
+
+        // 聚合候选医生（预筛过的）
+        List<Map<String, Object>> candidates = leaveRequestService.getAvailableSubstitutes(
+                schedule.getDepartmentId(), leave.getLeaveDate(),
+                leave.getTimeSlot(), leave.getPhysicianId())
+                .stream()
+                .map(s -> {
+                    Map<String, Object> c = new LinkedHashMap<>();
+                    c.put("physicianId", s.getPhysicianId());
+                    c.put("name", s.getPhysicianName() != null ? s.getPhysicianName() : "医生" + s.getPhysicianId());
+                    c.put("title", s.getRegistLevelName() != null ? s.getRegistLevelName() : "普通号");
+                    c.put("weeklyLoad", 0); // 简化字段
+                    c.put("availableSlots", s.getTimeSlot() != null ? s.getTimeSlot() : "全天空闲");
+                    return c;
+                })
+                .toList();
+
+        // 组装返回
+        Map<String, Object> leaveInfo = new LinkedHashMap<>();
+        leaveInfo.put("id", leave.getId());
+        leaveInfo.put("physicianId", leave.getPhysicianId());
+        leaveInfo.put("leaveDate", leave.getLeaveDate() != null ? leave.getLeaveDate().toString() : null);
+        leaveInfo.put("timeSlot", leave.getTimeSlot());
+        leaveInfo.put("leaveType", leave.getLeaveType());
+        leaveInfo.put("reason", leave.getReason());
+
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("leaveInfo", leaveInfo);
+        context.put("candidates", candidates);
+        context.put("affectedPatientCount", schedule.getUsedQuota() != null ? schedule.getUsedQuota() : 0);
+        context.put("departmentId", schedule.getDepartmentId());
+        context.put("departmentRule", "该科室最少需 1 人在岗");
+        context.put("statistics", Map.of(
+                "totalCandidates", candidates.size(),
+                "scheduleId", schedule.getId()
+        ));
+
+        log.info("Dify 上下文聚合：leaveId={}, candidates={}, affectedPatients={}",
+                leaveId, candidates.size(), schedule.getUsedQuota());
+
+        return success(context);
     }
 
     // ==================== 调整申请 API ====================

@@ -1,0 +1,349 @@
+# Dify 工作流导入文件：智能请假替班推荐 v1.0
+# 导入方式：Dify 云端 → 创建应用 → 导入 DSL → 粘贴本文件全部内容
+#
+# 工作流概览（7 节点）：
+#   Start ─→ LLM:理解请假 ─→ HTTP:拉上下文 ─→ Code:压缩
+#          ─→ LLM:推荐替班 ─→ Code:守门员校验 ─→ End
+#
+# 输入字段（全部 string，规避 Dify 开始节点类型限制）：
+#   - leave_id           请假记录 ID
+#   - leave_summary      请假自然语言摘要
+#   - candidates_brief   候选医生清单（管道符分隔）
+#   - affected_count     影响患者数
+
+app:
+  description: >-
+    熙康云医院智能替班推荐工作流。当医生请假时，后端预筛候选医生，
+    本工作流通过 HTTP 回调后端拉取详细上下文，LLM 综合推荐最合适替班医生，
+    最后由 Code 节点守门员校验输出格式 + 校验 substitute_id 在候选清单内，
+    失败自动降级到候选列表首位。
+  icon: 🏥
+  icon_background: '#E4FBFF'
+  mode: workflow
+  name: 智能请假替班推荐
+  use_icon_as_answer_icon: false
+
+kind: app
+version: 0.1.5
+
+workflow:
+  features:
+    file_upload:
+      enabled: false
+  graph:
+    # ==================== 节点 ====================
+    nodes:
+      # ---------------- 节点 1: Start ----------------
+      - id: 'start'
+          type: custom
+          data:
+            type: start
+            title: 开始
+            variables:
+              - variable: leave_id
+                type: text-input
+                label: 请假记录 ID
+                required: true
+                max_length: 20
+              - variable: leave_summary
+                type: paragraph
+                label: 请假摘要
+                required: true
+                max_length: 500
+              - variable: candidates_brief
+                type: paragraph
+                label: 候选清单（管道分隔）
+                required: true
+                max_length: 2000
+                hint: '格式：医生ID(ID,本周N班,时段)|医生ID(ID,本周N班,时段)'
+              - variable: affected_count
+                type: text-input
+                label: 影响患者数
+                required: false
+                max_length: 10
+          position: { x: 80, y: 280 }
+
+      # ---------------- 节点 2: LLM 理解请假语义 ----------------
+      - id: 'llm_understand'
+          type: custom
+          data:
+            type: llm
+            title: LLM 理解请假语义
+            model:
+              provider: openai
+              name: gpt-4o-mini
+              mode: chat
+              completion_params:
+                temperature: 0.3
+                max_tokens: 200
+            prompt_template:
+              - role: system
+                text: >-
+                  你是医院排班 AI 助理。分析请假信息，输出 JSON 判断严重程度和紧急度。
+
+                  只输出 JSON，不要任何其他文字：
+                  {"severity":"high|medium|low","urgency":"today|tomorrow|scheduled","impact_level":"critical|normal"}
+
+                  严重程度标准：
+                  - severity: 病假>事假>公假>其他，且 reason 含"急诊""手术"视为 high
+                  - urgency: leaveDate 是今天=today，是明天=tomorrow，其他=scheduled
+                  - impact_level: affected_count > 10 视为 critical，否则 normal
+              - role: user
+                text: |-
+                  请假摘要：{{#start.leave_summary#}}
+                  影响患者数：{{#start.affected_count#}}
+            structured_output_enabled: true
+          position: { x: 340, y: 280 }
+
+      # ---------------- 节点 3: HTTP 拉上下文（核心亮点） ----------------
+      - id: 'http_context'
+          type: custom
+          data:
+            type: http-request
+            title: HTTP 拉详细上下文
+            method: GET
+            url: 'http://43.139.102.203:8080/api/schedule/adjust/context?leaveId={{#start.leave_id#}}'
+            headers: |
+              [
+                {"name": "X-Dify-Token", "value": "schedule-internal-2026"}
+              ]
+            params: ''
+            body_type: none
+            timeout: 10
+          position: { x: 600, y: 280 }
+
+      # ---------------- 节点 4: Code 压缩数据 ----------------
+      - id: 'code_compress'
+          type: custom
+          data:
+            type: code
+            title: Code 压缩数据
+            code_language: python3
+            code: >-
+              def main(http_result, leave_summary, affected_count, candidates_brief):
+                  """把 HTTP 返回的大 JSON 压缩成 LLM 易读的短文本"""
+                  try:
+                      data = http_result.get('data', {}) if isinstance(http_result, dict) else {}
+                  except Exception:
+                      data = {}
+
+                  candidates = data.get('candidates', [])
+                  if not candidates:
+                      # 从 candidates_brief 兜底
+                      return {
+                          "context_text": f"【请假】{leave_summary}\n【影响】{affected_count} 位患者\n【候选】无（候选清单字段为空）"
+                      }
+
+                  lines = []
+                  for c in candidates:
+                      lines.append(
+                          f"- {c.get('name','未知')}(ID={c.get('physicianId')}) "
+                          f"{c.get('title','普通号')}, "
+                          f"本周已排 {c.get('weeklyLoad',0)} 班, "
+                          f"可替时段: {c.get('availableSlots','未知')}"
+                      )
+                  candidates_text = "\n".join(lines)
+
+                  context_text = f"""【请假信息】
+              {leave_summary}
+
+              【影响范围】
+              共 {affected_count} 位已挂号患者需要改约
+
+              【候选替班医生】（substitute_id 只能从以下 ID 中选）
+              {candidates_text}
+
+              【科室规则】
+              {data.get('departmentRule', '科室最少需 1 人在岗')}
+              """
+                  return {"context_text": context_text}
+            variables:
+              - variable: http_result
+                value_selector:
+                  - 'http_context'
+                  - body
+              - variable: leave_summary
+                value_selector:
+                  - 'start'
+                  - leave_summary
+              - variable: affected_count
+                value_selector:
+                  - 'start'
+                  - affected_count
+              - variable: candidates_brief
+                value_selector:
+                  - 'start'
+                  - candidates_brief
+            outputs:
+              - variable: context_text
+                type: string
+          position: { x: 860, y: 280 }
+
+      # ---------------- 节点 5: LLM 推荐替班（核心推理） ----------------
+      - id: 'llm_recommend'
+          type: custom
+          data:
+            type: llm
+            title: LLM 推荐替班
+            model:
+              provider: openai
+              name: gpt-4o-mini
+              mode: chat
+              completion_params:
+                temperature: 0.4
+                max_tokens: 400
+            prompt_template:
+              - role: system
+                text: >-
+                  你是医院智能排班 AI。基于上下文，从候选医生中推荐最合适的替班人选。
+
+                  【硬性规则】（必须遵守）
+                  1. substitute_id 必须是候选清单中已存在的 ID，不能编造
+                  2. 优先选择 weeklyLoad 最低的医生
+                  3. 若所有候选本周都已排满，选择 title 最高的（经验丰富者）
+
+                  【输出格式】（仅 JSON，无其他文字，无 markdown 代码块）
+                  {
+                    "substitute_id": "候选 ID",
+                    "substitute_name": "医生姓名",
+                    "adjust_type": "临时替班",
+                    "reason": "30 字内说明",
+                    "patient_notification": "50 字内话术，含抱歉和改约信息"
+                  }
+              - role: user
+                text: '{{#code_compress.context_text#}}'
+          position: { x: 1120, y: 280 }
+
+      # ---------------- 节点 6: Code 守门员（防幻觉核心） ----------------
+      - id: 'code_validate'
+          type: custom
+          data:
+            type: code
+            title: Code 守门员校验
+            code_language: python3
+            code: >-
+              import json, re
+
+              def main(llm_output, candidates_brief):
+                  """校验 LLM 输出，失败降级到候选首位"""
+                  # 1. 提取 JSON 块
+                  m = re.search(r'\{[^{}]*\}', llm_output, re.DOTALL)
+                  if not m:
+                      return _fallback(candidates_brief, "LLM 输出无 JSON")
+                  try:
+                      result = json.loads(m.group())
+                  except Exception:
+                      return _fallback(candidates_brief, "JSON 解析失败")
+
+                  # 2. 从 candidates_brief 提取合法 ID 集合
+                  valid_ids = set(re.findall(r'\((\d+),', candidates_brief))
+                  sid = str(result.get("substitute_id", ""))
+                  if sid not in valid_ids:
+                      return _fallback(candidates_brief, f"substitute_id={sid} 不在候选清单")
+
+                  # 3. 必填字段校验
+                  for k in ("substitute_id", "substitute_name", "reason"):
+                      if not result.get(k):
+                          return _fallback(candidates_brief, f"必填字段 {k} 缺失")
+
+                  result["source"] = "ai"
+                  return {"result": json.dumps(result, ensure_ascii=False), "source": "ai"}
+
+              def _fallback(candidates_brief, error_msg):
+                  m = re.search(r'([^(]+)\((\d+),', candidates_brief)
+                  if m:
+                      fb = {
+                          "substitute_id": m.group(2),
+                          "substitute_name": m.group(1).strip(),
+                          "adjust_type": "临时替班",
+                          "reason": f"AI 推理失败({error_msg})，默认候选首位",
+                          "patient_notification": "您的预约时间有调整，医院将尽快联系您",
+                          "source": "fallback"
+                      }
+                      return {"result": json.dumps(fb, ensure_ascii=False), "source": "fallback"}
+                  return {"result": "{}", "source": "error"}
+            variables:
+              - variable: llm_output
+                value_selector:
+                  - 'llm_recommend'
+                  - text
+              - variable: candidates_brief
+                value_selector:
+                  - 'start'
+                  - candidates_brief
+            outputs:
+              - variable: result
+                type: string
+              - variable: source
+                type: string
+          position: { x: 1380, y: 280 }
+
+      # ---------------- 节点 7: End ----------------
+      - id: 'end'
+          type: custom
+          data:
+            type: end
+            title: 结束
+            outputs:
+              - variable: result
+                value_selector:
+                  - 'code_validate'
+                  - result
+              - variable: source
+                value_selector:
+                  - 'code_validate'
+                  - source
+              - variable: severity
+                value_selector:
+                  - 'llm_understand'
+                  - text
+          position: { x: 1640, y: 280 }
+
+    # ==================== 边（节点连线） ====================
+    edges:
+      - source: 'start'
+          sourceHandle: source
+        target: 'llm_understand'
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+      - source: 'llm_understand'
+          sourceHandle: source
+        target: 'http_context'
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+      - source: 'http_context'
+          sourceHandle: source
+        target: 'code_compress'
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+      - source: 'code_compress'
+          sourceHandle: source
+        target: 'llm_recommend'
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+      - source: 'llm_recommend'
+          sourceHandle: source
+        target: 'code_validate'
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+      - source: 'code_validate'
+          sourceHandle: source
+        target: 'end'
+        targetHandle: target
+        type: custom
+        data:
+          isInIteration: false
+
+  # ==================== 触发方式 ====================
+  conversation_variables: []
+  environment_variables: []

@@ -10,9 +10,11 @@ import com.xikang.schedule.client.dto.EmployeeDTO;
 import com.xikang.schedule.client.dto.RegistLevelDTO;
 import com.xikang.schedule.dto.AiGeneratePlanRequest;
 import com.xikang.schedule.dto.AiGeneratePlanResult;
+import com.xikang.schedule.dto.DifyLeaveAdjustResult;
 import com.xikang.schedule.entity.DoctorSchedule;
 import com.xikang.schedule.entity.LeaveRequest;
 import com.xikang.schedule.entity.SchedulePlan;
+import com.xikang.schedule.mapper.DoctorScheduleMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,11 +61,16 @@ public class DifyIntegrationService {
     private final RegistrationClient registrationClient;
     private final SchedulePlanService schedulePlanService;
     private final DoctorScheduleService doctorScheduleService;
+    private final DoctorScheduleMapper doctorScheduleMapper;
     private final ObjectMapper objectMapper;
     private final WebClient.Builder webClientBuilder;
 
     @Value("${dify.api-key:}")
     private String difyApiKey;
+
+    /** 替班工作流独立 API Key（在 Dify 创建新工作流后填入；为空时回退到 dify.api-key） */
+    @Value("${dify.leave-adjust-api-key:}")
+    private String difyLeaveAdjustApiKey;
 
     @Value("${dify.base-url:http://43.139.102.203}")
     private String difyBaseUrl;
@@ -74,11 +81,13 @@ public class DifyIntegrationService {
     public DifyIntegrationService(RegistrationClient registrationClient,
                                    SchedulePlanService schedulePlanService,
                                    DoctorScheduleService doctorScheduleService,
+                                   DoctorScheduleMapper doctorScheduleMapper,
                                    ObjectMapper objectMapper,
                                    WebClient.Builder webClientBuilder) {
         this.registrationClient = registrationClient;
         this.schedulePlanService = schedulePlanService;
         this.doctorScheduleService = doctorScheduleService;
+        this.doctorScheduleMapper = doctorScheduleMapper;
         this.objectMapper = objectMapper;
         this.webClientBuilder = webClientBuilder;
     }
@@ -89,11 +98,228 @@ public class DifyIntegrationService {
     }
 
     /**
-     * 处理医生请假（AI 理解 + 生成调整方案）—— 预留
+     * 处理医生请假（调 Dify 7 节点工作流，生成 AI 替班方案）
+     * <p>调用时机：管理员审批通过后，由 {@link LeaveRequestService#processLeave} 触发。
+     * <p>失败时不抛异常（由上层 try/catch 降级），仅返回 null。
+     *
+     * @param leave    请假记录
+     * @param schedule 被请假的排班（含 departmentId / usedQuota / totalQuota）
+     * @return 解析后的替班方案 DTO；解析失败或工作流出错时返回 null
      */
-    public void processLeaveWithAI(LeaveRequest leaveRequest) {
-        log.info("【预留】Dify AI 处理请假：leaveId={}, physicianId={}",
-                leaveRequest.getId(), leaveRequest.getPhysicianId());
+    public DifyLeaveAdjustResult processLeaveWithAI(LeaveRequest leave, DoctorSchedule schedule) {
+        if (leave == null || schedule == null) {
+            log.warn("processLeaveWithAI 入参为空，跳过");
+            return null;
+        }
+        if (!isConfigured()) {
+            log.warn("Dify 未配置完整，跳过 AI 替班推荐");
+            return null;
+        }
+
+        log.info("开始调用 Dify 替班工作流：leaveId={}, scheduleId={}", leave.getId(), schedule.getId());
+
+        // 1. 后端预筛候选（防幻觉：LLM 只能从这批 ID 里选）
+        List<SubstituteCandidate> candidates = findLeaveSubstitutes(schedule, leave);
+        if (candidates.isEmpty()) {
+            log.warn("未找到合格候选医生，跳过 AI 推荐：scheduleId={}", schedule.getId());
+            DifyLeaveAdjustResult empty = new DifyLeaveAdjustResult();
+            empty.setSource("no_candidate");
+            empty.setRawJson("{\"error\":\"no candidate available\"}");
+            return empty;
+        }
+
+        // 2. 构造 Dify 开始节点 inputs（全部 string）
+        Map<String, Object> workflowInput = buildLeaveWorkflowInput(leave, schedule, candidates);
+
+        // 3. 调 Dify 工作流（blocking 模式）
+        String rawResponse;
+        try {
+            rawResponse = callLeaveAdjustWorkflow(workflowInput);
+        } catch (Exception ex) {
+            log.error("Dify 替班工作流调用失败：leaveId={}, err={}", leave.getId(), ex.getMessage());
+            return null;
+        }
+
+        // 4. 解析 + 守门员校验
+        return parseLeaveAdjustResult(rawResponse, candidates);
+    }
+
+    /**
+     * 后端预筛替班候选（SQL + Java 双重过滤）
+     * <p>规则：同科室 + 当天在岗 + 状态正常 + 有余号 + 排除请假医生本人。
+     */
+    private List<SubstituteCandidate> findLeaveSubstitutes(DoctorSchedule schedule, LeaveRequest leave) {
+        try {
+            List<DoctorSchedule> available = doctorScheduleMapper.selectAvailable(
+                    schedule.getDepartmentId(), leave.getLeaveDate());
+            return available.stream()
+                    .filter(s -> !s.getPhysicianId().equals(leave.getPhysicianId()))
+                    .filter(s -> "正常".equals(s.getStatus()))
+                    .filter(s -> s.getAvailableQuota() != null && s.getAvailableQuota() > 0)
+                    .map(s -> {
+                        SubstituteCandidate c = new SubstituteCandidate();
+                        c.setPhysicianId(s.getPhysicianId());
+                        c.setWeeklyLoad(0); // 简化：当前只用可用号源判断
+                        c.setAvailableSlots(s.getTimeSlot() != null ? s.getTimeSlot() : "全天空闲");
+                        return c;
+                    })
+                    .collect(Collectors.toList());
+        } catch (Exception ex) {
+            log.warn("查询替班候选失败：{}", ex.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 构造 Dify 开始节点输入（全部 string，规避 Dify 类型限制）
+     */
+    private Map<String, Object> buildLeaveWorkflowInput(LeaveRequest leave,
+                                                         DoctorSchedule schedule,
+                                                         List<SubstituteCandidate> candidates) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("leave_id", String.valueOf(leave.getId()));
+        input.put("leave_summary", String.format("%s %s 科室%d 医生%d 因%s 请%s",
+                leave.getLeaveDate(),
+                leave.getTimeSlot() != null ? leave.getTimeSlot() : "全天",
+                schedule.getDepartmentId(),
+                leave.getPhysicianId(),
+                StringUtils.hasText(leave.getReason()) ? leave.getReason() : "请假",
+                leave.getLeaveType() != null ? leave.getLeaveType() : "事假"));
+        input.put("candidates_brief", candidates.stream()
+                .map(c -> String.format("医生%d(%d,本周%d班,%s)",
+                        c.getPhysicianId(), c.getPhysicianId(), c.getWeeklyLoad(), c.getAvailableSlots()))
+                .collect(Collectors.joining("|")));
+        input.put("affected_count", String.valueOf(schedule.getUsedQuota() != null ? schedule.getUsedQuota() : 0));
+        return input;
+    }
+
+    /**
+     * 调用 Dify 替班工作流（blocking 模式）。
+     * 与 {@link #callDifyWorkflow} 相似，但使用独立的 API Key 配置（便于区分两个工作流）。
+     */
+    private String callLeaveAdjustWorkflow(Map<String, Object> workflowInput) {
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("inputs", workflowInput);
+        requestBody.put("response_mode", "blocking");
+        requestBody.put("user", "schedule-service-leave");
+
+        try {
+            log.info("Dify leave-adjust request: {}", objectMapper.writeValueAsString(requestBody));
+        } catch (JsonProcessingException ignored) {
+        }
+
+        // 复用 dify.base-url；API Key 优先用 leave-adjust 专用，否则回退到默认
+        String apiKey = StringUtils.hasText(difyLeaveAdjustApiKey) ? difyLeaveAdjustApiKey : difyApiKey;
+
+        WebClient client = webClientBuilder
+                .baseUrl(trimTrailingSlash(difyBaseUrl))
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .build();
+
+        return client.post()
+                .uri("/v1/workflows/run")
+                .bodyValue(requestBody)
+                .exchangeToMono(response -> response.bodyToMono(String.class)
+                        .defaultIfEmpty("[EMPTY BODY]")
+                        .map(body -> {
+                            if (response.statusCode().isError()) {
+                                log.error("Dify leave-adjust HTTP {} - body: {}",
+                                        response.statusCode(), body);
+                                throw new RuntimeException("Dify 替班工作流 HTTP "
+                                        + response.statusCode() + "：" + body);
+                            }
+                            return body;
+                        }))
+                .timeout(java.time.Duration.ofMillis(difyTimeoutMs))
+                .block();
+    }
+
+    /**
+     * 解析 Dify 替班工作流返回 + 守门员校验
+     * <p>双重防幻觉：① 用正则提取 JSON 块；② 校验 substitute_id 在候选清单内。
+     */
+    private DifyLeaveAdjustResult parseLeaveAdjustResult(String rawResponse,
+                                                          List<SubstituteCandidate> candidates) {
+        DifyLeaveAdjustResult result = new DifyLeaveAdjustResult();
+        if (!StringUtils.hasText(rawResponse)) {
+            result.setSource("error");
+            return result;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(rawResponse);
+            if (root.has("error")) {
+                log.error("Dify 替班工作流错误：{}", root.path("error").asText());
+                result.setSource("error");
+                return result;
+            }
+
+            JsonNode outputs = root.path("data").path("outputs");
+            // outputs 可能整体是 string（Dify 兼容模式）
+            if (outputs.isTextual() && looksLikeJson(outputs.asText())) {
+                outputs = objectMapper.readTree(outputs.asText());
+            }
+
+            // 从 outputs 里取 result 字段（JSON-in-String）
+            String jsonStr = outputs.path("result").asText("");
+            if (!StringUtils.hasText(jsonStr)) {
+                // 兼容：直接整个 outputs 当 JSON
+                jsonStr = outputs.toString();
+            }
+
+            // 正则提取 {...}（防止 LLM 输出带 markdown 代码块）
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("\\{[^{}]*\\}", java.util.regex.Pattern.DOTALL)
+                    .matcher(jsonStr);
+            String cleanJson = m.find() ? m.group() : jsonStr;
+
+            JsonNode payload = objectMapper.readTree(cleanJson);
+
+            // 守门员校验：substitute_id 必须在候选清单内
+            String substituteId = payload.path("substitute_id").asText("");
+            boolean valid = candidates.stream()
+                    .anyMatch(c -> String.valueOf(c.getPhysicianId()).equals(substituteId));
+
+            if (!valid) {
+                // 降级：取候选清单第一个
+                SubstituteCandidate fallback = candidates.get(0);
+                log.warn("Dify 返回的 substitute_id={} 不在候选清单，降级到首位 {}",
+                        substituteId, fallback.getPhysicianId());
+                result.setSubstitutePhysicianId(fallback.getPhysicianId());
+                result.setSubstitutePhysicianName("候选医生" + fallback.getPhysicianId());
+                result.setReason("AI 推荐 ID 非法，降级到候选首位");
+                result.setSource("fallback");
+            } else {
+                result.setSubstitutePhysicianId(Long.valueOf(substituteId));
+                result.setSubstitutePhysicianName(payload.path("substitute_name").asText(""));
+                result.setAdjustType(payload.path("adjust_type").asText("临时替班"));
+                result.setReason(payload.path("reason").asText(""));
+                result.setPatientNotification(payload.path("patient_notification").asText(""));
+                result.setSource(payload.path("source").asText("ai"));
+            }
+            result.setRawJson(cleanJson);
+            return result;
+
+        } catch (Exception e) {
+            log.error("解析 Dify 替班结果失败：{}", e.getMessage(), e);
+            result.setSource("error");
+            return result;
+        }
+    }
+
+    /** 替班候选内部 DTO */
+    private static class SubstituteCandidate {
+        private Long physicianId;
+        private int weeklyLoad;
+        private String availableSlots;
+
+        public Long getPhysicianId() { return physicianId; }
+        public void setPhysicianId(Long physicianId) { this.physicianId = physicianId; }
+        public int getWeeklyLoad() { return weeklyLoad; }
+        public void setWeeklyLoad(int weeklyLoad) { this.weeklyLoad = weeklyLoad; }
+        public String getAvailableSlots() { return availableSlots; }
+        public void setAvailableSlots(String availableSlots) { this.availableSlots = availableSlots; }
     }
 
     /**
