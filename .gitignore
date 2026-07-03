@@ -235,3 +235,11 @@ xikang-cloud-hospital/glucose-prediction-service/app/__pycache__/norm.cpython-31
 xikang-cloud-hospital/glucose-prediction-service/app/__pycache__/predictor.cpython-311.pyc
 xikang-cloud-hospital/glucose-prediction-service/app/__pycache__/schemas.cpython-311.pyc
 xikang-cloud-hospital/docker/init-db/init.sql
+xikang-cloud-hospital/docker/init-db/migrate_036_follow_up_clinical_backfill.sql
+xikang-cloud-hospital/docker/init-db/migrate_037_communication_read_cursor.sql
+xikang-cloud-hospital/docker/init-db/migrate_038_follow_up_pending_schedule.sql
+xikang-cloud-hospital/docker/init-db/run_follow_up_production_migrations.py
+xikang-cloud-hospital/docker/init-db/run_migrate_037_038.py
+xikang-cloud-hospital/docker/init-db/run_follow_up_production_migrations.py
+xikang-cloud-hospital/docker/init-db/run_follow_up_production_migrations.py
+xikang-cloud-hospital/docker/init-db/run_follow_up_production_migrations.py
