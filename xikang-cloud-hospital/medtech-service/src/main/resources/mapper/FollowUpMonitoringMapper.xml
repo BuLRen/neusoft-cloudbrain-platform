@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpMonitoringMapper">
+
+    <update id="assignMonitoring">
+        UPDATE follow_up_enrollment
+        SET monitoring_employee_id = #{employeeId},
+            monitored_at = NOW(),
+            follow_up_deadline = COALESCE(follow_up_deadline, (enrolled_at::date + INTERVAL '180 days')::date)
+        WHERE register_id = #{registerId}
+          AND status = 'active'
+    </update>
+
+    <update id="assignMonitoringProfile">
+        UPDATE follow_up_patient_profile
+        SET monitoring_employee_id = #{employeeId},
+            monitored_at = NOW(),
+            follow_up_deadline = COALESCE(follow_up_deadline, (enrolled_at::date + INTERVAL '180 days')::date)
+        WHERE register_id = #{registerId}
+    </update>
+
+    <insert id="insertTransferRequest" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO follow_up_monitoring_transfer_request (
+            register_id, department_id, from_employee_id, to_employee_id, reason, status
+        ) VALUES (
+            #{registerId}, #{departmentId}, #{fromEmployeeId}, #{toEmployeeId}, #{reason}, 'pending'
+        )
+    </insert>
+
+    <select id="selectPendingTransferRequests" resultType="map">
+        SELECT
+            r.id,
+            r.register_id AS "registerId",
+            r.department_id AS "departmentId",
+            r.from_employee_id AS "fromEmployeeId",
+            fe.realname AS "fromEmployeeName",
+            r.to_employee_id AS "toEmployeeId",
+            te.realname AS "toEmployeeName",
+            r.reason,
+            r.status,
+            r.created_at AS "createdAt",
+            reg.real_name AS "patientName",
+            reg.case_number AS "caseNumber"
+        FROM follow_up_monitoring_transfer_request r
+        JOIN register reg ON reg.id = r.register_id
+        LEFT JOIN employee fe ON fe.id = r.from_employee_id
+        LEFT JOIN employee te ON te.id = r.to_employee_id
+        WHERE r.status = 'pending'
+        <if test="departmentId != null">
+            AND r.department_id = #{departmentId}
+        </if>
+        ORDER BY r.created_at ASC
+    </select>
+
+    <select id="selectTransferRequestById" resultType="map">
+        SELECT
+            id,
+            register_id AS "registerId",
+            department_id AS "departmentId",
+            from_employee_id AS "fromEmployeeId",
+            to_employee_id AS "toEmployeeId",
+            reason,
+            status,
+            admin_note AS "adminNote",
+            reviewed_by AS "reviewedBy",
+            reviewed_at AS "reviewedAt",
+            created_at AS "createdAt"
+        FROM follow_up_monitoring_transfer_request
+        WHERE id = #{id}
+    </select>
+
+    <update id="updateTransferRequestStatus">
+        UPDATE follow_up_monitoring_transfer_request
+        SET status = #{status},
+            admin_note = #{adminNote},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = NOW()
+        WHERE id = #{id}
+          AND status = 'pending'
+    </update>
+
+    <select id="countPendingTransferRequests" resultType="int">
+        SELECT COUNT(*)
+        FROM follow_up_monitoring_transfer_request
+        WHERE status = 'pending'
+        <if test="departmentId != null">
+            AND department_id = #{departmentId}
+        </if>
+    </select>
+
+</mapper>

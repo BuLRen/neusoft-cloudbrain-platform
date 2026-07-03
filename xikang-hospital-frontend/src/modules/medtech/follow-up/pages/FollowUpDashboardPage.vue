@@ -9,6 +9,9 @@ import FollowUpDoctorSidebar from '@/modules/medtech/follow-up/components/Follow
 import FollowUpMonthCalendar from '@/modules/medtech/follow-up/components/FollowUpMonthCalendar.vue'
 import FollowUpPatientCard from '@/modules/medtech/follow-up/components/FollowUpPatientCard.vue'
 import FollowUpScheduleDialog from '@/modules/medtech/follow-up/components/FollowUpScheduleDialog.vue'
+import FollowUpShiftDayDialog from '@/modules/medtech/follow-up/components/FollowUpShiftDayDialog.vue'
+import FollowUpShiftChangeDialog from '@/modules/medtech/follow-up/components/FollowUpShiftChangeDialog.vue'
+import FollowUpMonitoringTransferDialog from '@/modules/medtech/follow-up/components/FollowUpMonitoringTransferDialog.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { monthRangeYmd } from '@/modules/medtech/follow-up/constants/followUpPriority'
 import { beijingTodayYmd, formatYmdWeekday } from '@/shared/utils/beijingDate'
@@ -16,6 +19,7 @@ import type {
   FollowUpDashboardContext,
   FollowUpDashboardPatient,
   FollowUpDayScheduleItem,
+  FollowUpStaffShift,
 } from '@/shared/types/medtechFollowUp'
 
 const router = useRouter()
@@ -23,6 +27,7 @@ const loading = ref(false)
 const context = ref<FollowUpDashboardContext | null>(null)
 const patients = ref<FollowUpDashboardPatient[]>([])
 const schedules = ref<FollowUpDayScheduleItem[]>([])
+const myShifts = ref<FollowUpStaffShift[]>([])
 
 const todayYmd = beijingTodayYmd()
 const todayLabel = formatYmdWeekday(todayYmd)
@@ -34,19 +39,47 @@ const scheduleDialogVisible = ref(false)
 const scheduleDialogDate = ref(todayYmd)
 const schedulingRegisterId = ref<number | null>(null)
 
-/** 仅展示当日已排访谈的患者 */
-const interviewPatients = computed(() =>
-  patients.value.filter((item) => item.interviewScheduledToday),
+const shiftDayDialogVisible = ref(false)
+const shiftDayDialogDate = ref(todayYmd)
+const shiftDayDialogTasks = ref<FollowUpStaffShift['contactTasks']>([])
+
+const shiftChangeVisible = ref(false)
+const shiftChangeTarget = ref<FollowUpStaffShift | null>(null)
+
+const transferVisible = ref(false)
+const transferTarget = ref<FollowUpDashboardPatient | null>(null)
+
+const enrolledPatients = computed(() => patients.value.filter((p) => p.enrolled))
+
+const myPatients = computed(() => patients.value.filter((p) => p.isMine))
+
+const unassignedEnrolled = computed(() =>
+  enrolledPatients.value.filter((p) => !p.monitoringEmployeeId),
 )
 
-/** 仅展示当日尚未完成观察的患者 */
-const observationPatients = computed(() =>
-  patients.value.filter((item) => item.observationDueToday),
+const contactDueToday = computed(() =>
+  myPatients.value.filter(
+    (p) => p.contactStatus !== 'contacted_today' && p.contactStatus !== 'within_limit',
+  ),
 )
+
+const todayShift = computed(() => myShifts.value.find((s) => s.workDate === todayYmd))
+
+const contactStats = computed(() => ({
+  myMonitoring: myPatients.value.length,
+  contacted: myPatients.value.filter((p) => p.contactStatus === 'contacted_today').length,
+  due: myPatients.value.filter((p) => p.contactStatus === 'due').length,
+  overdue: myPatients.value.filter((p) => p.contactStatus === 'overdue').length,
+}))
 
 async function loadSchedules() {
   const { from, to } = monthRangeYmd(calendarYear.value, calendarMonth.value)
-  schedules.value = await medtechFollowUpApi.listDaySchedules({ from, to })
+  const [daySchedules, shifts] = await Promise.all([
+    medtechFollowUpApi.listDaySchedules({ from, to }),
+    medtechFollowUpApi.listMyShifts(from, to),
+  ])
+  schedules.value = daySchedules
+  myShifts.value = shifts
 }
 
 async function loadDashboard() {
@@ -56,7 +89,23 @@ async function loadDashboard() {
       medtechFollowUpApi.getDashboardContext({ date: todayYmd }),
       medtechFollowUpApi.listDashboardPatients({ date: todayYmd }),
     ])
-    context.value = contextRes
+    context.value = {
+      ...contextRes,
+      stats: {
+        ...contextRes.stats,
+        enrolledPatients:
+          contextRes.stats?.enrolledPatients ??
+          patientsRes.filter((p) => p.enrolled).length,
+        myMonitoringCount: patientsRes.filter((p) => p.isMine).length,
+        todayContactDue: patientsRes.filter(
+          (p) => p.isMine && p.contactStatus !== 'contacted_today',
+        ).length,
+        todayContacted: patientsRes.filter(
+          (p) => p.isMine && p.contactStatus === 'contacted_today',
+        ).length,
+        contactOverdue: patientsRes.filter((p) => p.isMine && p.contactStatus === 'overdue').length,
+      },
+    }
     patients.value = patientsRes
     await loadSchedules()
   } catch {
@@ -78,6 +127,18 @@ function openScheduleDialog(date: string) {
   scheduleDialogVisible.value = true
 }
 
+function openShiftDay(date: string) {
+  const shift = myShifts.value.find((s) => s.workDate === date)
+  shiftDayDialogDate.value = date
+  shiftDayDialogTasks.value = shift?.contactTasks ?? []
+  shiftDayDialogVisible.value = true
+}
+
+function openShiftChange(shift: FollowUpStaffShift) {
+  shiftChangeTarget.value = shift
+  shiftChangeVisible.value = true
+}
+
 async function scheduleTodayInterview(patient: FollowUpDashboardPatient) {
   schedulingRegisterId.value = patient.registerId
   try {
@@ -89,7 +150,7 @@ async function scheduleTodayInterview(patient: FollowUpDashboardPatient) {
     ElMessage.success(`已将 ${patient.realName ?? '患者'} 排入今日访谈`)
     await loadDashboard()
   } catch {
-    // 统一错误提示
+    // unified error
   } finally {
     schedulingRegisterId.value = null
   }
@@ -103,6 +164,17 @@ async function enrollPatient(patient: FollowUpDashboardPatient) {
   } catch {
     ElMessage.error('纳入随访失败')
   }
+}
+
+async function openTransferRequest(patient: FollowUpDashboardPatient) {
+  transferTarget.value = patient
+  transferVisible.value = true
+}
+
+async function onTransferSubmitted() {
+  transferVisible.value = false
+  ElMessage.success('调换申请已提交，等待管理员审批')
+  await loadDashboard()
 }
 
 async function handleScheduleSubmit(payload: {
@@ -121,8 +193,14 @@ async function handleScheduleSubmit(payload: {
     ElMessage.success('日程已保存')
     await loadDashboard()
   } catch {
-    // 统一错误提示
+    // unified error
   }
+}
+
+async function onShiftChangeSubmitted() {
+  shiftChangeVisible.value = false
+  ElMessage.success('调班申请已提交，等待管理员审批')
+  await loadDashboard()
 }
 
 watch([calendarYear, calendarMonth], () => {
@@ -142,11 +220,12 @@ onActivated(() => {
   <div class="follow-up-dashboard u-page-grid" v-loading="loading">
     <PageHeader
       title="随访工作台"
-      description="今日任务池聚焦待办；全科在管池可检索全部患者并快速排访谈。"
+      description="监视患者、今日联系任务、科室患者池与工作排班。"
       eyebrow="随访系统 / Dashboard"
     >
       <template #actions>
         <ElTag type="info" effect="plain" class="follow-up-dashboard__today-tag">{{ todayLabel }}</ElTag>
+        <ElButton v-if="todayShift" @click="openShiftChange(todayShift)">申请调班</ElButton>
         <ElButton @click="loadDashboard">刷新</ElButton>
       </template>
     </PageHeader>
@@ -156,49 +235,57 @@ onActivated(() => {
         <GlassCard class="follow-up-dashboard__panel">
           <div class="follow-up-dashboard__panel-head">
             <div>
-              <h3>今日待访谈</h3>
-              <p>仅显示今日已安排访谈的患者；未排入日程的患者不会出现在此列表。</p>
+              <h3>我的监视患者</h3>
+              <p>您负责日常联系与随访的患者，点击卡片进入疗效评估。</p>
             </div>
+            <ElTag effect="plain">共 {{ myPatients.length }} 人</ElTag>
           </div>
-          <div v-if="interviewPatients.length" class="follow-up-dashboard__cards">
+          <div v-if="myPatients.length" class="follow-up-dashboard__cards">
             <FollowUpPatientCard
-              v-for="patient in interviewPatients"
-              :key="`interview-${patient.registerId}`"
+              v-for="patient in myPatients"
+              :key="`mine-${patient.registerId}`"
               :patient="patient"
-              :observed="patient.observedToday"
-              :dim-observed="false"
+              show-contact-info
+              show-status-row
               :draggable="false"
               @click="openOutcome"
             />
           </div>
-          <ElEmpty v-else description="今日暂无已排访谈" />
+          <ElEmpty
+            v-else
+            :description="
+              unassignedEnrolled.length
+                ? '本科室有在管患者尚未分配监视医生，请联系管理员'
+                : '暂无监视患者，请联系管理员分配'
+            "
+          />
         </GlassCard>
 
         <GlassCard class="follow-up-dashboard__panel">
           <div class="follow-up-dashboard__panel-head">
             <div>
-              <h3>今日待观察</h3>
-              <p>点击卡片进入疗效评估；确认「今日已观察」后卡片将变灰并移出列表。</p>
+              <h3>今日需联系</h3>
+              <p>6 个月随访期内尚未完成今日联系的患者（已联系 {{ contactStats.contacted }} / 待联系 {{ contactStats.due + contactStats.overdue }}）。</p>
             </div>
           </div>
-          <div v-if="observationPatients.length" class="follow-up-dashboard__cards">
+          <div v-if="contactDueToday.length" class="follow-up-dashboard__cards">
             <FollowUpPatientCard
-              v-for="patient in observationPatients"
-              :key="`observation-${patient.registerId}`"
+              v-for="patient in contactDueToday"
+              :key="`contact-${patient.registerId}`"
               :patient="patient"
-              :observed="patient.observedToday"
+              show-contact-info
               :draggable="false"
               @click="openOutcome"
             />
           </div>
-          <ElEmpty v-else description="今日观察任务已全部完成" />
+          <ElEmpty v-else description="今日联系任务已全部完成" />
         </GlassCard>
 
         <GlassCard class="follow-up-dashboard__panel">
           <div class="follow-up-dashboard__panel-head">
             <div>
-              <h3>全科在管患者</h3>
-              <p>本科室全部纳入随访池的患者；支持搜索筛选，可一键排入今日访谈或进入疗效评估。</p>
+              <h3>科室患者池</h3>
+              <p>本科室全部在管患者；监视医生由管理员分配，您可对已分配给自己的患者申请调换。</p>
             </div>
           </div>
           <FollowUpAllPatientsPool
@@ -207,7 +294,31 @@ onActivated(() => {
             @open="openOutcome"
             @schedule-today="scheduleTodayInterview"
             @enroll="enrollPatient"
+            @transfer="openTransferRequest"
           />
+        </GlassCard>
+
+        <GlassCard class="follow-up-dashboard__panel">
+          <div class="follow-up-dashboard__panel-head">
+            <div>
+              <h3>我的工作排班</h3>
+              <p>管理员发布的月度排班；点击日期查看当日需联系患者。</p>
+            </div>
+          </div>
+          <div v-if="myShifts.length" class="follow-up-dashboard__shift-list">
+            <button
+              v-for="shift in myShifts"
+              :key="shift.id"
+              type="button"
+              class="follow-up-dashboard__shift-chip"
+              :class="{ 'follow-up-dashboard__shift-chip--today': shift.workDate === todayYmd }"
+              @click="openShiftDay(shift.workDate)"
+            >
+              <strong>{{ shift.workDate }}</strong>
+              <span>{{ shift.contactTasks?.length ?? 0 }} 位待联系</span>
+            </button>
+          </div>
+          <ElEmpty v-else description="本月暂无工作排班，请联系管理员生成" />
         </GlassCard>
 
         <FollowUpMonthCalendar
@@ -215,11 +326,17 @@ onActivated(() => {
           v-model:month="calendarMonth"
           :today-ymd="todayYmd"
           :schedules="schedules"
+          :shift-dates="myShifts.map((s) => s.workDate)"
           @open-day="openScheduleDialog"
+          @open-shift-day="openShiftDay"
         />
       </div>
 
-      <FollowUpDoctorSidebar :context="context" :target-date="todayYmd" />
+      <FollowUpDoctorSidebar
+        :context="context"
+        :target-date="todayYmd"
+        :contact-stats="contactStats"
+      />
     </div>
 
     <FollowUpScheduleDialog
@@ -229,15 +346,29 @@ onActivated(() => {
       :schedules="schedules"
       @submit="handleScheduleSubmit"
     />
+
+    <FollowUpShiftDayDialog
+      v-model="shiftDayDialogVisible"
+      :date="shiftDayDialogDate"
+      :tasks="shiftDayDialogTasks"
+      @open-patient="openOutcome"
+    />
+
+    <FollowUpShiftChangeDialog
+      v-model="shiftChangeVisible"
+      :shift="shiftChangeTarget"
+      @submitted="onShiftChangeSubmitted"
+    />
+
+    <FollowUpMonitoringTransferDialog
+      v-model="transferVisible"
+      :patient="transferTarget"
+      @submitted="onTransferSubmitted"
+    />
   </div>
 </template>
 
 <style scoped>
-.follow-up-dashboard__today-tag {
-  font-size: 13px;
-  padding: 8px 12px;
-}
-
 .follow-up-dashboard__layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
@@ -254,12 +385,21 @@ onActivated(() => {
   padding: var(--space-4);
 }
 
+.follow-up-dashboard__panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+}
+
 .follow-up-dashboard__panel-head h3 {
-  margin: 0;
+  margin: 0 0 var(--space-1);
+  font-size: 17px;
 }
 
 .follow-up-dashboard__panel-head p {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   color: var(--color-text-muted);
   font-size: 13px;
 }
@@ -268,22 +408,39 @@ onActivated(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-3);
-  margin-block-start: var(--space-4);
+}
+
+.follow-up-dashboard__shift-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.follow-up-dashboard__shift-chip {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+  cursor: pointer;
+  font: inherit;
+  text-align: start;
+}
+
+.follow-up-dashboard__shift-chip--today {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-soft));
+}
+
+.follow-up-dashboard__shift-chip span {
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
 
 @media (max-width: 1100px) {
   .follow-up-dashboard__layout {
     grid-template-columns: 1fr;
   }
-}
-</style>
-
-<style>
-.outcome-dialog-overlay {
-  pointer-events: none;
-}
-
-.outcome-dialog-overlay .el-dialog {
-  pointer-events: auto;
 }
 </style>

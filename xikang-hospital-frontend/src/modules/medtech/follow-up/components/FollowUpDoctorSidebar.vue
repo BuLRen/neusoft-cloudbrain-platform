@@ -10,6 +10,12 @@ import type { FollowUpDashboardContext } from '@/shared/types/medtechFollowUp'
 const props = defineProps<{
   context: FollowUpDashboardContext | null
   targetDate: string
+  contactStats?: {
+    myMonitoring?: number
+    contacted?: number
+    due?: number
+    overdue?: number
+  }
 }>()
 
 const router = useRouter()
@@ -20,6 +26,7 @@ const displayName = computed(
 )
 
 const stats = computed(() => props.context?.stats ?? {})
+const contactStats = computed(() => props.contactStats ?? {})
 </script>
 
 <template>
@@ -41,21 +48,40 @@ const stats = computed(() => props.context?.stats ?? {})
       <div class="follow-up-sidebar__stats">
         <div>
           <span>在管患者</span>
+          <strong>{{ stats.enrolledPatients ?? stats.totalPatients ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>我的监视</span>
+          <strong>{{ contactStats?.myMonitoring ?? stats.myMonitoringCount ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>科室池</span>
           <strong>{{ stats.totalPatients ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>今日已联系</span>
+          <strong>{{ contactStats?.contacted ?? stats.todayContacted ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>待联系</span>
+          <strong>{{ contactStats?.due ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>联系逾期</span>
+          <strong>{{ contactStats?.overdue ?? stats.contactOverdue ?? 0 }}</strong>
         </div>
         <div>
           <span>今日待访谈</span>
           <strong>{{ stats.todayInterviewsPlanned ?? 0 }}</strong>
-        </div>
-        <div>
-          <span>今日待观察</span>
-          <strong>{{ stats.todayObservationPending ?? 0 }}</strong>
         </div>
       </div>
 
       <div class="follow-up-sidebar__actions">
         <ElButton type="primary" plain @click="router.push('/follow-up/outcome')">
           疗效评估
+        </ElButton>
+        <ElButton plain @click="router.push('/follow-up/communication')">
+          医患沟通
         </ElButton>
       </div>
     </GlassCard>

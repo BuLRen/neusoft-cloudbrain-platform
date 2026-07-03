@@ -78,6 +78,14 @@ public class DifyWorkflowClient {
         return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
     }
 
+    public DifyWorkflowRunResult runFollowUpShiftScheduleBlocking(Map<String, Object> inputs, String user, String traceId) {
+        String apiKey = properties.resolveFollowUpShiftScheduleApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("随访排班 API Key 未配置");
+        }
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
     private DifyWorkflowRunResult runWorkflowBlockingInternal(
         String baseUrl,
         String apiKey,

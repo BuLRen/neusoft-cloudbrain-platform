@@ -7,6 +7,8 @@ import type {
   FollowUpCommunicationMessagesPage,
   FollowUpCommunicationPatientBrief,
   FollowUpCommunicationSession,
+  FollowUpContactRecord,
+  FollowUpContactRecordPayload,
   FollowUpDashboardContext,
   FollowUpDashboardPatient,
   FollowUpDayScheduleItem,
@@ -22,6 +24,7 @@ import type {
   FollowUpPatientOption,
   FollowUpPatientProfile,
   FollowUpSchedulePayload,
+  FollowUpStaffShift,
   GlucoseAdvice,
   InterviewScheduleItem,
   InterviewSchedulePayload,
@@ -178,6 +181,70 @@ export const medtechFollowUpApi = {
   enrollPatient(payload: FollowUpEnrollPayload) {
     return http<FollowUpEnrollResult>({
       url: `${dashboardBase}/enroll`,
+      method: 'POST',
+      data: payload,
+    })
+  },
+
+  claimMonitoring(registerId: number) {
+    return http<{ registerId: number; claimed: boolean }>({
+      url: `${dashboardBase}/monitor/claim`,
+      method: 'POST',
+      data: { registerId },
+    })
+  },
+
+  releaseMonitoring(registerId: number) {
+    return http<{ registerId: number; released: boolean }>({
+      url: `${dashboardBase}/monitor/release`,
+      method: 'POST',
+      data: { registerId },
+    })
+  },
+
+  submitMonitoringTransferRequest(payload: {
+    registerId: number
+    toEmployeeId?: number
+    reason: string
+  }) {
+    return http<Record<string, unknown>>({
+      url: `${dashboardBase}/monitor/transfer-request`,
+      method: 'POST',
+      data: payload,
+    })
+  },
+
+  listContactRecords(registerId: number, limit?: number) {
+    return http<FollowUpContactRecord[]>({
+      url: `/medtech/follow-up/contact/records/${registerId}`,
+      method: 'GET',
+      params: limit ? { limit } : undefined,
+    })
+  },
+
+  createContactRecord(payload: FollowUpContactRecordPayload) {
+    return http<FollowUpContactRecord>({
+      url: '/medtech/follow-up/contact/records',
+      method: 'POST',
+      data: payload,
+    })
+  },
+
+  listMyShifts(from: string, to: string) {
+    return http<FollowUpStaffShift[]>({
+      url: '/medtech/follow-up/shift/my-shifts',
+      method: 'GET',
+      params: { from, to },
+    })
+  },
+
+  submitShiftChangeRequest(payload: {
+    originalShiftId: number
+    requestedWorkDate: string
+    reason: string
+  }) {
+    return http<{ id: number; status: string }>({
+      url: '/medtech/follow-up/shift/change-request',
       method: 'POST',
       data: payload,
     })

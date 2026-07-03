@@ -38,6 +38,7 @@ import {
 } from '@/shared/utils/beijingDate'
 import LastVisitSnapshotPanel from '@/modules/medtech/follow-up/components/LastVisitSnapshotPanel.vue'
 import HomeGlucoseMonitoringPanel from '@/modules/medtech/follow-up/components/HomeGlucoseMonitoringPanel.vue'
+import ContactRecordHistoryDialog from '@/modules/medtech/follow-up/components/ContactRecordHistoryDialog.vue'
 import { addToTodayInterview, getTodayInterviewScheduled } from '@/modules/medtech/follow-up/services/interviewSchedule'
 import type {
   FollowUpHealthMetric,
@@ -85,6 +86,7 @@ const metricDialogChartEl = ref<HTMLElement | null>(null)
 let metricDialogChart: echarts.ECharts | null = null
 
 const patientDetailVisible = ref(false)
+const contactHistoryVisible = ref(false)
 const patientDetail = ref<FollowUpPatientDetail | null>(null)
 const patientDetailLoading = ref(false)
 
@@ -551,6 +553,7 @@ void loadPatients().then(() => loadPatientData())
         </div>
         <div class="toolbar__right">
           <ElButton :disabled="!selectedRegisterId" @click="openPatientDetail">查看患者信息</ElButton>
+          <ElButton :disabled="!selectedRegisterId" @click="contactHistoryVisible = true">联系记录</ElButton>
           <ElButton
             :disabled="!selectedRegisterId || observedToday"
             :loading="confirmingObservation"
@@ -812,6 +815,11 @@ void loadPatients().then(() => loadPatientData())
         <ElEmpty v-else-if="!patientDetailLoading" description="暂无患者信息" />
       </div>
     </ElDialog>
+
+    <ContactRecordHistoryDialog
+      v-model="contactHistoryVisible"
+      :register-id="selectedRegisterId"
+    />
   </MedtechStepLayout>
 </template>
 

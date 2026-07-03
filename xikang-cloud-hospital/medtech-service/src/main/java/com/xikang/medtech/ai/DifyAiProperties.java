@@ -13,6 +13,8 @@ public class DifyAiProperties {
     private String workflowFollowUpCaseSummary = "";
     private String apiKeyFollowUpMedicalChat = "";
     private String workflowFollowUpMedicalChat = "";
+    private String apiKeyFollowUpShiftSchedule = "";
+    private String workflowFollowUpShiftSchedule = "";
     private String ctInferenceUrl = "";
     private int readTimeoutMs = 300_000;
     private int connectTimeoutMs = 30_000;
@@ -80,6 +82,22 @@ public class DifyAiProperties {
 
     public void setWorkflowFollowUpMedicalChat(String workflowFollowUpMedicalChat) {
         this.workflowFollowUpMedicalChat = workflowFollowUpMedicalChat;
+    }
+
+    public String getApiKeyFollowUpShiftSchedule() {
+        return apiKeyFollowUpShiftSchedule;
+    }
+
+    public void setApiKeyFollowUpShiftSchedule(String apiKeyFollowUpShiftSchedule) {
+        this.apiKeyFollowUpShiftSchedule = apiKeyFollowUpShiftSchedule;
+    }
+
+    public String getWorkflowFollowUpShiftSchedule() {
+        return workflowFollowUpShiftSchedule;
+    }
+
+    public void setWorkflowFollowUpShiftSchedule(String workflowFollowUpShiftSchedule) {
+        this.workflowFollowUpShiftSchedule = workflowFollowUpShiftSchedule;
     }
 
     public String getCtInferenceUrl() {
@@ -150,6 +168,16 @@ public class DifyAiProperties {
 
     public String resolveFollowUpMedicalChatApiKey() {
         return apiKeyFollowUpMedicalChat == null ? "" : apiKeyFollowUpMedicalChat.trim();
+    }
+
+    public boolean isFollowUpShiftScheduleEnabled() {
+        return isDifyBaseConfigured()
+            && isWorkflowSwitchOn(workflowFollowUpShiftSchedule)
+            && !resolveFollowUpShiftScheduleApiKey().isBlank();
+    }
+
+    public String resolveFollowUpShiftScheduleApiKey() {
+        return apiKeyFollowUpShiftSchedule == null ? "" : apiKeyFollowUpShiftSchedule.trim();
     }
 
     private boolean isWorkflowSwitchOn(String switchValue) {

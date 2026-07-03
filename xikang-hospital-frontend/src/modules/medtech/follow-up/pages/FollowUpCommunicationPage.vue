@@ -9,6 +9,7 @@ import CommunicationThread from '@/modules/medtech/follow-up/components/Communic
 import CommunicationComposer from '@/modules/medtech/follow-up/components/CommunicationComposer.vue'
 import CommunicationCardPicker from '@/modules/medtech/follow-up/components/CommunicationCardPicker.vue'
 import CommunicationPatientBrief from '@/modules/medtech/follow-up/components/CommunicationPatientBrief.vue'
+import ContactRecordPanel from '@/modules/medtech/follow-up/components/ContactRecordPanel.vue'
 import CaseSummaryReviewDialog from '@/modules/medtech/follow-up/components/CaseSummaryReviewDialog.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { beijingTodayYmd, formatYmdWeekday } from '@/shared/utils/beijingDate'
@@ -288,15 +289,18 @@ onActivated(() => {
         </template>
       </GlassCard>
 
-      <CommunicationPatientBrief
-        :brief="brief"
-        :session="activeSession"
-        :generating-summary="generatingSummary"
-        @generate-summary="handleGenerateSummary"
-        @open-outcome="openOutcome"
-        @toggle-ai="handleToggleAi"
-        @send-revisit-reminder="handleSendRevisitReminder"
-      />
+      <div class="comm-page__aside">
+        <CommunicationPatientBrief
+          :brief="brief"
+          :session="activeSession"
+          :generating-summary="generatingSummary"
+          @generate-summary="handleGenerateSummary"
+          @open-outcome="openOutcome"
+          @toggle-ai="handleToggleAi"
+          @send-revisit-reminder="handleSendRevisitReminder"
+        />
+        <ContactRecordPanel :register-id="activeSession?.registerId" />
+      </div>
     </div>
 
     <CaseSummaryReviewDialog
@@ -327,6 +331,12 @@ onActivated(() => {
   grid-template-columns: minmax(260px, 280px) minmax(0, 1fr) minmax(300px, 360px);
   gap: var(--space-5);
   align-items: start;
+}
+
+.comm-page__aside {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
 }
 
 .comm-page__panel {

@@ -31,7 +31,7 @@ const modules = [
       description="您已登录为随访人员，请进入随访系统管理在管患者。"
       eyebrow="随访系统"
     />
-    <GlassCard class="dashboard__card" @click="router.push('/follow-up/outcome')">
+    <GlassCard class="dashboard__card" @click="router.push('/follow-up/dashboard')">
       <StatusTag tone="primary">随访</StatusTag>
       <h2>进入随访系统</h2>
       <p>工作台、疗效评估、医患沟通与随访记录。</p>
