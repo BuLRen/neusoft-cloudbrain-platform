@@ -19,7 +19,7 @@ SET timezone = 'Asia/Shanghai';
 -- ============================================================
 -- 表: users (用户表)
 -- 说明: 系统用户表，用于登录认证（管理员、医生、挂号员、医技、药房、患者）
--- user_type: 1-管理员, 2-医生, 3-挂号员, 4-医技人员, 5-药房人员, 6-患者
+-- user_type: 1-管理员, 2-医生, 3-挂号员, 4-医技人员, 5-药房人员, 6-患者, 7-随访人员
 -- ============================================================
 CREATE TABLE users (
     id              BIGSERIAL      PRIMARY KEY,
@@ -50,7 +50,7 @@ CREATE INDEX idx_users_id_card ON users(id_card);
 CREATE INDEX idx_users_employee_id ON users(employee_id);
 
 COMMENT ON TABLE users IS '系统用户表（登录认证）';
-COMMENT ON COLUMN users.user_type IS '用户类型: 1-管理员, 2-医生, 3-挂号员, 4-医技人员, 5-药房人员, 6-患者';
+COMMENT ON COLUMN users.user_type IS '用户类型: 1-管理员, 2-医生, 3-挂号员, 4-医技人员, 5-药房人员, 6-患者, 7-随访人员';
 COMMENT ON COLUMN users.id_card IS '身份证号，用于实名认证和医保关联';
 COMMENT ON COLUMN users.gender IS '性别: 男/女';
 COMMENT ON COLUMN users.birthdate IS '出生日期';
