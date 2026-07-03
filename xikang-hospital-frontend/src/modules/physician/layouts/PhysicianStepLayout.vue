@@ -17,6 +17,8 @@ const props = defineProps<{
   description?: string
   prevPath?: string
   nextPath?: string
+  /** 双栏内容区：透明底、无外层卡片，便于左右独立白卡片布局 */
+  contentVariant?: 'default' | 'split'
 }>()
 
 const router = useRouter()
@@ -112,9 +114,15 @@ const patientBadge = computed(() => {
       </template>
     </GlassCard>
 
-    <GlassCard class="step-layout__panel">
+    <GlassCard
+      class="step-layout__panel"
+      :class="{ 'step-layout__panel--split': contentVariant === 'split' }"
+    >
       <slot />
-      <div class="step-layout__nav">
+      <div
+        class="step-layout__nav"
+        :class="{ 'step-layout__nav--split': contentVariant === 'split' }"
+      >
         <ElButton v-if="prevPath" @click="navigateWithRegisterId(prevPath)">上一步</ElButton>
         <ElButton v-if="nextPath" type="primary" @click="navigateWithRegisterId(nextPath)">下一步</ElButton>
       </div>
@@ -142,6 +150,14 @@ const patientBadge = computed(() => {
   margin-block-start: var(--space-4);
 }
 
+.step-layout__panel--split {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 .step-layout__nav {
   display: flex;
   justify-content: flex-end;
@@ -150,6 +166,16 @@ const patientBadge = computed(() => {
   margin-block-start: var(--space-5);
   padding-block-start: var(--space-4);
   border-block-start: 1px solid var(--color-border);
+}
+
+.step-layout__nav--split {
+  margin-block-start: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-strong);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--blur-glass);
 }
 
 .patient-profile__main {

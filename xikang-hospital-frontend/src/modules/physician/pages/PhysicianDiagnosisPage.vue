@@ -264,7 +264,6 @@ onMounted(() => {
   <PhysicianStepLayout
     group-label="门诊诊疗"
     title="门诊确诊"
-    description="先查看 W4 AI 诊断参考，再从疾病库搜索并确认最终确诊。"
     prev-path="/physician/results"
     next-path="/physician/prescription"
   >

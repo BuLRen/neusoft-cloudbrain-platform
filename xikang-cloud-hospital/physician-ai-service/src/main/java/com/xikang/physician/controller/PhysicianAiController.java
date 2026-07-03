@@ -52,6 +52,14 @@ public class PhysicianAiController {
         return Result.success("W1 病历字段结构化完成", pipelineService.runW1(request));
     }
 
+    @GetMapping("/w2/status")
+    public Result<Map<String, Object>> getW2Status(@RequestParam Long registerId) {
+        if (registerId == null) {
+            return Result.error("registerId 不能为空");
+        }
+        return Result.success(pipelineService.getW2Status(registerId));
+    }
+
     @PostMapping("/w2/recommend")
     public Result<Map<String, Object>> runW2(@RequestBody Map<String, Object> request) {
         try {

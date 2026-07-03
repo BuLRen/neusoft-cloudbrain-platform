@@ -854,7 +854,7 @@ CREATE TABLE ai_medical_record_log (
         FOREIGN KEY (medical_record_id) REFERENCES medical_record(id)
         ON DELETE SET NULL,
 
-    CONSTRAINT chk_ai_mrlog_source CHECK (source_type IN ('consultation', 'dictation', 'exam', 'preliminary_diagnosis')),
+    CONSTRAINT chk_ai_mrlog_source CHECK (source_type IN ('consultation', 'dictation', 'exam', 'preliminary_diagnosis', 'w2_recommend')),
     CONSTRAINT chk_ai_mrlog_adopted CHECK (is_adopted IN (0, 1, 2))
 );
 

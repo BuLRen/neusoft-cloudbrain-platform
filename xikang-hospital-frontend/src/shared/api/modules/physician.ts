@@ -248,6 +248,12 @@ export interface W2Output {
   modelId?: string
 }
 
+export interface W2Status {
+  registerId?: number
+  completed: boolean
+  w2Output?: W2Output
+}
+
 export interface W3IndicatorRow {
   itemCode?: string
   itemName: string
@@ -455,6 +461,14 @@ export const physicianApi = {
       method: 'POST',
       data: { registerId },
       timeout: W2_AI_TIMEOUT_MS,
+    })
+  },
+  w2Status(registerId: number) {
+    return http<W2Status>({
+      url: '/physician/ai/w2/status',
+      method: 'GET',
+      params: { registerId },
+      skipErrorMessage: true,
     })
   },
   aiW2b(registerId: number, autoCreateRequests = true) {

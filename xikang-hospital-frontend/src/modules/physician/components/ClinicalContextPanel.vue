@@ -71,7 +71,6 @@ const hasContext = computed(
   <GlassCard class="clinical-context">
     <header class="clinical-context__header">
       <h2 class="clinical-context__title">病历与诊断摘要</h2>
-      <p class="clinical-context__subtitle">来自上一步已保存的病历与初步诊断，供开立检查检验参考</p>
     </header>
 
     <ElSkeleton v-if="loading" :rows="4" animated />
@@ -87,18 +86,6 @@ const hasContext = computed(
     </template>
 
     <template v-else>
-      <ElAlert
-        v-if="redFlags.length"
-        type="error"
-        :closable="false"
-        show-icon
-        class="clinical-context__alert"
-        title="警示征象"
-      >
-        <ul class="clinical-context__flags">
-          <li v-for="(flag, index) in redFlags" :key="`flag-${index}`">{{ flag }}</li>
-        </ul>
-      </ElAlert>
 
       <p v-if="clinicalSummary" class="clinical-context__summary">
         <strong>AI 临床摘要：</strong>{{ clinicalSummary }}

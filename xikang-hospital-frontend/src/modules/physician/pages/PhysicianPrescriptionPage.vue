@@ -303,7 +303,6 @@ onMounted(() => {
   <PhysicianStepLayout
     group-label="门诊诊疗"
     title="处方开立"
-    description="选择药品并提交处方；AI 推荐仅供辅助参考，最终用药判断由医生负责。"
     prev-path="/physician/diagnosis"
   >
     <div class="rx-grid">

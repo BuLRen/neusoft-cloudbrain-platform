@@ -181,6 +181,18 @@ public class PhysicianAiPipelineService {
         return output;
     }
 
+    public Map<String, Object> getW2Status(Long registerId) {
+        Map<String, Object> w2Output = loadW2Output(registerId);
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("registerId", registerId);
+        boolean hasRecommendations = !listOfMaps(w2Output.get("recommendedExaminations")).isEmpty();
+        boolean hasAssessment = !String.valueOf(w2Output.getOrDefault("preliminaryAssessment", "")).trim().isEmpty()
+            || !String.valueOf(w2Output.getOrDefault("notRecommendedNote", "")).trim().isEmpty();
+        status.put("completed", hasRecommendations || hasAssessment);
+        status.put("w2Output", w2Output);
+        return status;
+    }
+
     private Map<String, Object> runW2ViaDify(Long registerId, List<Map<String, Object>> availableExaminations) {
         try {
             Map<String, Object> clinicalContext = w2ClinicalContextBuilder.build(registerId);
@@ -838,6 +850,66 @@ public class PhysicianAiPipelineService {
             row.put("modelId", modelId);
             physicianAiMapper.insertExamSuggestion(row);
         }
+        persistW2AiLog(registerId, output);
+    }
+
+    private void persistW2AiLog(Long registerId, Map<String, Object> output) {
+        if (registerId == null) {
+            return;
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("notRecommendedNote", output.get("notRecommendedNote"));
+        meta.put("unmatchedSuggestions", output.get("unmatchedSuggestions"));
+        meta.put("workflowRunId", output.get("workflowRunId"));
+
+        Map<String, Object> log = new HashMap<>();
+        log.put("registerId", registerId);
+        log.put("sourceType", "w2_recommend");
+        log.put("aiDiagnosis", output.get("preliminaryAssessment"));
+        log.put("modelId", output.get("modelId"));
+        log.put("doctorModification", JsonMapUtils.toJson(meta));
+        physicianAiMapper.insertAiMedicalRecordLog(log);
+    }
+
+    private Map<String, Object> loadW2Output(Long registerId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("preliminaryAssessment", "");
+        out.put("recommendedExaminations", List.of());
+        out.put("notRecommendedNote", "");
+        out.put("unmatchedSuggestions", List.of());
+
+        Map<String, Object> log = physicianAiMapper.selectLatestAiMedicalRecordLogBySourceType(registerId, "w2_recommend");
+        if (log != null) {
+            out.put("preliminaryAssessment", String.valueOf(log.getOrDefault("aiDiagnosis", "")).trim());
+            out.put("modelId", log.get("modelId"));
+            Object rawMeta = log.get("doctorModification");
+            if (rawMeta instanceof String text && !text.isBlank()) {
+                Map<String, Object> meta = JsonMapUtils.asMap(text);
+                out.put("notRecommendedNote", String.valueOf(meta.getOrDefault("notRecommendedNote", "")).trim());
+                out.put("unmatchedSuggestions", listOfMaps(meta.get("unmatchedSuggestions")));
+                out.put("workflowRunId", meta.get("workflowRunId"));
+            }
+        }
+
+        List<Map<String, Object>> recommendations = new ArrayList<>();
+        for (Map<String, Object> suggestion : physicianAiMapper.selectExamSuggestions(registerId)) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("techId", suggestion.get("techId"));
+            item.put("techName", suggestion.get("techName"));
+            item.put("techType", suggestion.get("suggestType"));
+            item.put("reason", suggestion.get("suggestReason"));
+            item.put("priority", suggestion.getOrDefault("priority", 1));
+            recommendations.add(item);
+        }
+        out.put("recommendedExaminations", recommendations);
+
+        if (String.valueOf(out.get("preliminaryAssessment")).trim().isEmpty() && !recommendations.isEmpty()) {
+            String fallback = loadLatestPreliminaryAssessment(registerId);
+            if (!fallback.isEmpty()) {
+                out.put("preliminaryAssessment", fallback);
+            }
+        }
+        return out;
     }
 
     private String resolveW2ModelIdLabel() {

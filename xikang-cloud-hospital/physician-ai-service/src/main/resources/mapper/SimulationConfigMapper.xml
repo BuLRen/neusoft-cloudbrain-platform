@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.physician.simulation.mapper.SimulationConfigMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.physician.simulation.entity.SimulationConfig">
+        <id column="id" property="id"/>
+        <result column="config_key" property="configKey"/>
+        <result column="tech_code" property="techCode"/>
+        <result column="check_name" property="checkName"/>
+        <result column="match_keywords" property="matchKeywords"/>
+        <result column="enabled" property="enabled"/>
+        <result column="simulation_mode" property="simulationMode"/>
+        <result column="version" property="version"/>
+        <result column="prompt_sections" property="promptSections"/>
+        <result column="disease_mappings" property="diseaseMappings"/>
+        <result column="output_schema" property="outputSchema"/>
+        <result column="defaults" property="defaults"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectBestMatch" resultMap="BaseResultMap">
+        SELECT *
+        FROM simulation_config
+        WHERE enabled = TRUE
+          AND (
+            (#{techCode} IS NOT NULL AND #{techCode} &lt;&gt; '' AND tech_code = #{techCode})
+            OR (#{techCode} IS NOT NULL AND #{techCode} &lt;&gt; '' AND config_key = #{techCode})
+            OR (#{checkName} IS NOT NULL AND #{checkName} &lt;&gt; '' AND config_key = #{checkName})
+            OR (#{checkName} IS NOT NULL AND #{checkName} &lt;&gt; '' AND check_name = #{checkName})
+            OR (
+                #{checkName} IS NOT NULL AND #{checkName} &lt;&gt; ''
+                AND match_keywords IS NOT NULL AND match_keywords &lt;&gt; ''
+                AND EXISTS (
+                    SELECT 1
+                    FROM unnest(string_to_array(match_keywords, ',')) AS kw
+                    WHERE trim(kw) &lt;&gt; ''
+                      AND position(lower(trim(kw)) IN lower(#{checkName})) &gt; 0
+                )
+            )
+          )
+        ORDER BY
+          CASE
+            WHEN #{techCode} IS NOT NULL AND #{techCode} &lt;&gt; '' AND tech_code = #{techCode} THEN 1
+            WHEN #{techCode} IS NOT NULL AND #{techCode} &lt;&gt; '' AND config_key = #{techCode} THEN 2
+            WHEN #{checkName} IS NOT NULL AND #{checkName} &lt;&gt; '' AND config_key = #{checkName} THEN 3
+            WHEN #{checkName} IS NOT NULL AND #{checkName} &lt;&gt; '' AND check_name = #{checkName} THEN 4
+            ELSE 5
+          END,
+          id
+        LIMIT 1
+    </select>
+</mapper>

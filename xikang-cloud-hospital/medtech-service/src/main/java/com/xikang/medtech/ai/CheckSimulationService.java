@@ -48,6 +48,7 @@ public class CheckSimulationService {
         boolean normalStatus = parseNormalStatus(requestBody);
         Map<String, Object> inputs = buildWorkflowInputs(
             ctx.technology().getTechName(),
+            ctx.technology().getTechCode(),
             ctx.request().getCheckInfo(),
             ctx.request().getRegisterId(),
             normalStatus
@@ -73,6 +74,7 @@ public class CheckSimulationService {
         boolean normalStatus = parseNormalStatus(requestBody);
         Map<String, Object> inputs = buildWorkflowInputs(
             ctx.technology().getTechName(),
+            ctx.technology().getTechCode(),
             ctx.request().getInspectionInfo(),
             ctx.request().getRegisterId(),
             normalStatus
@@ -187,17 +189,26 @@ public class CheckSimulationService {
 
     private Map<String, Object> buildWorkflowInputs(
         String examName,
+        String techCode,
         String purpose,
         Long registerId,
         boolean normalStatus
     ) {
+        String normalFlag = normalStatus ? "true" : "false";
         Map<String, Object> inputs = new LinkedHashMap<>();
-        inputs.put("checkName", examName);
-        inputs.put("normal_status", normalStatus ? "true" : "false");
+        inputs.put("checkName", nullToEmpty(examName));
+        inputs.put("techCode", nullToEmpty(techCode));
+        // v2.0 Start 变量 isNormal：String 传 "true"/"false"；Boolean 传 true/false（Dify 控制台类型不同）
+        inputs.put("isNormal", normalFlag);
+        inputs.put("normal_status", normalFlag);
         inputs.put("possibleDiseases", contextBuilder.serializePossibleDiseases(registerId));
-        inputs.put("checkPurpose", purpose == null ? "" : purpose);
         inputs.put("patientContext", contextBuilder.buildPatientContext(registerId));
+        inputs.put("checkPurpose", nullToEmpty(purpose));
         return inputs;
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private CheckContext requireInProgressCheckContext(Long checkRequestId) {
@@ -290,10 +301,13 @@ public class CheckSimulationService {
         for (int attempt = 1; attempt <= DIFY_MAX_ATTEMPTS; attempt++) {
             try {
                 log.info(
-                    "{} invoking Dify | requestId={} checkName={} attempt={}",
+                    "{} invoking Dify | requestId={} checkName={} isNormal={} normal_status={} techCode={} attempt={}",
                     logPrefix,
                     requestId,
                     inputs.get("checkName"),
+                    inputs.get("isNormal"),
+                    inputs.get("normal_status"),
+                    inputs.get("techCode"),
                     attempt
                 );
                 DifyWorkflowRunResult result = difyWorkflowClient.runCheckSimulateBlocking(inputs, user, null);
@@ -301,6 +315,16 @@ public class CheckSimulationService {
                 lastElapsed = result.getElapsedTime();
                 Map<String, Object> candidateOutputs = result.getOutputs();
                 if (outputMapper.hasUsableStructuredOutput(candidateOutputs)) {
+                    if (shouldRetryForValidationWarning(candidateOutputs) && attempt < DIFY_MAX_ATTEMPTS) {
+                        log.warn(
+                            "{} Dify validation warning, retrying | requestId={} attempt={} workflowRunId={}",
+                            logPrefix,
+                            requestId,
+                            attempt,
+                            lastRunId
+                        );
+                        continue;
+                    }
                     log.info(
                         "{} Dify succeeded | requestId={} workflowRunId={} attempt={}",
                         logPrefix,
@@ -341,6 +365,12 @@ public class CheckSimulationService {
             lastElapsed,
             error
         );
+    }
+
+    private boolean shouldRetryForValidationWarning(Map<String, Object> outputs) {
+        Map<String, Object> structured = outputMapper.extractStructuredOutput(outputs);
+        Object warning = structured.get("_validationWarning");
+        return warning instanceof String text && !text.isBlank();
     }
 
     private record DifyInvocation(

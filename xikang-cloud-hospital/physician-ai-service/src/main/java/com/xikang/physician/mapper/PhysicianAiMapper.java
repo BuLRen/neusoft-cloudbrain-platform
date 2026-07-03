@@ -36,4 +36,9 @@ public interface PhysicianAiMapper {
     int updateDrugSuggestionAdopted(@Param("id") Long id, @Param("isAdopted") int isAdopted);
 
     int insertAiMedicalRecordLog(Map<String, Object> row);
+
+    Map<String, Object> selectLatestAiMedicalRecordLogBySourceType(
+        @Param("registerId") Long registerId,
+        @Param("sourceType") String sourceType
+    );
 }

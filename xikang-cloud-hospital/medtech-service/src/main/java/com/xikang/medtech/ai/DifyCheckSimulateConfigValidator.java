@@ -30,7 +30,7 @@ public class DifyCheckSimulateConfigValidator {
 
         if (difyWorkflowClient.isCheckSimulateEnabled()) {
             log.info(
-                "模拟检查：已启用 Dify Workflow（base-url={}，api-key 已配置）",
+                "模拟检查：已启用 Dify Workflow（base-url={}，api-key 已配置，v2 入参含 isNormal/techCode）",
                 properties.getBaseUrl()
             );
         } else {
