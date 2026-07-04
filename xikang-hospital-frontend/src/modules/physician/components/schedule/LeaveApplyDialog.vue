@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElButton, ElDialog, ElForm, ElFormItem, ElInput, ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { scheduleApi } from '@/shared/api/modules/schedule'
 import type { DoctorSchedule, LeaveRequest } from '@/shared/types/schedule'
@@ -22,6 +22,20 @@ watch(() => props.modelValue, (v) => { open.value = v })
 watch(open, (v) => emit('update:modelValue', v))
 
 const LEAVE_TYPES = ['事假', '病假', '公假', '其他'] as const
+
+/**
+ * 三天规则：请假日期必须距今 ≥ 3 天
+ * 计算 schedule.workDate 与今天的天数差，不足 3 天不允许提交
+ */
+const MIN_LEAVE_DAYS = 3
+const daysUntilLeave = computed(() => {
+  if (!props.schedule?.workDate) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const leave = new Date(props.schedule.workDate + 'T00:00:00')
+  return Math.round((leave.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+})
+const tooClose = computed(() => daysUntilLeave.value !== null && daysUntilLeave.value < MIN_LEAVE_DAYS)
 
 const formRef = ref<FormInstance | null>(null)
 const form = reactive({
@@ -102,6 +116,11 @@ async function handleSubmit() {
       </div>
     </div>
 
+    <!-- 三天规则提示 -->
+    <div v-if="tooClose" class="leave-warning">
+      ⚠ 该班次距今天仅 {{ daysUntilLeave }} 天，需至少提前 {{ MIN_LEAVE_DAYS }} 天申请请假
+    </div>
+
     <ElForm
       ref="formRef"
       :model="form"
@@ -151,6 +170,7 @@ async function handleSubmit() {
       <ElButton
         type="primary"
         :loading="submitting"
+        :disabled="tooClose"
         class="leave-submit"
         @click="handleSubmit"
       >
@@ -215,6 +235,17 @@ async function handleSubmit() {
   font-size: 16px;
   color: var(--sched-today);
   font-weight: 700;
+}
+
+.leave-warning {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: rgba(235, 145, 32, 0.08);
+  border: 1px solid rgba(235, 145, 32, 0.35);
+  border-radius: 8px;
+  font-size: 12px;
+  color: #b86a00;
+  line-height: 1.5;
 }
 
 /* 类型芯片选择器 */

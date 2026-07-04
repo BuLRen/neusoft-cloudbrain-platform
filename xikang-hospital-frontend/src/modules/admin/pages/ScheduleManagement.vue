@@ -7,12 +7,14 @@ import {
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,
+  ElDrawer,
   ElEmpty,
   ElForm,
   ElFormItem,
   ElInput,
   ElInputNumber,
   ElMessage,
+  ElMessageBox,
   ElOption,
   ElPagination,
   ElSelect,
@@ -30,6 +32,7 @@ import type {
   ScheduleAdjustRequest,
   CalendarDay,
   AiGenerateTaskView,
+  LeaveRequest,
 } from '@/shared/types/schedule'
 import { registrationApi } from '@/shared/api/modules/registration'
 import type { DepartmentOption } from '@/shared/types/registration'
@@ -83,6 +86,17 @@ const calendarData = ref<CalendarDay[]>([])
 const pendingAdjusts = ref<ScheduleAdjustRequest[]>([])
 const selectedAdjust = ref<ScheduleAdjustRequest | null>(null)
 
+// 待审批请假（管理员消息中心）
+const pendingLeaves = ref<LeaveRequest[]>([])
+const leaveDrawerVisible = ref(false)
+const leaveProcessingId = ref<number | null>(null)
+const rejectDialogVisible = ref(false)
+const rejectForm = reactive({
+  leaveId: 0,
+  approverId: 1,
+  reason: '',
+})
+
 // 弹窗状态
 const editScheduleDialogVisible = ref(false)
 const adjustConfirmDialogVisible = ref(false)
@@ -105,6 +119,10 @@ const adjustConfirmForm = reactive({
   remark: '',
 })
 
+// 调整弹窗的两种驳回 loading 状态
+const adjustRejecting = ref(false)
+const adjustRegenerating = ref(false)
+
 // 同步当前操作人 ID（保存调整时使用）
 function syncCurrentOperator() {
   adjustConfirmForm.confirmedBy = currentOperatorId.value
@@ -116,6 +134,7 @@ const statistics = computed(() => ({
   totalQuota: planSchedules.value.reduce((sum, s) => sum + s.totalQuota, 0),
   usedQuota: planSchedules.value.reduce((sum, s) => sum + s.usedQuota, 0),
   pendingAdjusts: pendingAdjusts.value.length,
+  pendingLeaves: pendingLeaves.value.length,
 }))
 
 const filteredPlanSchedules = computed(() => {
@@ -224,6 +243,102 @@ async function loadPlan() {
 // 加载待确认调整
 async function loadPendingAdjusts() {
   pendingAdjusts.value = await scheduleApi.pendingAdjusts()
+}
+
+// 加载待审批请假
+async function loadPendingLeaves() {
+  try {
+    const list = await scheduleApi.leaves({ status: '待审批' })
+    pendingLeaves.value = Array.isArray(list) ? list : []
+  } catch (error) {
+    pendingLeaves.value = []
+  }
+}
+
+// 打开请假审批抽屉
+function openLeaveDrawer() {
+  leaveDrawerVisible.value = true
+  loadPendingLeaves()
+}
+
+// 同意请假（批准后会触发 Dify 7 节点替班工作流，自动生成「待确认调整」）
+async function approveLeave(leave: LeaveRequest) {
+  try {
+    await ElMessageBox.confirm(
+      `确认批准 ${leave.physicianName || '医生 ' + leave.physicianId} 的${leave.leaveType}申请？批准后系统将自动调用 AI 生成替班方案（约 8-10 秒）。`,
+      '审批确认',
+      { type: 'warning', confirmButtonText: '批准', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+
+  leaveProcessingId.value = leave.id
+  // 即刻从待审批列表移除，避免管理员重复点击
+  pendingLeaves.value = pendingLeaves.value.filter((l) => l.id !== leave.id)
+  try {
+    await scheduleApi.approveLeave(leave.id, currentOperatorId.value)
+    ElMessage.success('已批准，AI 替班方案正在生成…')
+    // 等后端把方案落库后再拉取「待确认调整」
+    await loadPendingAdjusts()
+  } catch (error) {
+    // 失败时回滚：把请假放回待审批列表
+    pendingLeaves.value = [leave, ...pendingLeaves.value]
+    ElMessage.error(error instanceof Error ? error.message : '审批失败')
+  } finally {
+    leaveProcessingId.value = null
+  }
+}
+
+// 打开拒绝弹窗
+function openRejectDialog(leave: LeaveRequest) {
+  rejectForm.leaveId = leave.id
+  rejectForm.approverId = currentOperatorId.value
+  rejectForm.reason = ''
+  rejectDialogVisible.value = true
+}
+
+// 确认拒绝
+async function confirmRejectLeave() {
+  if (!rejectForm.reason.trim()) {
+    ElMessage.warning('请填写拒绝原因')
+    return
+  }
+  // 找到当前要拒绝的请假对象，便于失败时回滚
+  const target = pendingLeaves.value.find((l) => l.id === rejectForm.leaveId)
+  leaveProcessingId.value = rejectForm.leaveId
+  // 即刻从待审批列表移除（乐观更新），避免网络慢时管理员重复点击
+  if (target) {
+    pendingLeaves.value = pendingLeaves.value.filter((l) => l.id !== target.id)
+  }
+  try {
+    await scheduleApi.rejectLeave(rejectForm.leaveId, rejectForm.approverId)
+    ElMessage.success('已拒绝该请假申请')
+    rejectDialogVisible.value = false
+    // 后端已确认拒绝，无需重新拉取（乐观更新即终态）
+  } catch (error) {
+    // 失败时回滚：把请假放回待审批列表
+    if (target) {
+      pendingLeaves.value = [target, ...pendingLeaves.value]
+    }
+    ElMessage.error(error instanceof Error ? error.message : '操作失败')
+  } finally {
+    leaveProcessingId.value = null
+  }
+}
+
+// 请假类型 tag 配色
+function getLeaveTypeTone(type: string): 'primary' | 'warning' | 'info' | 'danger' {
+  switch (type) {
+    case '病假':
+      return 'danger'
+    case '事假':
+      return 'warning'
+    case '公假':
+      return 'primary'
+    default:
+      return 'info'
+  }
 }
 
 // 发布计划
@@ -447,14 +562,66 @@ async function confirmAdjust() {
   await loadPlan()
 }
 
-// 驳回调整
+// 驳回调整（直接拒绝）
 async function rejectAdjust() {
   if (!selectedAdjust.value) return
 
-  await scheduleApi.rejectAdjust(selectedAdjust.value.id, adjustConfirmForm.confirmedBy, adjustConfirmForm.remark)
-  ElMessage.success('调整已驳回')
-  adjustConfirmDialogVisible.value = false
-  await loadPendingAdjusts()
+  try {
+    await ElMessageBox.confirm(
+      '确认直接驳回该 AI 替班方案？驳回后需要管理员手动处理该请假记录。',
+      '驳回确认',
+      { type: 'warning', confirmButtonText: '直接驳回', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+
+  adjustRejecting.value = true
+  try {
+    await scheduleApi.rejectAdjust(
+      selectedAdjust.value.id,
+      adjustConfirmForm.confirmedBy,
+      adjustConfirmForm.remark || '不采纳 AI 方案',
+    )
+    ElMessage.success('AI 方案已驳回')
+    adjustConfirmDialogVisible.value = false
+    await loadPendingAdjusts()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '操作失败')
+  } finally {
+    adjustRejecting.value = false
+  }
+}
+
+// 驳回并重新生成（重新调 Dify 工作流）
+async function regenAdjust() {
+  if (!selectedAdjust.value) return
+
+  try {
+    await ElMessageBox.confirm(
+      '确认驳回当前方案并重新生成 AI 替班建议？系统会再次调用 Dify 工作流（约 8-10 秒）。',
+      '重新生成确认',
+      { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+
+  adjustRegenerating.value = true
+  try {
+    await scheduleApi.regenAdjust(
+      selectedAdjust.value.id,
+      adjustConfirmForm.confirmedBy,
+      adjustConfirmForm.remark || '方案不合适，请重新推荐',
+    )
+    ElMessage.success('已重新生成 AI 方案，请查看新的调整建议')
+    adjustConfirmDialogVisible.value = false
+    await loadPendingAdjusts()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '重新生成失败')
+  } finally {
+    adjustRegenerating.value = false
+  }
 }
 
 // 获取状态颜色
@@ -487,6 +654,44 @@ function getAdjustTypeTag(type: string): { text: string; tone: 'primary' | 'warn
   }
 }
 
+/**
+ * 解析 aiSuggestion 字段：可能是 JSON 字符串、被 <think> 包裹的脏字符串、或普通文本
+ * 后端落库时 aiSuggestion 存的是 Dify 返回的 result JSON 原文
+ */
+const parsedAiSuggestion = computed(() => {
+  const raw = selectedAdjust.value?.aiSuggestion || ''
+  const result: {
+    adjustType?: string
+    reason?: string
+    patientNotification?: string
+    source?: string
+  } = {}
+
+  if (!raw) return result
+
+  // 先剥离 <think>...</think> 块（DeepSeek-V4 CoT 污染）
+  let cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim()
+
+  // 尝试提取首个 JSON 对象
+  const match = cleaned.match(/\{[\s\S]*\}/)
+  if (match) {
+    try {
+      const obj = JSON.parse(match[0])
+      result.adjustType = obj.adjust_type || obj.adjustType
+      result.reason = obj.reason
+      result.patientNotification = obj.patient_notification || obj.patientNotification
+      result.source = obj.source
+      return result
+    } catch {
+      // 解析失败：当成纯文本展示
+    }
+  }
+
+  // 兜底：原文展示
+  result.reason = cleaned || raw
+  return result
+})
+
 // 监听筛选条件变化
 watch(
   () => [filter.departmentId, filter.month],
@@ -498,7 +703,7 @@ watch(
 onMounted(async () => {
   loading.value = true
   syncCurrentOperator()
-  await Promise.all([loadDepartments(), loadPendingAdjusts()])
+  await Promise.all([loadDepartments(), loadPendingAdjusts(), loadPendingLeaves()])
   loading.value = false
   // 进入页面时尝试拉一次后台任务,让离开又回来的用户能看到横幅
   const view = await refreshAiTaskOnce()
@@ -516,6 +721,17 @@ onMounted(async () => {
       eyebrow="Role B / Admin"
     >
       <template #actions>
+        <ElBadge
+          :value="statistics.pendingLeaves"
+          :max="99"
+          :hidden="statistics.pendingLeaves === 0"
+          class="message-bell"
+        >
+          <ElButton class="message-bell__btn" @click="openLeaveDrawer" aria-label="待审批消息">
+            <span class="message-bell__icon" aria-hidden="true">🔔</span>
+            <span class="message-bell__label">消息</span>
+          </ElButton>
+        </ElBadge>
         <ElButton type="primary" :loading="generating" @click="generateByAI">AI生成排班</ElButton>
       </template>
     </PageHeader>
@@ -607,6 +823,17 @@ onMounted(async () => {
             </ElBadge>
             <span class="stat-label">待确认调整</span>
           </div>
+          <button
+            class="stat-item stat-leave"
+            :class="{ 'is-empty': statistics.pendingLeaves === 0 }"
+            @click="openLeaveDrawer"
+            type="button"
+          >
+            <ElBadge :value="statistics.pendingLeaves" :max="99" :hidden="statistics.pendingLeaves === 0">
+              <span class="stat-value">{{ statistics.pendingLeaves }}</span>
+            </ElBadge>
+            <span class="stat-label">待审批请假</span>
+          </button>
         </div>
 
         <div class="plan-actions">
@@ -717,6 +944,38 @@ onMounted(async () => {
         </div>
 
         <ElEmpty v-else description="暂无待确认的调整" />
+      </GlassCard>
+
+      <!-- 待审批请假预览（侧栏快捷区，点击打开抽屉查看详情） -->
+      <GlassCard class="leave-preview-card">
+        <div class="section-header">
+          <h3>
+            <ElBadge :value="pendingLeaves.length" :max="99">
+              待审批请假
+            </ElBadge>
+          </h3>
+          <ElButton link type="primary" @click="openLeaveDrawer">全部</ElButton>
+        </div>
+        <div v-if="pendingLeaves.length > 0" class="leave-preview-list">
+          <div
+            v-for="leave in pendingLeaves.slice(0, 3)"
+            :key="leave.id"
+            class="leave-preview-item"
+            @click="openLeaveDrawer"
+          >
+            <div class="leave-preview-left">
+              <span class="leave-preview-day">{{ leave.leaveDate?.slice(-2) }}</span>
+              <div class="leave-preview-meta">
+                <strong>{{ leave.physicianName || '医生 ' + leave.physicianId }}</strong>
+                <small>{{ leave.leaveType }} · {{ leave.timeSlot || '全天' }}</small>
+              </div>
+            </div>
+            <ElTag :type="getLeaveTypeTone(leave.leaveType)" size="small" effect="plain">
+              {{ leave.leaveType }}
+            </ElTag>
+          </div>
+        </div>
+        <ElEmpty v-else description="暂无待审批请假" :image-size="60" />
       </GlassCard>
 
       <!-- 排班列表 -->
@@ -921,8 +1180,24 @@ onMounted(async () => {
         </ElDescriptions>
 
         <div class="ai-suggestion-box" v-if="selectedAdjust.aiSuggestion">
-          <h4>AI分析</h4>
-          <p>{{ selectedAdjust.aiSuggestion }}</p>
+          <h4>AI 分析</h4>
+          <div class="ai-suggestion-box__fields">
+            <div v-if="parsedAiSuggestion.adjustType" class="ai-field">
+              <span class="ai-field__label">调整方式</span>
+              <ElTag size="small" effect="plain" type="primary">{{ parsedAiSuggestion.adjustType }}</ElTag>
+            </div>
+            <div v-if="parsedAiSuggestion.reason" class="ai-field">
+              <span class="ai-field__label">推荐理由</span>
+              <p class="ai-field__text">{{ parsedAiSuggestion.reason }}</p>
+            </div>
+            <div v-if="parsedAiSuggestion.patientNotification" class="ai-field">
+              <span class="ai-field__label">患者通知</span>
+              <p class="ai-field__text ai-field__text--quote">{{ parsedAiSuggestion.patientNotification }}</p>
+            </div>
+            <div v-if="parsedAiSuggestion.source" class="ai-field ai-field--meta">
+              <span class="ai-field__source">来源：{{ parsedAiSuggestion.source === 'ai' ? 'AI 推理' : parsedAiSuggestion.source }}</span>
+            </div>
+          </div>
         </div>
 
         <ElForm label-position="top" class="mt">
@@ -934,8 +1209,124 @@ onMounted(async () => {
 
       <template #footer>
         <ElButton @click="adjustConfirmDialogVisible = false">取消</ElButton>
-        <ElButton type="danger" plain @click="rejectAdjust">驳回</ElButton>
-        <ElButton type="primary" @click="confirmAdjust">确认执行</ElButton>
+        <ElButton
+          type="warning"
+          plain
+          :loading="adjustRegenerating"
+          :disabled="adjustRejecting"
+          @click="regenAdjust"
+        >
+          {{ adjustRegenerating ? 'AI 重新生成中…' : '驳回并重新生成' }}
+        </ElButton>
+        <ElButton
+          type="danger"
+          plain
+          :loading="adjustRejecting"
+          :disabled="adjustRegenerating"
+          @click="rejectAdjust"
+        >
+          直接驳回
+        </ElButton>
+        <ElButton type="primary" :disabled="adjustRejecting || adjustRegenerating" @click="confirmAdjust">确认执行</ElButton>
+      </template>
+    </ElDialog>
+
+    <!-- 请假审批消息中心抽屉 -->
+    <ElDrawer
+      v-model="leaveDrawerVisible"
+      title="消息中心 · 待审批请假"
+      direction="rtl"
+      size="460px"
+      class="leave-drawer"
+    >
+      <div class="leave-drawer__toolbar">
+        <span class="leave-drawer__count">共 {{ pendingLeaves.length }} 条待审批</span>
+        <ElButton link type="primary" @click="loadPendingLeaves">刷新</ElButton>
+      </div>
+
+      <!-- AI 生成中横幅 -->
+      <div v-if="leaveProcessingId !== null" class="leave-ai-loading">
+        <span class="leave-ai-loading__spinner" aria-hidden="true"></span>
+        <div class="leave-ai-loading__body">
+          <strong>AI 替班方案生成中</strong>
+          <small>Dify 7 节点工作流正在推理，约 8-10 秒…</small>
+        </div>
+      </div>
+
+      <div v-if="pendingLeaves.length > 0" class="leave-drawer__list">
+        <div v-for="leave in pendingLeaves" :key="leave.id" class="leave-card">
+          <div class="leave-card__top">
+            <div class="leave-card__physician">
+              <span class="leave-card__avatar" aria-hidden="true">
+                {{ (leave.physicianName || '?').charAt(0) }}
+              </span>
+              <div class="leave-card__name-block">
+                <strong>{{ leave.physicianName || '医生 ' + leave.physicianId }}</strong>
+                <small>提交于 {{ leave.createTime }}</small>
+              </div>
+            </div>
+            <ElTag :type="getLeaveTypeTone(leave.leaveType)" size="small" effect="light">
+              {{ leave.leaveType }}
+            </ElTag>
+          </div>
+
+          <div class="leave-card__date-row">
+            <div class="leave-card__date-block">
+              <span class="leave-card__date-label">请假日期</span>
+              <strong class="leave-card__date-value">{{ leave.leaveDate }}</strong>
+              <span class="leave-card__slot">{{ leave.timeSlot || '全天' }}</span>
+            </div>
+          </div>
+
+          <div v-if="leave.reason" class="leave-card__reason">
+            <span class="leave-card__reason-label">原因</span>
+            <p>{{ leave.reason }}</p>
+          </div>
+
+          <div class="leave-card__actions">
+            <ElButton
+              type="primary"
+              :loading="leaveProcessingId === leave.id"
+              @click="approveLeave(leave)"
+            >
+              {{ leaveProcessingId === leave.id ? 'AI 生成中…' : '批准' }}
+            </ElButton>
+            <ElButton
+              type="danger"
+              plain
+              :disabled="leaveProcessingId === leave.id"
+              @click="openRejectDialog(leave)"
+            >
+              拒绝
+            </ElButton>
+          </div>
+        </div>
+      </div>
+
+      <ElEmpty v-else description="暂无待审批请假，所有申请已处理完毕" />
+    </ElDrawer>
+
+    <!-- 拒绝原因弹窗 -->
+    <ElDialog
+      v-model="rejectDialogVisible"
+      title="拒绝请假申请"
+      width="440px"
+      class="schedule-dialog"
+      :close-on-click-modal="false"
+    >
+      <ElForm label-position="top">
+        <ElFormItem label="拒绝原因" required>
+          <ElInput
+            v-model="rejectForm.reason"
+            type="textarea"
+            :rows="3"
+            placeholder="请填写拒绝原因，将通知申请医生"
+          />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="rejectDialogVisible = false">取消</ElButton>
+        <ElButton type="danger" @click="confirmRejectLeave">确认拒绝</ElButton>
       </template>
     </ElDialog>
   </div>
@@ -954,7 +1345,8 @@ onMounted(async () => {
 
 .calendar-card,
 .adjust-card,
-.schedule-list-card {
+.schedule-list-card,
+.leave-preview-card {
   padding: var(--space-5);
 }
 
@@ -1069,7 +1461,12 @@ onMounted(async () => {
 
 .adjust-card {
   grid-column: 2;
-  grid-row: 1 / 3;
+  grid-row: 1;
+}
+
+.leave-preview-card {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .schedule-list-card {
@@ -1437,6 +1834,60 @@ onMounted(async () => {
   color: var(--color-text);
 }
 
+/* AI 建议结构化字段 */
+.ai-suggestion-box__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-field__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-ai);
+  text-transform: uppercase;
+}
+
+.ai-field__text {
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--color-text);
+  border-inline-start: 2px solid var(--color-ai);
+}
+
+.ai-field__text--quote {
+  font-style: italic;
+  color: var(--color-text-soft);
+  background: rgba(245, 159, 0, 0.06);
+  border-inline-start-color: var(--color-warning);
+}
+
+.ai-field--meta {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.ai-field__source {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .mt {
   margin-top: var(--space-4);
 }
@@ -1473,9 +1924,14 @@ onMounted(async () => {
     grid-row: 2;
   }
 
-  .schedule-list-card {
+  .leave-preview-card {
     grid-column: 1;
     grid-row: 3;
+  }
+
+  .schedule-list-card {
+    grid-column: 1;
+    grid-row: 4;
   }
 
   .statistics {
@@ -1594,5 +2050,375 @@ onMounted(async () => {
 
 .ai-task-banner__actions {
   flex-shrink: 0;
+}
+
+/* ============ 消息铃铛（PageHeader 操作区） ============ */
+.message-bell {
+  margin-inline-end: var(--space-2);
+}
+
+.message-bell__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.message-bell__btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.message-bell__icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.message-bell__label {
+  font-weight: 500;
+}
+
+/* ============ 待审批请假统计芯片（筛选区） ============ */
+.stat-leave {
+  appearance: none;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid rgba(235, 145, 32, 0.35);
+  background: linear-gradient(135deg, rgba(235, 145, 32, 0.14), rgba(235, 145, 32, 0.06));
+}
+
+.stat-leave .stat-value {
+  color: #b86a00;
+}
+
+.stat-leave .stat-label {
+  color: #8a4f00;
+}
+
+.stat-leave:hover {
+  border-color: rgba(235, 145, 32, 0.7);
+  box-shadow: 0 4px 14px rgba(235, 145, 32, 0.22);
+  transform: translateY(-1px);
+}
+
+.stat-leave.is-empty {
+  background: var(--color-primary-soft);
+  border-color: var(--color-border);
+}
+
+.stat-leave.is-empty .stat-value,
+.stat-leave.is-empty .stat-label {
+  color: var(--color-text-muted);
+}
+
+/* ============ 侧栏「待审批请假预览」卡片 ============ */
+.leave-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.leave-preview-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-strong);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.leave-preview-item:hover {
+  border-color: var(--color-primary);
+  transform: translateX(2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.leave-preview-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.leave-preview-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 34px;
+  block-size: 34px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(235, 145, 32, 0.18), rgba(235, 145, 32, 0.08));
+  color: #b86a00;
+  font-weight: 700;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.leave-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.leave-preview-meta strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leave-preview-meta small {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+/* ============ 请假审批消息抽屉 ============ */
+.leave-drawer :deep(.el-drawer__header) {
+  margin-bottom: 0;
+  padding: 20px 20px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.04), rgba(31, 140, 255, 0.04));
+}
+
+.leave-drawer :deep(.el-drawer__title) {
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.leave-drawer :deep(.el-drawer__body) {
+  padding: 16px 20px 24px;
+}
+
+.leave-drawer__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.leave-drawer__count {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+/* AI 生成中横幅 */
+.leave-ai-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.12), rgba(31, 140, 255, 0.08));
+  border: 1px solid rgba(124, 92, 255, 0.25);
+}
+
+.leave-ai-loading__spinner {
+  display: inline-block;
+  inline-size: 16px;
+  block-size: 16px;
+  border: 2px solid rgba(124, 92, 255, 0.25);
+  border-top-color: var(--color-ai);
+  border-radius: 50%;
+  animation: leave-spin 800ms linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes leave-spin {
+  to { transform: rotate(360deg); }
+}
+
+.leave-ai-loading__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.leave-ai-loading__body strong {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-ai);
+}
+
+.leave-ai-loading__body small {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.leave-drawer__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 单条请假卡片 */
+.leave-card {
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-strong);
+  transition: all var(--duration-fast) var(--ease-standard);
+  position: relative;
+  overflow: hidden;
+}
+
+.leave-card::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  background: var(--gradient-ai);
+  opacity: 0.7;
+}
+
+.leave-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.leave-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: 12px;
+}
+
+.leave-card__physician {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.leave-card__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.leave-card__name-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.leave-card__name-block strong {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leave-card__name-block small {
+  font-size: 0.7rem;
+  color: var(--color-text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.leave-card__date-row {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(31, 140, 255, 0.06), rgba(124, 92, 255, 0.04));
+  border-radius: var(--radius-md);
+}
+
+.leave-card__date-block {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.leave-card__date-label {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.leave-card__date-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-primary-strong);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.leave-card__slot {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.leave-card__reason {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-inline-start: 2px solid var(--color-border);
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.leave-card__reason-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.leave-card__reason p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.leave-card__actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.leave-card__actions .el-button {
+  flex: 1;
 }
 </style>

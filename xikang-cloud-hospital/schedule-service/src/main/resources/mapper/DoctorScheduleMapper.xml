@@ -188,6 +188,19 @@
         WHERE id = #{id}
     </update>
 
+    <!--
+        排班调整时同步挂号表 register：把对应 scheduling_id 的所有挂号记录的 employee_id 改为新医生。
+        register 表无 physician_name 字段（医生姓名通过 JOIN employee 查），所以这里只改 employee_id。
+        通知标记由前端通过 schedule.modify_remark JOIN 显示。
+        条件：scheduling_id = #{scheduleId} AND employee_id = #{oldPhysicianId}（双重保险防止误改）
+    -->
+    <update id="updateRegistrationsPhysician">
+        UPDATE register
+        SET employee_id = #{newPhysicianId}
+        WHERE scheduling_id = #{scheduleId}
+          AND employee_id = #{oldPhysicianId}
+    </update>
+
     <update id="deleteById">
         UPDATE doctor_schedule SET delmark = 1 WHERE id = #{id}
     </update>

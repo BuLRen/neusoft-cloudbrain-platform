@@ -63,16 +63,28 @@ public class LeaveRequestService {
      * 创建请假申请
      * <p>只落库，不触发 AI。AI 替班推荐由 {@link #processLeave} 在审批通过后调用。
      * <p>autoProcess 参数保留兼容性，当前忽略（审批流程才触发 Dify）。
+     * <p>业务规则：请假日期必须距今 ≥ 3 天（给医院时间安排替班 + 通知患者改约）。
      */
     @Transactional
     public LeaveRequest createLeave(LeaveRequest leaveRequest, boolean autoProcess) {
+        // 三天规则校验
+        if (leaveRequest.getLeaveDate() == null) {
+            throw new RuntimeException("请假日期不能为空");
+        }
+        long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), leaveRequest.getLeaveDate());
+        if (daysBetween < 3) {
+            throw new RuntimeException(
+                    String.format("请假日期需至少提前 3 天申请（当前距 %s 仅 %d 天）",
+                            leaveRequest.getLeaveDate(), daysBetween));
+        }
+
         leaveRequest.setStatus("待审批");
         leaveRequest.setAutoProcessed(autoProcess);
         leaveRequestMapper.insert(leaveRequest);
 
-        log.info("创建请假申请：医生ID={}, 日期={}, 时段={}, autoProcess={}",
+        log.info("创建请假申请：医生ID={}, 日期={}, 时段={}, 距今天数={}, autoProcess={}",
                 leaveRequest.getPhysicianId(), leaveRequest.getLeaveDate(),
-                leaveRequest.getTimeSlot(), autoProcess);
+                leaveRequest.getTimeSlot(), daysBetween, autoProcess);
 
         return leaveRequest;
     }
@@ -169,6 +181,26 @@ public class LeaveRequestService {
         return doctorScheduleMapper.selectByPhysicianAndDate(
                 leave.getPhysicianId(), leave.getLeaveDate(),
                 leave.getTimeSlot() != null ? leave.getTimeSlot() : "上午");
+    }
+
+    /**
+     * 通过排班 ID 反查请假记录 ID（给 regenAdjust 用）
+     * <p>规则：找到 schedule 表对应的 physicianId/workDate/timeSlot，
+     * 再去 leave 表匹配同医生同日期的请假记录。
+     */
+    public Long findLeaveIdByScheduleId(Long scheduleId) {
+        DoctorSchedule schedule = doctorScheduleMapper.selectById(scheduleId);
+        if (schedule == null) return null;
+
+        // 反查 leave：physicianId + leaveDate = schedule.workDate
+        List<LeaveRequest> leaves = leaveRequestMapper.selectByPhysician(schedule.getPhysicianId());
+        return leaves.stream()
+                .filter(l -> schedule.getWorkDate() != null
+                        && schedule.getWorkDate().equals(l.getLeaveDate()))
+                .filter(l -> l.getTimeSlot() == null || l.getTimeSlot().equals(schedule.getTimeSlot()))
+                .map(LeaveRequest::getId)
+                .findFirst()
+                .orElse(null);
     }
 
     /**

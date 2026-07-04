@@ -3,6 +3,7 @@ package com.xikang.schedule.controller;
 import com.xikang.schedule.entity.DoctorSchedule;
 import com.xikang.schedule.entity.LeaveRequest;
 import com.xikang.schedule.entity.ScheduleAdjustRequest;
+import com.xikang.schedule.service.DifyIntegrationService;
 import com.xikang.schedule.service.LeaveRequestService;
 import com.xikang.schedule.service.ScheduleAdjustService;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class LeaveController {
 
     private final LeaveRequestService leaveRequestService;
     private final ScheduleAdjustService scheduleAdjustService;
+    private final DifyIntegrationService difyIntegrationService;
 
     /** Dify HTTP 节点回调时的简单鉴权 token（防止外部恶意调用） */
     @Value("${dify.callback-token:schedule-internal-2026}")
@@ -43,7 +45,8 @@ public class LeaveController {
     public Map<String, Object> getAllLeaves(
             @RequestParam(required = false) Long physicianId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) String status) {
 
         List<LeaveRequest> leaves;
         if (physicianId != null && startDate != null && endDate != null) {
@@ -52,6 +55,13 @@ public class LeaveController {
             leaves = leaveRequestService.getByPhysician(physicianId);
         } else {
             leaves = leaveRequestService.getAll();
+        }
+
+        // 按状态过滤（前端"待审批"tab 用），后端已落"已拒绝/已批准"的不再返回
+        if (status != null && !status.isBlank()) {
+            leaves = leaves.stream()
+                    .filter(l -> status.equals(l.getStatus()))
+                    .toList();
         }
 
         return success(leaves);
@@ -95,9 +105,13 @@ public class LeaveController {
         }
 
         boolean autoProcess = body.containsKey("autoProcess") && (Boolean) body.get("autoProcess");
-        LeaveRequest created = leaveRequestService.createLeave(leave, autoProcess);
-
-        return success(created);
+        try {
+            LeaveRequest created = leaveRequestService.createLeave(leave, autoProcess);
+            return success(created);
+        } catch (RuntimeException e) {
+            log.warn("创建请假失败：{}", e.getMessage());
+            return error(e.getMessage());
+        }
     }
 
     /**
@@ -134,6 +148,37 @@ public class LeaveController {
         leaveRequestService.rejectLeave(leaveId, approverId);
 
         return success("已拒绝");
+    }
+
+    /**
+     * 重新生成 AI 替班方案
+     * <p>管理员驳回原 AI 方案后，可选择「重新生成」再次调 Dify 工作流。
+     * <p>流程：把原 adjust 标记为「已驳回-重新生成」→ 用原 scheduleId 反查 leaveId
+     * → 调用 LeaveRequestService.processLeave 重新跑 Dify → 返回新 adjust。
+     */
+    @PostMapping("/adjust/regen")
+    public Map<String, Object> regenAdjust(@RequestBody Map<String, Object> body) {
+        Long requestId = ((Number) body.get("requestId")).longValue();
+        Long operatorId = ((Number) body.get("operatorId")).longValue();
+        String reason = body.containsKey("reason") ? (String) body.get("reason") : "重新生成";
+
+        // 1. 标记原 adjust 为「已驳回-重新生成」
+        ScheduleAdjustRequest oldAdjust = scheduleAdjustService.regenAdjust(requestId, operatorId, reason);
+
+        // 2. 通过 scheduleId 反查 leaveId
+        Long scheduleId = oldAdjust.getScheduleId();
+        Long leaveId = leaveRequestService.findLeaveIdByScheduleId(scheduleId);
+        if (leaveId == null) {
+            return error("未找到对应的请假记录，无法重新生成");
+        }
+
+        // 3. 重新跑 Dify 工作流生成新方案
+        ScheduleAdjustRequest newAdjust = leaveRequestService.processLeave(leaveId);
+        if (newAdjust == null) {
+            return error("重新生成失败：未找到对应排班");
+        }
+
+        return success(newAdjust);
     }
 
     /**
@@ -180,21 +225,10 @@ public class LeaveController {
             return error("未找到对应排班");
         }
 
-        // 聚合候选医生（预筛过的）
-        List<Map<String, Object>> candidates = leaveRequestService.getAvailableSubstitutes(
-                schedule.getDepartmentId(), leave.getLeaveDate(),
-                leave.getTimeSlot(), leave.getPhysicianId())
-                .stream()
-                .map(s -> {
-                    Map<String, Object> c = new LinkedHashMap<>();
-                    c.put("physicianId", s.getPhysicianId());
-                    c.put("name", s.getPhysicianName() != null ? s.getPhysicianName() : "医生" + s.getPhysicianId());
-                    c.put("title", s.getRegistLevelName() != null ? s.getRegistLevelName() : "普通号");
-                    c.put("weeklyLoad", 0); // 简化字段
-                    c.put("availableSlots", s.getTimeSlot() != null ? s.getTimeSlot() : "全天空闲");
-                    return c;
-                })
-                .toList();
+        // 聚合候选医生 — 必须用和 findLeaveSubstitutes 完全一致的查询，
+        // 否则 LLM 看到的候选（HTTP 节点 3）和守门员校验的候选（开始节点 brief）会不一致，
+        // LLM 推荐的 ID 不在 brief 里 → 触发 fallback。
+        List<Map<String, Object>> candidates = difyIntegrationService.findLeaveSubstitutesPublic(schedule, leave);
 
         // 组装返回
         Map<String, Object> leaveInfo = new LinkedHashMap<>();

@@ -37,6 +37,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -141,29 +142,105 @@ public class DifyIntegrationService {
         }
 
         // 4. 解析 + 守门员校验
-        return parseLeaveAdjustResult(rawResponse, candidates);
+        DifyLeaveAdjustResult parsed = parseLeaveAdjustResult(rawResponse, candidates);
+
+        // 5. 兜底：LLM 可能在 patient_notification 里编"医生1/医生X"等占位词，
+        //    用 leave 的真实姓名做一次替换，保证患者看到的是真名。
+        if (parsed != null && parsed.getPatientNotification() != null) {
+            String realName = StringUtils.hasText(leave.getPhysicianName())
+                    ? leave.getPhysicianName()
+                    : "医生" + leave.getPhysicianId();
+            String cleaned = parsed.getPatientNotification()
+                    .replaceAll("医生\\s*" + leave.getPhysicianId() + "\\s*号?", realName)
+                    .replaceAll("医生\\s*[一二三四五六七八九十]\\s*号?", realName)
+                    .replaceAll("某医生|某某医生|医生X|医生x", realName);
+            if (!cleaned.equals(parsed.getPatientNotification())) {
+                log.info("patient_notification 占位词替换：{} → 医生{}({})",
+                        parsed.getPatientNotification(), leave.getPhysicianId(), realName);
+                parsed.setPatientNotification(cleaned);
+            }
+        }
+
+        return parsed;
     }
 
     /**
-     * 后端预筛替班候选（SQL + Java 双重过滤）
-     * <p>规则：同科室 + 当天在岗 + 状态正常 + 有余号 + 排除请假医生本人。
+     * 后端预筛替班候选（public 版本，返回 Map 列表，供 Controller 复用）
+     * <p>规则：同科室 + 同挂号级别（不允许低价位降级）+ 当天不在同时段已经有班次
+     *          + 状态正常 + 有余号 + 排除请假医生本人。
+     * <p>关键：开始节点 brief 和 HTTP 节点 3 必须用同一个查询，
+     *    否则 LLM 看到的候选和守门员校验的候选不一致，会触发 fallback。
+     *
+     * @return List of Map，每个 Map 含 physicianId/name/title/weeklyLoad/availableSlots/availableQuota
+     */
+    public List<java.util.Map<String, Object>> findLeaveSubstitutesPublic(DoctorSchedule schedule, LeaveRequest leave) {
+        return findLeaveSubstitutes(schedule, leave).stream()
+                .map(c -> {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("physicianId", c.getPhysicianId());
+                    m.put("name", c.getPhysicianName());
+                    m.put("title", c.getRegistLevelName());
+                    m.put("weeklyLoad", c.getWeeklyLoad());
+                    m.put("availableSlots", c.getAvailableSlots());
+                    m.put("availableQuota", c.getAvailableQuota());
+                    return m;
+                })
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    /**
+     * 后端预筛替班候选（实际实现）
+     * <p>规则：同科室 + 同挂号级别（不允许低价位降级）+ 当天不在同时段已经有班次
+     *          + 状态正常 + 有余号 + 排除请假医生本人。
+     * <p>同时段无班次过滤是关键：避免唯一约束 idx_ds_unique 冲突，
+     *    也避免给 LLM 推荐一个"已经在那个时段上班"的医生。
      */
     private List<SubstituteCandidate> findLeaveSubstitutes(DoctorSchedule schedule, LeaveRequest leave) {
         try {
             List<DoctorSchedule> available = doctorScheduleMapper.selectAvailable(
                     schedule.getDepartmentId(), leave.getLeaveDate());
-            return available.stream()
+
+            // 请假时段（leave 表里的 time_slot 可能是"全天"，回退到 schedule.timeSlot）
+            String leaveSlot = leave.getTimeSlot() != null ? leave.getTimeSlot() : schedule.getTimeSlot();
+
+            // 拉取挂号级别价目表（用于按 price 过滤）
+            Map<Long, BigDecimal> levelPriceMap = loadRegistLevelPriceMap();
+            BigDecimal leavePrice = levelPriceMap.get(schedule.getRegistLevelId());
+            log.info("替班候选筛选：leavePrice={} (registLevelId={})", leavePrice, schedule.getRegistLevelId());
+
+            List<SubstituteCandidate> result = available.stream()
                     .filter(s -> !s.getPhysicianId().equals(leave.getPhysicianId()))
                     .filter(s -> "正常".equals(s.getStatus()))
                     .filter(s -> s.getAvailableQuota() != null && s.getAvailableQuota() > 0)
+                    // 价位过滤：候选医生挂号费 >= 请假医生挂号费
+                    // 业务规则：允许高价医生替班低价医生（患者不补差价，相当于升级服务）
+                    //          禁止低价医生替班高价医生（避免患者花专家号的钱看普通号）
+                    .filter(s -> {
+                        if (leavePrice == null) return true;  // 请假医生级别价目查不到，不过滤
+                        BigDecimal candidatePrice = levelPriceMap.get(s.getRegistLevelId());
+                        if (candidatePrice == null) return false;  // 候选级别价目查不到，不通过
+                        return candidatePrice.compareTo(leavePrice) >= 0;
+                    })
+                    // 同时段无班次过滤：避免唯一约束冲突 + 避免 LLM 推荐已经在那个时段上班的医生
+                    .filter(s -> {
+                        DoctorSchedule conflict = doctorScheduleMapper.selectByPhysicianAndDate(
+                                s.getPhysicianId(), leave.getLeaveDate(), leaveSlot);
+                        return conflict == null;
+                    })
                     .map(s -> {
                         SubstituteCandidate c = new SubstituteCandidate();
                         c.setPhysicianId(s.getPhysicianId());
-                        c.setWeeklyLoad(0); // 简化：当前只用可用号源判断
-                        c.setAvailableSlots(s.getTimeSlot() != null ? s.getTimeSlot() : "全天空闲");
+                        c.setPhysicianName(s.getPhysicianName() != null
+                                ? s.getPhysicianName() : "医生" + s.getPhysicianId());
+                        c.setRegistLevelName(s.getRegistLevelName() != null
+                                ? s.getRegistLevelName() : "普通号");
+                        c.setWeeklyLoad(0);
+                        c.setAvailableSlots(leaveSlot != null ? leaveSlot + "空闲" : "全天空闲");
+                        c.setAvailableQuota(s.getAvailableQuota());
                         return c;
                     })
                     .collect(Collectors.toList());
+            return result;
         } catch (Exception ex) {
             log.warn("查询替班候选失败：{}", ex.getMessage());
             return Collections.emptyList();
@@ -172,22 +249,37 @@ public class DifyIntegrationService {
 
     /**
      * 构造 Dify 开始节点输入（全部 string，规避 Dify 类型限制）
+     * <p>关键修复：必须把"请假医生真实姓名"传给 LLM，否则 LLM 拿不到姓名会在
+     * patient_notification 里编"医生1""医生X"等占位词，患者看到很怪。
      */
     private Map<String, Object> buildLeaveWorkflowInput(LeaveRequest leave,
                                                          DoctorSchedule schedule,
                                                          List<SubstituteCandidate> candidates) {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("leave_id", String.valueOf(leave.getId()));
-        input.put("leave_summary", String.format("%s %s 科室%d 医生%d 因%s 请%s",
+
+        // 请假医生真实姓名（LeaveRequestMapper.selectById 已 JOIN employee 带出 physician_name）
+        String leavingPhysicianName = StringUtils.hasText(leave.getPhysicianName())
+                ? leave.getPhysicianName()
+                : "医生" + leave.getPhysicianId();
+        input.put("leaving_physician_name", leavingPhysicianName);
+
+        input.put("leave_summary", String.format("%s %s 科室%d %s医生(ID=%d) 因%s 请%s",
                 leave.getLeaveDate(),
                 leave.getTimeSlot() != null ? leave.getTimeSlot() : "全天",
                 schedule.getDepartmentId(),
+                leavingPhysicianName,
                 leave.getPhysicianId(),
                 StringUtils.hasText(leave.getReason()) ? leave.getReason() : "请假",
                 leave.getLeaveType() != null ? leave.getLeaveType() : "事假"));
         input.put("candidates_brief", candidates.stream()
-                .map(c -> String.format("医生%d(%d,本周%d班,%s)",
-                        c.getPhysicianId(), c.getPhysicianId(), c.getWeeklyLoad(), c.getAvailableSlots()))
+                .map(c -> String.format("(%d,%s,%s,本周%d班,%s,余号%d)",
+                        c.getPhysicianId(),
+                        c.getPhysicianName(),
+                        c.getRegistLevelName(),
+                        c.getWeeklyLoad(),
+                        c.getAvailableSlots(),
+                        c.getAvailableQuota() != null ? c.getAvailableQuota() : 0))
                 .collect(Collectors.joining("|")));
         input.put("affected_count", String.valueOf(schedule.getUsedQuota() != null ? schedule.getUsedQuota() : 0));
         return input;
@@ -236,8 +328,25 @@ public class DifyIntegrationService {
     }
 
     /**
-     * 解析 Dify 替班工作流返回 + 守门员校验
-     * <p>双重防幻觉：① 用正则提取 JSON 块；② 校验 substitute_id 在候选清单内。
+     * 解析 Dify 替班工作流返回 + 后端校验（v2.0 架构）。
+     * <p>v2.0 关键变化：Dify 工作流只剩 Start → HTTP → LLM → End 四个节点，
+     * 所有 JSON 解析和候选校验都挪到本方法。
+     *
+     * <p>解析顺序（兼容 Dify 各种输出形态）：
+     * <ol>
+     *   <li>从 {@code data.outputs} 拿结果字段（v2.0 字段名 {@code llm_result}，兼容旧 {@code result}）</li>
+     *   <li>用 {@link #extractOutermostJson} 括号配平算法提取最外层 JSON
+     *       （能正确处理 {@code <think>} 标签污染、markdown 包裹、嵌套对象）</li>
+     *   <li>取 substitute_id / substitute_name / reason 等字段</li>
+     * </ol>
+     *
+     * <p>候选 ID 实时校验（替代旧版 Dify 节点 6 守门员）：
+     * 拿到 substitute_id 后，重新查 DB 确认该医生仍在最新候选清单内
+     * （同科室 + 同价位 + 同时段无班次冲突）。不在则降级到候选首位 + source=fallback。
+     *
+     * @param rawResponse Dify blocking 模式返回的完整 JSON 字符串
+     * @param candidates  后端预筛候选（用于降级时取首位）
+     * @return 解析后的 DTO；解析失败或工作流出错时返回 source=error
      */
     private DifyLeaveAdjustResult parseLeaveAdjustResult(String rawResponse,
                                                           List<SubstituteCandidate> candidates) {
@@ -261,43 +370,66 @@ public class DifyIntegrationService {
                 outputs = objectMapper.readTree(outputs.asText());
             }
 
-            // 从 outputs 里取 result 字段（JSON-in-String）
-            String jsonStr = outputs.path("result").asText("");
+            // v2.0：优先取 llm_result（LLM 节点直出），兼容旧 result 字段
+            String jsonStr = outputs.path("llm_result").asText("");
             if (!StringUtils.hasText(jsonStr)) {
-                // 兼容：直接整个 outputs 当 JSON
+                jsonStr = outputs.path("result").asText("");
+            }
+            if (!StringUtils.hasText(jsonStr)) {
+                // 兜底：整个 outputs 当 JSON
                 jsonStr = outputs.toString();
             }
 
-            // 正则提取 {...}（防止 LLM 输出带 markdown 代码块）
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("\\{[^{}]*\\}", java.util.regex.Pattern.DOTALL)
-                    .matcher(jsonStr);
-            String cleanJson = m.find() ? m.group() : jsonStr;
-
+            // 用括号配平算法提取最外层 JSON 对象
+            // 能正确处理 <think> 污染、markdown 代码块、嵌套对象、首尾杂文本
+            String cleanJson = extractOutermostJson(jsonStr);
             JsonNode payload = objectMapper.readTree(cleanJson);
 
-            // 守门员校验：substitute_id 必须在候选清单内
             String substituteId = payload.path("substitute_id").asText("");
-            boolean valid = candidates.stream()
-                    .anyMatch(c -> String.valueOf(c.getPhysicianId()).equals(substituteId));
+            String substituteNameFromLlm = payload.path("substitute_name").asText("");
 
-            if (!valid) {
-                // 降级：取候选清单第一个
-                SubstituteCandidate fallback = candidates.get(0);
-                log.warn("Dify 返回的 substitute_id={} 不在候选清单，降级到首位 {}",
-                        substituteId, fallback.getPhysicianId());
-                result.setSubstitutePhysicianId(fallback.getPhysicianId());
-                result.setSubstitutePhysicianName("候选医生" + fallback.getPhysicianId());
-                result.setReason("AI 推荐 ID 非法，降级到候选首位");
-                result.setSource("fallback");
-            } else {
-                result.setSubstitutePhysicianId(Long.valueOf(substituteId));
-                result.setSubstitutePhysicianName(payload.path("substitute_name").asText(""));
+            // —— 候选 ID 实时校验（替代 Dify 节点 6 守门员）——
+            // LLM 推理可能基于 HTTP 节点 3 拿到的"宽松候选"推荐，
+            // 后端要按"严格候选"二次校验：不在则降级到候选首位。
+            Optional<SubstituteCandidate> matched = candidates.stream()
+                    .filter(c -> String.valueOf(c.getPhysicianId()).equals(substituteId))
+                    .findFirst();
+
+            if (matched.isPresent()) {
+                // 校验通过：LLM 推荐合法，原样采用
+                SubstituteCandidate c = matched.get();
+                result.setSubstitutePhysicianId(c.getPhysicianId());
+                // 优先用 LLM 给的姓名（更友好），缺失则用候选里的
+                result.setSubstitutePhysicianName(StringUtils.hasText(substituteNameFromLlm)
+                        ? substituteNameFromLlm : c.getPhysicianName());
                 result.setAdjustType(payload.path("adjust_type").asText("临时替班"));
                 result.setReason(payload.path("reason").asText(""));
                 result.setPatientNotification(payload.path("patient_notification").asText(""));
-                result.setSource(payload.path("source").asText("ai"));
+                result.setSource("ai");
+                log.info("Dify 替班推荐校验通过：substituteId={}, name={}",
+                        c.getPhysicianId(), result.getSubstitutePhysicianName());
+            } else if (!candidates.isEmpty()) {
+                // 校验失败：LLM 推的 ID 不在严格候选清单 → 降级到候选首位
+                SubstituteCandidate first = candidates.get(0);
+                result.setSubstitutePhysicianId(first.getPhysicianId());
+                result.setSubstitutePhysicianName(first.getPhysicianName());
+                result.setAdjustType("临时替班");
+                result.setReason(String.format("AI 推荐 ID=%s 不在严格候选清单，降级到首位 %s",
+                        substituteId, first.getPhysicianName()));
+                result.setPatientNotification(payload.path("patient_notification").asText(""));
+                result.setSource("fallback");
+                log.warn("Dify 替班推荐 ID={} 不在严格候选清单 {}，降级到首位={}",
+                        substituteId,
+                        candidates.stream()
+                                .map(c -> String.valueOf(c.getPhysicianId()))
+                                .collect(Collectors.toList()),
+                        first.getPhysicianId());
+            } else {
+                // 候选清单本身为空：彻底失败
+                log.error("Dify 替班推荐无法校验：候选清单为空，LLM 推荐 ID={}", substituteId);
+                result.setSource("error");
             }
+
             result.setRawJson(cleanJson);
             return result;
 
@@ -311,15 +443,24 @@ public class DifyIntegrationService {
     /** 替班候选内部 DTO */
     private static class SubstituteCandidate {
         private Long physicianId;
+        private String physicianName;
+        private String registLevelName;
         private int weeklyLoad;
         private String availableSlots;
+        private Integer availableQuota;
 
         public Long getPhysicianId() { return physicianId; }
         public void setPhysicianId(Long physicianId) { this.physicianId = physicianId; }
+        public String getPhysicianName() { return physicianName; }
+        public void setPhysicianName(String physicianName) { this.physicianName = physicianName; }
+        public String getRegistLevelName() { return registLevelName; }
+        public void setRegistLevelName(String registLevelName) { this.registLevelName = registLevelName; }
         public int getWeeklyLoad() { return weeklyLoad; }
         public void setWeeklyLoad(int weeklyLoad) { this.weeklyLoad = weeklyLoad; }
         public String getAvailableSlots() { return availableSlots; }
         public void setAvailableSlots(String availableSlots) { this.availableSlots = availableSlots; }
+        public Integer getAvailableQuota() { return availableQuota; }
+        public void setAvailableQuota(Integer availableQuota) { this.availableQuota = availableQuota; }
     }
 
     /**
@@ -504,6 +645,24 @@ public class DifyIntegrationService {
         Result<List<RegistLevelDTO>> result = registrationClient.getRegistLevels();
         List<RegistLevelDTO> levels = unwrapResult(result, "获取挂号级别失败");
         return levels.stream().collect(Collectors.toMap(RegistLevelDTO::getId, item -> item, (left, right) -> left));
+    }
+
+    /**
+     * 拉取挂号级别价目表：{regist_level_id -> price}
+     * <p>用于替班候选筛选：候选医生挂号费必须 >= 请假医生挂号费。
+     * <p>失败时返回空 map（filter 会跳过价位过滤，不会阻塞业务）。
+     */
+    private Map<Long, BigDecimal> loadRegistLevelPriceMap() {
+        try {
+            return getRegistLevelMap().entrySet().stream()
+                    .collect(Collectors.toMap(
+                            Map.Entry::getKey,
+                            e -> e.getValue().getPrice() != null ? e.getValue().getPrice() : BigDecimal.ZERO,
+                            (a, b) -> a));
+        } catch (Exception ex) {
+            log.warn("获取挂号级别价目表失败，跳过价位过滤：{}", ex.getMessage());
+            return Collections.emptyMap();
+        }
     }
 
     private <T> List<T> unwrapResult(Result<List<T>> result, String defaultMessage) {
@@ -799,6 +958,60 @@ public class DifyIntegrationService {
     private boolean looksLikeJson(String text) {
         String trimmed = text.trim();
         return trimmed.startsWith("{") || trimmed.startsWith("[");
+    }
+
+    /**
+     * 从 LLM/Dify 输出中提取最外层 JSON 对象。
+     * <p>背景：Dify 工作流的 result 字段可能包含嵌套对象（如 severity_info），
+     * 旧实现用 {@code \{[^{}]*\}} 正则会匹配到内层 {...}，导致顶层字段全丢。
+     * <p>本方法用括号配平算法找最外层 {...}，兼容 markdown 代码块包裹和首尾多余文本。
+     *
+     * @param text 原始输出
+     * @return 最外层 JSON 子串；找不到时原样返回（让上层报错）
+     */
+    private String extractOutermostJson(String text) {
+        if (text == null) return "";
+        String trimmed = text.trim();
+
+        // 快乐路径：直接整体就是合法 JSON
+        try {
+            objectMapper.readTree(trimmed);
+            return trimmed;
+        } catch (Exception ignored) {
+            // 不是纯 JSON，走配平算法
+        }
+
+        int start = trimmed.indexOf('{');
+        if (start < 0) return trimmed;
+
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = start; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (c == '\\' && inString) {
+                escape = true;
+                continue;
+            }
+            if (c == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) continue;
+            if (c == '{') depth++;
+            else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return trimmed.substring(start, i + 1);
+                }
+            }
+        }
+        // 括号没配平，返回原样让上层 JSON 解析报错
+        return trimmed;
     }
 
     private String stringify(Object value) {

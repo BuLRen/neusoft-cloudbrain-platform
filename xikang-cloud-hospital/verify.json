@@ -1,0 +1,1 @@
+{"code":200,"data":{"leaveInfo":{"id":6,"physicianId":1,"leaveDate":"2026-07-22","timeSlot":"上午","leaveType":"事假","reason":"我爸爸结婚"},"candidates":[{"physicianId":2,"name":"内科李医生","title":"普通号","weeklyLoad":0,"availableSlots":"上午空闲","availableQuota":75}],"affectedPatientCount":0,"departmentId":1,"departmentRule":"该科室最少需 1 人在岗","statistics":{"totalCandidates":1,"scheduleId":373}}}

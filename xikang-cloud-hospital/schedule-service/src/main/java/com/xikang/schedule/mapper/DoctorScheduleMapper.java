@@ -65,6 +65,25 @@ public interface DoctorScheduleMapper {
 
     int updateStatus(@Param("id") Long id, @Param("status") String status);
 
+    /**
+     * 排班调整时同步挂号表 register：换医生 + 写通知标记到 case_number 备注
+     * <p>跨表写库（schedule-service 直接写 register 表），通过 scheduling_id 关联排班 ID。
+     * <p>register 表无 remark 字段，所以把通知标记写到 modify_remark（如有）或
+     * 通过 schedule.modify_remark 让前端 JOIN 显示。
+     *
+     * @param scheduleId        排班 ID（对应 register.scheduling_id）
+     * @param oldPhysicianId    原医生 ID（双重保险，防止误改其他记录）
+     * @param newPhysicianId    新医生 ID（对应 register.employee_id）
+     * @param newPhysicianName  新医生姓名（保留参数，预留 register 表加姓名字段时用）
+     * @param transferRemark    通知标记（暂存 schedule.modify_remark 由前端 JOIN）
+     * @return 受影响行数
+     */
+    int updateRegistrationsPhysician(@Param("scheduleId") Long scheduleId,
+                                     @Param("oldPhysicianId") Long oldPhysicianId,
+                                     @Param("newPhysicianId") Long newPhysicianId,
+                                     @Param("newPhysicianName") String newPhysicianName,
+                                     @Param("transferRemark") String transferRemark);
+
     int deleteById(@Param("id") Long id);
 
     int deleteByPlanId(@Param("planId") Long planId);
