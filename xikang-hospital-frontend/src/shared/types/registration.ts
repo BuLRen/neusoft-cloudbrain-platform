@@ -170,6 +170,10 @@ export interface RegistrationRecord {
   relation?: string
   /** 是否家属挂号（relation 非"本人"），用于列表显示家属标签 */
   isFamily?: boolean
+  /** 排班表的通知标记（JOIN doctor_schedule.modify_remark），含"[医生变更]"等提示 */
+  scheduleModifyRemark?: string
+  /** 排班表状态（JOIN doctor_schedule.status），用于判断该排班是否被调整过 */
+  scheduleStatus?: string
 }
 
 export interface PendingChargeItem {
