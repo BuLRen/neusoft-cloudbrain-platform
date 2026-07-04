@@ -20,16 +20,26 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+
+/** 默认回退目标：按角色回到对应首页（避免 router.back() 跳到登录页或外部站点） */
+function fallbackPath(): string {
+  if (props.role === 'patient') return '/patient/overview'
+  if (props.role === 'physician') return '/physician/queue'
+  return '/admin/triage'
+}
+
+/**
+ * 返回上一页：
+ * - vue-router 4 把当前位置记在 window.history.state.position（递增计数），
+ *   如果 position > 0，说明当前 SPA session 内确实有更早的页面可回退 → router.back()
+ * - 否则（直接打开 URL / 从外部跳转过来）→ router.push(fallback)
+ */
 function goBack() {
-  // 有历史才回退，否则按角色回首页
-  if (window.history.length > 1) {
+  const state = window.history.state
+  if (state && typeof state.position === 'number' && state.position > 0) {
     router.back()
-  } else if (props.role === 'patient') {
-    router.push('/patient/overview')
-  } else if (props.role === 'physician') {
-    router.push('/physician/queue')
   } else {
-    router.push('/admin/triage')
+    router.push(fallbackPath())
   }
 }
 
@@ -143,11 +153,8 @@ onMounted(load)
 
 <template>
   <div class="message-list-page">
-    <!-- 顶部独立返回条 -->
-    <button class="back-bar" type="button" @click="goBack">
-      <el-icon><ArrowLeft /></el-icon>
-      <span>返回</span>
-    </button>
+    <!-- 顶部返回按钮 -->
+    <el-button class="back-btn" text :icon="ArrowLeft" @click="goBack">返回</el-button>
 
     <div class="message-list-page__header">
       <div>
@@ -229,27 +236,12 @@ onMounted(load)
   margin: 0 auto;
 }
 
-/* 顶部独立返回条 */
-.back-bar {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px 6px 10px;
+/* 顶部返回按钮：text 风格，无 padding 干扰 */
+.back-btn {
   align-self: flex-start;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface-strong, #fff);
-  color: var(--color-text);
+  padding-left: 0;
   font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: all var(--duration-base, 0.18s) var(--ease-standard, ease);
-}
-.back-bar:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: var(--color-primary-soft, #f0f7ff);
+  font-weight: 500;
 }
 
 .message-list-page__header {
