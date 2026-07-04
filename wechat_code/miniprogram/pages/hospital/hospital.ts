@@ -1,0 +1,1 @@
+Page({data:{services:['在线问诊','居家护理','健康管理','远程医疗']},onShow(){const tabBar=this.getTabBar();if(tabBar){tabBar.setData({selected:3})}},tap(e:WechatMiniprogram.BaseEvent){wx.showToast({title:e.currentTarget.dataset.name,icon:'none'})}})

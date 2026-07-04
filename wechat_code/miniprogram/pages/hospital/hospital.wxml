@@ -1,0 +1,14 @@
+<view class="page-shell hospital-page">
+  <view class="page-title">医院信息</view>
+  <view class="brand-card card">
+    <view class="brand-logo"><text>熙康</text><text>XIKANG</text></view>
+    <view class="brand-copy"><text class="brand-name">熙康云医院</text><text class="brand-sub">东软旗下数字医疗服务平台</text><view class="brand-tags"><text>互联网医疗</text><text>居家护理</text></view></view>
+    <view class="cloud-art"><view class="cloud"></view><view class="building one"></view><view class="building two"></view></view>
+    <text class="brand-foot">让医疗和护理服务到家</text>
+  </view>
+  <view class="address card"><text class="pin">⌖</text><view><text class="address-title">辽宁省沈阳市创新路175号</text><text class="address-sub">东软熙康 · 云医院服务平台</text></view><view class="nav-button" data-name="地图导航" bindtap="tap">到这去</view></view>
+  <view class="services card"><view wx:for="{{services}}" wx:key="*this" data-name="{{item}}" bindtap="tap"><view class="service-box color-{{index}}">云</view><text class="service-name">{{item}}</text><text class="service-desc">详情信息查询</text></view></view>
+  <view class="section card"><view class="section-head"><text class="section-title">平台简介</text><text class="section-more">查看更多 ›</text></view><text class="intro">熙康云医院整合优质医疗资源，为个人及企业客户提供便捷、线上线下一体化的全生命周期医疗和健康管理服务，覆盖互联网诊疗、远程医疗、家庭医生及居家护理等场景。</text><view class="stats"><view><text class="stat-value">29个</text><text>城市云医院平台</text></view><view><text class="stat-value">103.3万</text><text>在线问诊服务</text></view><view><text class="stat-value">57.6万</text><text>远程医疗服务</text></view></view><text class="data-note">服务量为公开披露的2024年上半年数据</text></view>
+  <view class="section card"><view class="section-head"><text class="section-title">核心服务</text><text class="section-more">查看详情 ›</text></view><view class="platforms"><view><text class="platform-icon blue-bg">诊</text><text class="platform-title">互联网医院服务</text><text>在线问诊与复诊</text></view><view><text class="platform-icon green-bg">护</text><text class="platform-title">居家护理服务</text><text>专业护理到家</text></view><view><text class="platform-icon orange-bg">管</text><text class="platform-title">健康管理服务</text><text>全生命周期管理</text></view></view></view>
+  <view class="section card contact-card"><view class="section-title">联系方式</view><text>服务热线　024-23356271</text><text>官方网站　www.xikang.com</text></view>
+</view>
