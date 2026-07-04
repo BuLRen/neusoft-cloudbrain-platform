@@ -5,10 +5,7 @@ import {
   Aim,
   ArrowLeft,
   ArrowRight,
-  Bell,
   Calendar as CalendarIcon,
-  CircleCheck,
-  CircleClose,
   Clock,
   Refresh,
   TrendCharts,
@@ -32,42 +29,6 @@ import ScheduleDetailDrawer from '../components/schedule/ScheduleDetailDrawer.vu
 import LeaveApplyDialog from '../components/schedule/LeaveApplyDialog.vue'
 
 const authStore = useAuthStore()
-
-// ==================== 通知中心：医生请假审批结果 + 被指派替班 ====================
-const myLeaves = ref<LeaveRequest[]>([])
-const leaveNotifLoading = ref(false)
-
-// 拉取本人请假记录，用于"审批结果"通知
-async function loadMyLeaves() {
-  if (!canViewOwnSchedule.value || !physicianId.value) return
-  leaveNotifLoading.value = true
-  try {
-    myLeaves.value = await scheduleApi.leaves({ physicianId: physicianId.value })
-  } catch {
-    myLeaves.value = []
-  } finally {
-    leaveNotifLoading.value = false
-  }
-}
-
-// 仅展示「最近 7 天内有审批动作」的请假通知，待审批的不属于通知（属于待办）
-const leaveNotifications = computed(() => {
-  const now = Date.now()
-  const sevenDays = 7 * 24 * 3600 * 1000
-  return myLeaves.value
-    .filter((l) => l.status === '已批准' || l.status === '已拒绝')
-    .filter((l) => {
-      if (!l.approvalTime) return false
-      const t = new Date(l.approvalTime).getTime()
-      return Number.isFinite(t) && now - t < sevenDays
-    })
-    .sort((a, b) => (a.approvalTime! < b.approvalTime! ? 1 : -1))
-})
-
-// 替班通知：当前医生名下、modifyRemark 含"医生变更"的排班
-const substituteNotifications = computed(() =>
-  schedules.value.filter((s) => s.modifyRemark && s.modifyRemark.includes('医生变更')),
-)
 
 type ViewMode = 'week' | 'month'
 
@@ -212,29 +173,6 @@ async function loadSchedules() {
   }
 }
 
-// 一次性拉取本人请假列表（不随周/月切换刷新，但提供手动刷新入口）
-async function loadNotifications() {
-  await Promise.all([loadMyLeaves()])
-}
-
-// 标记通知为已读（前端本地消除，避免重复打扰）
-const dismissedLeaveIds = ref<Set<number>>(new Set())
-const dismissedSubstituteIds = ref<Set<number>>(new Set())
-function dismissLeave(id: number) {
-  dismissedLeaveIds.value.add(id)
-}
-function dismissSubstitute(id: number) {
-  dismissedSubstituteIds.value.add(id)
-}
-const visibleLeaveNotifs = computed(() =>
-  leaveNotifications.value.filter((l) => !dismissedLeaveIds.value.has(l.id)),
-)
-const visibleSubstituteNotifs = computed(() =>
-  substituteNotifications.value.filter((s) => !dismissedSubstituteIds.value.has(s.id)),
-)
-const hasNotifications = computed(
-  () => visibleLeaveNotifs.value.length > 0 || visibleSubstituteNotifs.value.length > 0,
-)
 
 // 导航
 function prevWeek() {
@@ -313,7 +251,6 @@ watch([viewMode, weekStart, monthCursor], () => {
 
 onMounted(() => {
   void loadSchedules()
-  void loadNotifications()
 })
 </script>
 
@@ -326,54 +263,9 @@ onMounted(() => {
       eyebrow="门诊排班"
     >
       <template #actions>
-        <ElButton :icon="Refresh" :loading="loading" @click="() => { loadSchedules(); loadNotifications() }">刷新</ElButton>
+        <ElButton :icon="Refresh" :loading="loading" @click="loadSchedules">刷新</ElButton>
       </template>
     </PageHeader>
-
-    <!-- 通知中心：请假审批结果 + 被指派替班 -->
-    <section v-if="hasNotifications" class="ms-notif-stack">
-      <!-- 请假审批结果通知 -->
-      <div
-        v-for="leave in visibleLeaveNotifs"
-        :key="`leave-${leave.id}`"
-        class="ms-notif"
-        :class="leave.status === '已批准' ? 'ms-notif--success' : 'ms-notif--danger'"
-        role="alert"
-      >
-        <div class="ms-notif__icon">
-          <ElIcon><CircleCheck v-if="leave.status === '已批准'" /><CircleClose v-else /></ElIcon>
-        </div>
-        <div class="ms-notif__body">
-          <p class="ms-notif__title">
-            您的请假申请已<strong>{{ leave.status }}</strong>
-          </p>
-          <p class="ms-notif__desc">
-            {{ leave.leaveDate }} {{ leave.timeSlot || '' }} · {{ leave.leaveType }}
-            <template v-if="leave.reason">· {{ leave.reason }}</template>
-          </p>
-        </div>
-        <button class="ms-notif__close" type="button" aria-label="关闭通知" @click="dismissLeave(leave.id)">×</button>
-      </div>
-
-      <!-- 被指派为替班医生通知 -->
-      <div
-        v-for="sch in visibleSubstituteNotifs"
-        :key="`sub-${sch.id}`"
-        class="ms-notif ms-notif--info"
-        role="alert"
-      >
-        <div class="ms-notif__icon">
-          <ElIcon><Bell /></ElIcon>
-        </div>
-        <div class="ms-notif__body">
-          <p class="ms-notif__title">您被指派为替班医生</p>
-          <p class="ms-notif__desc">
-            {{ sch.workDate }} {{ sch.timeSlot }} · {{ sch.departmentName || '' }} · {{ sch.modifyRemark }}
-          </p>
-        </div>
-        <button class="ms-notif__close" type="button" aria-label="关闭通知" @click="dismissSubstitute(sch.id)">×</button>
-      </div>
-    </section>
 
     <!-- 患者角色：无排班 -->
     <GlassCard v-if="isPatient" class="ms-empty-card">
@@ -644,80 +536,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-/* ============================================================
-   通知中心：请假审批结果 + 替班指派（堆叠式 banner）
-   ============================================================ */
-.ms-notif-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.ms-notif {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  font-size: 13px;
-  line-height: 1.5;
-  position: relative;
-  animation: ms-notif-in 240ms cubic-bezier(0.2, 0, 0, 1);
-}
-@keyframes ms-notif-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.ms-notif--success {
-  background: linear-gradient(90deg, rgba(32, 180, 134, 0.10) 0%, rgba(255, 255, 255, 0.7) 100%);
-  border-color: rgba(32, 180, 134, 0.35);
-  color: #0f7a55;
-}
-.ms-notif--danger {
-  background: linear-gradient(90deg, rgba(239, 77, 90, 0.10) 0%, rgba(255, 255, 255, 0.7) 100%);
-  border-color: rgba(239, 77, 90, 0.35);
-  color: #b8343f;
-}
-.ms-notif--info {
-  background: linear-gradient(90deg, rgba(31, 140, 255, 0.12) 0%, rgba(255, 255, 255, 0.7) 100%);
-  border-color: rgba(31, 140, 255, 0.35);
-  color: #145a99;
-}
-.ms-notif__icon {
-  flex-shrink: 0;
-  font-size: 18px;
-  margin-top: 2px;
-}
-.ms-notif__body {
-  flex: 1;
-  min-width: 0;
-}
-.ms-notif__title {
-  margin: 0 0 2px;
-  font-weight: 600;
-  font-size: 14px;
-}
-.ms-notif__desc {
-  margin: 0;
-  color: var(--sched-ink-soft);
-  font-size: 12px;
-}
-.ms-notif__close {
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  opacity: 0.55;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 4px;
-  transition: opacity 120ms ease;
-}
-.ms-notif__close:hover {
-  opacity: 1;
 }
 
 /* ============================================================

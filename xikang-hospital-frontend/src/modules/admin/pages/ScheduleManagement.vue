@@ -86,6 +86,13 @@ const calendarData = ref<CalendarDay[]>([])
 const pendingAdjusts = ref<ScheduleAdjustRequest[]>([])
 const selectedAdjust = ref<ScheduleAdjustRequest | null>(null)
 
+// "待确认调整"卡片折叠状态（持久化到 localStorage）
+const adjustCardCollapsed = ref(localStorage.getItem('schedule_adjust_card_collapsed') === '1')
+function toggleAdjustCard() {
+  adjustCardCollapsed.value = !adjustCardCollapsed.value
+  localStorage.setItem('schedule_adjust_card_collapsed', adjustCardCollapsed.value ? '1' : '0')
+}
+
 // 待审批请假（管理员消息中心）
 const pendingLeaves = ref<LeaveRequest[]>([])
 const leaveDrawerVisible = ref(false)
@@ -913,9 +920,12 @@ onMounted(async () => {
               待确认调整
             </ElBadge>
           </h3>
+          <ElButton link type="primary" @click="toggleAdjustCard">
+            {{ adjustCardCollapsed ? '展开' : '收起' }}
+          </ElButton>
         </div>
 
-        <div class="adjust-list" v-if="pendingAdjusts.length > 0">
+        <div v-show="!adjustCardCollapsed" class="adjust-list" v-if="pendingAdjusts.length > 0">
           <div
             v-for="adjust in pendingAdjusts"
             :key="adjust.id"
@@ -943,7 +953,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <ElEmpty v-else description="暂无待确认的调整" />
+        <ElEmpty v-show="!adjustCardCollapsed" v-else description="暂无待确认的调整" />
       </GlassCard>
 
       <!-- 待审批请假预览（侧栏快捷区，点击打开抽屉查看详情） -->

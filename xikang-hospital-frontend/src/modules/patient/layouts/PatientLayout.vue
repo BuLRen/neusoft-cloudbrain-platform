@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/app/stores/auth'
+import { useNotificationStore } from '@/app/stores/notification'
 import { loginRoutePath } from '@/shared/constants/app'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import { ArrowDown, Check } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
+const notificationStore = useNotificationStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -30,14 +32,28 @@ function switchPatient(patientId: number) {
   authStore.switchPatient(patientId)
 }
 
-// 快捷功能菜单
-const quickActions = [
+// 快捷功能菜单（"我的消息"带未读红点）
+interface QuickAction {
+  key: string
+  label: string
+  icon: string
+  path: string
+  badge?: number
+}
+const quickActions = computed<QuickAction[]>(() => [
+  {
+    key: 'messages',
+    label: '我的消息',
+    icon: '🔔',
+    path: '/patient/messages',
+    badge: notificationStore.unreadCount,
+  },
   { key: 'registration', label: '我的挂号', icon: '📋', path: '/patient/registration' },
   { key: 'payment', label: '我的账单', icon: '💳', path: '/patient/payment' },
   { key: 'records', label: '电子病历', icon: '📄', path: '/patient/records' },
   { key: 'prescription', label: '我的处方', icon: '💊', path: '/patient/prescription' },
   { key: 'profile', label: '个人中心', icon: '👤', path: '/patient/profile' },
-]
+])
 
 const currentBalance = computed(() => Number(currentPatient.value?.accountBalance || 0))
 
@@ -49,9 +65,21 @@ async function logout() {
   try {
     await authStore.logout()
   } finally {
+    notificationStore.reset()
     router.replace({ path: loginRoutePath, query: {} })
   }
 }
+
+// 进入患者布局启动通知轮询；患者切换时也刷新一次（不同 patientId 对应不同未读数）
+onMounted(() => {
+  notificationStore.startPolling()
+})
+onUnmounted(() => {
+  notificationStore.stopPolling()
+})
+watch(() => authStore.currentPatientId, () => {
+  notificationStore.refreshUnreadCount()
+})
 
 const currentPageTitle = computed(() => {
   const titleMap: Record<string, string> = {
@@ -132,6 +160,10 @@ const currentPageTitle = computed(() => {
             >
               <span class="quick-action-icon">{{ action.icon }}</span>
               <span class="quick-action-label">{{ action.label }}</span>
+              <span
+                v-if="action.badge && action.badge > 0"
+                class="quick-action-badge"
+              >{{ action.badge > 99 ? '99+' : action.badge }}</span>
             </button>
           </div>
           <el-button class="logout-btn" text @click="logout">
@@ -385,6 +417,23 @@ const currentPageTitle = computed(() => {
 .quick-action-label {
   font-size: 13px;
   font-weight: 500;
+}
+
+.quick-action-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--color-surface-strong, #fff);
 }
 
 .logout-btn {

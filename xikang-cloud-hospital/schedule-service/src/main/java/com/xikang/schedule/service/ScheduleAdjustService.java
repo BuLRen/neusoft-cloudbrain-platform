@@ -1,5 +1,7 @@
 package com.xikang.schedule.service;
 
+import com.xikang.schedule.client.NotificationClient;
+import com.xikang.schedule.dto.NotificationSendRequest;
 import com.xikang.schedule.entity.DoctorSchedule;
 import com.xikang.schedule.entity.ScheduleAdjustLog;
 import com.xikang.schedule.entity.ScheduleAdjustRequest;
@@ -8,10 +10,12 @@ import com.xikang.schedule.mapper.ScheduleAdjustLogMapper;
 import com.xikang.schedule.mapper.ScheduleAdjustRequestMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -22,6 +26,11 @@ public class ScheduleAdjustService {
     private final ScheduleAdjustRequestMapper adjustRequestMapper;
     private final ScheduleAdjustLogMapper adjustLogMapper;
     private final DoctorScheduleMapper doctorScheduleMapper;
+    private final NotificationClient notificationClient;
+
+    /** 通知服务内部调用鉴权 token */
+    @Value("${notification.internal-token:notif-internal-2026}")
+    private String notificationInternalToken;
 
     /**
      * 获取所有待确认调整
@@ -190,7 +199,84 @@ public class ScheduleAdjustService {
         schedule.setModifyRemark("已调整：" + (request.getReason() != null ? request.getReason() : "管理员调整"));
         doctorScheduleMapper.update(schedule);
 
+        // 仅当医生确实变更时才发"医生变更"通知（仅改号源/状态不发，避免无意义消息）
+        // 顶层再加一道 try-catch：即使 sendDoctorChangeNotifications 内部某条 catch 失误抛出，
+        // 也不会回滚排班调整事务（消息是辅助，不能阻塞主业务）。
+        if (request.getNewPhysicianId() != null
+                && !request.getNewPhysicianId().equals(oldPhysicianId)) {
+            try {
+                sendDoctorChangeNotifications(request, schedule,
+                        oldPhysicianId, oldPhysicianNameSafe(schedule, oldPhysicianId),
+                        request.getNewPhysicianId(),
+                        schedule.getPhysicianName() != null ? schedule.getPhysicianName() : ("替班医生" + request.getNewPhysicianId()));
+            } catch (Exception ex) {
+                log.warn("发送医生变更通知整体失败（不阻塞调整）：scheduleId={}, err={}",
+                        schedule.getId(), ex.getMessage());
+            }
+        }
+
         log.info("执行调整完成：排班ID={}", request.getScheduleId());
+    }
+
+    /**
+     * 发送"医生变更"通知：1 条给替班医生 + N 条给受影响患者
+     * <p>关键约束：通知失败不能回滚排班调整事务。所有 Feign 调用包在 try-catch 里，仅 log warn。
+     */
+    private void sendDoctorChangeNotifications(ScheduleAdjustRequest request,
+                                               DoctorSchedule schedule,
+                                               Long oldPhysicianId, String oldPhysicianName,
+                                               Long newPhysicianId, String newPhysicianName) {
+        String dateStr = schedule.getWorkDate() != null ? schedule.getWorkDate().toString() : "未知日期";
+        String slot = schedule.getTimeSlot() != null ? schedule.getTimeSlot() : "未知时段";
+        String reason = request.getReason() != null ? request.getReason() : "管理员调整";
+
+        // 1. 通知替班医生（你被指派为新接手的医生）
+        try {
+            NotificationSendRequest toSub = new NotificationSendRequest(
+                    newPhysicianId, "physician", "doctor_change",
+                    "您被指派为替班医生",
+                    String.format("排班 #%d（%s %s）原医生 %s → 您，原因：%s",
+                            schedule.getId(), dateStr, slot, oldPhysicianName, reason),
+                    "schedule_adjust_request", request.getId());
+            notificationClient.send(toSub, notificationInternalToken);
+            log.info("已通知替班医生：physicianId={}, scheduleId={}",
+                    newPhysicianId, schedule.getId());
+        } catch (Exception ex) {
+            log.warn("通知替班医生失败（不阻塞调整）：physicianId={}, err={}",
+                    newPhysicianId, ex.getMessage());
+        }
+
+        // 2. 通知所有受影响患者（批量）
+        try {
+            List<Long> patientIds = doctorScheduleMapper.selectPatientIdsBySchedule(schedule.getId());
+            if (patientIds == null || patientIds.isEmpty()) {
+                log.info("无受影响患者，跳过批量通知：scheduleId={}", schedule.getId());
+                return;
+            }
+            List<NotificationSendRequest> batch = new ArrayList<>(patientIds.size());
+            String patientContent = String.format(
+                    "您在 %s %s 的就诊医生已由 %s 医生变更为 %s 医生，请按原时间就诊。",
+                    dateStr, slot, oldPhysicianName, newPhysicianName);
+            for (Long patientId : patientIds) {
+                batch.add(new NotificationSendRequest(
+                        patientId, "patient", "doctor_change",
+                        "您的就诊医生已变更",
+                        patientContent,
+                        "schedule_adjust_request", request.getId()));
+            }
+            notificationClient.batchSend(batch, notificationInternalToken);
+            log.info("已通知受影响患者：scheduleId={}, count={}",
+                    schedule.getId(), batch.size());
+        } catch (Exception ex) {
+            log.warn("通知受影响患者失败（不阻塞调整）：scheduleId={}, err={}",
+                    schedule.getId(), ex.getMessage());
+        }
+    }
+
+    private String oldPhysicianNameSafe(DoctorSchedule schedule, Long oldPhysicianId) {
+        return schedule.getPhysicianName() != null
+                ? schedule.getPhysicianName()
+                : ("原医生" + oldPhysicianId);
     }
 
     /**

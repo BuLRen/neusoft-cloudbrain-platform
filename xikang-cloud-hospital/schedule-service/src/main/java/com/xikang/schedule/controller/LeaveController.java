@@ -1,5 +1,7 @@
 package com.xikang.schedule.controller;
 
+import com.xikang.schedule.client.NotificationClient;
+import com.xikang.schedule.dto.NotificationSendRequest;
 import com.xikang.schedule.entity.DoctorSchedule;
 import com.xikang.schedule.entity.LeaveRequest;
 import com.xikang.schedule.entity.ScheduleAdjustRequest;
@@ -31,10 +33,15 @@ public class LeaveController {
     private final LeaveRequestService leaveRequestService;
     private final ScheduleAdjustService scheduleAdjustService;
     private final DifyIntegrationService difyIntegrationService;
+    private final NotificationClient notificationClient;
 
     /** Dify HTTP 节点回调时的简单鉴权 token（防止外部恶意调用） */
     @Value("${dify.callback-token:schedule-internal-2026}")
     private String difyCallbackToken;
+
+    /** 通知服务内部调用鉴权 token */
+    @Value("${notification.internal-token:notif-internal-2026}")
+    private String notificationInternalToken;
 
     // ==================== 请假申请 API ====================
 
@@ -128,6 +135,9 @@ public class LeaveController {
         // 自动处理请假（生成调整申请）
         ScheduleAdjustRequest adjustRequest = leaveRequestService.processLeave(leaveId);
 
+        // 通知请假医生（审批结果）
+        sendLeaveDecisionNotification(leaveId, true);
+
         Map<String, Object> result = new HashMap<>();
         result.put("leave_id", leaveId);
         result.put("adjust_id", adjustRequest != null ? adjustRequest.getId() : null);
@@ -147,7 +157,42 @@ public class LeaveController {
         Long approverId = ((Number) body.get("approverId")).longValue();
         leaveRequestService.rejectLeave(leaveId, approverId);
 
+        // 通知请假医生（审批结果）
+        sendLeaveDecisionNotification(leaveId, false);
+
         return success("已拒绝");
+    }
+
+    /**
+     * 通知请假医生审批结果
+     * <p>关键约束：通知失败不能阻塞审批流程，try-catch 兜底，仅 log warn。
+     */
+    private void sendLeaveDecisionNotification(Long leaveId, boolean approved) {
+        try {
+            LeaveRequest leave = leaveRequestService.getById(leaveId);
+            if (leave == null || leave.getPhysicianId() == null) {
+                return;
+            }
+            String dateStr = leave.getLeaveDate() != null ? leave.getLeaveDate().toString() : "未知日期";
+            String slot = leave.getTimeSlot() != null ? leave.getTimeSlot() : "全天";
+
+            NotificationSendRequest req = new NotificationSendRequest(
+                    leave.getPhysicianId(), "physician",
+                    approved ? "leave_approved" : "leave_rejected",
+                    approved ? "您的请假申请已批准" : "您的请假申请已拒绝",
+                    approved
+                            ? String.format("您 %s %s 的请假申请已批准，系统将安排替班医生。",
+                            dateStr, slot)
+                            : String.format("您 %s %s 的请假申请已被拒绝，请联系管理员。",
+                            dateStr, slot),
+                    "leave_request", leaveId);
+            notificationClient.send(req, notificationInternalToken);
+            log.info("已通知请假医生：leaveId={}, physicianId={}, approved={}",
+                    leaveId, leave.getPhysicianId(), approved);
+        } catch (Exception ex) {
+            log.warn("通知请假医生失败（不阻塞审批）：leaveId={}, err={}",
+                    leaveId, ex.getMessage());
+        }
     }
 
     /**

@@ -29,6 +29,23 @@ dify:
   leave-adjust-api-key: ${DIFY_LEAVE_ADJUST_API_KEY:}   # 替班工作流独立 API Key（为空时回退到 api-key）
   callback-token: ${DIFY_CALLBACK_TOKEN:schedule-internal-2026}  # Dify HTTP 节点回调简单鉴权 token
 
+# 通知服务集成（写消息：医生变更/请假审批等）
+notification:
+  service:
+    url: ${NOTIFICATION_SERVICE_URL:}                    # 留空则走 Nacos 服务发现（推荐）
+  internal-token: ${NOTIF_INTERNAL_TOKEN:notif-internal-2026}  # 内部调用鉴权 token（与 notification-service 配置一致）
+
+# Feign 超时（避免 notification-service 挂时拖垮主流程）
+feign:
+  client:
+    config:
+      default:
+        connect-timeout: 3000
+        read-timeout: 5000
+      notification-service:
+        connect-timeout: 2000
+        read-timeout: 4000
+
 # 号源预警阈值
 quota:
   alert:

@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.notification.mapper.NotificationMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.notification.entity.Notification">
+        <id     column="id"            property="id"/>
+        <result column="receiver_id"   property="receiverId"/>
+        <result column="receiver_role" property="receiverRole"/>
+        <result column="type"          property="type"/>
+        <result column="title"         property="title"/>
+        <result column="content"       property="content"/>
+        <result column="biz_type"      property="bizType"/>
+        <result column="biz_id"        property="bizId"/>
+        <result column="is_read"       property="isRead"/>
+        <result column="is_deleted"    property="isDeleted"/>
+        <result column="created_time"  property="createdTime"/>
+        <result column="update_time"   property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, receiver_id, receiver_role, type, title, content,
+        biz_type, biz_id, is_read, is_deleted, created_time, update_time
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO notification (
+            receiver_id, receiver_role, type, title, content,
+            biz_type, biz_id, is_read, is_deleted
+        ) VALUES (
+            #{receiverId}, #{receiverRole}, #{type}, #{title}, #{content},
+            #{bizType}, #{bizId}, 0, 0
+        )
+    </insert>
+
+    <insert id="batchInsert">
+        INSERT INTO notification (
+            receiver_id, receiver_role, type, title, content,
+            biz_type, biz_id, is_read, is_deleted
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.receiverId}, #{item.receiverRole}, #{item.type},
+                #{item.title}, #{item.content},
+                #{item.bizType}, #{item.bizId}, 0, 0
+            )
+        </foreach>
+    </insert>
+
+    <select id="selectList" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM notification
+        WHERE is_deleted = 0
+          AND receiver_id   = #{receiverId}
+          AND receiver_role = #{receiverRole}
+        <if test="type != null and type != ''">
+            AND type = #{type}
+        </if>
+        <if test="isRead != null">
+            AND is_read = #{isRead}
+        </if>
+        ORDER BY created_time DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countList" resultType="long">
+        SELECT COUNT(*)
+        FROM notification
+        WHERE is_deleted = 0
+          AND receiver_id   = #{receiverId}
+          AND receiver_role = #{receiverRole}
+        <if test="type != null and type != ''">
+            AND type = #{type}
+        </if>
+        <if test="isRead != null">
+            AND is_read = #{isRead}
+        </if>
+    </select>
+
+    <select id="selectRecent" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM notification
+        WHERE is_deleted = 0
+          AND receiver_id   = #{receiverId}
+          AND receiver_role = #{receiverRole}
+        ORDER BY created_time DESC
+        LIMIT #{size}
+    </select>
+
+    <select id="countUnread" resultType="int">
+        SELECT COUNT(*)
+        FROM notification
+        WHERE is_deleted = 0
+          AND is_read       = 0
+          AND receiver_id   = #{receiverId}
+          AND receiver_role = #{receiverRole}
+    </select>
+
+    <update id="markRead">
+        UPDATE notification
+        SET is_read    = 1,
+            update_time = #{updateTime}
+        WHERE id = #{id}
+          AND receiver_id = #{receiverId}
+          AND is_deleted = 0
+    </update>
+
+    <update id="markAllRead">
+        UPDATE notification
+        SET is_read    = 1,
+            update_time = #{updateTime}
+        WHERE receiver_id   = #{receiverId}
+          AND receiver_role = #{receiverRole}
+          AND is_read       = 0
+          AND is_deleted    = 0
+    </update>
+
+    <update id="softDelete">
+        UPDATE notification
+        SET is_deleted = 1,
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND receiver_id = #{receiverId}
+    </update>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM notification
+        WHERE id = #{id}
+    </select>
+
+</mapper>

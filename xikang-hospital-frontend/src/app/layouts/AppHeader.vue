@@ -5,19 +5,23 @@ import { Sunny, Moon, SwitchButton } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/app/stores/app'
 import { useAuthStore } from '@/app/stores/auth'
+import { useNotificationStore } from '@/app/stores/notification'
 import { useUserStore } from '@/app/stores/user'
 import { loginRoutePath } from '@/shared/constants/app'
+import NotificationBell from '@/app/layouts/components/NotificationBell.vue'
 
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const notificationStore = useNotificationStore()
 const userStore = useUserStore()
 
 async function logout() {
   try {
     await authStore.logout()
   } finally {
-    // 主动登出：不携带任何 redirect，避免下次被自动送回原页面
+    // 主动登出：清通知轮询 + 不携带 redirect
+    notificationStore.reset()
     router.replace({ path: loginRoutePath, query: {} })
   }
 }
@@ -35,6 +39,7 @@ async function logout() {
         <el-icon><component :is="appStore.theme === 'light' ? Moon : Sunny" /></el-icon>
         {{ appStore.themeLabel }}模式
       </el-button>
+      <NotificationBell />
       <div class="app-header__user">
         <strong>{{ userStore.profile.name }}</strong>
         <span>{{ userStore.profile.description }}</span>

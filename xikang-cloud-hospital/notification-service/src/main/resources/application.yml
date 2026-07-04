@@ -1,0 +1,43 @@
+server:
+  port: 8105
+
+spring:
+  config:
+    import:
+      - optional:file:../.env
+      - optional:file:./.env
+      - optional:classpath:config/database.yml
+      - optional:file:../config/database.yml
+      - optional:file:./config/database.yml
+      - optional:file:../config/database-secrets.yml
+      - optional:file:./config/database-secrets.yml
+  application:
+    name: notification-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/xikang_cloud_hospital}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.xikang.notification.entity
+  configuration:
+    map-underscore-to-camel-case: true
+
+# 内部服务调用鉴权 token（其他微服务调 /api/notification/send 时需带 X-Internal-Token）
+notification:
+  internal-token: ${NOTIF_INTERNAL_TOKEN:notif-internal-2026}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.xikang.notification: INFO

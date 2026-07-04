@@ -17,6 +17,7 @@ import PatientProfile from '@/modules/patient/pages/PatientProfile.vue'
 import PatientPrescription from '@/modules/patient/pages/PatientPrescription.vue'
 import PatientPayment from '@/modules/patient/pages/PatientPayment.vue'
 import PatientDepartmentDetail from '@/modules/patient/pages/PatientDepartmentDetail.vue'
+import PatientMessages from '@/modules/patient/pages/PatientMessages.vue'
 import RegistrationWorkspace from '@/modules/registration/RegistrationWorkspace.vue'
 import PharmacyDispensingPage from '@/modules/pharmacy/pages/DispensingPage.vue'
 import PharmacyInventoryPage from '@/modules/pharmacy/pages/InventoryPage.vue'
@@ -137,6 +138,12 @@ const patientRoutes: RouteRecordRaw[] = [
         name: 'PatientProfile',
         component: PatientProfile,
         meta: { title: '个人中心', requiresAuth: true, roles: ['patient', 'admin'] },
+      },
+      {
+        path: 'messages',
+        name: 'PatientMessages',
+        component: PatientMessages,
+        meta: { title: '我的消息', requiresAuth: true, roles: ['patient', 'admin'] },
       },
     ],
   },
@@ -521,6 +528,18 @@ export const routes: RouteRecordRaw[] = [
         name: 'MySchedule',
         component: MySchedulePage,
         meta: { title: '我的排班', description: '查看我的班次课程表与请假', icon: 'Calendar', roles: ['physician', 'registration', 'medtech', 'pharmacy', 'patient', 'admin'], requiresAuth: true, owner: '共同' },
+      },
+      {
+        path: 'physician/messages',
+        name: 'PhysicianMessages',
+        component: () => import('@/modules/physician/pages/PhysicianMessages.vue'),
+        meta: { title: '我的消息', icon: 'Bell', roles: ['physician', 'admin'], requiresAuth: true, owner: '共同', hidden: true },
+      },
+      {
+        path: 'admin/messages',
+        name: 'AdminMessages',
+        component: () => import('@/modules/admin/pages/AdminMessages.vue'),
+        meta: { title: '消息中心', icon: 'Bell', roles: ['admin'], requiresAuth: true, owner: '共同', hidden: true },
       },
       {
         path: '403',

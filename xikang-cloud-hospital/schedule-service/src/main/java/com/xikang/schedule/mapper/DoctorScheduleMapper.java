@@ -84,6 +84,12 @@ public interface DoctorScheduleMapper {
                                      @Param("newPhysicianName") String newPhysicianName,
                                      @Param("transferRemark") String transferRemark);
 
+    /**
+     * 查询某排班下所有受影响患者 ID（去重 + 排除空值）。
+     * <p>用于"医生变更"通知批量发送。
+     */
+    List<Long> selectPatientIdsBySchedule(@Param("scheduleId") Long scheduleId);
+
     int deleteById(@Param("id") Long id);
 
     int deleteByPlanId(@Param("planId") Long planId);
