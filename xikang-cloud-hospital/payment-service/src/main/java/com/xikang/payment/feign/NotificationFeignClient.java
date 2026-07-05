@@ -13,7 +13,7 @@ import java.util.Map;
  * <p>payment-service 调用 notification-service 写入消息（支付成功 / 退款成功通知患者）。
  * <p>调用失败时由调用方 try/catch 兜底，绝不能影响支付主流程。
  */
-@FeignClient(name = "notification-service", url = "${notification.service.url:}")
+@FeignClient(name = "notification-service", url = "${notification.service.url:http://localhost:8105}")
 public interface NotificationFeignClient {
 
     /**
