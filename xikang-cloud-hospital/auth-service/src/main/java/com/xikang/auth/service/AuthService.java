@@ -395,6 +395,12 @@ public class AuthService {
         if (idCard == null || !idCard.matches("^\\d{17}[0-9X]$")) {
             return false;
         }
+        String validProvinces = "|11|12|13|14|15|21|22|23|31|32|33|34|35|36|37|41|42|43|44|45|46|50|51|52|53|54|61|62|63|64|65|71|81|82|";
+        if (!validProvinces.contains("|" + idCard.substring(0, 2) + "|")
+                || "000000".equals(idCard.substring(0, 6))
+                || "000".equals(idCard.substring(14, 17))) {
+            return false;
+        }
         LocalDate birthdate = parseBirthdateFromIdCard(idCard);
         if (birthdate == null || birthdate.isAfter(LocalDate.now()) || birthdate.isBefore(LocalDate.of(1900, 1, 1))) {
             return false;

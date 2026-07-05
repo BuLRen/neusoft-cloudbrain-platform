@@ -1,10 +1,26 @@
 import { API_BASE_URL, REQUEST_TIMEOUT } from '../config/env'
-import { clearSession, session } from '../stores/session'
+import { clearSession, saveSession, session } from '../stores/session'
 import { replacePage } from '../utils/navigation'
 
 export interface ApiResult<T> { code:number; message:string; data:T }
-export interface RequestOptions { url:string; method?:UniApp.RequestOptions['method']; data?:unknown; header?:Record<string,string>; skipAuth?:boolean; showError?:boolean }
+export interface RequestOptions { url:string; method?:UniApp.RequestOptions['method']; data?:unknown; header?:Record<string,string>; skipAuth?:boolean; showError?:boolean; _retried?:boolean }
 let redirecting = false
+let refreshing: Promise<string> | null = null
+
+function refreshAccessToken(): Promise<string> {
+  if (refreshing) return refreshing
+  refreshing = new Promise((resolve,reject) => {
+    if (!session.refreshToken) { reject(new Error('缺少刷新令牌')); return }
+    uni.request<ApiResult<{token?:string;accessToken?:string}>>({
+      url:`${API_BASE_URL}/auth/refresh`, method:'POST', data:{refreshToken:session.refreshToken},
+      header:{'Content-Type':'application/json','X-Refresh-Token':session.refreshToken}, timeout:REQUEST_TIMEOUT,
+      success(response){const token=response.data?.data?.token||response.data?.data?.accessToken;if(response.statusCode===200&&response.data?.code===200&&token){saveSession({token});resolve(token)}else reject(new Error(response.data?.message||'登录已过期'))},
+      fail:()=>reject(new Error('刷新登录状态失败')),
+      complete:()=>setTimeout(()=>{refreshing=null},0),
+    })
+  })
+  return refreshing
+}
 
 function redirectToLogin() {
   if (redirecting) return
@@ -25,9 +41,12 @@ export function request<T>(options: RequestOptions): Promise<T> {
       data: options.data as UniApp.RequestOptions['data'],
       header: headers,
       timeout: REQUEST_TIMEOUT,
-      success(response) {
+      async success(response) {
         const body = response.data
         if (response.statusCode === 401 || body?.code === 401) {
+          if (!options.skipAuth && !options._retried && session.refreshToken) {
+            try { await refreshAccessToken(); resolve(await request<T>({...options,_retried:true})); return } catch { /* refresh token 也已失效 */ }
+          }
           redirectToLogin(); reject(new Error(body?.message || '登录已过期')); return
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {

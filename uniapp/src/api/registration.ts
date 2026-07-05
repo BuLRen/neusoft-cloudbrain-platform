@@ -7,7 +7,7 @@ export const registrationApi = {
   schedules:(departmentId:number,date:string)=>request<Schedule[]>({url:`/registration/scheduling/${departmentId}/${date}`}),
   managed:()=>request<Registration[]>({url:'/registration/managed'}),
   patient:(patientId:number)=>request<Registration[]>({url:`/registration/patient/${patientId}`}),
-  create:(data:Record<string,unknown>)=>request<Record<string,unknown>>({url:'/registration/register',method:'POST',data}),
+  create:(data:Record<string,unknown>)=>request<Record<string,any>>({url:'/registration/register',method:'POST',data}),
   cancel:(id:number)=>request<Record<string,unknown>>({url:`/registration/${id}/cancel`,method:'PUT'}),
   checkIn:(id:number)=>request<Record<string,unknown>>({url:`/registration/${id}/check-in`,method:'POST'}),
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import './styles/theme.scss'
 import './styles/records-polish.scss'
+import './styles/patients-polish.scss'
 import { onLaunch } from '@dcloudio/uni-app'
 import { restoreSession } from './stores/session'
 onLaunch(() => {

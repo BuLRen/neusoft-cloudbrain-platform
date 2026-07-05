@@ -7,6 +7,7 @@ export interface PrevisitMeta {sessionUuid?:string;registerId?:number;roundNumbe
 export interface PrevisitRound {roundNumber:number;aiQuestion?:string;patientAnswer?:string}
 export interface PrevisitSession {exists:boolean;sessionUuid?:string;state?:string;rounds?:PrevisitRound[];summary?:Record<string,unknown>}
 export interface PrevisitSummary {chiefComplaint?:string;symptomDuration?:string;presentIllness?:string;historySummary?:string;allergySummary?:string;medicationSummary?:string;suggestedExam?:string[]}
+export interface TriageSummary {symptomDescription?:string;recommendDeptName?:string;recommendDeptId?:number;riskLevel?:string;aiAnalysisJson?:string}
 
 function streamSse(path:string,data:Record<string,unknown>,onToken:(text:string)=>void):Promise<PrevisitMeta>{
   return new Promise((resolve,reject)=>{
@@ -26,6 +27,7 @@ export const aiApi = {
   followups:(patientId:number)=>request<FollowupPlan[]>({url:`/ai/pharmacy/followup/patient/${patientId}`}),
   feedback:(planId:number,data:Record<string,unknown>)=>request<void>({url:`/ai/pharmacy/followup/${planId}/feedback`,method:'POST',data}),
   previsitSession:(registerId:number)=>request<PrevisitSession>({url:`/ai/consult/preconsult/session/${registerId}`,showError:false}),
+  triageSummaryByRegister:(registerId:number)=>request<TriageSummary|null>({url:`/ai/triage/summary/register/${registerId}`,showError:false}),
   previsitStart:(data:{registerId:number;patientId:number;triageSessionId?:string},onToken:(text:string)=>void)=>streamSse('/ai/consult/preconsult/start',data,onToken),
   previsitReply:(data:{sessionUuid:string;answer:string},onToken:(text:string)=>void)=>streamSse('/ai/consult/preconsult/reply',data,onToken),
   previsitFinish:(sessionUuid:string)=>request<PrevisitSummary>({url:'/ai/consult/preconsult/finish',method:'POST',data:{sessionUuid}}),
