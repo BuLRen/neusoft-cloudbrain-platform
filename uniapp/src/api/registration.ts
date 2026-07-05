@@ -5,7 +5,7 @@ export interface Registration { id:number;patientId?:number;patientName?:string;
 export const registrationApi = {
   departments:()=>request<Department[]>({url:'/registration/departments'}),
   schedules:(departmentId:number,date:string)=>request<Schedule[]>({url:`/registration/scheduling/${departmentId}/${date}`}),
-  managed:()=>request<Registration[]>({url:'/registration/managed'}),
+  managed:(showError:boolean=true)=>request<Registration[]>({url:'/registration/managed',showError}),
   patient:(patientId:number)=>request<Registration[]>({url:`/registration/patient/${patientId}`}),
   create:(data:Record<string,unknown>)=>request<Record<string,any>>({url:'/registration/register',method:'POST',data}),
   cancel:(id:number)=>request<Record<string,unknown>>({url:`/registration/${id}/cancel`,method:'PUT'}),

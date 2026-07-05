@@ -16,6 +16,6 @@ export const medicalApi = {
   notifications:(patientId:number,page=1,size=20)=>request<{list:NotificationItem[];total:number}>({url:'/notification/list',data:{receiverId:patientId,receiverRole:'patient',page,size}}),
   unreadCount:(patientId:number)=>request<{count:number}>({url:'/notification/unread-count',data:{receiverId:patientId,receiverRole:'patient'}}),
   markRead:(id:number,patientId:number)=>request<void>({url:`/notification/${id}/read?receiverId=${patientId}`,method:'POST'}),
-  paymentOrders:(patientId:number,status?:number)=>request<{orders:PaymentOrder[];total:number}>({url:'/payment/orders',data:{patientId,status,page:1,size:20}}),
-  payAll:(registerId:number)=>request<Record<string,unknown>>({url:`/payment/orders/${registerId}/pay-all`,method:'POST'}),
+  paymentOrders:(patientId:number,status?:number|null)=>request<{orders:PaymentOrder[];total:number}>({url:'/payment/orders',data:{patientId,...(status!==undefined&&status!==null?{status}:{}),page:1,size:20}}),
+  payAll:(registerId:number)=>request<{accountBalance?:number}&Record<string,unknown>>({url:`/payment/orders/${registerId}/pay-all`,method:'POST'}),
 }

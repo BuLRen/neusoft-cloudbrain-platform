@@ -1,4 +1,5 @@
 import { reactive, computed } from 'vue'
+import { patientApi } from '../api/patient'
 
 export interface PatientInfo {
   patientId: number
@@ -47,6 +48,22 @@ export function switchPatient(patientId: number) {
     session.currentPatientId = patientId
     uni.setStorageSync(SESSION_KEY, { ...session })
   }
+}
+
+export function setPatientBalance(patientId: number, accountBalance: number) {
+  const target = session.patients.find(item => item.patientId === patientId)
+  if (!target) return
+  target.accountBalance = accountBalance
+  uni.setStorageSync(SESSION_KEY, { ...session })
+}
+
+export async function refreshCurrentPatientBalance(): Promise<void> {
+  const pid = currentPatient.value?.patientId
+  if (!pid) return
+  try {
+    const res = await patientApi.balance(pid)
+    setPatientBalance(pid, res.accountBalance)
+  } catch { /* 静默失败：余额刷新失败不打扰用户 */ }
 }
 
 export function clearSession() {
