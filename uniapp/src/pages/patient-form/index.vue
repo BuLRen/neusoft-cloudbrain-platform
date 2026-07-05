@@ -1,0 +1,20 @@
+<script setup lang="ts">
+import { computed, reactive, ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import PageHeader from '../../components/PageHeader.vue'
+import { patientApi } from '../../api/patient'
+import { session } from '../../stores/session'
+
+const patientId=ref(0),saving=ref(false)
+const editing=computed(()=>patientId.value>0)
+const relations=['配偶','子女','父母','其他'],genders=['男','女']
+const form=reactive({realName:'',relation:'配偶',gender:'男',idCard:'',birthdate:'',phone:'',homeAddress:'',allergyHistory:''})
+function selectRelation(e:any){form.relation=relations[Number(e.detail.value)]}
+function selectGender(e:any){form.gender=genders[Number(e.detail.value)]}
+function selectDate(e:any){form.birthdate=e.detail.value}
+function validate(){if(!form.realName.trim())return '请填写姓名';if(!/^\d{17}[\dXx]$/.test(form.idCard))return '请填写正确的 18 位身份证号';if(form.phone&&!/^1\d{10}$/.test(form.phone))return '请填写正确的手机号';return ''}
+async function save(){const message=validate();if(message){uni.showToast({title:message,icon:'none'});return}saving.value=true;try{const data={realName:form.realName.trim(),gender:form.gender,idCard:form.idCard.toUpperCase(),birthdate:form.birthdate||undefined,phone:form.phone||undefined,homeAddress:form.homeAddress||undefined,allergyHistory:form.allergyHistory||undefined};if(editing.value)await patientApi.update(patientId.value,data);else await patientApi.addFamily(session.userId,form.relation,data);uni.showToast({title:editing.value?'保存成功':'添加成功',icon:'success'});setTimeout(()=>uni.navigateBack(),500)}catch{}finally{saving.value=false}}
+onLoad(async options=>{patientId.value=Number(options?.id||0);if(!patientId.value)return;const data=await patientApi.detail(patientId.value);Object.assign(form,{realName:data.realName||'',relation:data.relation||'家属',gender:data.gender||'男',idCard:data.idCard||'',birthdate:data.birthdate||'',phone:data.phone||'',homeAddress:data.homeAddress||'',allergyHistory:data.allergyHistory||''})})
+</script>
+<template><view class="page-shell"><PageHeader :title="editing?'编辑就诊人':'添加就诊人'" subtitle="请填写真实身份与联系信息"/><view class="form-card card"><view class="field"><text><i>*</i> 姓名</text><input v-model="form.realName" maxlength="30" placeholder="请输入真实姓名"/></view><picker v-if="!editing" :range="relations" @change="selectRelation"><view class="field"><text><i>*</i> 与本人关系</text><text class="value">{{form.relation}} ›</text></view></picker><picker :range="genders" @change="selectGender"><view class="field"><text><i>*</i> 性别</text><text class="value">{{form.gender}} ›</text></view></picker><view class="field"><text><i>*</i> 身份证号</text><input v-model="form.idCard" maxlength="18" placeholder="请输入 18 位身份证号"/></view><picker mode="date" :value="form.birthdate" @change="selectDate"><view class="field"><text>出生日期</text><text class="value">{{form.birthdate||'请选择'}} ›</text></view></picker><view class="field"><text>手机号</text><input v-model="form.phone" type="number" maxlength="11" placeholder="请输入手机号"/></view><view class="field"><text>家庭住址</text><input v-model="form.homeAddress" maxlength="100" placeholder="请输入家庭住址"/></view><view class="textarea-field"><text>过敏史</text><textarea v-model="form.allergyHistory" maxlength="300" placeholder="无过敏史可不填"/></view></view><button class="submit" :loading="saving" @tap="save">{{saving?'正在保存…':'保存就诊人'}}</button></view></template>
+<style scoped lang="scss">.form-card{padding:5rpx 27rpx}.field{min-height:96rpx;display:flex;align-items:center;border-bottom:1rpx solid #edf1f6;font-size:24rpx}.field>text:first-child{width:205rpx;color:#263a5f}.field i{color:#ef5360;font-style:normal}.field input{flex:1;text-align:right;font-size:23rpx}.value{flex:1;text-align:right;color:#65738b}.textarea-field{padding:25rpx 0}.textarea-field>text{font-size:24rpx;color:#263a5f}.textarea-field textarea{width:100%;height:150rpx;margin-top:17rpx;padding:18rpx;border-radius:18rpx;background:#f5f8fc;font-size:23rpx}.submit{height:88rpx;margin-top:28rpx;border-radius:25rpx;background:linear-gradient(100deg,#2878ff,#5ba4ff);color:#fff;font-size:28rpx}</style>
