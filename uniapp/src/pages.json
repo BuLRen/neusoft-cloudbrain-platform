@@ -12,6 +12,7 @@
     {"path":"pages/queue/index","style":{"navigationStyle":"custom"}},
     {"path":"pages/payment/index","style":{"navigationStyle":"custom"}},
     {"path":"pages/records/index","style":{"navigationStyle":"custom"}},
+    {"path":"pages/record-detail/index","style":{"navigationStyle":"custom"}},
     {"path":"pages/patients/index","style":{"navigationStyle":"custom"}},
     {"path":"pages/patient-form/index","style":{"navigationStyle":"custom"}},
     {"path":"pages/previsit/index","style":{"navigationStyle":"custom"}},

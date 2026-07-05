@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { unreadMessageCount, refreshUnreadMessageCount } from '../stores/notification'
+import { replacePage } from '../utils/navigation'
 const props=defineProps<{active:number}>()
 const items=[{text:'首页',path:'/pages/home/index',icon:'home'},{text:'我的就诊',path:'/pages/visits/index',icon:'visit'},{text:'消息中心',path:'/pages/messages/index',icon:'message'},{text:'医院信息',path:'/pages/hospital/index',icon:'hospital'},{text:'个人中心',path:'/pages/profile/index',icon:'profile'}]
-function go(index:number,path:string){if(index===props.active)return;uni.reLaunch({url:path})}
+function go(index:number,path:string){if(index===props.active)return;replacePage(path)}
 onMounted(refreshUnreadMessageCount)
 </script>
 <template><view class="bottom-nav"><view v-for="(item,index) in items" :key="item.path" class="nav-item" :class="{active:index===active}" @tap="go(index,item.path)"><view class="nav-icon"><image :src="`/static/nav/${item.icon}${index===active?'-active':''}.svg`" mode="aspectFit"/><text v-if="index===2&&unreadMessageCount>0" class="badge">{{unreadMessageCount>99?'99+':unreadMessageCount}}</text></view><text class="nav-label">{{item.text}}</text></view></view></template>

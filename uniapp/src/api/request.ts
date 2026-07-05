@@ -1,5 +1,6 @@
 import { API_BASE_URL, REQUEST_TIMEOUT } from '../config/env'
 import { clearSession, session } from '../stores/session'
+import { replacePage } from '../utils/navigation'
 
 export interface ApiResult<T> { code:number; message:string; data:T }
 export interface RequestOptions { url:string; method?:UniApp.RequestOptions['method']; data?:unknown; header?:Record<string,string>; skipAuth?:boolean; showError?:boolean }
@@ -9,7 +10,8 @@ function redirectToLogin() {
   if (redirecting) return
   redirecting = true
   clearSession()
-  uni.reLaunch({ url:'/pages/login/index', complete:()=>setTimeout(()=>{redirecting=false},500) })
+  replacePage('/pages/login/index', true)
+  setTimeout(()=>{redirecting=false},800)
 }
 
 export function request<T>(options: RequestOptions): Promise<T> {
