@@ -1,7 +1,8 @@
 import { request } from './request'
 import { API_BASE_URL, REQUEST_TIMEOUT } from '../config/env'
 import { session } from '../stores/session'
-export interface TriageResult {urgencyLevel?:string;urgencyAdvice?:string;recommendedDepartment?:string;recommendedDepartmentId?:number;departmentReason?:string;confidenceLevel?:string;redFlags?:string[];selfCareAdvice?:string;sessionId?:string;isOutOfScope?:boolean;outOfScopeMessage?:string}
+export interface TriageAiAnalysis{possibleConditions?:string[];suggestedExaminations?:string[];selfCareAdvice?:string}
+export interface TriageResult{urgencyLevel?:string;urgencyAdvice?:string;recommendedDepartment?:string;recommendedDepartmentId?:number;departmentReason?:string;confidenceLevel?:string;redFlags?:string[];selfCareAdvice?:string;sessionId?:string;isOutOfScope?:boolean;outOfScopeMessage?:string;riskLevel?:string;recommendedRegistLevelId?:number;registLevelReason?:string;alternativeDepartments?:string[];aiAnalysis?:TriageAiAnalysis}
 export interface FollowupPlan {id:number;registerId?:number;prescriptionId?:number;followUpDay?:number;plannedDate?:string;followUpType?:string;contentTemplate?:string;planStatus?:string;creationTime?:string;modelId?:string}
 export interface PrevisitMeta {sessionUuid?:string;registerId?:number;roundNumber?:number;finished?:boolean}
 export interface PrevisitRound {roundNumber:number;aiQuestion?:string;patientAnswer?:string}
