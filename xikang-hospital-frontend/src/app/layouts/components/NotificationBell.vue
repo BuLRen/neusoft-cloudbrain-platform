@@ -81,9 +81,10 @@ function goAllMessages() {
 
 onMounted(() => {
   notificationStore.startPolling()
+  notificationStore.connectWebSocket()
 })
 onUnmounted(() => {
-  // 注意：AppHeader 在所有布局都常驻，这里不停止轮询。
+  // 注意：AppHeader 在所有布局都常驻，这里不停止轮询 / 不断开 WS。
   // 真正停止由登出动作触发（PatientLayout.logout 已处理；其他布局登出也会清 store）。
 })
 </script>

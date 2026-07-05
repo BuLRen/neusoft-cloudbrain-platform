@@ -4,11 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.payment.entity.ExpenseRecord;
 import com.xikang.payment.feign.AuthPatientFeignClient;
+import com.xikang.payment.feign.NotificationFeignClient;
 import com.xikang.payment.feign.RegistrationFeignClient;
+import com.xikang.payment.feign.dto.PaymentNotificationRequest;
 import com.xikang.payment.mapper.ExpenseRecordMapper;
 import com.xikang.payment.mapper.RegisterInfoMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +46,10 @@ public class PaymentService {
     private final RegisterInfoMapper registerInfoMapper;
     private final AuthPatientFeignClient authPatientFeignClient;
     private final RegistrationFeignClient registrationFeignClient;
+    private final NotificationFeignClient notificationFeignClient;
+
+    @Value("${notification.internal-token:notif-internal-2026}")
+    private String notificationInternalToken;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -255,6 +262,9 @@ public class PaymentService {
         final String itemCode = item.getItemCode();
         final BigDecimal paidAmount = amount;
         final Long opId = operatorId;
+        final Long patientId = item.getPatientId();
+        final String patientName = item.getPatientName();
+        final String itemName = item.getItemName();
         try {
             if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
                 org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
@@ -262,10 +272,16 @@ public class PaymentService {
                         @Override
                         public void afterCommit() {
                             fireOnFeePaidCallback(registerId, itemCode, itemId, paidAmount, opId);
+                            firePaymentNotification(patientId, patientName, "PAYMENT_SUCCESS",
+                                    "支付成功", "「" + itemName + "」已支付 " + paidAmount + " 元",
+                                    "register", registerId);
                         }
                     });
             } else {
                 fireOnFeePaidCallback(registerId, itemCode, itemId, paidAmount, opId);
+                firePaymentNotification(patientId, patientName, "PAYMENT_SUCCESS",
+                        "支付成功", "「" + itemName + "」已支付 " + paidAmount + " 元",
+                        "register", registerId);
             }
         } catch (Exception e) {
             log.error("注册 afterCommit 回调失败，将依赖定时补偿 | itemId={}", itemId, e);
@@ -380,6 +396,35 @@ public class PaymentService {
         item.setOperatorName(operatorName != null ? operatorName : "系统");
         item.setRemark((item.getRemark() == null ? "" : item.getRemark() + " | ") + "已退款：" + (reason != null ? reason : ""));
         expenseRecordMapper.update(item);
+
+        // afterCommit 推送退款通知
+        final Long patientId = item.getPatientId();
+        final String patientName = item.getPatientName();
+        final String itemName = item.getItemName();
+        final BigDecimal refundAmount = amount;
+        final String refundReason = reason;
+        final Long registerId = item.getRegisterId();
+        try {
+            if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            firePaymentNotification(patientId, patientName, "REFUND_SUCCESS",
+                                    "退款成功", "「" + itemName + "」已退款 " + refundAmount + " 元"
+                                            + (refundReason != null ? "（" + refundReason + "）" : ""),
+                                    "register", registerId);
+                        }
+                    });
+            } else {
+                firePaymentNotification(patientId, patientName, "REFUND_SUCCESS",
+                        "退款成功", "「" + itemName + "」已退款 " + refundAmount + " 元"
+                                + (refundReason != null ? "（" + refundReason + "）" : ""),
+                        "register", registerId);
+            }
+        } catch (Exception e) {
+            log.error("注册退款 afterCommit 通知失败 | itemId={}", itemId, e);
+        }
 
         log.info("refund 成功 | itemId={}, registerId={}, amount={}", itemId, item.getRegisterId(), amount);
 
@@ -749,6 +794,29 @@ public class PaymentService {
             // 回调失败不影响支付主流程，registration 定时任务或下次支付时会重算 summary
             log.error("on-fee-paid 回调失败 | registerId={}, itemId={}（registration 后续汇总会兜底）",
                     registerId, itemId, e);
+        }
+    }
+
+    /**
+     * 推送支付/退款通知给患者（通过 notification-service 写库 + WebSocket 实时推送）。
+     * <p>调用失败仅记日志，绝不影响支付/退款主流程。
+     */
+    private void firePaymentNotification(Long patientId, String patientName, String type,
+                                         String title, String content, String bizType, Long bizId) {
+        try {
+            PaymentNotificationRequest req = new PaymentNotificationRequest();
+            req.setReceiverId(patientId);
+            req.setReceiverRole("patient");
+            req.setType(type);
+            req.setTitle(title);
+            req.setContent(content);
+            req.setBizType(bizType);
+            req.setBizId(bizId);
+            notificationFeignClient.send(req, notificationInternalToken);
+            log.info("支付/退款通知已发送 | patientId={}, type={}, bizId={}", patientId, type, bizId);
+        } catch (Exception e) {
+            log.error("支付/退款通知发送失败 | patientId={}, type={}, bizId={}（不影响主流程）",
+                    patientId, type, bizId, e);
         }
     }
 

@@ -1,5 +1,6 @@
 import { API_BASE_URL, REQUEST_TIMEOUT } from '../config/env'
 import { clearSession, saveSession, session } from '../stores/session'
+import { disconnectNotification } from '../stores/notification'
 import { replacePage } from '../utils/navigation'
 
 export interface ApiResult<T> { code:number; message:string; data:T }
@@ -26,6 +27,7 @@ function redirectToLogin() {
   if (redirecting) return
   redirecting = true
   clearSession()
+  try { disconnectNotification() } catch { /* ignore */ }
   replacePage('/pages/login/index', true)
   setTimeout(()=>{redirecting=false},800)
 }
