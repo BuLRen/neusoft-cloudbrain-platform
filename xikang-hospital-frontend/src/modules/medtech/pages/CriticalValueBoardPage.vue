@@ -7,6 +7,7 @@ import {
   type CriticalValueAlert,
   type CriticalValueBoardStats,
 } from '@/shared/api/modules/criticalValue'
+import { formatBeijingDateTime } from '@/shared/utils/beijingDate'
 
 const loading = ref(false)
 const alerts = ref<CriticalValueAlert[]>([])
@@ -168,9 +169,15 @@ onUnmounted(() => {
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="reportedTime" label="上报时间" min-width="150" />
-        <ElTableColumn prop="ackDeadline" label="签收截止" min-width="150" />
-        <ElTableColumn prop="handledTime" label="处置时间" min-width="150" />
+        <ElTableColumn label="上报时间" min-width="150">
+          <template #default="{ row }">{{ formatBeijingDateTime(row.reportedTime) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="签收截止" min-width="150">
+          <template #default="{ row }">{{ formatBeijingDateTime(row.ackDeadline) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="处置时间" min-width="150">
+          <template #default="{ row }">{{ formatBeijingDateTime(row.handledTime) }}</template>
+        </ElTableColumn>
       </ElTable>
       <ElEmpty v-if="!loading && !alerts.length" description="暂无数据" />
     </ElCard>

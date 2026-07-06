@@ -27,9 +27,14 @@ public class CriticalValueDetector {
     private final ObjectMapper objectMapper;
 
     public CriticalDetectResult detect(String techCode, Map<String, Object> resultData) {
+        return detect(techCode, null, resultData);
+    }
+
+    public CriticalDetectResult detect(String techCode, String techName, Map<String, Object> resultData) {
+        Map<String, Object> payload = enrichResultPayload(techCode, techName, resultData);
         List<CriticalItemHit> hits = new ArrayList<>();
-        hits.addAll(detectFromStructuredOutput(techCode, resultData));
-        hits.addAll(detectFromValues(techCode, resultData));
+        hits.addAll(detectFromStructuredOutput(techCode, payload));
+        hits.addAll(detectFromValues(techCode, payload));
 
         if (!hits.isEmpty()) {
             String severity = hits.stream()
@@ -40,11 +45,58 @@ public class CriticalValueDetector {
             return CriticalDetectResult.of(dedupeHits(hits), severity, "rule");
         }
 
-        CriticalDetectResult aiResult = detectFromAi(techCode, resultData);
+        CriticalDetectResult aiResult = detectFromAi(techCode, payload);
         if (aiResult.isSuspected()) {
             return aiResult;
         }
         return CriticalDetectResult.none();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> enrichResultPayload(String techCode, String techName, Map<String, Object> resultData) {
+        Map<String, Object> enriched = new LinkedHashMap<>(resultData != null ? resultData : Map.of());
+        Object valuesObj = enriched.get("values");
+        if (!(valuesObj instanceof Map<?, ?> values)) {
+            return enriched;
+        }
+
+        String reportText = joinReportTexts(values);
+        if (reportText == null || reportText.isBlank()) {
+            return enriched;
+        }
+
+        enriched.putIfAbsent("resultText", reportText);
+        if (!enriched.containsKey("structuredOutput")) {
+            Map<String, Object> structured = new LinkedHashMap<>();
+            String name = techName != null && !techName.isBlank() ? techName : techCode;
+            if (name != null && !name.isBlank()) {
+                structured.put("checkName", name);
+            }
+            structured.put("conclusion", reportText);
+            enriched.put("structuredOutput", structured);
+        }
+        return enriched;
+    }
+
+    private String joinReportTexts(Map<?, ?> values) {
+        String[] keys = {
+            "conclusion", "impression", "findings",
+            "checkResult", "inspectionResult", "disposalResult", "result"
+        };
+        StringBuilder builder = new StringBuilder();
+        for (String key : keys) {
+            String text = stringValue(values.get(key));
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            if (!builder.isEmpty() && !builder.toString().contains(text)) {
+                builder.append('\n');
+            }
+            if (!builder.toString().contains(text)) {
+                builder.append(text);
+            }
+        }
+        return builder.toString().trim();
     }
 
     @SuppressWarnings("unchecked")

@@ -125,7 +125,7 @@ public class MedtechService {
         response.put("checkTime", request.getCheckTime());
         response.put("aiAnalysisTriggered", resultData.get("aiAnalysis") != null);
         physicianW3Client.triggerW3Async(request.getRegisterId());
-        attachCriticalDetect(response, request.getTechCode(), resultData);
+        attachCriticalDetect(response, request.getTechCode(), request.getTechName(), resultData);
 
         return response;
     }
@@ -405,7 +405,7 @@ public class MedtechService {
         response.put("status", "completed");
         response.put("inspectionTime", request.getInspectionTime());
         physicianW3Client.triggerW3Async(request.getRegisterId());
-        attachCriticalDetect(response, request.getTechCode(), resultData);
+        attachCriticalDetect(response, request.getTechCode(), request.getTechName(), resultData);
 
         return response;
     }
@@ -517,7 +517,7 @@ public class MedtechService {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "completed");
         response.put("disposalTime", request.getDisposalTime());
-        attachCriticalDetect(response, request.getTechCode(), resultData);
+        attachCriticalDetect(response, request.getTechCode(), request.getTechName(), resultData);
         return response;
     }
 
@@ -774,12 +774,17 @@ public class MedtechService {
         return extra == null ? base : base + "；" + extra;
     }
 
-    private void attachCriticalDetect(Map<String, Object> response, String techCode, Map<String, Object> resultData) {
+    private void attachCriticalDetect(
+        Map<String, Object> response,
+        String techCode,
+        String techName,
+        Map<String, Object> resultData
+    ) {
         if (response == null || resultData == null) {
             return;
         }
         try {
-            CriticalDetectResult detect = criticalValueDetector.detect(techCode, resultData);
+            CriticalDetectResult detect = criticalValueDetector.detect(techCode, techName, resultData);
             response.put("criticalDetect", criticalValueService.toDetectMap(detect));
         } catch (Exception e) {
             log.warn("危急值识别失败，已跳过 | techCode={} | {}", techCode, e.getMessage());

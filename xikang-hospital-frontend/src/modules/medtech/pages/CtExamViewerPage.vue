@@ -278,6 +278,8 @@ onMounted(async () => {
           >
             <CtDiagnosisReportPanel
               :check-request-id="id"
+              :register-id="report?.registerId"
+              :tech-name="report?.techName"
               :can-edit="canEditReport"
               :has-imaging="hasImaging"
               :analysis-result="analysisResult"
