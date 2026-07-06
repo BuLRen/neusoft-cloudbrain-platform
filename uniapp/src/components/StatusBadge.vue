@@ -1,0 +1,3 @@
+<script setup lang="ts">import{computed}from'vue';const props=defineProps<{status:string}>();const tone=computed(()=>props.status.includes('待缴')?'warning':props.status.includes('完成')?'success':props.status.includes('取消')?'muted':'primary')</script>
+<template><text class="status-badge" :class="tone">{{status}}</text></template>
+<style scoped>.status-badge{display:inline-flex;align-items:center;padding:6rpx 15rpx;border-radius:18rpx;font-size:19rpx;line-height:1.2;font-weight:500}.primary{color:#2878ff;background:#eaf3ff}.success{color:#10a47b;background:#e6f8f1}.warning{color:#ed8611;background:#fff2df}.muted{color:#8792a4;background:#eef1f5}</style>

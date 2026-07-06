@@ -1,14 +1,1 @@
-{
-  "pages": [
-    "pages/index/index",
-    "pages/logs/logs"
-  ],
-  "window": {
-    "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "Weixin",
-    "navigationBarBackgroundColor": "#ffffff"
-  },
-  "style": "v2",
-  "componentFramework": "glass-easel",
-  "lazyCodeLoading": "requiredComponents"
-}
+{"pages":["pages/home/home","pages/visits/visits","pages/messages/messages","pages/hospital/hospital","pages/profile/profile"],"window":{"navigationStyle":"custom","backgroundColor":"#f4f8ff","backgroundTextStyle":"light"},"tabBar":{"custom":true,"color":"#7d879b","selectedColor":"#2878ff","backgroundColor":"#ffffff","list":[{"pagePath":"pages/home/home","text":"首页"},{"pagePath":"pages/visits/visits","text":"我的就诊"},{"pagePath":"pages/messages/messages","text":"消息中心"},{"pagePath":"pages/hospital/hospital","text":"医院信息"},{"pagePath":"pages/profile/profile","text":"个人中心"}]},"style":"v2","componentFramework":"glass-easel","lazyCodeLoading":"requiredComponents"}

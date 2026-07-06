@@ -218,15 +218,33 @@ public class AuthService {
         String birthdateStr = registerRequest.get("birthdate");
         String userTypeStr = registerRequest.get("userType");
 
+        username = username == null ? null : username.trim();
+        realName = realName == null ? null : realName.trim();
+        phone = phone == null ? null : phone.trim();
+        idCard = idCard == null ? null : idCard.trim().toUpperCase();
+
         if (username == null || username.isBlank()) {
             throw new BusinessException(400, "用户名不能为空");
         }
         if (password == null || password.isBlank()) {
             throw new BusinessException(400, "密码不能为空");
         }
-        if (idCard == null || idCard.isBlank()) {
-            throw new BusinessException(400, "身份证号不能为空");
+        if (password.length() < 6) {
+            throw new BusinessException(400, "密码长度不能少于6位");
         }
+        if (realName == null || realName.isBlank()) {
+            throw new BusinessException(400, "真实姓名不能为空");
+        }
+        if (phone == null || !phone.matches("^1[3-9]\\d{9}$")) {
+            throw new BusinessException(400, "请输入正确的11位手机号");
+        }
+        if (!isValidChineseIdCard(idCard)) {
+            throw new BusinessException(400, "请输入正确的18位身份证号");
+        }
+
+        // 患者的出生日期和性别以已校验的身份证为唯一数据源，不信任前端传值。
+        LocalDate idCardBirthdate = parseBirthdateFromIdCard(idCard);
+        String idCardGender = parseGenderFromIdCard(idCard);
 
         // Check if username already exists
         User existing = userMapper.selectByUsername(username);
@@ -239,6 +257,9 @@ public class AuthService {
         Integer patientId;
 
         if (existingPatient != null) {
+            if (existingPatient.getRealName() != null && !existingPatient.getRealName().equals(realName)) {
+                throw new BusinessException(409, "身份证号与姓名不匹配");
+            }
             // 身份证号已存在，直接关联
             patientId = existingPatient.getId();
             log.info("Patient already exists for idCard: {}, patientId: {}", idCard, patientId);
@@ -247,15 +268,8 @@ public class AuthService {
             Patient patient = new Patient();
             patient.setRealName(realName != null ? realName : username);
             patient.setIdCard(idCard);
-            patient.setGender(resolveGender(gender, idCard));
-            if (birthdateStr != null && !birthdateStr.isBlank()) {
-                patient.setBirthdate(LocalDate.parse(birthdateStr));
-            } else {
-                LocalDate parsedBirthdate = parseBirthdateFromIdCard(idCard);
-                if (parsedBirthdate != null) {
-                    patient.setBirthdate(parsedBirthdate);
-                }
-            }
+            patient.setGender(idCardGender);
+            patient.setBirthdate(idCardBirthdate);
 
             patient.setPhone(phone != null ? phone : "");
             patient.setDelmark(1);
@@ -374,6 +388,30 @@ public class AuthService {
         }
 
         log.info("User password changed successfully: {}", username);
+    }
+
+    /** 校验18位中国居民身份证：格式、出生日期和 MOD 11-2 校验位。 */
+    private boolean isValidChineseIdCard(String idCard) {
+        if (idCard == null || !idCard.matches("^\\d{17}[0-9X]$")) {
+            return false;
+        }
+        String validProvinces = "|11|12|13|14|15|21|22|23|31|32|33|34|35|36|37|41|42|43|44|45|46|50|51|52|53|54|61|62|63|64|65|71|81|82|";
+        if (!validProvinces.contains("|" + idCard.substring(0, 2) + "|")
+                || "000000".equals(idCard.substring(0, 6))
+                || "000".equals(idCard.substring(14, 17))) {
+            return false;
+        }
+        LocalDate birthdate = parseBirthdateFromIdCard(idCard);
+        if (birthdate == null || birthdate.isAfter(LocalDate.now()) || birthdate.isBefore(LocalDate.of(1900, 1, 1))) {
+            return false;
+        }
+        int[] weights = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
+        char[] checks = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
+        int sum = 0;
+        for (int i = 0; i < 17; i++) {
+            sum += (idCard.charAt(i) - '0') * weights[i];
+        }
+        return idCard.charAt(17) == checks[sum % 11];
     }
 
     private String resolveGender(String gender, String idCard) {
