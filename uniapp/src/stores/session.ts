@@ -1,5 +1,6 @@
 import { reactive, computed } from 'vue'
 import { patientApi } from '../api/patient'
+import { connectNotification, disconnectNotification } from './notification'
 
 export interface PatientInfo {
   patientId: number
@@ -47,6 +48,13 @@ export function switchPatient(patientId: number) {
   if (session.patients.some(item => item.patientId === patientId)) {
     session.currentPatientId = patientId
     uni.setStorageSync(SESSION_KEY, { ...session })
+    // 切患者后必须重连 WS，否则收到的是上一个用户的消息，channel 会错乱
+    try {
+      disconnectNotification()
+      connectNotification()
+    } catch {
+      /* ignore：未登录/未配置时静默 */
+    }
   }
 }
 
@@ -69,4 +77,10 @@ export async function refreshCurrentPatientBalance(): Promise<void> {
 export function clearSession() {
   Object.assign(session, emptySession())
   uni.removeStorageSync(SESSION_KEY)
+  // 登出后必须断开 WS，避免旧 token 持续上报通知
+  try {
+    disconnectNotification()
+  } catch {
+    /* ignore */
+  }
 }

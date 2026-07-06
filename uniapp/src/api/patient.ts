@@ -4,6 +4,7 @@ export const patientApi = {
   list:async(userId:string|number)=>{const rows=await request<Array<PatientInfo&{id?:number}>>({url:'/patient/list',data:{userId}});return rows.map(item=>({...item,patientId:item.patientId||Number(item.id)}))},
   detail:async(patientId:number)=>{const item=await request<PatientInfo&{id?:number}>({url:`/patient/${patientId}`});return{...item,patientId:item.patientId||Number(item.id)}},
   balance:(patientId:number)=>request<{patientId:number;accountBalance:number}>({url:`/patient/${patientId}/balance`}),
+  recharge:(patientId:number,amount:number,remark?:string)=>request<{accountBalance?:number;message?:string}&Record<string,unknown>>({url:`/patient/${patientId}/balance/recharge`,method:'POST',data:{amount,remark:'患者自助充值'}}),
   transactions:(patientId:number)=>request<unknown[]>({url:`/patient/${patientId}/balance/transactions`}),
   addFamily:(userId:string|number,relation:string,data:Partial<PatientInfo>)=>request<void>({url:`/patient/family?userId=${encodeURIComponent(String(userId))}&relation=${encodeURIComponent(relation)}`,method:'POST',data}),
   update:(patientId:number,data:Partial<PatientInfo>)=>request<void>({url:`/patient/${patientId}`,method:'PUT',data}),

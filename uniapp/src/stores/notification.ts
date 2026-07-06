@@ -33,6 +33,15 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 let wsActivePatientId = 0
 
+// 内存级通知订阅：messages 页进入时订阅，离开时注销，用于实时插入列表头部
+type NotificationListener = (payload: { id: number; title?: string; content?: string }) => void
+const notificationListeners = new Set<NotificationListener>()
+
+export function onNotification(listener: NotificationListener) {
+  notificationListeners.add(listener)
+  return () => notificationListeners.delete(listener)
+}
+
 function buildWsUrl(): string | null {
   const patientId = currentPatient.value?.patientId
   const token = session.token
@@ -77,6 +86,10 @@ function handleMessage(raw: string) {
   if (payload.event === 'pong' || payload.event === 'hello') return
   if (payload.event === 'notification' && payload.id) {
     unreadMessageCount.value += 1
+    // 通知所有订阅者（messages 页用）
+    for (const fn of notificationListeners) {
+      try { fn({ id: payload.id, title: payload.title, content: payload.content }) } catch { /* 单个订阅者异常不影响其他 */ }
+    }
   }
 }
 
