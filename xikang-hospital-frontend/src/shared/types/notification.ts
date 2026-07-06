@@ -13,6 +13,7 @@ export type NotificationType =
   | 'PAYMENT_SUCCESS'
   | 'REFUND_SUCCESS'
   | 'EXAM_FEE_CREATED'
+  | 'PRESCRIPTION_CREATED'
 
 export interface NotificationItem {
   id: number
@@ -56,4 +57,5 @@ export const NOTIFICATION_TYPE_LABEL: Record<string, string> = {
   PAYMENT_SUCCESS: '支付成功',
   REFUND_SUCCESS: '退款成功',
   EXAM_FEE_CREATED: '待缴费提醒',
+  PRESCRIPTION_CREATED: '处方已开具',
 }

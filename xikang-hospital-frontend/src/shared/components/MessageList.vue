@@ -138,6 +138,7 @@ function typeTagType(t: NotificationType | string) {
   if (t === 'PAYMENT_SUCCESS') return 'success'
   if (t === 'REFUND_SUCCESS') return 'warning'
   if (t === 'EXAM_FEE_CREATED') return 'warning'
+  if (t === 'PRESCRIPTION_CREATED') return 'success'
   return 'info'
 }
 
