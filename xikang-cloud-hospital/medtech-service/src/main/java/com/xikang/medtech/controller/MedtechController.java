@@ -338,11 +338,10 @@ public class MedtechController {
      * 提交处置结果
      */
     @PutMapping("/disposal/result/{id}")
-    public Result<Void> submitDisposalResult(
+    public Result<Map<String, Object>> submitDisposalResult(
             @PathVariable Long id,
             @RequestBody Map<String, Object> result) {
-        medtechService.submitDisposalResult(id, result);
-        return Result.success();
+        return Result.success(medtechService.submitDisposalResult(id, result));
     }
 
     // ==================== 基础数据接口 ====================

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.CriticalValueContextMapper">
+
+    <select id="selectRegisterDoctor" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.employee_id AS "doctorId",
+            e.realname AS "doctorName",
+            r.real_name AS "patientName",
+            r.case_number AS "caseNumber",
+            r.deptment_id AS "departmentId"
+        FROM register r
+        LEFT JOIN employee e ON e.id = r.employee_id
+        WHERE r.id = #{registerId}
+        LIMIT 1
+    </select>
+</mapper>

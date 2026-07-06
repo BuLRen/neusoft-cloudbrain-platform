@@ -34,6 +34,8 @@ public interface MedicalTechnologyMapper {
 
     int countReferences(Long id);
 
+    int deleteAiExamSuggestionsByTechId(Long id);
+
     int insert(MedicalTechnology medicalTechnology);
 
     int update(MedicalTechnology medicalTechnology);

@@ -81,6 +81,10 @@
         )
     </select>
 
+    <delete id="deleteAiExamSuggestionsByTechId">
+        DELETE FROM ai_exam_suggestion WHERE tech_id = #{id}
+    </delete>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO medical_technology (
             tech_code, tech_name, tech_format, tech_price, tech_type, price_type,

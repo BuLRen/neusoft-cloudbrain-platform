@@ -32,7 +32,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
     //   路径形如 /api/registration/calling/board/{deptId}，子串匹配无冲突
     // - /check-in：报到机扫码报到接口，路径形如 /api/registration/{id}/check-in
     //   含 check-in 子串的本系统路径只有报到接口，无安全风险
-    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/api/auth/captcha,/ws/voice,/ws/notification,/api/voice/,/calling/stream/,/calling/board/,/check-in,/api/medtech/internal/";
+    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/api/auth/captcha,/ws/voice,/ws/notification,/api/voice/,/calling/stream/,/calling/board/,/check-in,/api/medtech/internal/,/critical-value/stream/";
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {

@@ -8,6 +8,7 @@ import {
   FirstAidKit,
   MagicStick,
   Tickets,
+  WarningFilled,
 } from '@element-plus/icons-vue'
 import type { Component } from 'vue'
 import { clinicalRecordApi, type ClinicalTimelineEntry } from '@/shared/api/modules/clinicalRecord'
@@ -34,6 +35,7 @@ const EVENT_STEP_INDEX: Record<string, number> = {
   check_result: 3,
   inspection_result: 3,
   disposal_result: 3,
+  critical_value: 3,
   diagnosis: 4,
   prescription: 5,
   visit_archived: 5,
@@ -51,6 +53,7 @@ const EVENT_ICON: Record<string, Component> = {
   check_result: FirstAidKit,
   inspection_result: FirstAidKit,
   disposal_result: FirstAidKit,
+  critical_value: WarningFilled,
   diagnosis: DocumentChecked,
   prescription: Tickets,
   visit_archived: CircleCheck,

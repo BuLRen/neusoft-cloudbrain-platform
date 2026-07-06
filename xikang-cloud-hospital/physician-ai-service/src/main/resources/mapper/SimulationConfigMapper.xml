@@ -50,4 +50,60 @@
           id
         LIMIT 1
     </select>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT *
+        FROM simulation_config
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (
+                    config_key ILIKE CONCAT('%', #{keyword}, '%')
+                    OR check_name ILIKE CONCAT('%', #{keyword}, '%')
+                    OR tech_code ILIKE CONCAT('%', #{keyword}, '%')
+                    OR match_keywords ILIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY id
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM simulation_config WHERE id = #{id}
+    </select>
+
+    <select id="selectByConfigKey" resultMap="BaseResultMap">
+        SELECT * FROM simulation_config WHERE config_key = #{configKey}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO simulation_config (
+            config_key, tech_code, check_name, match_keywords, enabled, simulation_mode, version,
+            prompt_sections, disease_mappings, output_schema, defaults
+        ) VALUES (
+            #{configKey}, #{techCode}, #{checkName}, #{matchKeywords}, #{enabled}, #{simulationMode}, #{version},
+            #{promptSections}::jsonb, #{diseaseMappings}::jsonb, #{outputSchema}::jsonb, #{defaults}::jsonb
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE simulation_config
+        SET
+            config_key = #{configKey},
+            tech_code = #{techCode},
+            check_name = #{checkName},
+            match_keywords = #{matchKeywords},
+            enabled = #{enabled},
+            simulation_mode = #{simulationMode},
+            version = #{version},
+            prompt_sections = #{promptSections}::jsonb,
+            disease_mappings = #{diseaseMappings}::jsonb,
+            output_schema = #{outputSchema}::jsonb,
+            defaults = #{defaults}::jsonb,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM simulation_config WHERE id = #{id}
+    </delete>
 </mapper>

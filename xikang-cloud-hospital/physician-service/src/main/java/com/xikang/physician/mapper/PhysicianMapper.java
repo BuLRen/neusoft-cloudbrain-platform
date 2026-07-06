@@ -93,6 +93,8 @@ public interface PhysicianMapper {
 
     Long selectRegisterEmployeeId(@Param("registerId") Long registerId);
 
+    boolean isRegisterPatientArchived(@Param("registerId") Long registerId);
+
     Long selectRegisterIdByMedicalRecordId(@Param("medicalRecordId") Long medicalRecordId);
 
     Map<String, Object> selectPatientByRegisterId(@Param("registerId") Long registerId);

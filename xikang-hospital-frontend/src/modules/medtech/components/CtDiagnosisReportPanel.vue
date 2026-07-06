@@ -2,13 +2,17 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElAlert, ElButton, ElDivider, ElMessage, ElTag } from 'element-plus'
 import DynamicResultForm from '@/shared/components/DynamicResultForm.vue'
+import CriticalValueConfirmDialog from '@/shared/components/CriticalValueConfirmDialog.vue'
 import { resultFormApi } from '@/shared/api/modules/resultForm'
 import { medtechApi } from '@/shared/api/modules/medtech'
+import { useCriticalValueReport } from '@/shared/composables/useCriticalValueReport'
 import type { ResultFormSchema } from '@/shared/types/resultForm'
 import type { CtAnalyzeResult } from '@/shared/api/modules/ctViewer'
 
 const props = defineProps<{
   checkRequestId: number
+  registerId?: number
+  techName?: string
   canEdit?: boolean
   analysisResult?: CtAnalyzeResult | null
   /** 只读模式：直接传入已解析的表单 schema，跳过 medtech API */
@@ -27,6 +31,15 @@ const schema = ref<ResultFormSchema | null>(null)
 const formValues = ref<Record<string, unknown>>({})
 const formRef = ref<InstanceType<typeof DynamicResultForm>>()
 const loadError = ref('')
+
+const {
+  dialogVisible: criticalDialogVisible,
+  reporting: criticalReporting,
+  detectResult: criticalDetect,
+  openIfSuspected,
+  confirmReport: confirmCriticalReport,
+  skipReport: skipCriticalReport,
+} = useCriticalValueReport()
 
 const canDraft = computed(() => Boolean(props.canEdit && props.checkRequestId && !loading.value && !drafting.value))
 const canSubmit = computed(() => Boolean(
@@ -96,6 +109,11 @@ async function handleAiDraft() {
   }
 }
 
+function finishSubmit() {
+  ElMessage.success('诊断报告已提交')
+  emit('submitted')
+}
+
 async function handleSubmit() {
   if (!props.checkRequestId || !schema.value) return
   const valid = await formRef.value?.validate()
@@ -103,9 +121,20 @@ async function handleSubmit() {
 
   loading.value = true
   try {
-    await medtechApi.submitCheckResult(props.checkRequestId, { values: formValues.value })
-    ElMessage.success('诊断报告已提交')
-    emit('submitted')
+    const response = await medtechApi.submitCheckResult(props.checkRequestId, { values: formValues.value })
+    const needsConfirm = openIfSuspected(
+      response,
+      {
+        registerId: props.registerId ?? 0,
+        sourceType: 'check',
+        sourceId: props.checkRequestId,
+        techName: props.techName,
+      },
+      finishSubmit,
+    )
+    if (!needsConfirm) {
+      finishSubmit()
+    }
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '提交失败，请稍后重试')
   } finally {
@@ -193,6 +222,14 @@ onMounted(() => {
         提交报告
       </ElButton>
     </footer>
+
+    <CriticalValueConfirmDialog
+      v-model:visible="criticalDialogVisible"
+      :detect="criticalDetect"
+      :reporting="criticalReporting"
+      @confirm="confirmCriticalReport"
+      @skip="skipCriticalReport"
+    />
   </aside>
 </template>
 

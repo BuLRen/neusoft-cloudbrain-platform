@@ -40,6 +40,20 @@ import MedicalRecordSummaryCard from '../components/MedicalRecordSummaryCard.vue
 import AgentActionCard from '../components/AgentActionCard.vue'
 import AgentConfirmCard from '../components/AgentConfirmCard.vue'
 import { applyConfirmCompletions, enrichAssistantMessage, parseStoredThoughts, sanitizeAgentContent, stripBlocksForDisplay } from '../utils/copilotConfirm'
+import {
+  WORKFLOW_CATALOG,
+  detectRunningWorkflow,
+  emptyWorkflowCompletion,
+  fetchWorkflowCompletion,
+  mergeWorkflowCompletion,
+  resolveWorkflowState,
+  workflowCompletionFromMessages,
+  workflowResultRoute,
+  workflowStatusLabel,
+  type WorkflowCatalogItem,
+  type WorkflowId,
+  type WorkflowRunState,
+} from '../utils/workflowStatus'
 import { copilotApi } from '@/shared/api/modules/copilot'
 import { physicianApi, type MedicalRecord, type PhysicianPatient } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
@@ -69,10 +83,12 @@ const loading = ref(false)
 const historyLoading = ref(false)
 const sessionsLoading = ref(false)
 const chatScrollRef = ref<InstanceType<typeof ElScrollbar> | null>(null)
-const composerInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const patient = ref<PhysicianPatient | null>(null)
 const medicalRecord = ref<MedicalRecord | null>(null)
 const medicalRecordLoading = ref(false)
+const workflowCompletion = ref(emptyWorkflowCompletion())
+const pendingWorkflowId = ref<WorkflowId | null>(null)
+const workflowStatusLoading = ref(false)
 type ContextPanel = 'ai-consult' | 'medical-record'
 const contextPanel = ref<ContextPanel | null>(null)
 const actionStates = reactive<Record<string, AgentActionStatus>>({})
@@ -125,14 +141,6 @@ const knowledgeBaseItems = [
   { label: '影像知识库', count: '420 条' },
 ] as const
 
-const workflowCatalog = [
-  { id: 'w1', label: 'W1 病历结构化', prompt: '请运行病历结构化工作流' },
-  { id: 'w2', label: 'W2 检查推荐', prompt: '请运行检查推荐工作流' },
-  { id: 'w3', label: 'W3 结果解读', prompt: '请运行结果解读工作流' },
-  { id: 'w4', label: 'W4 确诊推理', prompt: '请运行确诊推理工作流' },
-  { id: 'w5', label: 'W5 智能荐药', prompt: '请运行智能荐药工作流' },
-] as const
-
 const recommendedActions = ref([...composerPrompts.slice(0, 4)])
 
 const draftCharCount = computed(() => draft.value.length)
@@ -164,6 +172,76 @@ const medicalRecordDraftPreview = computed(() => {
   return parts.join('\n\n').trim()
 })
 
+const runningWorkflowId = computed(() =>
+  pendingWorkflowId.value ?? detectRunningWorkflow(messages.value, loading.value),
+)
+
+const workflowItems = computed(() =>
+  WORKFLOW_CATALOG.map((item) => ({
+    ...item,
+    state: resolveWorkflowState(item.id, workflowCompletion.value, runningWorkflowId.value),
+    statusLabel: workflowStatusLabel(
+      resolveWorkflowState(item.id, workflowCompletion.value, runningWorkflowId.value),
+    ),
+  })),
+)
+
+async function refreshWorkflowStatus(options?: { skipMedicalRecordFetch?: boolean }) {
+  if (!registerId.value) {
+    workflowCompletion.value = emptyWorkflowCompletion()
+    return
+  }
+
+  workflowStatusLoading.value = true
+  try {
+    let record = medicalRecord.value
+    if (!options?.skipMedicalRecordFetch) {
+      try {
+        record = await physicianApi.medicalRecord(registerId.value)
+        medicalRecord.value = record
+      } catch {
+        record = medicalRecord.value
+      }
+    }
+
+    const fromServer = await fetchWorkflowCompletion(registerId.value, record)
+    const fromChat = workflowCompletionFromMessages(messages.value)
+    workflowCompletion.value = mergeWorkflowCompletion(fromServer, fromChat)
+  } finally {
+    workflowStatusLoading.value = false
+  }
+}
+
+async function runWorkflow(item: WorkflowCatalogItem) {
+  if (loading.value || !currentSessionId.value) return
+  pendingWorkflowId.value = item.id
+  try {
+    await sendMessage(item.prompt)
+  } finally {
+    pendingWorkflowId.value = null
+  }
+}
+
+function handleWorkflowClick(item: WorkflowCatalogItem & { state: WorkflowRunState }) {
+  if (item.state === 'running') return
+  if (item.state === 'completed') {
+    if (!registerId.value) return
+    void router.push(workflowResultRoute(item.id, registerId.value))
+    return
+  }
+  void runWorkflow(item)
+}
+
+function workflowClickDisabled(item: { state: WorkflowRunState }) {
+  if (item.state === 'completed') return !registerId.value
+  if (item.state === 'running') return true
+  return loading.value || !currentSessionId.value
+}
+
+function workflowStateClass(state: ReturnType<typeof resolveWorkflowState>) {
+  return `is-${state}`
+}
+
 function refreshRecommendedActions() {
   const shuffled = [...composerPrompts].sort(() => Math.random() - 0.5)
   recommendedActions.value = shuffled.slice(0, 4)
@@ -172,14 +250,6 @@ function refreshRecommendedActions() {
 function handleSessionSelect(sessionId: number | string) {
   const id = typeof sessionId === 'string' ? Number(sessionId) : sessionId
   if (Number.isFinite(id)) void switchSession(id)
-}
-
-function applyComposerPrompt(text: string) {
-  if (loading.value || !currentSessionId.value) return
-  draft.value = text
-  void nextTick(() => {
-    composerInputRef.value?.focus?.()
-  })
 }
 
 function actionStateKey(messageIndex: number, actionIndex: number) {
@@ -303,9 +373,11 @@ async function loadMedicalRecord(id: number) {
     const record = await physicianApi.medicalRecord(id)
     if (seq !== medicalRecordLoadSeq) return
     medicalRecord.value = record
+    await refreshWorkflowStatus({ skipMedicalRecordFetch: true })
   } catch {
     if (seq !== medicalRecordLoadSeq) return
     medicalRecord.value = null
+    await refreshWorkflowStatus({ skipMedicalRecordFetch: true })
   } finally {
     if (seq === medicalRecordLoadSeq) medicalRecordLoading.value = false
   }
@@ -355,6 +427,7 @@ async function loadHistory(regId: number, sessionId: number) {
     resetChatState()
     messages.value = [...normalized, ...localResults]
     Object.assign(confirmStates, applyConfirmCompletions(messages.value, completions))
+    await refreshWorkflowStatus()
     await scrollToBottom()
   } finally {
     historyLoading.value = false
@@ -512,6 +585,7 @@ async function sendMessage(text?: string) {
   } finally {
     loading.value = false
     abortController = null
+    await refreshWorkflowStatus()
     await scrollToBottom()
   }
 }
@@ -547,6 +621,7 @@ async function handleActionConfirm(messageIndex: number, actionIndex: number, ac
     })
 
     await loadPatient(registerId.value)
+    await refreshWorkflowStatus()
     await scrollToBottom()
   } catch (error) {
     actionStates[key] = 'pending'
@@ -585,6 +660,7 @@ async function handleConfirmSubmit(
     confirmStates[key] = 'done'
 
     await loadPatient(registerId.value)
+    await refreshWorkflowStatus()
     await scrollToBottom()
   } catch (error) {
     confirmStates[key] = 'pending'
@@ -626,6 +702,7 @@ watch(registerId, (id, prevId) => {
     contextPanel.value = null
     sessions.value = []
     currentSessionId.value = null
+    workflowCompletion.value = emptyWorkflowCompletion()
     resetChatState()
     return
   }
@@ -902,30 +979,13 @@ onMounted(() => {
                   </div>
                 </template>
 
-                <p v-else>{{ msg.content }}</p>
+                <p v-else class="agent-chat__text">{{ msg.content }}</p>
               </div>
             </ElScrollbar>
 
             <div class="agent-composer">
-              <div v-if="currentSessionId" class="agent-composer__suggestions">
-                <span class="agent-composer__suggestions-label">快捷提问</span>
-                <div class="agent-composer__suggestions-list">
-                  <button
-                    v-for="item in composerPrompts"
-                    :key="`composer-${item}`"
-                    type="button"
-                    class="agent-composer__suggestion-btn"
-                    :disabled="loading"
-                    @click="applyComposerPrompt(item)"
-                  >
-                    {{ item }}
-                  </button>
-                </div>
-              </div>
-
               <div class="agent-composer__input-wrap">
                 <ElInput
-                  ref="composerInputRef"
                   v-model="draft"
                   type="textarea"
                   :rows="3"
@@ -972,11 +1032,23 @@ onMounted(() => {
             <div class="agent-side__head">
               <h3>工作流</h3>
             </div>
-            <ul class="agent-workflow-list">
-              <li v-for="item in workflowCatalog" :key="item.id">
-                <button type="button" class="agent-workflow-list__btn" @click="sendMessage(item.prompt)">
+            <ul class="agent-workflow-list" v-loading="workflowStatusLoading">
+              <li v-for="item in workflowItems" :key="item.id">
+                <button
+                  type="button"
+                  class="agent-workflow-list__btn"
+                  :class="{ 'is-completed': item.state === 'completed' }"
+                  :disabled="workflowClickDisabled(item)"
+                  :aria-label="item.state === 'completed' ? `查看${item.label}结果` : `运行${item.label}`"
+                  @click="handleWorkflowClick(item)"
+                >
                   <span>{{ item.label }}</span>
-                  <span class="agent-workflow-list__status">未运行</span>
+                  <span
+                    class="agent-workflow-list__status"
+                    :class="workflowStateClass(item.state)"
+                  >
+                    {{ item.state === 'completed' ? '查看结果' : item.statusLabel }}
+                  </span>
                 </button>
               </li>
             </ul>
@@ -1031,10 +1103,13 @@ onMounted(() => {
   --agent-accent-soft: #e9f4ff;
   --agent-success: #059669;
   --agent-warning: #d97706;
+  --agent-msg-max-height: min(360px, 42vh);
   color-scheme: light;
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   background:
     radial-gradient(circle at 12% 0%, rgba(47, 141, 247, 0.1), transparent 28%),
     radial-gradient(circle at 88% 12%, rgba(32, 194, 211, 0.08), transparent 24%),
@@ -1169,6 +1244,7 @@ onMounted(() => {
   grid-template-columns: 280px minmax(0, 1fr) 300px;
   gap: 14px;
   min-height: 0;
+  overflow: hidden;
   padding: 14px;
 }
 
@@ -1419,8 +1495,10 @@ onMounted(() => {
 }
 
 .agent-chat__scroll {
-  flex: 1;
+  flex: 1 1 0;
+  height: 0;
   min-height: 0;
+  overflow: hidden;
   padding: 16px;
 }
 
@@ -1430,6 +1508,10 @@ onMounted(() => {
 
 .agent-chat__scroll :deep(.el-scrollbar__wrap) {
   overflow-x: hidden;
+}
+
+.agent-chat__scroll :deep(.el-scrollbar__view) {
+  padding-bottom: 4px;
 }
 
 .agent-chat__welcome-lead {
@@ -1494,6 +1576,17 @@ onMounted(() => {
   border-radius: 14px;
   line-height: 1.75;
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.agent-chat__text {
+  margin: 0;
+  max-height: var(--agent-msg-max-height);
+  overflow-y: auto;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overscroll-behavior: contain;
 }
 
 .agent-chat__bubble.is-user {
@@ -1569,6 +1662,11 @@ onMounted(() => {
 .agent-action-result__head p {
   margin: 4px 0 0;
   color: var(--agent-muted);
+  max-height: var(--agent-msg-max-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .agent-action-result__head .el-icon.is-success { color: var(--agent-success); }
@@ -1587,42 +1685,6 @@ onMounted(() => {
 .agent-composer {
   border-top: 1px solid var(--agent-border);
   background: rgba(255, 255, 255, 0.95);
-}
-
-.agent-composer__suggestions {
-  display: flex;
-  gap: 10px;
-  padding: 10px 16px 0;
-}
-
-.agent-composer__suggestions-label {
-  flex-shrink: 0;
-  padding-top: 6px;
-  color: var(--agent-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.agent-composer__suggestions-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.agent-composer__suggestion-btn {
-  padding: 6px 12px;
-  border: 1px solid var(--agent-border);
-  border-radius: 999px;
-  background: var(--agent-surface-2);
-  color: var(--agent-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.agent-composer__suggestion-btn:hover:not(:disabled) {
-  border-color: #8ec5fa;
-  color: var(--agent-accent);
-  background: var(--agent-accent-soft);
 }
 
 .agent-composer__input-wrap {
@@ -1711,9 +1773,27 @@ onMounted(() => {
   cursor: pointer;
 }
 
+.agent-workflow-list__btn.is-completed:not(:disabled):hover {
+  border-color: rgba(5, 150, 105, 0.32);
+  background: #ecfff7;
+}
+
+.agent-workflow-list__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .agent-workflow-list__status {
   color: var(--agent-muted);
   font-size: 11px;
+}
+
+.agent-workflow-list__status.is-running {
+  color: var(--agent-accent);
+}
+
+.agent-workflow-list__status.is-completed {
+  color: var(--agent-success);
 }
 
 .agent-knowledge-list li {
@@ -1750,6 +1830,8 @@ onMounted(() => {
   color: var(--agent-text);
   background: #f8fbff;
   border-color: var(--agent-border);
+  max-height: var(--agent-msg-max-height);
+  overscroll-behavior: contain;
 }
 
 .agent-chat :deep(.agent-action-card),
