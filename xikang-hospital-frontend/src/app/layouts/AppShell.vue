@@ -2,12 +2,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/app/stores/auth'
 import AppHeader from './AppHeader.vue'
 import AppSidebar from './AppSidebar.vue'
 import PhysicianPatientSelectDialog from '@/modules/physician/components/PhysicianPatientSelectDialog.vue'
+import CriticalValueAlertDialog from '@/shared/components/CriticalValueAlertDialog.vue'
+import { useCriticalValueStream } from '@/shared/composables/useCriticalValueStream'
 
 const route = useRoute()
+const authStore = useAuthStore()
 const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
+const criticalValueEnabled = computed(
+  () => authStore.role === 'physician' && Boolean(authStore.employeeId),
+)
+
+const { activeAlert, dismissCurrent, stopAlarm } = useCriticalValueStream(() => criticalValueEnabled.value)
+
+function handleCriticalResolved() {
+  stopAlarm()
+  dismissCurrent()
+}
 </script>
 
 <template>
@@ -25,6 +39,7 @@ const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
       </main>
     </template>
     <PhysicianPatientSelectDialog />
+    <CriticalValueAlertDialog :alert="activeAlert" @resolved="handleCriticalResolved" />
   </div>
 </template>
 

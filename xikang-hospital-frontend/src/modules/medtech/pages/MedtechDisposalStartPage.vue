@@ -13,6 +13,8 @@ import {
   ElMessage,
 } from 'element-plus'
 import { medtechApi, type DisposalReport } from '@/shared/api/modules/medtech'
+import { useCriticalValueReport } from '@/shared/composables/useCriticalValueReport'
+import CriticalValueConfirmDialog from '@/shared/components/CriticalValueConfirmDialog.vue'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
 
 const route = useRoute()
@@ -27,6 +29,20 @@ const started = ref(false)
 
 const id = computed(() => Number(route.query.id || 0))
 const canSubmit = computed(() => started.value && !!resultText.value.trim() && !loading.value && report.value?.paid !== false)
+
+const {
+  dialogVisible: criticalDialogVisible,
+  reporting: criticalReporting,
+  detectResult: criticalDetect,
+  openIfSuspected,
+  confirmReport: confirmCriticalReport,
+  skipReport: skipCriticalReport,
+} = useCriticalValueReport()
+
+function finishSubmitNavigation() {
+  ElMessage.success('处置结果已提交')
+  router.push('/medtech/check-queue')
+}
 
 async function loadPage() {
   if (!id.value) return
@@ -61,12 +77,23 @@ async function submit() {
   if (!id.value || !canSubmit.value) return
   loading.value = true
   try {
-    await medtechApi.submitDisposalResult(id.value, {
+    const response = await medtechApi.submitDisposalResult(id.value, {
       disposalResult: resultText.value.trim(),
       disposalRemark: remark.value.trim() || undefined,
     })
-    ElMessage.success('处置结果已提交')
-    router.push('/medtech/check-queue')
+    const needsConfirm = openIfSuspected(
+      response,
+      {
+        registerId: report.value?.registerId ?? 0,
+        sourceType: 'disposal',
+        sourceId: id.value,
+        techName: report.value?.techName,
+      },
+      finishSubmitNavigation,
+    )
+    if (!needsConfirm) {
+      finishSubmitNavigation()
+    }
   } finally {
     loading.value = false
   }
@@ -133,6 +160,14 @@ onMounted(() => {
       </div>
     </template>
   </MedtechStepLayout>
+
+  <CriticalValueConfirmDialog
+    v-model:visible="criticalDialogVisible"
+    :detect="criticalDetect"
+    :reporting="criticalReporting"
+    @confirm="confirmCriticalReport"
+    @skip="skipCriticalReport"
+  />
 </template>
 
 <style scoped>

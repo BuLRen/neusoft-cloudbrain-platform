@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.CriticalValueAlertMapper">
+
+    <resultMap id="CriticalValueAlertMap" type="com.xikang.medtech.entity.CriticalValueAlert">
+        <id column="id" property="id"/>
+        <result column="register_id" property="registerId"/>
+        <result column="patient_name" property="patientName"/>
+        <result column="case_number" property="caseNumber"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="source_id" property="sourceId"/>
+        <result column="tech_name" property="techName"/>
+        <result column="critical_items" property="criticalItems"/>
+        <result column="severity" property="severity"/>
+        <result column="reporter_id" property="reporterId"/>
+        <result column="reporter_name" property="reporterName"/>
+        <result column="doctor_id" property="doctorId"/>
+        <result column="doctor_name" property="doctorName"/>
+        <result column="status" property="status"/>
+        <result column="reported_time" property="reportedTime"/>
+        <result column="acknowledged_time" property="acknowledgedTime"/>
+        <result column="handled_time" property="handledTime"/>
+        <result column="handle_note" property="handleNote"/>
+        <result column="escalated_time" property="escalatedTime"/>
+        <result column="ack_deadline" property="ackDeadline"/>
+        <result column="creation_time" property="creationTime"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO critical_value_alert (
+            register_id, patient_name, case_number, source_type, source_id, tech_name,
+            critical_items, severity, reporter_id, reporter_name, doctor_id, doctor_name,
+            status, reported_time, ack_deadline
+        ) VALUES (
+            #{registerId}, #{patientName}, #{caseNumber}, #{sourceType}, #{sourceId}, #{techName},
+            #{criticalItems}::jsonb, #{severity}, #{reporterId}, #{reporterName}, #{doctorId}, #{doctorName},
+            #{status}, #{reportedTime}, #{ackDeadline}
+        )
+    </insert>
+
+    <select id="selectById" resultMap="CriticalValueAlertMap">
+        SELECT * FROM critical_value_alert WHERE id = #{id}
+    </select>
+
+    <select id="selectPendingByDoctorId" resultMap="CriticalValueAlertMap">
+        SELECT * FROM critical_value_alert
+        WHERE doctor_id = #{doctorId}
+          AND status IN ('PENDING', 'ESCALATED')
+        ORDER BY reported_time ASC
+    </select>
+
+    <select id="selectOverduePending" resultMap="CriticalValueAlertMap">
+        SELECT * FROM critical_value_alert
+        WHERE status = 'PENDING'
+          AND ack_deadline &lt; #{now}
+    </select>
+
+    <select id="selectBoardAlerts" resultMap="CriticalValueAlertMap">
+        SELECT * FROM critical_value_alert
+        ORDER BY reported_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="updateAcknowledged">
+        UPDATE critical_value_alert
+        SET status = #{status},
+            acknowledged_time = #{acknowledgedTime}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateHandled">
+        UPDATE critical_value_alert
+        SET status = #{status},
+            handled_time = #{handledTime},
+            handle_note = #{handleNote}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateEscalated">
+        UPDATE critical_value_alert
+        SET status = #{status},
+            escalated_time = #{escalatedTime}
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectByRegisterId" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            source_type AS "sourceType",
+            source_id AS "sourceId",
+            tech_name AS "techName",
+            critical_items AS "criticalItems",
+            severity AS "severity",
+            status AS "status",
+            reported_time AS "reportedTime",
+            acknowledged_time AS "acknowledgedTime",
+            handled_time AS "handledTime",
+            handle_note AS "handleNote",
+            escalated_time AS "escalatedTime",
+            ack_deadline AS "ackDeadline",
+            reporter_name AS "reporterName",
+            doctor_name AS "doctorName"
+        FROM critical_value_alert
+        WHERE register_id = #{registerId}
+        ORDER BY reported_time ASC
+    </select>
+
+    <select id="selectBoardStats" resultType="map">
+        SELECT
+            COUNT(*) FILTER (WHERE status IN ('PENDING', 'ESCALATED')) AS "pendingCount",
+            COUNT(*) FILTER (WHERE status = 'ESCALATED') AS "escalatedCount",
+            COUNT(*) FILTER (WHERE status = 'HANDLED') AS "handledCount",
+            COALESCE(AVG(EXTRACT(EPOCH FROM (acknowledged_time - reported_time))) FILTER (WHERE acknowledged_time IS NOT NULL), 0) AS "avgAckSeconds",
+            COALESCE(AVG(EXTRACT(EPOCH FROM (handled_time - reported_time))) FILTER (WHERE handled_time IS NOT NULL), 0) AS "avgHandleSeconds"
+        FROM critical_value_alert
+    </select>
+</mapper>

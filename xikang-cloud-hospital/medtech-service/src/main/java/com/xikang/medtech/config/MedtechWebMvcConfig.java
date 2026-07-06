@@ -10,19 +10,25 @@ public class MedtechWebMvcConfig implements WebMvcConfigurer {
     private final MedtechAuthInterceptor medtechAuthInterceptor;
     private final FollowUpStaffAuthInterceptor followUpStaffAuthInterceptor;
     private final PatientFollowUpAuthInterceptor patientFollowUpAuthInterceptor;
+    private final CriticalValueAuthInterceptor criticalValueAuthInterceptor;
 
     public MedtechWebMvcConfig(
         MedtechAuthInterceptor medtechAuthInterceptor,
         FollowUpStaffAuthInterceptor followUpStaffAuthInterceptor,
-        PatientFollowUpAuthInterceptor patientFollowUpAuthInterceptor
+        PatientFollowUpAuthInterceptor patientFollowUpAuthInterceptor,
+        CriticalValueAuthInterceptor criticalValueAuthInterceptor
     ) {
         this.medtechAuthInterceptor = medtechAuthInterceptor;
         this.followUpStaffAuthInterceptor = followUpStaffAuthInterceptor;
         this.patientFollowUpAuthInterceptor = patientFollowUpAuthInterceptor;
+        this.criticalValueAuthInterceptor = criticalValueAuthInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(criticalValueAuthInterceptor)
+            .addPathPatterns("/api/medtech/critical-value/**");
+
         registry.addInterceptor(patientFollowUpAuthInterceptor)
             .addPathPatterns(
                 "/api/medtech/follow-up/patient/**",
@@ -46,6 +52,7 @@ public class MedtechWebMvcConfig implements WebMvcConfigurer {
             .addPathPatterns("/api/medtech/**")
             .excludePathPatterns(
                 "/actuator/**",
+                "/api/medtech/critical-value/**",
                 "/api/medtech/follow-up/patient/**",
                 "/api/medtech/follow-up/dashboard/**",
                 "/api/medtech/follow-up/outcome/**",

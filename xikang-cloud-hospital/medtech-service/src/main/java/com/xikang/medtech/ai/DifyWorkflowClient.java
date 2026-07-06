@@ -63,6 +63,10 @@ public class DifyWorkflowClient {
         return properties.isFollowUpMedicalChatEnabled();
     }
 
+    public boolean isCriticalValueDetectEnabled() {
+        return properties.isCriticalValueDetectEnabled();
+    }
+
     public DifyWorkflowRunResult runFollowUpCaseSummaryBlocking(Map<String, Object> inputs, String user, String traceId) {
         String apiKey = properties.resolveFollowUpCaseSummaryApiKey();
         if (apiKey.isBlank()) {
@@ -75,6 +79,14 @@ public class DifyWorkflowClient {
         String apiKey = properties.resolveFollowUpMedicalChatApiKey();
         if (apiKey.isBlank()) {
             throw new DifyWorkflowException("随访医疗对话 API Key 未配置");
+        }
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
+    public DifyWorkflowRunResult runCriticalValueDetectBlocking(Map<String, Object> inputs, String user, String traceId) {
+        String apiKey = properties.resolveCriticalValueDetectApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("危急值识别 API Key 未配置");
         }
         return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
     }

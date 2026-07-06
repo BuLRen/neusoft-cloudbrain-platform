@@ -10,6 +10,8 @@ import com.xikang.medtech.client.PhysicianW3Client;
 import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.entity.*;
 import com.xikang.medtech.mapper.*;
+import com.xikang.medtech.ai.CriticalValueDetector;
+import com.xikang.medtech.critical.CriticalDetectResult;
 import com.xikang.medtech.util.CtCategoryResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +44,8 @@ public class MedtechService {
     private final PhysicianW3Client physicianW3Client;
     private final PaymentClient paymentClient;
     private final CtViewerClient ctViewerClient;
+    private final CriticalValueDetector criticalValueDetector;
+    private final CriticalValueService criticalValueService;
 
     // ==================== 检查相关 ====================
 
@@ -121,6 +125,7 @@ public class MedtechService {
         response.put("checkTime", request.getCheckTime());
         response.put("aiAnalysisTriggered", resultData.get("aiAnalysis") != null);
         physicianW3Client.triggerW3Async(request.getRegisterId());
+        attachCriticalDetect(response, request.getTechCode(), resultData);
 
         return response;
     }
@@ -400,6 +405,7 @@ public class MedtechService {
         response.put("status", "completed");
         response.put("inspectionTime", request.getInspectionTime());
         physicianW3Client.triggerW3Async(request.getRegisterId());
+        attachCriticalDetect(response, request.getTechCode(), resultData);
 
         return response;
     }
@@ -481,7 +487,7 @@ public class MedtechService {
      * 提交处置结果
      */
     @Transactional
-    public void submitDisposalResult(Long id, Map<String, Object> resultData) {
+    public Map<String, Object> submitDisposalResult(Long id, Map<String, Object> resultData) {
         log.info("提交处置结果 | disposalRequestId={}", id);
 
         DisposalRequest request = disposalRequestMapper.selectById(id);
@@ -507,6 +513,12 @@ public class MedtechService {
         request.setDisposalRemark(trimToNull((String) resultData.get("disposalRemark")));
         request.setInputdisposalEmployeeId(resolveOperatorEmployeeId(resultData, "inputdisposalEmployeeId"));
         disposalRequestMapper.updateResult(request);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "completed");
+        response.put("disposalTime", request.getDisposalTime());
+        attachCriticalDetect(response, request.getTechCode(), resultData);
+        return response;
     }
 
     /**
@@ -760,6 +772,18 @@ public class MedtechService {
         String base = "[已归档] " + reason;
         String extra = trimToNull((String) archiveData.get("remark"));
         return extra == null ? base : base + "；" + extra;
+    }
+
+    private void attachCriticalDetect(Map<String, Object> response, String techCode, Map<String, Object> resultData) {
+        if (response == null || resultData == null) {
+            return;
+        }
+        try {
+            CriticalDetectResult detect = criticalValueDetector.detect(techCode, resultData);
+            response.put("criticalDetect", criticalValueService.toDetectMap(detect));
+        } catch (Exception e) {
+            log.warn("危急值识别失败，已跳过 | techCode={} | {}", techCode, e.getMessage());
+        }
     }
 
     private static String trimToNull(String value) {
