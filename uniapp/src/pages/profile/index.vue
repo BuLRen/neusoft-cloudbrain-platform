@@ -138,7 +138,7 @@ async function handleLogout() {
           <text class="stat-num">{{ session.patients.length }} 人</text>
           <text class="stat-label">就诊人管理</text>
         </view>
-        <view @tap="refreshCurrentPatientBalance">
+        <view @tap="openRecharge">
           <text class="stat-num">¥{{ Number(currentPatient?.accountBalance || 0).toFixed(2) }}</text>
           <text class="stat-label">账户余额</text>
         </view>
@@ -155,11 +155,7 @@ async function handleLogout() {
       <view class="balance-actions">
         <view class="recharge-btn" @tap="openRecharge">
           <text class="recharge-icon">＋</text>
-          <text>充值</text>
-        </view>
-        <view class="recharge-btn ghost" @tap="refreshCurrentPatientBalance">
-          <text class="recharge-icon">↻</text>
-          <text>刷新余额</text>
+          <text>账户充值</text>
         </view>
       </view>
     </view>
@@ -361,12 +357,6 @@ async function handleLogout() {
   font-size: 26rpx;
   font-weight: 600;
   box-shadow: 0 12rpx 24rpx rgba(40, 120, 255, 0.28);
-}
-
-.recharge-btn.ghost {
-  background: rgba(255, 255, 255, 0.85);
-  color: #1768ef;
-  box-shadow: 0 6rpx 16rpx rgba(40, 120, 255, 0.12);
 }
 
 .recharge-icon {
