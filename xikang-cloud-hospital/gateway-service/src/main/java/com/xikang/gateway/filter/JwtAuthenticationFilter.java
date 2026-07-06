@@ -82,13 +82,16 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
     }
 
     private String extractToken(ServerWebExchange exchange) {
-        // Prefer HttpOnly cookie token (recommended)
+        String bearerToken = extractToken(exchange.getRequest());
         var cookie = exchange.getRequest().getCookies().getFirst(ACCESS_COOKIE_NAME);
         if (cookie != null && cookie.getValue() != null && !cookie.getValue().isBlank()) {
-            return cookie.getValue();
+            String cookieToken = cookie.getValue();
+            if (JwtUtils.validateToken(cookieToken)) {
+                return cookieToken;
+            }
+            // Cookie 中 token 已过期/无效时，回退到 Authorization Bearer（refresh 后 localStorage 可能更新更快）
         }
-        // Fallback to Authorization Bearer token (useful for debugging)
-        return extractToken(exchange.getRequest());
+        return bearerToken;
     }
 
     private Mono<Void> unauthorized(ServerHttpResponse response) {

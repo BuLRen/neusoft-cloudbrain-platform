@@ -37,7 +37,7 @@ public class AuthService {
     private final UserPatientManagedMapper userPatientManagedMapper;
     private final CaptchaService captchaService;
 
-    @Value("${jwt.accessExpirationMs:900000}")
+    @Value("${jwt.accessExpirationMs:7200000}")
     private long accessExpirationMs;
 
     @Value("${jwt.refreshExpirationMs:604800000}")
