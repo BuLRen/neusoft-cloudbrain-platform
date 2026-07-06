@@ -62,7 +62,7 @@ spring:
           predicates:
             - Path=/api/notification/**
         - id: notification-websocket
-          uri: lb:ws://notification-service
+          uri: lb://notification-service
           predicates:
             - Path=/ws/notification/**
         - id: ai-triage-service

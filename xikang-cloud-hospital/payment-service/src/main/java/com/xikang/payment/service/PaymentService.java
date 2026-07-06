@@ -273,14 +273,16 @@ public class PaymentService {
                         public void afterCommit() {
                             fireOnFeePaidCallback(registerId, itemCode, itemId, paidAmount, opId);
                             firePaymentNotification(patientId, patientName, "PAYMENT_SUCCESS",
-                                    "支付成功", "「" + itemName + "」已支付 " + paidAmount + " 元",
+                                    "支付成功",
+                                    buildPaymentContent(patientName, itemName, itemCode, paidAmount, registerId),
                                     "register", registerId);
                         }
                     });
             } else {
                 fireOnFeePaidCallback(registerId, itemCode, itemId, paidAmount, opId);
                 firePaymentNotification(patientId, patientName, "PAYMENT_SUCCESS",
-                        "支付成功", "「" + itemName + "」已支付 " + paidAmount + " 元",
+                        "支付成功",
+                        buildPaymentContent(patientName, itemName, itemCode, paidAmount, registerId),
                         "register", registerId);
             }
         } catch (Exception e) {
@@ -411,15 +413,17 @@ public class PaymentService {
                         @Override
                         public void afterCommit() {
                             firePaymentNotification(patientId, patientName, "REFUND_SUCCESS",
-                                    "退款成功", "「" + itemName + "」已退款 " + refundAmount + " 元"
-                                            + (refundReason != null ? "（" + refundReason + "）" : ""),
+                                    "退款成功",
+                                    buildRefundContent(patientName, itemName, item.getItemCode(),
+                                            refundAmount, registerId, refundReason),
                                     "register", registerId);
                         }
                     });
             } else {
                 firePaymentNotification(patientId, patientName, "REFUND_SUCCESS",
-                        "退款成功", "「" + itemName + "」已退款 " + refundAmount + " 元"
-                                + (refundReason != null ? "（" + refundReason + "）" : ""),
+                        "退款成功",
+                        buildRefundContent(patientName, itemName, item.getItemCode(),
+                                refundAmount, registerId, refundReason),
                         "register", registerId);
             }
         } catch (Exception e) {
@@ -818,6 +822,54 @@ public class PaymentService {
             log.error("支付/退款通知发送失败 | patientId={}, type={}, bizId={}（不影响主流程）",
                     patientId, type, bizId, e);
         }
+    }
+
+    /**
+     * 构造支付成功通知正文（与 schedule-service 医生变更通知同款风格：完整可读句子）。
+     * 形如：尊敬的张三，您的「普通号挂号费」已支付成功，金额 15.00 元，订单号 1024。请按时就诊。
+     */
+    private String buildPaymentContent(String patientName, String itemName, String itemCode,
+                                       BigDecimal amount, Long registerId) {
+        String greeting = (patientName == null || patientName.isBlank())
+                ? "您好" : "尊敬的 " + patientName;
+        String item = (itemName == null || itemName.isBlank()) ? "费用项" : itemName;
+        String tip = paymentTipByItemCode(itemCode);
+        String base = String.format("%s，您的「%s」已支付成功，金额 %s 元，订单号 %d。",
+                greeting, item, amount == null ? "0.00" : amount.toPlainString(), registerId);
+        return tip == null ? base : base + tip;
+    }
+
+    /**
+     * 构造退款成功通知正文。
+     * 形如：尊敬的张三，您的「普通号挂号费」已退款 15.00 元，订单号 1024，款项已退回至账户余额。退款原因：患者取消。
+     */
+    private String buildRefundContent(String patientName, String itemName, String itemCode,
+                                      BigDecimal amount, Long registerId, String reason) {
+        String greeting = (patientName == null || patientName.isBlank())
+                ? "您好" : "尊敬的 " + patientName;
+        String item = (itemName == null || itemName.isBlank()) ? "费用项" : itemName;
+        String base = String.format("%s，您的「%s」已退款 %s 元，订单号 %d，款项已退回至您的账户余额。",
+                greeting, item, amount == null ? "0.00" : amount.toPlainString(), registerId);
+        String tail = "";
+        if (reason != null && !reason.isBlank()) {
+            tail = "退款原因：" + reason + "。";
+        }
+        return tail.isEmpty() ? base : base + tail;
+    }
+
+    /**
+     * 按 itemCode 给支付成功通知补一句业务提示语。
+     */
+    private String paymentTipByItemCode(String itemCode) {
+        if (itemCode == null) return null;
+        return switch (itemCode) {
+            case "REGISTRATION_FEE" -> "请按时就诊，就诊时请先到分诊台报到。";
+            case "MEDICATION_FEE" -> "请凭电子凭证到药房取药。";
+            case "CHECK_FEE", "EXAMINATION_FEE" -> "请按预约时间前往相应检查科室。";
+            case "INSPECTION_FEE" -> "请前往检验科完成检验。";
+            case "DISPOSAL_FEE" -> "请按医嘱前往相应科室完成处置。";
+            default -> null;
+        };
     }
 
     private ExpenseRecord buildFromRequest(Map<String, Object> body, String itemCode, int status) {

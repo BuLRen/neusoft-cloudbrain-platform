@@ -23,13 +23,16 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
     // 注意：isWhitelisted 用的是 path.contains(pattern) 子串匹配
     // 因此每个模式都必须足够"独特"，避免误伤其他接口
     // - /ws/voice：AI 语音 WebSocket，公共设备
+    // - /ws/notification：消息通知 WebSocket —— 鉴权由 notification-service
+    //   的 WsAuthHandshakeInterceptor 在握手时从 query 解析 token + role 自行处理，
+    //   不能由 gateway 用 header 取 token（浏览器原生 WebSocket 不支持自定义 header）
     // - /calling/stream/：叫号系统 SSE 订阅端点（大屏/报到机），公共设备
     //   路径形如 /api/registration/calling/stream/department/{id}，子串匹配无冲突
     // - /calling/board/：叫号板查询端点（大屏），公共设备
     //   路径形如 /api/registration/calling/board/{deptId}，子串匹配无冲突
     // - /check-in：报到机扫码报到接口，路径形如 /api/registration/{id}/check-in
     //   含 check-in 子串的本系统路径只有报到接口，无安全风险
-    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/api/auth/captcha,/ws/voice,/api/voice/,/calling/stream/,/calling/board/,/check-in,/api/medtech/internal/";
+    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/api/auth/captcha,/ws/voice,/ws/notification,/api/voice/,/calling/stream/,/calling/board/,/check-in,/api/medtech/internal/";
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {

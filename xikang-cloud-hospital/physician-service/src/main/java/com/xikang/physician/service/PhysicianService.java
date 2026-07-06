@@ -6,11 +6,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.agent.AgentToolExecutionContext;
 import com.xikang.physician.client.CtViewerClient;
+import com.xikang.physician.client.NotificationClient;
 import com.xikang.physician.client.PaymentClient;
 import com.xikang.physician.context.PhysicianAuthContext;
 import com.xikang.physician.mapper.PhysicianMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -37,15 +40,18 @@ public class PhysicianService {
     private final PhysicianMapper physicianMapper;
     private final PaymentClient paymentClient;
     private final CtViewerClient ctViewerClient;
+    private final NotificationClient notificationClient;
 
     public PhysicianService(
         PhysicianMapper physicianMapper,
         PaymentClient paymentClient,
-        CtViewerClient ctViewerClient
+        CtViewerClient ctViewerClient,
+        NotificationClient notificationClient
     ) {
         this.physicianMapper = physicianMapper;
         this.paymentClient = paymentClient;
         this.ctViewerClient = ctViewerClient;
+        this.notificationClient = notificationClient;
     }
 
     public Map<String, Object> getPatients(String keyword, Integer page, Integer size) {
@@ -760,6 +766,9 @@ public class PhysicianService {
         String patientName = register.get("realName") != null ? register.get("realName").toString() : null;
         String itemCode = itemCodeForTechType(type);
 
+        // 收集通知参数（等事务 commit 后再发送，避免事务回滚后误推消息）
+        List<Map<String, Object>> pendingNotifications = new java.util.ArrayList<>();
+
         List<Long> requestIds = requestItems(request).stream().map(item -> {
             Map<String, Object> row = new HashMap<>(item);
             row.put("registerId", registerId);
@@ -781,11 +790,77 @@ public class PhysicianService {
             String techName = tech.get("techName") != null ? tech.get("techName").toString() : itemCode;
             paymentClient.createTechFee(
                     registerId, patientId, patientName, itemCode, requestId, techId, techName, unitPrice);
+
+            // 收集该 item 的通知参数（事务 afterCommit 时发送）
+            Map<String, Object> n = new HashMap<>();
+            n.put("techName", techName);
+            n.put("unitPrice", unitPrice != null ? unitPrice.toPlainString() : "0");
+            n.put("itemCode", itemCode);
+            pendingNotifications.add(n);
+
             return requestId;
         }).toList();
+
+        // afterCommit：所有 item 写完 + 事务 commit 后才发通知，避免回滚后误推
+        registerFeePendingNotificationsIfTxActive(
+                patientId, patientName, registerId, pendingNotifications);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("requestIds", requestIds);
         return result;
+    }
+
+    /**
+     * 在事务 commit 之后给患者推"待缴费提醒"通知。
+     * <p>每个开单项一条通知，让患者清楚知道哪些项目待缴费。
+     * <p>通知失败仅 log，绝不影响开单主流程（NotificationClient.trySend 内部已吞异常）。
+     * <p>若调用时不在事务里（理论上不会），直接同步发送。
+     */
+    private void registerFeePendingNotificationsIfTxActive(
+            Long patientId, String patientName, Long registerId,
+            List<Map<String, Object>> items) {
+        if (items.isEmpty() || patientId == null) return;
+
+        final String greeting = (patientName == null || patientName.isBlank())
+                ? "您好" : "尊敬的 " + patientName;
+
+        Runnable sendAll = () -> {
+            for (Map<String, Object> item : items) {
+                String techName = String.valueOf(item.get("techName"));
+                String price = String.valueOf(item.get("unitPrice"));
+                String tip = paymentTipByItemCode(String.valueOf(item.get("itemCode")));
+                String content = String.format(
+                        "%s，您的「%s」已开单，金额 %s 元，请前往支付中心完成缴费，缴费后医技科室方可执行。",
+                        greeting, techName, price);
+                if (tip != null) content = content + tip;
+                notificationClient.trySend(
+                        patientId, "patient", "EXAM_FEE_CREATED",
+                        "待缴费提醒", content,
+                        "register", registerId);
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    sendAll.run();
+                }
+            });
+        } else {
+            sendAll.run();
+        }
+    }
+
+    /** 按 itemCode 给待缴费通知补一句业务提示语。 */
+    private String paymentTipByItemCode(String itemCode) {
+        if (itemCode == null) return null;
+        return switch (itemCode) {
+            case "CHECK_FEE", "EXAMINATION_FEE" -> "缴费后请按预约时间前往相应检查科室。";
+            case "INSPECTION_FEE" -> "缴费后请前往检验科完成检验。";
+            case "DISPOSAL_FEE" -> "缴费后请按医嘱前往相应科室完成处置。";
+            default -> null;
+        };
     }
 
     private static String itemCodeForTechType(String type) {
