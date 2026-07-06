@@ -51,6 +51,11 @@ const props = withDefaults(defineProps<{
   mode: 'physician',
 })
 
+const emit = defineEmits<{
+  /** 用户点击"查看用药指导"时触发，父组件打开预览弹窗 */
+  'view-guide': [registerId: number]
+}>()
+
 const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
 const filmPrintRef = ref<InstanceType<typeof CtFilmPrintSheet> | null>(null)
 const ctDiagnosisPrintRef = ref<InstanceType<typeof CtDiagnosisReportPrintSheet> | null>(null)
@@ -352,6 +357,15 @@ async function handleExportCtReport() {
               </template>
             </ElTableColumn>
           </ElTable>
+          <div class="clinical-notebook__guide-action">
+            <ElButton
+              v-if="notebook?.registerId"
+              type="primary"
+              plain
+              size="small"
+              @click="emit('view-guide', notebook.registerId)"
+            >查看用药指导</ElButton>
+          </div>
         </div>
       </section>
     </article>
@@ -613,6 +627,12 @@ async function handleExportCtReport() {
 
 .clinical-notebook__table-wrap {
   overflow-x: auto;
+}
+
+.clinical-notebook__guide-action {
+  margin-block-start: var(--space-3);
+  display: flex;
+  justify-content: flex-end;
 }
 
 .clinical-notebook__table {

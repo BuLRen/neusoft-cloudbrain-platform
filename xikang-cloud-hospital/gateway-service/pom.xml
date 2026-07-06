@@ -21,6 +21,21 @@
             <groupId>com.xikang</groupId>
             <artifactId>common</artifactId>
         </dependency>
+        <!-- 根 pom 的全局 dependencies 强行把 spring-boot-starter-web (Tomcat) 注入了所有子模块。
+             gateway 必须是 reactive (Netty) 应用：在这里显式重新声明 starter-web 并排除 tomcat，
+             Spring Boot 会自动 fallback 到 spring-cloud-starter-gateway 自带的 Netty (reactor-netty)。
+             若不排除，gateway 会同时跑 Tomcat + Netty，WebSocket 路由转发会抛
+             ClassCastException: ResponseFacade cannot be cast to HttpServerResponse。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-tomcat</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-gateway</artifactId>

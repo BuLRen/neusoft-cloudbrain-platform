@@ -1,0 +1,1 @@
+Page({data:{records:['挂号记录','门诊缴费','检查报告','检验报告','住院记录','候补挂号','咨询记录','复诊记录'],common:['预约记录','在线复诊','处方记录','电子发票','就诊卡充值','胶片打印','医院导航','停车缴费'],other:['隐私协议','账户安全','帮助中心','意见反馈']},onShow(){const tabBar=this.getTabBar();if(tabBar){tabBar.setData({selected:4})}},tap(e:WechatMiniprogram.BaseEvent){wx.showToast({title:e.currentTarget.dataset.name,icon:'none'})}})

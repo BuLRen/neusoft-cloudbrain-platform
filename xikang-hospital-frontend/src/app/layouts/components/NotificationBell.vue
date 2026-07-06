@@ -25,10 +25,14 @@ const allMessagesPath = computed(() => {
   return '/admin/messages'
 })
 
-function typeTagType(t: NotificationType) {
+function typeTagType(t: NotificationType | string) {
   if (t === 'doctor_change') return 'warning'
   if (t === 'leave_approved' || t === 'adjust_confirmed') return 'success'
   if (t === 'leave_rejected') return 'danger'
+  if (t === 'PAYMENT_SUCCESS') return 'success'
+  if (t === 'REFUND_SUCCESS') return 'warning'
+  if (t === 'EXAM_FEE_CREATED') return 'warning'
+  if (t === 'PRESCRIPTION_CREATED') return 'success'
   return 'info'
 }
 
@@ -81,9 +85,10 @@ function goAllMessages() {
 
 onMounted(() => {
   notificationStore.startPolling()
+  notificationStore.connectWebSocket()
 })
 onUnmounted(() => {
-  // 注意：AppHeader 在所有布局都常驻，这里不停止轮询。
+  // 注意：AppHeader 在所有布局都常驻，这里不停止轮询 / 不断开 WS。
   // 真正停止由登出动作触发（PatientLayout.logout 已处理；其他布局登出也会清 store）。
 })
 </script>
