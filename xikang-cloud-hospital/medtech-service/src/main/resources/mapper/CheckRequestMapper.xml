@@ -53,6 +53,9 @@
             mt.ai_category_code
         FROM check_request cr
         INNER JOIN register r ON r.id = cr.register_id
+            AND (r.patient_id IS NULL OR NOT EXISTS (
+                SELECT 1 FROM patient p WHERE p.id = r.patient_id AND p.delmark = 1
+            ))
         INNER JOIN medical_technology mt ON mt.id = cr.medical_technology_id
     </sql>
 
