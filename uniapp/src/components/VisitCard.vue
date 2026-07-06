@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import ServiceIcon from './ServiceIcon.vue'
+import CheckInQrCode from './CheckInQrCode.vue'
+import { ref } from 'vue'
 
 type VisitState = 1 | 2 | 3 | 5 | 6 | 7 | number
 
-defineProps<{
+const props = defineProps<{
   visit: {
     registerId?: number
     visitState?: VisitState
@@ -15,6 +17,10 @@ defineProps<{
     location?: string
     patient?: string
     previsitState?: 'none' | 'in_progress' | 'completed'
+    payStatus?: number
+    payStatusName?: string
+    checkedIn?: boolean
+    checkInTime?: string
   }
 }>()
 
@@ -42,6 +48,22 @@ function visitStateTone(state?: number): 'primary' | 'success' | 'warning' | 'da
   if (state === 7) return 'danger'
   if (state === 1 || state === 2 || state === 5 || state === 6) return 'primary'
   return 'warning'
+}
+
+const qrVisible = ref(false)
+
+function canShowQr() {
+  const visit = props.visit
+  if (!visit.registerId) return false
+  if (visit.payStatus !== 1) return false
+  if (visit.visitState === 4 || visit.visitState === 7) return false
+  if (visit.checkedIn) return false
+  return true
+}
+
+function openQr() {
+  if (!canShowQr()) return
+  qrVisible.value = true
 }
 </script>
 
@@ -96,7 +118,29 @@ function visitStateTone(state?: number): 'primary' | 'success' | 'warning' | 'da
           class="summary"
           @tap="$emit('previsit')"
         >查看预问诊详情</button>
+        <button
+          v-if="canShowQr()"
+          class="qr"
+          @tap="openQr"
+        >出示报到码</button>
         <button class="detail" @tap="$emit('action')">查看详情</button>
+      </view>
+    </view>
+
+    <view v-if="qrVisible" class="qr-mask" @tap="qrVisible=false">
+      <view class="qr-panel" @tap.stop>
+        <view class="qr-close" @tap="qrVisible=false">×</view>
+        <view class="qr-mark">
+          <ServiceIcon type="calendar" tone="blue" />
+        </view>
+        <text class="qr-title">报到二维码</text>
+        <text class="qr-subtitle">到院后请在报到机上扫描此二维码</text>
+        <CheckInQrCode :register-id="visit.registerId || 0" />
+        <view class="qr-info">
+          <text>{{ visit.department }} · {{ visit.doctor }}</text>
+          <text>{{ visit.date || '日期待定' }} {{ visit.time || '' }}</text>
+          <text>挂号单号：{{ visit.registerId }}</text>
+        </view>
       </view>
     </view>
   </view>
@@ -275,10 +319,101 @@ function visitStateTone(state?: number): 'primary' | 'success' | 'warning' | 'da
   color: #7356db;
 }
 
+.qr {
+  border: 1rpx solid #77d8c0;
+  background: #effbf7;
+  color: #15a47e;
+}
+
 .detail {
   border: 0;
   background: linear-gradient(135deg, #3f91ff, #1768ef);
   color: #fff;
   box-shadow: 0 7rpx 16rpx rgba(40, 120, 255, 0.2);
+}
+
+.qr-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(16, 40, 84, 0.35);
+  backdrop-filter: blur(5px);
+}
+
+.qr-panel {
+  position: relative;
+  width: 100%;
+  padding: 54rpx 32rpx calc(46rpx + env(safe-area-inset-bottom));
+  border-radius: 38rpx 38rpx 0 0;
+  background:
+    radial-gradient(circle at 50% 0, rgba(219, 237, 255, 0.94), transparent 230rpx),
+    #fff;
+  box-shadow: 0 -18rpx 54rpx rgba(42, 91, 161, 0.13);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.qr-close {
+  position: absolute;
+  right: 28rpx;
+  top: 26rpx;
+  width: 52rpx;
+  height: 52rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #eef5ff;
+  color: #8ca0bd;
+  font-size: 42rpx;
+  line-height: 1;
+}
+
+.qr-mark {
+  width: 64rpx;
+  height: 64rpx;
+}
+
+.qr-mark :deep(.service-icon) {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 20rpx;
+}
+
+.qr-title {
+  margin-top: 18rpx;
+  color: #0b2862;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.qr-subtitle {
+  margin: 12rpx 0 28rpx;
+  color: #7e8ca6;
+  font-size: 22rpx;
+}
+
+.qr-info {
+  width: 100%;
+  margin-top: 24rpx;
+  padding: 22rpx 26rpx;
+  border-radius: 22rpx;
+  background: #f5f9ff;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  color: #657792;
+  font-size: 22rpx;
+}
+
+.qr-info text:first-child {
+  color: #102854;
+  font-size: 25rpx;
+  font-weight: 700;
 }
 </style>
