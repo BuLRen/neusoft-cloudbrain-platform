@@ -60,7 +60,6 @@ const actualSize = computed(() => cellSize.value * (matrix.value.length || 1))
       </view>
     </view>
     <view v-else class="qr-fallback">二维码生成失败</view>
-    <text class="qr-payload">{{ payload }}</text>
   </view>
 </template>
 
@@ -104,10 +103,4 @@ const actualSize = computed(() => cellSize.value * (matrix.value.length || 1))
   font-size: 23rpx;
 }
 
-.qr-payload {
-  margin-top: 18rpx;
-  color: #8190aa;
-  font-size: 20rpx;
-  letter-spacing: 1rpx;
-}
 </style>

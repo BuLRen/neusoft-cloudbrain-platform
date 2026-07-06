@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import ServiceIcon from './ServiceIcon.vue'
-import CheckInQrCode from './CheckInQrCode.vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import QRCode from 'qrcode'
+import { buildRegQrPayload } from '../utils/qrProtocol'
 
 type VisitState = 1 | 2 | 3 | 5 | 6 | 7 | number
 
@@ -51,6 +52,22 @@ function visitStateTone(state?: number): 'primary' | 'success' | 'warning' | 'da
 }
 
 const qrVisible = ref(false)
+const qrPayload = computed(() => props.visit.registerId ? buildRegQrPayload(props.visit.registerId) : '')
+const qrMatrix = computed<boolean[][]>(() => {
+  if (!qrPayload.value) return []
+  const qr = QRCode.create(qrPayload.value, { errorCorrectionLevel: 'M', margin: 1 })
+  const size = qr.modules.size
+  const data = qr.modules.data
+  const rows: boolean[][] = []
+  for (let y = 0; y < size; y++) {
+    const row: boolean[] = []
+    for (let x = 0; x < size; x++) row.push(Boolean(data[y * size + x]))
+    rows.push(row)
+  }
+  return rows
+})
+const qrCellSize = computed(() => Math.max(6, Math.floor(300 / (qrMatrix.value.length || 1))))
+const qrActualSize = computed(() => qrCellSize.value * (qrMatrix.value.length || 1))
 
 function canShowQr() {
   const visit = props.visit
@@ -130,17 +147,58 @@ function openQr() {
     <view v-if="qrVisible" class="qr-mask" @tap="qrVisible=false">
       <view class="qr-panel" @tap.stop>
         <view class="qr-close" @tap="qrVisible=false">×</view>
-        <view class="qr-mark">
-          <ServiceIcon type="calendar" tone="blue" />
-        </view>
+        <view class="qr-top-glow" />
+        <view class="qr-mark">▣</view>
         <text class="qr-title">报到二维码</text>
         <text class="qr-subtitle">到院后请在报到机上扫描此二维码</text>
-        <CheckInQrCode :register-id="visit.registerId || 0" />
-        <view class="qr-info">
-          <text>{{ visit.department }} · {{ visit.doctor }}</text>
-          <text>{{ visit.date || '日期待定' }} {{ visit.time || '' }}</text>
-          <text>挂号单号：{{ visit.registerId }}</text>
+        <view class="qr-frame">
+          <view class="corner lt" />
+          <view class="corner rt" />
+          <view class="corner lb" />
+          <view class="corner rb" />
+          <view
+            v-if="qrMatrix.length"
+            class="qr-code"
+            :style="{ width: `${qrActualSize}rpx`, height: `${qrActualSize}rpx` }"
+          >
+            <view
+              v-for="(row, y) in qrMatrix"
+              :key="y"
+              class="qr-code-row"
+              :style="{ height: `${qrCellSize}rpx` }"
+            >
+              <view
+                v-for="(dark, x) in row"
+                :key="x"
+                class="qr-code-cell"
+                :class="{ dark }"
+                :style="{ width: `${qrCellSize}rpx`, height: `${qrCellSize}rpx` }"
+              />
+            </view>
+          </view>
+          <view v-else class="qr-code-fallback">二维码生成失败</view>
         </view>
+        <view class="qr-code-label">
+          <text />
+          <text>挂号单号 {{ visit.registerId }}</text>
+          <text />
+        </view>
+        <view class="qr-info">
+          <view class="qr-avatar">●</view>
+          <view class="qr-info-main">
+            <text>{{ visit.department }}{{ visit.doctor ? ` · ${visit.doctor}` : '' }}</text>
+            <view>
+              <text>▣</text>
+              <text>{{ visit.date || '日期待定' }} {{ visit.time || '' }}</text>
+            </view>
+            <view>
+              <text>▤</text>
+              <text>挂号单号：{{ visit.registerId }}</text>
+            </view>
+          </view>
+          <view class="hospital-silhouette">+</view>
+        </view>
+        <view class="qr-wave" />
       </view>
     </view>
   </view>
@@ -345,16 +403,29 @@ function openQr() {
 .qr-panel {
   position: relative;
   width: 100%;
-  padding: 54rpx 32rpx calc(46rpx + env(safe-area-inset-bottom));
+  overflow: hidden;
+  padding: 58rpx 42rpx calc(54rpx + env(safe-area-inset-bottom));
   border-radius: 38rpx 38rpx 0 0;
   background:
-    radial-gradient(circle at 50% 0, rgba(219, 237, 255, 0.94), transparent 230rpx),
-    #fff;
+    radial-gradient(circle at 50% 0, rgba(218, 235, 255, 0.96), transparent 260rpx),
+    linear-gradient(180deg, rgba(255,255,255,.98), #f8fbff 100%);
   box-shadow: 0 -18rpx 54rpx rgba(42, 91, 161, 0.13);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.qr-top-glow {
+  position: absolute;
+  top: -145rpx;
+  left: 50%;
+  width: 470rpx;
+  height: 280rpx;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: rgba(220, 237, 255, 0.72);
+  pointer-events: none;
 }
 
 .qr-close {
@@ -374,46 +445,201 @@ function openQr() {
 }
 
 .qr-mark {
-  width: 64rpx;
-  height: 64rpx;
-}
-
-.qr-mark :deep(.service-icon) {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 20rpx;
-}
-
-.qr-title {
-  margin-top: 18rpx;
-  color: #0b2862;
+  position: relative;
+  z-index: 1;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 24rpx;
+  background: linear-gradient(145deg, #7ec7ff, #2f74ff);
+  box-shadow: 0 14rpx 28rpx rgba(47, 116, 255, 0.28);
+  color: #fff;
   font-size: 34rpx;
   font-weight: 800;
 }
 
+.qr-title {
+  position: relative;
+  z-index: 1;
+  margin-top: 18rpx;
+  color: #0b2862;
+  font-size: 40rpx;
+  font-weight: 800;
+}
+
 .qr-subtitle {
+  position: relative;
+  z-index: 1;
   margin: 12rpx 0 28rpx;
   color: #7e8ca6;
+  font-size: 24rpx;
+}
+
+.qr-frame {
+  position: relative;
+  z-index: 1;
+  padding: 26rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  border: 1rpx solid #e0ebf8;
+  box-shadow: 0 16rpx 42rpx rgba(42, 91, 161, 0.12);
+}
+
+.corner {
+  position: absolute;
+  width: 32rpx;
+  height: 32rpx;
+  border-color: #5aa2ff;
+  z-index: 2;
+}
+
+.corner.lt { left: 17rpx; top: 17rpx; border-left: 5rpx solid #5aa2ff; border-top: 5rpx solid #5aa2ff; border-radius: 8rpx 0 0 0; }
+.corner.rt { right: 17rpx; top: 17rpx; border-right: 5rpx solid #5aa2ff; border-top: 5rpx solid #5aa2ff; border-radius: 0 8rpx 0 0; }
+.corner.lb { left: 17rpx; bottom: 17rpx; border-left: 5rpx solid #5aa2ff; border-bottom: 5rpx solid #5aa2ff; border-radius: 0 0 0 8rpx; }
+.corner.rb { right: 17rpx; bottom: 17rpx; border-right: 5rpx solid #5aa2ff; border-bottom: 5rpx solid #5aa2ff; border-radius: 0 0 8rpx 0; }
+
+.qr-code-label {
+  position: relative;
+  z-index: 1;
+  margin-top: 22rpx;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  color: #2878ff;
+  font-size: 23rpx;
+  font-weight: 750;
+  letter-spacing: .6rpx;
+}
+
+.qr-code-label text:first-child,
+.qr-code-label text:last-child {
+  width: 48rpx;
+  height: 2rpx;
+  background: linear-gradient(90deg, transparent, #b7d6ff);
+}
+
+.qr-code-label text:last-child {
+  background: linear-gradient(90deg, #b7d6ff, transparent);
+}
+
+.qr-code {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.qr-code-row {
+  display: flex;
+}
+
+.qr-code-cell {
+  background: #fff;
+}
+
+.qr-code-cell.dark {
+  background: #09275c;
+}
+
+.qr-code-fallback {
+  width: 300rpx;
+  height: 300rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8190aa;
   font-size: 22rpx;
 }
 
 .qr-info {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  margin-top: 24rpx;
-  padding: 22rpx 26rpx;
-  border-radius: 22rpx;
-  background: #f5f9ff;
+  min-height: 132rpx;
+  margin-top: 28rpx;
+  padding: 28rpx 28rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, rgba(241, 248, 255, .96), rgba(232, 243, 255, .9));
+  border: 1rpx solid rgba(227, 239, 253, .95);
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-  gap: 10rpx;
+  align-items: center;
+  gap: 20rpx;
   color: #657792;
   font-size: 22rpx;
 }
 
-.qr-info text:first-child {
+.qr-avatar {
+  width: 68rpx;
+  height: 68rpx;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #7ec7ff, #2f74ff);
+  box-shadow: 0 10rpx 24rpx rgba(47, 116, 255, .23);
+  color: #fff;
+  font-size: 26rpx;
+}
+
+.qr-info-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 13rpx;
+}
+
+.qr-info-main > text {
   color: #102854;
-  font-size: 25rpx;
-  font-weight: 700;
+  font-size: 27rpx;
+  font-weight: 800;
+}
+
+.qr-info-main view {
+  display: flex;
+  align-items: center;
+  gap: 13rpx;
+  color: #7787a2;
+  font-size: 22rpx;
+}
+
+.qr-info-main view text:first-child {
+  width: 24rpx;
+  color: #4e92ff;
+  font-size: 21rpx;
+  text-align: center;
+}
+
+.hospital-silhouette {
+  position: absolute;
+  right: 8rpx;
+  bottom: -8rpx;
+  width: 160rpx;
+  height: 94rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,.85);
+  font-size: 62rpx;
+  font-weight: 800;
+  border-radius: 22rpx 22rpx 0 0;
+  background: linear-gradient(180deg, rgba(184, 217, 255, .38), rgba(184, 217, 255, .14));
+  pointer-events: none;
+}
+
+.qr-wave {
+  position: absolute;
+  left: -40rpx;
+  right: -40rpx;
+  bottom: -42rpx;
+  height: 120rpx;
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(209, 230, 255, .9) 0, transparent 60%),
+    radial-gradient(ellipse at 80% 25%, rgba(225, 239, 255, .8) 0, transparent 58%);
+  opacity: .78;
+  pointer-events: none;
 }
 </style>
