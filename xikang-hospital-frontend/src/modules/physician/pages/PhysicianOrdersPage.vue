@@ -506,7 +506,7 @@ onMounted(() => {
             </ul>
           </section>
 
-          <section v-if="w2Output?.unmatchedSuggestions?.length" class="orders-section">
+          <!-- <section v-if="w2Output?.unmatchedSuggestions?.length" class="orders-section">
             <h3 class="orders-section__title">需人工核对</h3>
             <div class="orders-ai-assessments">
               <div
@@ -518,7 +518,7 @@ onMounted(() => {
                 <p class="orders-ai-box__text">{{ item.name }}：{{ item.reason }}</p>
               </div>
             </div>
-          </section>
+          </section> -->
           </div>
         </GlassCard>
       </div>
