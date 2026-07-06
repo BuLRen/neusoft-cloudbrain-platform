@@ -106,7 +106,7 @@
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
                account_balance, delmark, create_time, update_time
         FROM patient
-        WHERE delmark = 1
+        WHERE delmark = 0
           AND (
               real_name ILIKE CONCAT('%', #{keyword}, '%')
               OR phone ILIKE CONCAT('%', #{keyword}, '%')
@@ -115,5 +115,62 @@
         ORDER BY real_name ASC, id ASC
         LIMIT #{limit}
     </select>
+
+    <resultMap id="AdminViewResultMap" type="com.xikang.auth.dto.PatientAdminView">
+        <id column="id" property="id" jdbcType="INTEGER"/>
+        <result column="real_name" property="realName" jdbcType="VARCHAR"/>
+        <result column="id_card" property="idCard" jdbcType="VARCHAR"/>
+        <result column="gender" property="gender" jdbcType="VARCHAR"/>
+        <result column="birthdate" property="birthdate" jdbcType="DATE"/>
+        <result column="phone" property="phone" jdbcType="VARCHAR"/>
+        <result column="home_address" property="homeAddress" jdbcType="VARCHAR"/>
+        <result column="allergy_history" property="allergyHistory" jdbcType="VARCHAR"/>
+        <result column="account_balance" property="accountBalance" jdbcType="DECIMAL"/>
+        <result column="delmark" property="delmark" jdbcType="INTEGER"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="adminWhere">
+        <where>
+            <if test="includeDisabled == null or includeDisabled == false">
+                AND delmark = 0
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    real_name ILIKE CONCAT('%', #{keyword}, '%')
+                    OR phone ILIKE CONCAT('%', #{keyword}, '%')
+                    OR id_card ILIKE CONCAT('%', #{keyword}, '%')
+                    OR CAST(id AS TEXT) LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="countForAdmin" resultType="long">
+        SELECT COUNT(*)
+        FROM patient
+        <include refid="adminWhere"/>
+    </select>
+
+    <select id="selectPageForAdmin" resultMap="AdminViewResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        <include refid="adminWhere"/>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="selectAdminViewById" resultMap="AdminViewResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        WHERE id = #{id}
+    </select>
+
+    <update id="restoreById">
+        UPDATE patient SET delmark = 0, update_time = NOW() WHERE id = #{id}
+    </update>
 
 </mapper>

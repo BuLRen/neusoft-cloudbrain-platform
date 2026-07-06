@@ -1,7 +1,10 @@
 package com.xikang.auth.mapper;
 
+import com.xikang.auth.dto.PatientManagedUserRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /**
  * UserPatientManaged Mapper - 用户管理患者关联 Mapper
@@ -23,4 +26,9 @@ public interface UserPatientManagedMapper {
      * 删除用户-患者关联关系
      */
     int deleteByIds(@Param("userId") Long userId, @Param("patientId") Integer patientId);
+
+    /**
+     * 查询管理该患者档案的用户列表（管理员详情用）
+     */
+    List<PatientManagedUserRow> selectManagersByPatientId(@Param("patientId") Integer patientId);
 }

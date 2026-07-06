@@ -1,5 +1,6 @@
 package com.xikang.auth.mapper;
 
+import com.xikang.auth.dto.PatientAdminView;
 import com.xikang.auth.entity.Patient;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -57,4 +58,17 @@ public interface PatientMapper {
      * 按姓名/手机号/档案号模糊搜索（现场收费窗口用）
      */
     List<Patient> searchByKeyword(@Param("keyword") String keyword, @Param("limit") int limit);
+
+    long countForAdmin(@Param("keyword") String keyword, @Param("includeDisabled") Boolean includeDisabled);
+
+    List<PatientAdminView> selectPageForAdmin(
+        @Param("keyword") String keyword,
+        @Param("includeDisabled") Boolean includeDisabled,
+        @Param("offset") int offset,
+        @Param("limit") int limit
+    );
+
+    PatientAdminView selectAdminViewById(@Param("id") Integer id);
+
+    int restoreById(@Param("id") Integer id);
 }

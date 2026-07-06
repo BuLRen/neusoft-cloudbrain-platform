@@ -115,6 +115,9 @@ public class ClinicalRecordService {
         if (registerId == null) {
             throw new BusinessException(400, "挂号记录不存在");
         }
+        if (physicianMapper.isRegisterPatientArchived(registerId)) {
+            throw new BusinessException(403, "该患者档案已归档，无法在医疗系统中访问");
+        }
         if (AgentToolExecutionContext.isActive()) {
             Long ownerEmployeeId = physicianMapper.selectRegisterEmployeeId(registerId);
             if (ownerEmployeeId == null) {

@@ -470,6 +470,12 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: 'CT 影像审计', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
+            path: 'patients',
+            name: 'PatientManagement',
+            component: () => import('@/modules/admin/pages/PatientManagement.vue'),
+            meta: { title: '患者管理', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
             path: 'payment-bills',
             name: 'PaymentBillManagement',
             component: PaymentBillManagement,

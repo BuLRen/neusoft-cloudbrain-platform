@@ -197,6 +197,7 @@
             allergy_history AS "allergyHistory"
         FROM patient
         WHERE id = #{patientId}
+          AND delmark = 0
     </select>
 
     <insert id="upsertPatientClinicalProfile">

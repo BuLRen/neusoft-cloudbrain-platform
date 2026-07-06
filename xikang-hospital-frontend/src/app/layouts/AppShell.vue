@@ -54,7 +54,9 @@ function handleCriticalResolved() {
 
 .app-shell--fullscreen {
   display: block;
-  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   padding: 0;
 }
 

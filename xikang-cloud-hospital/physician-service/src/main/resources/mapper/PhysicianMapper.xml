@@ -2,6 +2,19 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.xikang.physician.mapper.PhysicianMapper">
 
+    <!-- 已归档（delmark=1）患者档案关联的挂号不在医疗业务队列中展示 -->
+    <sql id="ExcludeArchivedPatientRegister">
+        AND (r.patient_id IS NULL OR NOT EXISTS (
+            SELECT 1 FROM patient p WHERE p.id = r.patient_id AND p.delmark = 1
+        ))
+    </sql>
+
+    <sql id="ExcludeArchivedPatientRegisterNoAlias">
+        AND (patient_id IS NULL OR NOT EXISTS (
+            SELECT 1 FROM patient p WHERE p.id = patient_id AND p.delmark = 1
+        ))
+    </sql>
+
     <select id="selectPatients" resultType="map">
         SELECT
             r.id AS "registerId",
@@ -34,8 +47,9 @@
             ORDER BY acr.completion_time DESC NULLS LAST, acr.creation_time DESC
             LIMIT 1
         ) ac ON TRUE
-        WHERE (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
-           OR r.visit_state IN (2, 5, 6)
+        WHERE ((r.visit_state = 1 AND r.check_in_time IS NOT NULL)
+           OR r.visit_state IN (2, 5, 6))
+        <include refid="ExcludeArchivedPatientRegister"/>
         <if test="employeeId != null">
             AND r.employee_id = #{employeeId}
         </if>
@@ -49,8 +63,9 @@
     <select id="countPatients" resultType="long">
         SELECT COUNT(*)
         FROM register r
-        WHERE (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
-           OR r.visit_state IN (2, 5, 6)
+        WHERE ((r.visit_state = 1 AND r.check_in_time IS NOT NULL)
+           OR r.visit_state IN (2, 5, 6))
+        <include refid="ExcludeArchivedPatientRegister"/>
         <if test="employeeId != null">
             AND r.employee_id = #{employeeId}
         </if>
@@ -63,10 +78,11 @@
         SELECT
             COALESCE(SUM(CASE WHEN visit_state = 3 THEN 1 ELSE 0 END), 0) AS "totalVisited",
             COALESCE(SUM(CASE WHEN visit_state IN (1, 2, 5, 6) THEN 1 ELSE 0 END), 0) AS "totalWaiting"
-        FROM register
+        FROM register r
         <where>
+            <include refid="ExcludeArchivedPatientRegister"/>
             <if test="employeeId != null">
-                employee_id = #{employeeId}
+                AND r.employee_id = #{employeeId}
             </if>
         </where>
     </select>
@@ -117,10 +133,21 @@
             ) AS "todayInspectionOrders"
         FROM register r
         <where>
+            <include refid="ExcludeArchivedPatientRegister"/>
             <if test="employeeId != null">
-                r.employee_id = #{employeeId}
+                AND r.employee_id = #{employeeId}
             </if>
         </where>
+    </select>
+
+    <select id="isRegisterPatientArchived" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM register r
+            INNER JOIN patient p ON p.id = r.patient_id
+            WHERE r.id = #{registerId}
+              AND p.delmark = 1
+        )
     </select>
 
     <select id="selectPatientByRegisterId" resultType="map">
@@ -154,6 +181,7 @@
             LIMIT 1
         ) ac ON TRUE
         WHERE r.id = #{registerId}
+        <include refid="ExcludeArchivedPatientRegister"/>
     </select>
 
     <select id="countPendingExamRequests" resultType="long">

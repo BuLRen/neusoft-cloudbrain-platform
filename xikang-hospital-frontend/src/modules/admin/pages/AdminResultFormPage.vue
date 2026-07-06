@@ -217,13 +217,11 @@ onMounted(async () => {
     <PageHeader
       v-if="!embedded"
       title="检查结果表单配置"
-      description="维护分类通用模板，并为具体检查项目追加专属字段。"
     />
 
     <div v-if="embedded" class="admin-section-header">
       <div class="admin-section-header__text">
         <h3>结果表单配置</h3>
-        <p>维护分类通用模板，并为具体检查项目追加专属字段。</p>
       </div>
     </div>
 

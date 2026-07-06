@@ -254,14 +254,12 @@ onMounted(() => {
     <PageHeader
       v-if="!embedded"
       title="检查项目"
-      description="维护医生「开立检查检验」可选项目。检查类型（检查/检验/处置）即项目业务分类，与开单下拉一致。"
       eyebrow="管理端"
     />
 
     <div v-if="embedded" class="admin-section-header">
       <div class="admin-section-header__text">
         <h3>项目目录</h3>
-        <p>维护医生「开立检查检验」可选项目，与开单下拉数据一致。</p>
       </div>
     </div>
 

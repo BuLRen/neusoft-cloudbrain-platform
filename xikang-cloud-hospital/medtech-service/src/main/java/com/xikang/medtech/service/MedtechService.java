@@ -38,6 +38,7 @@ public class MedtechService {
     private final InspectionRequestMapper inspectionRequestMapper;
     private final DisposalRequestMapper disposalRequestMapper;
     private final MedicalTechnologyMapper medicalTechnologyMapper;
+    private final ResultFormMapper resultFormMapper;
     private final MedtechStatsMapper medtechStatsMapper;
     private final ResultFormService resultFormService;
     private final ObjectMapper objectMapper;
@@ -672,6 +673,9 @@ public class MedtechService {
         if (refs > 0) {
             throw new BusinessException(400, "该项目已被申请单引用，无法删除");
         }
+        // AI 检查推荐（W2）历史记录，非正式申请单，删除目录项时一并清理
+        medicalTechnologyMapper.deleteAiExamSuggestionsByTechId(id);
+        resultFormMapper.deleteFieldsByOwner("tech_extension", String.valueOf(id));
         medicalTechnologyMapper.deleteById(id);
     }
 
