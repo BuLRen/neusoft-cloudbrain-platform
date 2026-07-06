@@ -127,36 +127,16 @@ public class CriticalValueDetector {
                 "medtech-critical-detect",
                 "critical-detect"
             );
-            Map<String, Object> outputs = run.getOutputs();
-            if (outputs == null || outputs.isEmpty()) {
+            Map<String, Object> outputs = normalizeWorkflowOutputs(run.getOutputs());
+            if (outputs.isEmpty()) {
                 return CriticalDetectResult.none();
             }
-            boolean isCritical = Boolean.TRUE.equals(outputs.get("is_critical"))
-                || Boolean.TRUE.equals(outputs.get("isCritical"))
-                || "true".equalsIgnoreCase(String.valueOf(outputs.get("is_critical")));
+            boolean isCritical = parseBoolean(outputs.get("is_critical"))
+                || parseBoolean(outputs.get("isCritical"));
             if (!isCritical) {
                 return CriticalDetectResult.none();
             }
-            List<CriticalItemHit> hits = new ArrayList<>();
-            Object itemsObj = outputs.get("critical_items");
-            if (itemsObj == null) {
-                itemsObj = outputs.get("criticalItems");
-            }
-            if (itemsObj instanceof List<?> list) {
-                for (Object row : list) {
-                    if (row instanceof Map<?, ?> map) {
-                        CriticalItemHit hit = new CriticalItemHit();
-                        hit.setItemName(stringValue(map.get("item_name") != null ? map.get("item_name") : map.get("itemName")));
-                        hit.setValue(stringValue(map.get("value")));
-                        hit.setUnit(stringValue(map.get("unit")));
-                        hit.setReferenceRange(stringValue(map.get("reference_range") != null ? map.get("reference_range") : map.get("referenceRange")));
-                        hit.setReason(stringValue(map.get("reason")));
-                        hit.setSeverity(stringValue(map.get("severity")) != null ? stringValue(map.get("severity")) : "CRITICAL");
-                        hit.setRule("AI研判");
-                        hits.add(hit);
-                    }
-                }
-            }
+            List<CriticalItemHit> hits = parseCriticalItems(outputs);
             if (hits.isEmpty()) {
                 CriticalItemHit hit = new CriticalItemHit();
                 hit.setItemName(stringValue(outputs.get("item_name")) != null ? stringValue(outputs.get("item_name")) : "AI识别危急值");
@@ -165,11 +145,80 @@ public class CriticalValueDetector {
                 hit.setRule("AI研判");
                 hits.add(hit);
             }
+            log.info("危急值 AI 识别命中 | techCode={} | items={}", techCode, hits.size());
             return CriticalDetectResult.of(hits, "CRITICAL", "ai");
         } catch (Exception ex) {
             log.warn("危急值 AI 识别失败，降级为无命中: {}", ex.getMessage());
             return CriticalDetectResult.none();
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> normalizeWorkflowOutputs(Map<String, Object> outputs) {
+        if (outputs == null || outputs.isEmpty()) {
+            return Map.of();
+        }
+        if (outputs.containsKey("is_critical") || outputs.containsKey("isCritical")) {
+            return outputs;
+        }
+        for (String key : new String[] { "structured_output", "structuredOutput", "output_structured" }) {
+            Object nested = outputs.get(key);
+            if (nested instanceof Map<?, ?> map && !map.isEmpty()) {
+                return (Map<String, Object>) map;
+            }
+            if (nested instanceof String text && text.trim().startsWith("{")) {
+                try {
+                    return objectMapper.readValue(text, new TypeReference<Map<String, Object>>() {});
+                } catch (Exception ignored) {
+                    // fall through
+                }
+            }
+        }
+        return outputs;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<CriticalItemHit> parseCriticalItems(Map<String, Object> outputs) {
+        List<CriticalItemHit> hits = new ArrayList<>();
+        Object itemsObj = outputs.get("critical_items");
+        if (itemsObj == null) {
+            itemsObj = outputs.get("criticalItems");
+        }
+        if (itemsObj instanceof String text && text.trim().startsWith("[")) {
+            try {
+                itemsObj = objectMapper.readValue(text, List.class);
+            } catch (Exception ignored) {
+                return hits;
+            }
+        }
+        if (!(itemsObj instanceof List<?> list)) {
+            return hits;
+        }
+        for (Object row : list) {
+            if (row instanceof Map<?, ?> map) {
+                CriticalItemHit hit = new CriticalItemHit();
+                hit.setItemName(stringValue(map.get("item_name") != null ? map.get("item_name") : map.get("itemName")));
+                hit.setValue(stringValue(map.get("value")));
+                hit.setUnit(stringValue(map.get("unit")));
+                hit.setReferenceRange(stringValue(map.get("reference_range") != null ? map.get("reference_range") : map.get("referenceRange")));
+                hit.setReason(stringValue(map.get("reason")));
+                hit.setSeverity(stringValue(map.get("severity")) != null ? stringValue(map.get("severity")) : "CRITICAL");
+                hit.setRule("AI研判");
+                hits.add(hit);
+            }
+        }
+        return hits;
+    }
+
+    private boolean parseBoolean(Object raw) {
+        if (raw == null) {
+            return false;
+        }
+        if (raw instanceof Boolean bool) {
+            return bool;
+        }
+        String text = String.valueOf(raw).trim().toLowerCase(Locale.ROOT);
+        return "true".equals(text) || "1".equals(text) || "yes".equals(text);
     }
 
     private CriticalItemHit evaluateRule(

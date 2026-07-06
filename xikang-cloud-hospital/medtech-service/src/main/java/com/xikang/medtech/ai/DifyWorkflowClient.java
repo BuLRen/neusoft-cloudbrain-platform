@@ -84,10 +84,14 @@ public class DifyWorkflowClient {
     }
 
     public DifyWorkflowRunResult runCriticalValueDetectBlocking(Map<String, Object> inputs, String user, String traceId) {
+        if (!properties.isDifyBaseConfigured()) {
+            throw new DifyWorkflowException("Dify 未启用或未配置 base-url");
+        }
         String apiKey = properties.resolveCriticalValueDetectApiKey();
         if (apiKey.isBlank()) {
             throw new DifyWorkflowException("危急值识别 API Key 未配置");
         }
+        log.info("Dify critical-value-detect blocking request traceId={} baseUrl={}", traceId, properties.getBaseUrl());
         return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
     }
 

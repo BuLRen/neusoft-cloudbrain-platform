@@ -4,7 +4,8 @@
 > **前提**：`migrate_036_critical_value.sql` 已执行；`critical_value_rule` 种子数据已入库；危急值闭环主流程（规则识别 → 复核上报 → SSE → 看板）可正常运行。  
 > **设计文档**：本文档（编排细节见 **第 6 节**）  
 > **适配平台**：Dify 1.11.2  
-> **App 命名建议**：`WF-Critical 危急值AI识别`
+> **App 命名建议**：`WF-Critical 危急值AI识别`  
+> **文档版本**：v1.1（LLM 改为**结构化输出**推荐方案，与 WF-05/WF-06 对齐）
 
 ---
 
@@ -47,17 +48,18 @@
 ## 2. Dify 控制台编排步骤（速览）
 
 1. 新建 **Workflow App**，命名：`WF-Critical 危急值AI识别`。
-2. 按 **第 6 节** 创建 **5 个节点**：开始 → 解析载荷 → LLM 研判 → 格式化输出 → 结束。
-3. **无需 HTTP 节点**（不直连数据库；规则阈值已在 PostgreSQL `critical_value_rule` 表，由 Java 规则引擎处理）。
-4. 发布工作流，复制 **API Key**（`app-xxx`）到 `.env`：
+2. 按 **第 6 节** 创建节点（推荐 7 个：含 IF 与空结果分支；可简化为 5 个）。
+3. **LLM 节点必须开启结构化输出**（§6.4.2 JSON Schema），不要用 `text` 模式。
+4. **无需 HTTP 节点**（不直连数据库；规则阈值已在 PostgreSQL `critical_value_rule` 表，由 Java 规则引擎处理）。
+5. 发布工作流，复制 **API Key**（`app-xxx`）到 `.env`：
 
 ```bash
 DIFY_WORKFLOW_CRITICAL_VALUE_DETECT=true
 DIFY_API_KEY_CRITICAL_VALUE_DETECT=app-xxxxxxxx
 ```
 
-5. 重启 `medtech-service`。
-6. 用 **第 7 节** 测试用例在 Dify「运行」面板与医技执行页各测一遍。
+6. 重启 `medtech-service`。
+7. 用 **第 7 节** 测试用例在 Dify「运行」面板与医技执行页各测一遍。
 
 ---
 
@@ -121,9 +123,26 @@ Java 规则引擎（critical_value_rule）
 | 约定 | 说明 |
 |------|------|
 | Start 入参 | **全部 String**（含 JSON 载荷） |
-| LLM 输出 | 推荐 String `text`（JSON 字符串），由 Code 解析 |
-| End 出参 | `is_critical` 用 **String** `"true"`/`"false"`；`critical_items` 用 **Array[Object]** |
-| 布尔判断 | IF 条件比较 String，不用 Boolean 节点类型 |
+| LLM 输出 | **推荐结构化输出（JSON Schema）**，字段直接为 Boolean / String / Array[Object] |
+| Code 节点 | 读取 LLM 结构化字段做校验归一化；**不再** `json.loads(text)` |
+| End 出参 | `is_critical` 用 **Boolean**；`critical_items` 用 **Array[Object]** |
+| IF 条件 | 比较 String（如 `payload_valid` 等于 `"true"`） |
+| 后端兼容 | `CriticalValueDetector` 已支持 Boolean `is_critical` 与 List `critical_items` |
+
+### 5.5 为什么推荐 LLM 结构化输出（而非 text）
+
+本工作流输出包含 **嵌套数组 `critical_items[]`**，与 WF-05（门诊确诊）、WF-06（智能荐药）同类，**应使用结构化输出**：
+
+| 对比项 | text + Code 解析（v1.0） | 结构化输出（v1.1 推荐） |
+|--------|--------------------------|-------------------------|
+| 稳定性 | 易出现 Markdown 代码块、多余说明文字 | Schema 约束，字段类型明确 |
+| 下游引用 | 必须经 Code `json.loads` | 直接引用 `危急值研判.is_critical`、`危急值研判.critical_items` |
+| 数组类型 | 需手动解析为 Array[Object] | Dify 直接输出 **Array[Object]** |
+| 项目惯例 | 模拟检查因需 Code 强制改 `isNormal` 才用 text | 确诊/荐药/排班均已用结构化输出 |
+
+> **说明**：WF-MedTech「模拟检查检验」工作流使用 `text`，是因为节点 7 要**强制覆盖** `isNormal` 与各指标 `status`，与 LLM 原始输出不同。本工作流**不需要**覆盖 LLM 布尔判断，因此更适合结构化输出。
+
+**End 节点注意**：后端 `CriticalValueDetector` 从 API `outputs` **顶层**读取 `is_critical`、`critical_items`（不是嵌套在 `structured_output` 对象里）。因此 End 请映射**平铺 4 个字段**，不要只输出一个 `structured_output` 包装对象（除非后续改 Java 解包逻辑）。
 
 ---
 
@@ -135,13 +154,38 @@ Java 规则引擎（critical_value_rule）
 |------|----------|-----------|------|
 | 1 | 开始 | Start | 接收 `tech_code`、`result_payload` |
 | 2 | 解析载荷 | Code | 从 JSON 提取可读文本与上下文 |
-| 3 | 危急值研判 | LLM | 医学判断是否存在危急值 |
-| 4 | 格式化输出 | Code | 解析 LLM JSON，校验并输出 End 变量 |
-| 5 | 结束 | End | 输出 `is_critical`、`critical_items`、`reason`、`summary` |
+| 3 | 是否有效载荷 | IF / 条件分支 | `payload_valid` 为 `"true"` 才调 LLM（可选但推荐） |
+| 4 | 危急值研判 | LLM | **结构化输出**医学判断结果 |
+| 5 | 校验归一化 | Code | 字段归一化、空项兜底、清空非危急项 |
+| 6 | 空结果输出 | Code | 无效载荷时直接返回非危急（接 IF false 分支） |
+| 7 | 结束 | End | 平铺输出 `is_critical`、`critical_items`、`reason`、`summary` |
+
+**推荐拓扑（含 IF，省 Token）：**
 
 ```text
-1 开始 → 2 解析载荷 → 3 危急值研判 → 4 格式化输出 → 5 结束
+1 开始 → 2 解析载荷 → 3 是否有效载荷
+                          ├─ true  → 4 危急值研判 → 5 校验归一化 → 7 结束
+                          └─ false → 6 空结果输出 ────────────────→ 7 结束
 ```
+
+**简化拓扑（不用 IF，由节点 5 内部短路）：**
+
+```text
+1 开始 → 2 解析载荷 → 4 危急值研判 → 5 校验归一化 → 7 结束
+```
+
+### 6.0.1 全工作流变量类型速查
+
+| 节点 | 变量名 | Dify 类型 | 方向 |
+|------|--------|-----------|------|
+| 开始 | `tech_code`、`result_payload` | String | 入 → 出 |
+| 解析载荷 | `raw_text`、`payload_valid` 等 | String | 出 |
+| 危急值研判 | `is_critical` | **Boolean** | 出 |
+| 危急值研判 | `severity`、`summary`、`reason` | String | 出 |
+| 危急值研判 | `critical_items` | **Array[Object]** | 出 |
+| 校验归一化 | `is_critical` | **Boolean** | 出 |
+| 校验归一化 | `critical_items` | **Array[Object]** | 出 |
+| 结束 | 同上 4 字段 | 与校验归一化一致 | 工作流最终输出 |
 
 ---
 
@@ -309,7 +353,23 @@ def main(tech_code, result_payload):
 
 ---
 
-### 6.3 节点 3：危急值研判（LLM）
+### 6.3 节点 3：是否有效载荷（IF，可选）
+
+| 配置项 | 值 |
+|--------|-----|
+| 节点名称 | `是否有效载荷` |
+| 节点类型 | IF / 条件分支 |
+
+| 条件 | 分支 |
+|------|------|
+| `解析载荷.payload_valid` **等于** `"true"` | → 节点 4 危急值研判 |
+| ELSE | → 节点 6 空结果输出 |
+
+> 若希望画布更简单，可删除本节点，由节点 5 在 `payload_valid != "true"` 时直接返回非危急。
+
+---
+
+### 6.4 节点 4：危急值研判（LLM · 结构化输出）
 
 | 配置项 | 值 |
 |--------|-----|
@@ -317,7 +377,91 @@ def main(tech_code, result_payload):
 | 节点类型 | LLM |
 | 模型 | `deepseek-v4-pro` 或院内等价模型 |
 | Temperature | **0.1** |
-| 输出 | String `text`（JSON 字符串） |
+| 输出方式 | **结构化输出（Structured Output）** |
+
+#### 6.4.1 Dify 配置步骤
+
+1. 打开 LLM 节点 → **输出** → 选择 **结构化输出**。
+2. 切换到 **JSON Schema 源码模式**，粘贴 §6.4.2 Schema。
+3. **不要**在 Schema 中写 `"additionalProperties": false`（参考 WF-01/WF-05 踩坑说明）。
+4. 保存后，Dify 将自动暴露 `is_critical`、`critical_items` 等字段供下游引用。
+5. System / User Prompt 中**删除**「输出必须是合法 JSON」等字样——由 Schema 约束即可。
+
+#### 6.4.2 结构化输出 JSON Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "is_critical": {
+      "type": "boolean",
+      "description": "是否存在需要立即通知临床医生的危急值"
+    },
+    "severity": {
+      "type": "string",
+      "description": "CRITICAL 或 URGENT"
+    },
+    "summary": {
+      "type": "string",
+      "description": "一句话概述"
+    },
+    "reason": {
+      "type": "string",
+      "description": "总体判定理由"
+    },
+    "critical_items": {
+      "type": "array",
+      "description": "is_critical=true 时至少 1 条；false 时必须为空数组",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item_name": {
+            "type": "string",
+            "description": "项目名称或影像发现"
+          },
+          "value": {
+            "type": "string",
+            "description": "结果值或描述，无则空字符串"
+          },
+          "unit": {
+            "type": "string",
+            "description": "单位，无则空字符串"
+          },
+          "reference_range": {
+            "type": "string",
+            "description": "参考范围或正常描述"
+          },
+          "severity": {
+            "type": "string",
+            "description": "CRITICAL 或 URGENT"
+          },
+          "reason": {
+            "type": "string",
+            "description": "该项为何危急"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "is_critical",
+    "severity",
+    "summary",
+    "reason",
+    "critical_items"
+  ]
+}
+```
+
+#### 6.4.3 LLM 结构化输出字段（下游可引用）
+
+| 变量名 | Dify 类型 | 说明 |
+|--------|-----------|------|
+| `is_critical` | **Boolean** | 是否危急值 |
+| `severity` | String | `CRITICAL` / `URGENT` |
+| `summary` | String | 一句话概述 |
+| `reason` | String | 总体理由 |
+| `critical_items` | **Array[Object]** | 危急项列表 |
 
 **System Prompt：**
 
@@ -333,30 +477,10 @@ def main(tech_code, result_payload):
 - 微生物：血培养阳性（需结合上下文）
 
 注意：
-1. 仅当存在明确或高度可疑的危急情况时判定为危急值；轻度异常、慢性改变、建议随访不算。
-2. 若信息不足或仅为正常/阴性描述，判定为非危急值。
-3. 输出必须是合法 JSON，不要 Markdown 代码块。
-
-输出 JSON 格式：
-{
-  "is_critical": true或false,
-  "severity": "CRITICAL"或"URGENT",
-  "summary": "一句话概述",
-  "reason": "判定理由",
-  "critical_items": [
-    {
-      "item_name": "项目名称或发现",
-      "value": "结果值或描述",
-      "unit": "单位，无则空字符串",
-      "reference_range": "参考范围或正常描述",
-      "severity": "CRITICAL",
-      "reason": "该项为何危急"
-    }
-  ]
-}
-
-当 is_critical=false 时，critical_items 必须为 []。
-当 is_critical=true 时，critical_items 至少 1 条。
+1. 仅当存在明确或高度可疑的危急情况时判定 is_critical=true；轻度异常、慢性改变、建议随访不算。
+2. 若信息不足或仅为正常/阴性描述，is_critical=false 且 critical_items=[]。
+3. is_critical=true 时 critical_items 至少 1 条；false 时 critical_items 必须为空数组。
+4. 字段名使用 snake_case：item_name、reference_range。
 ```
 
 **User Prompt：**
@@ -365,8 +489,6 @@ def main(tech_code, result_payload):
 请判断以下医技结果是否存在危急值：
 
 {{解析载荷.raw_text}}
-
-若 payload 无效或内容为空，请返回 is_critical=false。
 ```
 
 **输入变量绑定：**
@@ -377,52 +499,51 @@ def main(tech_code, result_payload):
 
 ---
 
-### 6.4 节点 4：格式化输出
+### 6.5 节点 5：校验归一化（Code）
 
 | 配置项 | 值 |
 |--------|-----|
-| 节点名称 | `格式化输出` |
+| 节点名称 | `校验归一化` |
 | 节点类型 | Code |
 | 语言 | Python 3 |
+
+**作用**：在 LLM 结构化输出基础上做确定性兜底（空载荷短路、字段名兼容、危急项至少 1 条），**不再解析 `text` JSON**。
 
 **输入变量：**
 
 | 变量名 | Dify 类型 | 来源 |
 |--------|-----------|------|
-| `llm_text` | String | `危急值研判.text` |
 | `payload_valid` | String | `解析载荷.payload_valid` |
 | `exam_name` | String | `解析载荷.exam_name` |
+| `is_critical` | **Boolean** | `危急值研判.is_critical` |
+| `severity` | String | `危急值研判.severity` |
+| `summary` | String | `危急值研判.summary` |
+| `reason` | String | `危急值研判.reason` |
+| `critical_items` | **Array[Object]** | `危急值研判.critical_items` |
 
 **输出变量：**
 
 | 变量名 | Dify 类型 | 说明 |
 |--------|-----------|------|
-| `is_critical` | String | `"true"` / `"false"`（后端兼容） |
-| `critical_items` | **Array[Object]** | 危急项数组 |
+| `is_critical` | **Boolean** | 最终是否危急 |
+| `critical_items` | **Array[Object]** | snake_case 归一化后的数组 |
 | `reason` | String | 总体理由 |
 | `summary` | String | 一句话摘要 |
 
 **节点代码（可直接粘贴）：**
 
 ```python
-import json
-import re
-
 def clean(v):
     return "" if v is None else str(v).strip()
 
-def parse_llm_json(text):
-    raw = clean(text)
-    if not raw:
-        return {}
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-    try:
-        return json.loads(raw)
-    except Exception:
-        return {}
+def as_bool(v):
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return False
+    return clean(v).lower() in ("true", "1", "yes")
 
-def normalize_item(row, exam_name):
+def normalize_item(row, exam_name, default_severity):
     if not isinstance(row, dict):
         return None
     name = clean(row.get("item_name") or row.get("itemName")) or exam_name or "AI识别危急值"
@@ -431,73 +552,96 @@ def normalize_item(row, exam_name):
         "value": clean(row.get("value")),
         "unit": clean(row.get("unit")),
         "reference_range": clean(row.get("reference_range") or row.get("referenceRange")),
-        "severity": clean(row.get("severity")) or "CRITICAL",
+        "severity": clean(row.get("severity")) or default_severity or "CRITICAL",
         "reason": clean(row.get("reason")),
     }
 
-def main(llm_text, payload_valid, exam_name):
-    if clean(payload_valid) != "true":
+def main(payload_valid, exam_name, is_critical, severity, summary, reason, critical_items):
+    if clean(payload_valid).lower() != "true":
         return {
-            "is_critical": "false",
+            "is_critical": False,
             "critical_items": [],
             "reason": "",
             "summary": "无有效结果内容",
         }
 
-    data = parse_llm_json(llm_text)
-    is_critical = bool(data.get("is_critical"))
-    items = data.get("critical_items") or data.get("criticalItems") or []
+    critical = as_bool(is_critical)
+    default_severity = clean(severity) or "CRITICAL"
     normalized = []
-    if isinstance(items, list):
-        for row in items:
-            item = normalize_item(row, exam_name)
-            if item:
-                normalized.append(item)
 
-    if is_critical and not normalized:
+    items = critical_items if isinstance(critical_items, list) else []
+    for row in items:
+        item = normalize_item(row, exam_name, default_severity)
+        if item:
+            normalized.append(item)
+
+    if critical and not normalized:
         normalized.append({
             "item_name": exam_name or "AI识别危急值",
             "value": "",
             "unit": "",
             "reference_range": "",
-            "severity": clean(data.get("severity")) or "CRITICAL",
-            "reason": clean(data.get("reason") or data.get("summary")),
+            "severity": default_severity,
+            "reason": clean(reason) or clean(summary),
         })
 
-    if not is_critical:
+    if not critical:
         normalized = []
 
     return {
-        "is_critical": "true" if is_critical else "false",
+        "is_critical": critical,
         "critical_items": normalized,
-        "reason": clean(data.get("reason")),
-        "summary": clean(data.get("summary")),
+        "reason": clean(reason),
+        "summary": clean(summary),
     }
 ```
 
 ---
 
-### 6.5 节点 5：结束
+### 6.6 节点 6：空结果输出（Code，接 IF false 分支）
+
+| 配置项 | 值 |
+|--------|-----|
+| 节点名称 | `空结果输出` |
+| 节点类型 | Code |
+
+**输入变量：** 无（或占位 `exam_name` 来自解析载荷）
+
+**输出变量：** 与节点 5 相同（`is_critical` Boolean、`critical_items` Array 等）
+
+```python
+def main():
+    return {
+        "is_critical": False,
+        "critical_items": [],
+        "reason": "",
+        "summary": "无有效结果内容",
+    }
+```
+
+---
+
+### 6.7 节点 7：结束
 
 | 配置项 | 值 |
 |--------|-----|
 | 节点名称 | `结束` |
 | 节点类型 | End |
 
-**输出变量（与 Java 解析对齐）：**
+**输出变量（平铺映射，与 Java 顶层字段对齐）：**
 
-| 变量名 | Dify 类型 | 来源 | Java 读取字段 |
-|--------|-----------|------|---------------|
-| `is_critical` | String | `格式化输出.is_critical` | `is_critical` / `isCritical` |
-| `critical_items` | Array[Object] | `格式化输出.critical_items` | `critical_items` / `criticalItems` |
-| `reason` | String | `格式化输出.reason` | 兜底 `reason` |
-| `summary` | String | `格式化输出.summary` | 兜底 `summary` |
+| 变量名 | Dify 类型 | 来源 | Java 读取 |
+|--------|-----------|------|-----------|
+| `is_critical` | **Boolean** | `校验归一化.is_critical` 或 `空结果输出.is_critical` | `is_critical` / `isCritical` |
+| `critical_items` | **Array[Object]** | 同上 `.critical_items` | `critical_items` / `criticalItems` |
+| `reason` | String | 同上 `.reason` | 兜底 `reason` |
+| `summary` | String | 同上 `.summary` | 兜底 `summary` |
 
 **后端解析逻辑（`CriticalValueDetector.detectFromAi`）摘要：**
 
-- `is_critical` 为 `true` / `"true"` / Boolean true 时视为命中。
-- `critical_items` 每项读取 `item_name`/`itemName`、`value`、`unit`、`reference_range`/`referenceRange`、`reason`、`severity`。
-- 若 `is_critical=true` 但 `critical_items` 为空，后端用 `reason`/`summary` 生成一条默认命中项。
+- `is_critical` 支持 **Boolean `true`** 或字符串 `"true"`。
+- `critical_items` 必须是 **JSON 数组**（List），不能是 JSON 字符串。
+- 若 `is_critical=true` 但 `critical_items` 为空，后端用 `reason`/`summary` 生成默认命中项。
 
 ---
 
@@ -525,7 +669,7 @@ CT_HEAD
 }
 ```
 
-**期望 End 输出：** `is_critical=true`，`critical_items` 至少 1 条，含「脑出血」相关描述。
+**期望 End 输出：** `is_critical` 为 `true`（Boolean），`critical_items` 至少 1 条，含「脑出血」相关描述。
 
 ---
 
@@ -593,11 +737,19 @@ CT_HEAD
 | 问题 | 处理 |
 |------|------|
 | 医技提交后从不出现 AI 命中 | 检查 Key/开关；多数数值异常已被规则引擎拦截，应看 `detectSource=rule` |
-| Dify 返回成功但后端无命中 | 检查 End 变量名是否为 `is_critical`、`critical_items`（下划线命名） |
-| `critical_items` 后端解析为空 | End 必须输出 **Array[Object]**，不要只输出 JSON 字符串 |
+| Dify 返回成功但后端无命中 | 检查 End 是否**平铺**输出 `is_critical`、`critical_items`（勿只包在 `structured_output` 内） |
+| `critical_items` 后端解析为空 | End / LLM 结构化输出必须是 **Array[Object]**，不能是 JSON 字符串 |
+| LLM 结构化输出校验失败 | 检查 Schema 是否误加 `additionalProperties: false`；放宽 `required` 或重试 |
+| Dify 把 `critical_items` 落成 String | 检查 LLM 是否误用 text 模式；应改结构化输出 |
 | 工作流 succeeded 但结论离谱 | 调低 Temperature；在 System Prompt 补充本院危急值目录 |
 | 与模拟检查共用 Key | **不要共用**；本 Workflow 需独立 API Key |
 
 ---
 
-*文档版本：v1.0 · 与 `medtech-service` migrate_036 / `CriticalValueDetector` 对齐*
+## 10. 附录：text 模式（v1.0 遗留，不推荐）
+
+若 Dify 版本不支持结构化输出，可回退为 LLM 输出 `text` + Code `json.loads`。该方案易遇 Markdown 包裹、字段缺失等问题，**仅作兜底**。v1.1 起请以 §6.4 结构化输出为准。
+
+---
+
+*文档版本：v1.1 · LLM 结构化输出 · 与 `medtech-service` migrate_036 / `CriticalValueDetector` 对齐*
