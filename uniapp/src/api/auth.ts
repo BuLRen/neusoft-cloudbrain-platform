@@ -10,4 +10,5 @@ export const authApi = {
   register: (data:{username:string;password:string;realName:string;phone:string;idCard:string;gender?:string;birthdate?:string;userType:string}) => request<void>({ url:'/auth/register', method:'POST', data, skipAuth:true }),
   me: () => request<LoginResult>({ url:'/auth/me', showError:false }),
   logout: () => request<void>({ url:'/auth/logout', method:'POST', showError:false }),
+  changePassword: (oldPassword:string,newPassword:string)=>request<void>({ url:'/auth/change-password', method:'POST', data:{oldPassword,newPassword} }),
 }

@@ -42,8 +42,8 @@ onLoad((options) => {
 <template>
   <view class="guide-page">
     <PageHeader
-      :title="patientName ? `${patientName} · 用药指导` : '用药指导单'"
-      subtitle="熙康云医院 · AI 辅助生成"
+      title="熙康云医院 · AI 辅助生成"
+      subtitle="用药指导详情"
     />
 
     <scroll-view class="content" scroll-y>
@@ -57,7 +57,7 @@ onLoad((options) => {
         <view class="retry-btn" @tap="refresh">重新加载</view>
       </view>
 
-      <MedicationGuideSheet v-else :record="record" :loading="false" />
+      <MedicationGuideSheet v-else :record="record" :loading="false" :patient-name="patientName" />
 
       <view class="bottom-spacer" />
     </scroll-view>
@@ -68,9 +68,11 @@ onLoad((options) => {
 .guide-page {
   height: 100vh;
   overflow: hidden;
-  background: linear-gradient(180deg, #e6f2ff, #f4f8fd 330rpx);
+  background:
+    radial-gradient(circle at 77% 7%, rgba(157, 205, 255, 0.42), transparent 260rpx),
+    linear-gradient(180deg, #eef7ff 0%, #f8fbff 42%, #f4f8fd 100%);
   color: #102d5c;
-  padding: 0 24rpx;
+  padding: calc(var(--status-bar-height) + 34rpx) 28rpx 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -79,7 +81,7 @@ onLoad((options) => {
 .content {
   flex: 1;
   min-height: 0;
-  padding-top: 8rpx;
+  padding-top: 4rpx;
 }
 
 .state-card {

@@ -114,6 +114,43 @@ async function handleLogout() {
   clearSession()
   uni.reLaunch({ url: '/pages/login/index' })
 }
+
+// ============= 修改密码 =============
+const passwordVisible = ref(false)
+const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const passwordError = ref('')
+const passwordLoading = ref(false)
+
+function openPasswordDialog() {
+  passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  passwordError.value = ''
+  passwordVisible.value = true
+}
+function closePasswordDialog() {
+  if (passwordLoading.value) return
+  passwordVisible.value = false
+}
+async function confirmChangePassword() {
+  const { oldPassword, newPassword, confirmPassword } = passwordForm.value
+  if (!oldPassword) { passwordError.value = '请输入旧密码'; return }
+  if (!newPassword) { passwordError.value = '请输入新密码'; return }
+  if (newPassword.length < 6) { passwordError.value = '新密码长度不能少于 6 位'; return }
+  if (newPassword === oldPassword) { passwordError.value = '新密码不能与旧密码相同'; return }
+  if (!confirmPassword) { passwordError.value = '请再次输入新密码'; return }
+  if (confirmPassword !== newPassword) { passwordError.value = '两次输入的密码不一致'; return }
+
+  passwordError.value = ''
+  passwordLoading.value = true
+  try {
+    await authApi.changePassword(oldPassword, newPassword)
+    uni.showToast({ title: '密码修改成功', icon: 'success' })
+    passwordVisible.value = false
+  } catch (err) {
+    passwordError.value = err instanceof Error ? err.message : '密码修改失败'
+  } finally {
+    passwordLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -130,7 +167,7 @@ async function handleLogout() {
           </view>
           <text>{{ currentPatient?.phone || '手机号未填写' }}</text>
         </view>
-        <text class="setting">账户设置 ›</text>
+        <text class="setting" @tap="openPasswordDialog">账户设置 ›</text>
       </view>
 
       <view class="account-stats">
@@ -226,6 +263,61 @@ async function handleLogout() {
             :class="['recharge-btn-primary', { disabled: rechargeLoading }]"
             @tap="confirmRecharge"
           >{{ rechargeLoading ? '充值中…' : '确认充值' }}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 修改密码弹层 -->
+    <view v-if="passwordVisible" class="recharge-mask" @tap="closePasswordDialog">
+      <view class="recharge-dialog" @tap.stop>
+        <view class="recharge-title">修改密码</view>
+        <view class="recharge-sub">建议定期更换密码以保护账户安全</view>
+
+        <view class="pwd-field">
+          <text class="pwd-label">旧密码</text>
+          <input
+            v-model="passwordForm.oldPassword"
+            class="pwd-input"
+            type="password"
+            password
+            placeholder="请输入旧密码"
+            placeholder-class="recharge-input-placeholder"
+            :disabled="passwordLoading"
+          />
+        </view>
+        <view class="pwd-field">
+          <text class="pwd-label">新密码</text>
+          <input
+            v-model="passwordForm.newPassword"
+            class="pwd-input"
+            type="password"
+            password
+            placeholder="至少 6 位"
+            placeholder-class="recharge-input-placeholder"
+            :disabled="passwordLoading"
+          />
+        </view>
+        <view class="pwd-field">
+          <text class="pwd-label">确认密码</text>
+          <input
+            v-model="passwordForm.confirmPassword"
+            class="pwd-input"
+            type="password"
+            password
+            placeholder="请再次输入新密码"
+            placeholder-class="recharge-input-placeholder"
+            :disabled="passwordLoading"
+          />
+        </view>
+
+        <view v-if="passwordError" class="pwd-error">{{ passwordError }}</view>
+
+        <view class="recharge-actions">
+          <view class="recharge-btn-secondary" @tap="closePasswordDialog">取消</view>
+          <view
+            :class="['recharge-btn-primary', { disabled: passwordLoading }]"
+            @tap="confirmChangePassword"
+          >{{ passwordLoading ? '提交中…' : '确认修改' }}</view>
         </view>
       </view>
     </view>
@@ -591,4 +683,30 @@ async function handleLogout() {
 }
 
 .recharge-btn-primary.disabled { opacity: 0.55; }
+
+.pwd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.pwd-label {
+  font-size: 22rpx;
+  color: #526d95;
+  font-weight: 600;
+}
+
+.pwd-input {
+  padding: 18rpx 20rpx;
+  border-radius: 16rpx;
+  background: #f4f8fd;
+  font-size: 28rpx;
+  color: #102854;
+}
+
+.pwd-error {
+  color: #e0383f;
+  font-size: 21rpx;
+  padding: 4rpx 6rpx;
+}
 </style>
