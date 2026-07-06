@@ -476,9 +476,21 @@ public class PhysicianService {
             .map(item -> toDecimal(item.get("drugPrice")).multiply(new BigDecimal(String.valueOf(item.getOrDefault("drugNumber", "0")))))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 先 endVisit（里面会 assertAllPaid），事务 commit 后再发通知，避免回滚后误推
-        endVisit(registerId);
+        // 推送药品费到 payment-service（幂等：ON CONFLICT DO NOTHING）。
+        // 即使金额为 0，payment-service 也会落 status=1（已结清），避免后续 assertAllPaid 卡住。
+        if (patientId != null) {
+            paymentClient.createMedicationFee(registerId, patientId, patientName, totalAmount);
+        }
 
+        // 直接结束看诊（不走 endVisit 内部的 assertAllPaid）。
+        // 设计取舍：用户希望保持"开药即归档"的原体验，药品费/检查费等费用作为挂账留在支付中心，
+        // 患者之后自行缴费 —— 不让缴费流程卡住医生端的归档动作。
+        int current = currentVisitState(registerId);
+        if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_PENDING || current == VISIT_EXAM_COMPLETED) {
+            physicianMapper.updateVisitState(registerId, VISIT_ENDED);
+        }
+
+        // 事务 commit 后发通知，避免回滚后误推
         registerPrescriptionSubmittedNotificationIfTxActive(
                 patientId, patientName, registerId, prescriptions, totalAmount);
 
@@ -492,8 +504,8 @@ public class PhysicianService {
 
     /**
      * 处方开具后给患者推"处方已开具"通知（事务 commit 后才发，避免回滚后误推）。
-     * <p>当前处方不进 payment-service 计费（无 MEDICATION_FEE），所以这里只提醒"前往药房取药"，
-     * 不像 EXAM_FEE_CREATED 那样提示缴费。
+     * <p>处方费用已推送到 payment-service（MEDICATION_FEE），所以通知里提示"请前往支付中心缴费"，
+     * 缴费完成后 payment-service 会再推一条 PAYMENT_SUCCESS 通知（含"凭电子凭证到药房取药"提示）。
      * <p>通知失败仅 log，绝不影响开处方主流程（NotificationClient.trySend 内部已吞异常）。
      * <p>若调用时不在事务里（理论上不会），直接同步发送。
      */
@@ -518,7 +530,7 @@ public class PhysicianService {
         }
         final String totalStr = totalAmount != null ? totalAmount.toPlainString() : "0.00";
         final String content = String.format(
-                "%s，您的处方已开具（共 %d 种药品：%s），处方总额 %s 元，请前往药房取药。",
+                "%s，您的处方已开具（共 %d 种药品：%s），处方总额 %s 元，请前往支付中心完成缴费，缴费后凭电子凭证到药房取药。",
                 greeting, drugCount, drugSummary, totalStr);
 
         Runnable send = () -> notificationClient.trySend(
