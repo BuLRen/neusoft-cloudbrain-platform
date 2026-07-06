@@ -305,6 +305,25 @@ public class ClinicalRecordService {
                 includeDetail ? Map.of("items", prescriptions) : null));
         }
 
+        for (Map<String, Object> row : clinicalRecordMapper.selectCriticalValueAlerts(registerId)) {
+            String status = stringValue(row.get("status"));
+            String timelineStatus = "HANDLED".equals(status) || "CLOSED".equals(status)
+                ? "completed"
+                : ("ESCALATED".equals(status) ? "escalated" : "pending");
+            String summary = stringValue(row.get("techName"));
+            if (hasText(row.get("handleNote"))) {
+                summary = summary + " · 处置：" + row.get("handleNote");
+            }
+            events.add(event("critical_value",
+                firstNonNull(row.get("handledTime"), firstNonNull(row.get("acknowledgedTime"), row.get("reportedTime"))),
+                "危急值闭环",
+                summary,
+                timelineStatus,
+                "critical_value_alert",
+                toLong(row.get("id")),
+                includeDetail ? row : null));
+        }
+
         if (header != null && header.get("clinicalArchivedAt") != null) {
             events.add(event("visit_archived", header.get("clinicalArchivedAt"), "病历归档",
                 "医生已归档并发布给患者", "completed", "register", registerId,

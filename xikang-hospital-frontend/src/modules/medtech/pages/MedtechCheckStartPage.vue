@@ -17,6 +17,8 @@ import {
   loadCtDraft,
 } from '@/modules/medtech/composables/useCtCheckContext'
 import { restoreMedtechSimulationDraft } from '@/modules/medtech/composables/useMedtechSimulationDraft'
+import { useCriticalValueReport } from '@/shared/composables/useCriticalValueReport'
+import CriticalValueConfirmDialog from '@/shared/components/CriticalValueConfirmDialog.vue'
 import MedtechStepLayout from '../layouts/MedtechStepLayout.vue'
 
 const route = useRoute()
@@ -34,6 +36,20 @@ const started = ref(false)
 const isNormal = ref(false)
 const structuredOutput = ref<SimulatedCheckStructuredOutput | null>(null)
 const dialogVisible = ref(false)
+
+const {
+  dialogVisible: criticalDialogVisible,
+  reporting: criticalReporting,
+  detectResult: criticalDetect,
+  openIfSuspected,
+  confirmReport: confirmCriticalReport,
+  skipReport: skipCriticalReport,
+} = useCriticalValueReport()
+
+function finishSubmitNavigation() {
+  ElMessage.success('检查结果已提交')
+  router.push('/medtech/check-queue')
+}
 
 const id = computed(() => Number(route.query.id || 0))
 const phase = computed(() => String(route.query.phase || ''))
@@ -173,15 +189,26 @@ async function submit() {
 
   loading.value = true
   try {
-    await medtechApi.submitCheckResult(id.value, {
+    const response = await medtechApi.submitCheckResult(id.value, {
       values: formValues.value,
       structuredOutput: structuredOutput.value ?? undefined,
     })
     if (isCtSubmit.value) {
       clearCtDraft(id.value)
     }
-    ElMessage.success('检查结果已提交')
-    router.push('/medtech/check-queue')
+    const needsConfirm = openIfSuspected(
+      response,
+      {
+        registerId: report.value?.registerId ?? 0,
+        sourceType: 'check',
+        sourceId: id.value,
+        techName: report.value?.techName,
+      },
+      finishSubmitNavigation,
+    )
+    if (!needsConfirm) {
+      finishSubmitNavigation()
+    }
   } finally {
     loading.value = false
   }
@@ -285,6 +312,14 @@ onMounted(() => {
   <ElDialog v-model="dialogVisible" :title="dialogTitle" width="760px" align-center destroy-on-close>
     <SimulatedCheckResultContent :data="structuredOutput" />
   </ElDialog>
+
+  <CriticalValueConfirmDialog
+    v-model:visible="criticalDialogVisible"
+    :detect="criticalDetect"
+    :reporting="criticalReporting"
+    @confirm="confirmCriticalReport"
+    @skip="skipCriticalReport"
+  />
 </template>
 
 <style scoped>

@@ -49,6 +49,7 @@ import MedtechCheckStartPage from '@/modules/medtech/pages/MedtechCheckStartPage
 import MedtechCheckResultPage from '@/modules/medtech/pages/MedtechCheckResultPage.vue'
 import MedtechInspectionStartPage from '@/modules/medtech/pages/MedtechInspectionStartPage.vue'
 import MedtechDisposalStartPage from '@/modules/medtech/pages/MedtechDisposalStartPage.vue'
+import CriticalValueBoardPage from '@/modules/medtech/pages/CriticalValueBoardPage.vue'
 import OutcomeAssessmentPage from '@/modules/medtech/follow-up/pages/OutcomeAssessmentPage.vue'
 import FollowUpCommunicationPage from '@/modules/medtech/follow-up/pages/FollowUpCommunicationPage.vue'
 import FollowUpRecordsPage from '@/modules/medtech/follow-up/pages/FollowUpRecordsPage.vue'
@@ -321,6 +322,12 @@ export const routes: RouteRecordRaw[] = [
             name: 'MedtechDisposalStart',
             component: MedtechDisposalStartPage,
             meta: { title: '② 处置执行', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 2, hidden: true },
+          },
+          {
+            path: 'critical-value-board',
+            name: 'CriticalValueBoard',
+            component: CriticalValueBoardPage,
+            meta: { title: '危急值看板', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 3 },
           },
           {
             path: 'check-result',

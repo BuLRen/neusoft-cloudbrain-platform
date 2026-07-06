@@ -27,6 +27,8 @@ public interface ClinicalRecordMapper {
 
     List<Map<String, Object>> selectPrescriptions(@Param("registerId") Long registerId);
 
+    List<Map<String, Object>> selectCriticalValueAlerts(@Param("registerId") Long registerId);
+
     Map<String, Object> selectPatientClinicalProfile(@Param("patientId") Long patientId);
 
     Map<String, Object> selectPatientBasic(@Param("patientId") Long patientId);
