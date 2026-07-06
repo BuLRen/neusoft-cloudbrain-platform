@@ -50,7 +50,7 @@ onShow(load)
     <view v-for="item in prescriptions" :key="item.id" class="prescription card">
       <view class="head">
         <view>
-          <text>门诊处方 #{{ item.id }}</text>
+          <text>门诊处方</text>
           <text>{{ item.createTime?.slice(0, 10) || '' }} · {{ item.physicianName || '门诊医生' }}</text>
         </view>
         <text :class="['status-tag', isDispensed(item) ? 'success' : 'pending']">
