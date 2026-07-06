@@ -1,6 +1,6 @@
-package com.xikang.physician.simulation.mapper;
+package com.xikang.medtech.mapper;
 
-import com.xikang.physician.simulation.entity.SimulationConfig;
+import com.xikang.medtech.entity.SimulationConfig;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -8,11 +8,6 @@ import java.util.List;
 
 @Mapper
 public interface SimulationConfigMapper {
-
-    SimulationConfig selectBestMatch(
-        @Param("techCode") String techCode,
-        @Param("checkName") String checkName
-    );
 
     List<SimulationConfig> selectAll(@Param("keyword") String keyword);
 

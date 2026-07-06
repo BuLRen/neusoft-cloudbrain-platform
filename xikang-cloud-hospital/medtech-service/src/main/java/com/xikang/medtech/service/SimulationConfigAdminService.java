@@ -1,10 +1,10 @@
-package com.xikang.physician.simulation;
+package com.xikang.medtech.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.xikang.physician.simulation.dto.SimulationConfigSaveRequest;
-import com.xikang.physician.simulation.entity.SimulationConfig;
-import com.xikang.physician.simulation.mapper.SimulationConfigMapper;
+import com.xikang.medtech.dto.SimulationConfigSaveRequest;
+import com.xikang.medtech.entity.SimulationConfig;
+import com.xikang.medtech.mapper.SimulationConfigMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -15,7 +15,7 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class SimulationConfigService {
+public class SimulationConfigAdminService {
 
     private static final String DEFAULT_OUTPUT_SCHEMA = """
         {"type":"object","required":["checkName","simulatedForDiseases","resultItems","conclusion","notice"]}
@@ -23,20 +23,6 @@ public class SimulationConfigService {
 
     private final SimulationConfigMapper simulationConfigMapper;
     private final ObjectMapper objectMapper;
-
-    public Optional<Map<String, Object>> resolveForWorkflow(String techCode, String checkName) {
-        String normalizedTechCode = normalize(techCode);
-        String normalizedCheckName = normalize(checkName);
-        if (normalizedTechCode.isEmpty() && normalizedCheckName.isEmpty()) {
-            return Optional.empty();
-        }
-
-        SimulationConfig config = simulationConfigMapper.selectBestMatch(normalizedTechCode, normalizedCheckName);
-        if (config == null) {
-            return Optional.empty();
-        }
-        return Optional.of(toWorkflowPayload(config));
-    }
 
     public List<Map<String, Object>> listAll(String keyword) {
         return simulationConfigMapper.selectAll(normalize(keyword)).stream()
@@ -53,7 +39,7 @@ public class SimulationConfigService {
     }
 
     public Map<String, Object> create(SimulationConfigSaveRequest request) {
-        validateSaveRequest(request, null);
+        validateSaveRequest(request);
         SimulationConfig existing = simulationConfigMapper.selectByConfigKey(normalize(request.getConfigKey()));
         if (existing != null) {
             throw new IllegalArgumentException("配置键已存在：" + request.getConfigKey());
@@ -70,7 +56,7 @@ public class SimulationConfigService {
         if (current == null) {
             throw new IllegalArgumentException("配置不存在");
         }
-        validateSaveRequest(request, id);
+        validateSaveRequest(request);
 
         SimulationConfig duplicate = simulationConfigMapper.selectByConfigKey(normalize(request.getConfigKey()));
         if (duplicate != null && !duplicate.getId().equals(id)) {
@@ -90,7 +76,7 @@ public class SimulationConfigService {
         simulationConfigMapper.deleteById(id);
     }
 
-    private void validateSaveRequest(SimulationConfigSaveRequest request, Integer currentId) {
+    private void validateSaveRequest(SimulationConfigSaveRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("请求体不能为空");
         }
@@ -107,9 +93,6 @@ public class SimulationConfigService {
             if (normalize(request.getPromptSections().get(key)).isEmpty()) {
                 throw new IllegalArgumentException("提示词片段缺少必填项：" + key);
             }
-        }
-        if (currentId != null) {
-            // no-op placeholder for future cross-field validation
         }
     }
 
@@ -153,21 +136,6 @@ public class SimulationConfigService {
         data.put("outputSchema", parseJsonObject(config.getOutputSchema()));
         data.put("defaults", parseJsonObject(config.getDefaults()));
         data.put("createdAt", config.getCreatedAt());
-        return data;
-    }
-
-    private Map<String, Object> toWorkflowPayload(SimulationConfig config) {
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("configKey", config.getConfigKey());
-        data.put("techCode", config.getTechCode());
-        data.put("checkName", config.getCheckName());
-        data.put("enabled", config.getEnabled() == null || config.getEnabled());
-        data.put("simulationMode", config.getSimulationMode());
-        data.put("version", config.getVersion());
-        data.put("promptSections", parseJsonObject(config.getPromptSections()));
-        data.put("diseaseMappings", parseJsonValue(config.getDiseaseMappings()));
-        data.put("outputSchema", parseJsonObject(config.getOutputSchema()));
-        data.put("defaults", parseJsonObject(config.getDefaults()));
         return data;
     }
 
