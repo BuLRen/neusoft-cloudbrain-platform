@@ -120,10 +120,12 @@ const passwordVisible = ref(false)
 const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
 const passwordError = ref('')
 const passwordLoading = ref(false)
+const passwordEye = ref({ old: false, next: false, confirm: false })
 
 function openPasswordDialog() {
   passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
   passwordError.value = ''
+  passwordEye.value = { old: false, next: false, confirm: false }
   passwordVisible.value = true
 }
 function closePasswordDialog() {
@@ -172,18 +174,30 @@ async function confirmChangePassword() {
 
       <view class="account-stats">
         <view @tap="open('/pages/patients/index')">
+          <view class="stat-service-icon">
+            <ServiceIcon type="person" tone="blue" />
+          </view>
           <text class="stat-num">{{ session.patients.length }} 人</text>
           <text class="stat-label">就诊人管理</text>
         </view>
         <view @tap="openRecharge">
+          <view class="stat-service-icon">
+            <ServiceIcon type="wallet" tone="blue" />
+          </view>
           <text class="stat-num">¥{{ Number(currentPatient?.accountBalance || 0).toFixed(2) }}</text>
           <text class="stat-label">账户余额</text>
         </view>
         <view @tap="open('/pages/prescription/index')">
+          <view class="stat-service-icon">
+            <ServiceIcon type="compose" tone="blue" />
+          </view>
           <text class="stat-num">{{ prescriptionCount === null ? '—' : `${prescriptionCount} 张` }}</text>
           <text class="stat-label">我的处方</text>
         </view>
         <view @tap="open('/pages/followup/index')">
+          <view class="stat-service-icon">
+            <ServiceIcon type="calendar" tone="blue" />
+          </view>
           <text class="stat-num">{{ followupCount === null ? '—' : `${followupCount} 项` }}</text>
           <text class="stat-label">随访计划</text>
         </view>
@@ -268,54 +282,71 @@ async function confirmChangePassword() {
     </view>
 
     <!-- 修改密码弹层 -->
-    <view v-if="passwordVisible" class="recharge-mask" @tap="closePasswordDialog">
-      <view class="recharge-dialog" @tap.stop>
-        <view class="recharge-title">修改密码</view>
-        <view class="recharge-sub">建议定期更换密码以保护账户安全</view>
+    <view v-if="passwordVisible" class="password-mask" @tap="closePasswordDialog">
+      <view class="password-panel" @tap.stop>
+        <view class="password-close" @tap="closePasswordDialog">×</view>
+        <view class="password-shield">
+          <image src="/static/auth/shield.svg" mode="aspectFit" />
+        </view>
+        <text class="password-title">修改密码</text>
+        <text class="password-subtitle">建议定期更换密码以保护账户安全</text>
 
-        <view class="pwd-field">
-          <text class="pwd-label">旧密码</text>
-          <input
-            v-model="passwordForm.oldPassword"
-            class="pwd-input"
-            type="password"
-            password
-            placeholder="请输入旧密码"
-            placeholder-class="recharge-input-placeholder"
-            :disabled="passwordLoading"
-          />
-        </view>
-        <view class="pwd-field">
-          <text class="pwd-label">新密码</text>
-          <input
-            v-model="passwordForm.newPassword"
-            class="pwd-input"
-            type="password"
-            password
-            placeholder="至少 6 位"
-            placeholder-class="recharge-input-placeholder"
-            :disabled="passwordLoading"
-          />
-        </view>
-        <view class="pwd-field">
-          <text class="pwd-label">确认密码</text>
-          <input
-            v-model="passwordForm.confirmPassword"
-            class="pwd-input"
-            type="password"
-            password
-            placeholder="请再次输入新密码"
-            placeholder-class="recharge-input-placeholder"
-            :disabled="passwordLoading"
-          />
+        <view class="password-fields">
+          <view class="password-field">
+            <text class="field-title">旧密码</text>
+            <view class="field-row">
+              <image src="/static/auth/lock.svg" mode="aspectFit" />
+              <input
+                v-model="passwordForm.oldPassword"
+                class="field-input"
+                :password="!passwordEye.old"
+                placeholder="请输入旧密码"
+                placeholder-class="recharge-input-placeholder"
+                :disabled="passwordLoading"
+              />
+              <text class="eye-btn" @tap="passwordEye.old = !passwordEye.old">{{ passwordEye.old ? '睁' : '隐' }}</text>
+            </view>
+          </view>
+
+          <view class="password-field">
+            <text class="field-title">新密码</text>
+            <view class="field-row">
+              <image src="/static/auth/lock.svg" mode="aspectFit" />
+              <input
+                v-model="passwordForm.newPassword"
+                class="field-input"
+                :password="!passwordEye.next"
+                placeholder="至少 6 位，建议包含字母、数字及符号"
+                placeholder-class="recharge-input-placeholder"
+                :disabled="passwordLoading"
+              />
+              <text class="eye-btn" @tap="passwordEye.next = !passwordEye.next">{{ passwordEye.next ? '睁' : '隐' }}</text>
+            </view>
+          </view>
+
+          <view class="password-field">
+            <text class="field-title">确认密码</text>
+            <view class="field-row">
+              <image src="/static/auth/lock.svg" mode="aspectFit" />
+              <input
+                v-model="passwordForm.confirmPassword"
+                class="field-input"
+                :password="!passwordEye.confirm"
+                placeholder="请再次输入新密码"
+                placeholder-class="recharge-input-placeholder"
+                :disabled="passwordLoading"
+              />
+              <text class="eye-btn" @tap="passwordEye.confirm = !passwordEye.confirm">{{ passwordEye.confirm ? '睁' : '隐' }}</text>
+            </view>
+          </view>
         </view>
 
         <view v-if="passwordError" class="pwd-error">{{ passwordError }}</view>
 
-        <view class="recharge-actions">
-          <view class="recharge-btn-secondary" @tap="closePasswordDialog">取消</view>
+        <view class="password-actions">
+          <view class="password-cancel" @tap="closePasswordDialog">取消</view>
           <view
-            :class="['recharge-btn-primary', { disabled: passwordLoading }]"
+            :class="['password-confirm', { disabled: passwordLoading }]"
             @tap="confirmChangePassword"
           >{{ passwordLoading ? '提交中…' : '确认修改' }}</view>
         </view>
@@ -399,34 +430,65 @@ async function confirmChangePassword() {
 
 .account-stats {
   margin-top: 26rpx;
-  padding: 24rpx 4rpx;
-  border-radius: 25rpx;
+  padding: 22rpx 8rpx 21rpx;
+  border-radius: 24rpx;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  background: #fff;
+  background: linear-gradient(135deg, #f8fcff 0%, #eaf5ff 100%);
+  border: 1rpx solid rgba(194, 222, 255, 0.95);
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.95), 0 12rpx 28rpx rgba(37, 116, 255, 0.11);
 }
 
 .account-stats view {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9rpx;
+  gap: 8rpx;
   text-align: center;
   font-size: 19rpx;
+}
+
+.stat-service-icon {
+  width: 44rpx;
+  height: 44rpx;
+  margin-bottom: 2rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-service-icon :deep(.service-icon) {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 14rpx;
+  box-shadow: 0 7rpx 16rpx rgba(40, 120, 255, 0.22), inset 0 2rpx 3rpx rgba(255,255,255,.35);
+}
+
+.stat-service-icon :deep(.glyph) {
+  width: 27rpx;
+  height: 27rpx;
+}
+
+.stat-service-icon :deep(.shine) {
+  left: 6rpx;
+  right: 6rpx;
+  top: 4rpx;
+  height: 15rpx;
+  border-radius: 12rpx;
 }
 
 .account-stats view text:first-child { color: #2878ff; font-size: 25rpx; }
 .account-stats view .stat-num {
   color: #2878ff;
-  font-size: 28rpx;
-  font-weight: 700;
+  font-size: 27rpx;
+  font-weight: 800;
   letter-spacing: 0.5rpx;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 .account-stats view .stat-label {
-  font-size: 19rpx;
-  color: #8490a8;
+  font-size: 20rpx;
+  color: #70819c;
 }
 
 .balance-actions {
@@ -684,29 +746,168 @@ async function confirmChangePassword() {
 
 .recharge-btn-primary.disabled { opacity: 0.55; }
 
-.pwd-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.pwd-label {
-  font-size: 22rpx;
-  color: #526d95;
-  font-weight: 600;
-}
-
-.pwd-input {
-  padding: 18rpx 20rpx;
-  border-radius: 16rpx;
-  background: #f4f8fd;
-  font-size: 28rpx;
-  color: #102854;
-}
-
 .pwd-error {
   color: #e0383f;
-  font-size: 21rpx;
-  padding: 4rpx 6rpx;
+  font-size: 22rpx;
+  padding: 0 10rpx;
+}
+
+/* ============ 修改密码弹层 ============ */
+.password-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(16, 40, 84, 0.32);
+  backdrop-filter: blur(5px);
+}
+
+.password-panel {
+  position: relative;
+  width: 100%;
+  padding: 56rpx 28rpx calc(42rpx + env(safe-area-inset-bottom));
+  border-radius: 38rpx 38rpx 0 0;
+  background:
+    radial-gradient(circle at 50% 0, rgba(218, 235, 255, 0.9), transparent 210rpx),
+    #fff;
+  box-shadow: 0 -18rpx 54rpx rgba(42, 91, 161, 0.13);
+  box-sizing: border-box;
+}
+
+.password-close {
+  position: absolute;
+  right: 28rpx;
+  top: 26rpx;
+  width: 52rpx;
+  height: 52rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #eef5ff;
+  color: #8ca0bd;
+  font-size: 42rpx;
+  line-height: 1;
+}
+
+.password-shield {
+  width: 62rpx;
+  height: 62rpx;
+  margin: 0 auto 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 21rpx;
+  background: linear-gradient(145deg, #8ed0ff, #2f74ff);
+  box-shadow: 0 12rpx 26rpx rgba(47, 116, 255, 0.22);
+}
+
+.password-shield image {
+  width: 36rpx;
+  height: 36rpx;
+  filter: brightness(0) invert(1);
+}
+
+.password-title {
+  display: block;
+  color: #0b2862;
+  font-size: 32rpx;
+  font-weight: 800;
+  text-align: center;
+}
+
+.password-subtitle {
+  display: block;
+  margin-top: 13rpx;
+  color: #7e8ca6;
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.password-fields {
+  margin-top: 32rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.password-field {
+  padding: 22rpx 26rpx;
+  border-radius: 21rpx;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1rpx solid rgba(229, 238, 249, 0.95);
+  box-shadow: 0 10rpx 26rpx rgba(42, 91, 161, 0.06);
+}
+
+.field-title {
+  display: block;
+  margin-bottom: 16rpx;
+  color: #657792;
+  font-size: 22rpx;
+  font-weight: 760;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.field-row image {
+  width: 29rpx;
+  height: 29rpx;
+  flex: none;
+  opacity: 0.65;
+}
+
+.field-input {
+  flex: 1;
+  min-width: 0;
+  height: 42rpx;
+  color: #102854;
+  font-size: 25rpx;
+}
+
+.eye-btn {
+  width: 44rpx;
+  flex: none;
+  color: #8b9ab1;
+  font-size: 20rpx;
+  text-align: center;
+}
+
+.password-actions {
+  margin-top: 28rpx;
+  display: flex;
+  gap: 18rpx;
+}
+
+.password-cancel,
+.password-confirm {
+  flex: 1;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 21rpx;
+  font-size: 28rpx;
+  font-weight: 760;
+}
+
+.password-cancel {
+  background: linear-gradient(180deg, #f7f9fd, #eef2f7);
+  color: #62738c;
+  box-shadow: 0 10rpx 22rpx rgba(42, 91, 161, 0.08);
+}
+
+.password-confirm {
+  background: linear-gradient(135deg, #3f91ff, #1768ef);
+  color: #fff;
+  box-shadow: 0 12rpx 25rpx rgba(40, 120, 255, 0.28);
+}
+
+.password-confirm.disabled {
+  opacity: 0.58;
 }
 </style>
