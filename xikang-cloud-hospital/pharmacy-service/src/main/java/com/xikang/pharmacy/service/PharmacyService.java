@@ -464,10 +464,16 @@ public class PharmacyService {
 
     /**
      * 注册事务提交后的用药指导单生成。失败不抛异常，仅写 failed 记录。
+     * 幂等：若已存在 success 记录（发药前已主动生成过），则跳过。
      */
     private void registerMedicationGuideAfterCommit(Long registerId, Long patientId, Long prescriptionId) {
         Runnable guideTask = () -> {
             try {
+                MedicationGuide existing = medicationGuideMapper.selectLatestByRegisterId(registerId);
+                if (existing != null && "success".equals(existing.getStatus())) {
+                    log.info("用药指导单已存在（发药前生成），跳过 | registerId={}", registerId);
+                    return;
+                }
                 generateAndSaveMedicationGuide(registerId, patientId, prescriptionId);
             } catch (Exception e) {
                 log.warn("用药指导单生成失败（异步）| registerId={}", registerId, e);
@@ -594,6 +600,25 @@ public class PharmacyService {
      */
     public MedicationGuide retryMedicationGuide(Long registerId) {
         // 先看是否有 patientId/prescriptionId（取发药单据上的）
+        List<Prescription> heads = prescriptionMapper.selectByRegisterId(registerId);
+        if (heads.isEmpty()) {
+            throw new BusinessException(400, "处方不存在");
+        }
+        Prescription head = heads.get(0);
+        generateAndSaveMedicationGuide(registerId, head.getPatientId(), head.getId());
+        return medicationGuideMapper.selectLatestByRegisterId(registerId);
+    }
+
+    /**
+     * 发药前主动生成用药指导单（幂等）。
+     * 已有 success 记录则直接返回，不重复调用 AI；否则反查处方头后同步生成。
+     * 用于发药前的"生成用药指导单"按钮。
+     */
+    public MedicationGuide generateMedicationGuideForRegister(Long registerId) {
+        MedicationGuide existing = medicationGuideMapper.selectLatestByRegisterId(registerId);
+        if (existing != null && "success".equals(existing.getStatus())) {
+            return existing;
+        }
         List<Prescription> heads = prescriptionMapper.selectByRegisterId(registerId);
         if (heads.isEmpty()) {
             throw new BusinessException(400, "处方不存在");

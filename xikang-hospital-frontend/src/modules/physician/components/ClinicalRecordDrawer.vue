@@ -8,6 +8,7 @@ import ClinicalNotebookPrintSheet from '@/shared/components/ClinicalNotebookPrin
 import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
 import CtDiagnosisReportPrintSheet from '@/shared/components/CtDiagnosisReportPrintSheet.vue'
 import CtFilmPrintSheet from '@/shared/components/CtFilmPrintSheet.vue'
+import MedicationGuidePreviewDialog from '@/shared/components/MedicationGuidePreviewDialog.vue'
 import { useClinicalNotebookExport } from '@/shared/composables/useClinicalNotebookExport'
 import { clinicalRecordApi, type ClinicalExamItem, type ClinicalNotebook } from '@/shared/api/modules/clinicalRecord'
 import { getCompletedExamItemsForExportSelection } from '@/shared/utils/clinicalNotebook'
@@ -29,6 +30,8 @@ const message = ref('')
 const notebook = ref<ClinicalNotebook | null>(null)
 const drawerSubtitle = ref('')
 const exportDialogVisible = ref(false)
+const guidePreviewVisible = ref(false)
+const guidePreviewRegisterId = ref<number | null>(null)
 
 const notebookPrintRef = ref<InstanceType<typeof ClinicalNotebookPrintSheet> | null>(null)
 const labPrintRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
@@ -124,6 +127,11 @@ function handleExportNotebookClick() {
   void runNotebookExport([])
 }
 
+function handleViewGuide(registerId: number) {
+  guidePreviewRegisterId.value = registerId
+  guidePreviewVisible.value = true
+}
+
 function handleExportConfirm(selected: ClinicalExamItem[]) {
   void runNotebookExport(selected)
 }
@@ -170,6 +178,7 @@ async function runNotebookExport(selected: ClinicalExamItem[]) {
         :archived="archived"
         :mode="mode"
         :empty-text="emptyText"
+        @view-guide="handleViewGuide"
       />
 
       <div class="clinical-record-drawer__footer">
@@ -192,6 +201,11 @@ async function runNotebookExport(selected: ClinicalExamItem[]) {
       :exam-items="notebook?.examItems ?? []"
       :mode="mode"
       @confirm="handleExportConfirm"
+    />
+
+    <MedicationGuidePreviewDialog
+      v-model:visible="guidePreviewVisible"
+      :register-id="guidePreviewRegisterId ?? undefined"
     />
 
     <div class="clinical-notebook-print-host" aria-hidden="true">

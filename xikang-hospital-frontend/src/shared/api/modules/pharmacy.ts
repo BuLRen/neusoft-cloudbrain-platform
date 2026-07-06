@@ -153,6 +153,12 @@ export const pharmacyApi = {
     return http<MedicationGuideRecord>({ url: `/pharmacy/medication-guide/${registerId}/retry`, method: 'POST' })
   },
   /**
+   * 发药前主动生成用药指导单（幂等）。已有 success 记录则直接返回，否则同步生成。
+   */
+  generateMedicationGuide(registerId: number) {
+    return http<MedicationGuideRecord>({ url: `/pharmacy/medication-guide/${registerId}/generate`, method: 'POST' })
+  },
+  /**
    * 下载用药指导单 PDF：调后端实时渲染接口，拿到 blob 后在浏览器触发下载。
    * 不走 window.open 是因为 PDF 接口需要 Authorization header（window.open 无法附加）。
    */
