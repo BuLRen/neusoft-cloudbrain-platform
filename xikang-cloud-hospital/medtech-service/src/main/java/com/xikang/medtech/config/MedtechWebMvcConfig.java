@@ -11,23 +11,29 @@ public class MedtechWebMvcConfig implements WebMvcConfigurer {
     private final FollowUpStaffAuthInterceptor followUpStaffAuthInterceptor;
     private final PatientFollowUpAuthInterceptor patientFollowUpAuthInterceptor;
     private final InternalServiceAuthInterceptor internalServiceAuthInterceptor;
+    private final CriticalValueAuthInterceptor criticalValueAuthInterceptor;
 
     public MedtechWebMvcConfig(
         MedtechAuthInterceptor medtechAuthInterceptor,
         FollowUpStaffAuthInterceptor followUpStaffAuthInterceptor,
         PatientFollowUpAuthInterceptor patientFollowUpAuthInterceptor,
-        InternalServiceAuthInterceptor internalServiceAuthInterceptor
+        InternalServiceAuthInterceptor internalServiceAuthInterceptor,
+        CriticalValueAuthInterceptor criticalValueAuthInterceptor
     ) {
         this.medtechAuthInterceptor = medtechAuthInterceptor;
         this.followUpStaffAuthInterceptor = followUpStaffAuthInterceptor;
         this.patientFollowUpAuthInterceptor = patientFollowUpAuthInterceptor;
         this.internalServiceAuthInterceptor = internalServiceAuthInterceptor;
+        this.criticalValueAuthInterceptor = criticalValueAuthInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(internalServiceAuthInterceptor)
             .addPathPatterns("/api/medtech/internal/**");
+
+        registry.addInterceptor(criticalValueAuthInterceptor)
+            .addPathPatterns("/api/medtech/critical-value/**");
 
         registry.addInterceptor(patientFollowUpAuthInterceptor)
             .addPathPatterns(
@@ -56,6 +62,7 @@ public class MedtechWebMvcConfig implements WebMvcConfigurer {
             .excludePathPatterns(
                 "/actuator/**",
                 "/api/medtech/internal/**",
+                "/api/medtech/critical-value/**",
                 "/api/medtech/follow-up/patient/**",
                 "/api/medtech/follow-up/dashboard/**",
                 "/api/medtech/follow-up/outcome/**",

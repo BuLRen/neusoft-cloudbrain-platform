@@ -737,6 +737,22 @@ function formatVisitTime(record: RegistrationRecord) {
   return [record.visitDate, record.visitTime].filter(Boolean).join(' ') || record.createTime || '-'
 }
 
+/**
+ * 检测该挂号是否被排班调整影响（医生变更）。
+ * 后端在 schedule-service 调整确认后，会向 doctor_schedule.modify_remark 写入
+ * 形如 "[医生变更] 原医生 X → Y（调整单 #N）" 的标记，
+ * 患者端通过 JOIN 拿到 scheduleModifyRemark，这里解析后展示给患者。
+ */
+function doctorChangeInfo(record: RegistrationRecord): string | null {
+  const remark = record.scheduleModifyRemark
+  if (!remark) return null
+  // 仅在含"医生变更"关键字时提示，避免误报
+  if (!remark.includes('医生变更')) return null
+  // 已退号/爽约的不再打扰
+  if (record.status === 4 || record.status === 7) return null
+  return remark
+}
+
 function getQueryNumber(value: unknown) {
   const raw = Array.isArray(value) ? value[0] : value
   const parsed = Number(raw)
@@ -1182,6 +1198,10 @@ const showSuccessCard = computed(() => {
               <StatusTag :tone="paymentStatusTone(record.payStatus)">{{ record.payStatusName || (record.payStatus === 1 ? '已缴费' : '待缴费') }}</StatusTag>
               <StatusTag v-if="record.checkedIn" tone="success">✅ 已报到</StatusTag>
               <StatusTag v-else-if="canCheckIn(record)" tone="warning">待报到</StatusTag>
+            </div>
+            <div v-if="doctorChangeInfo(record)" class="record-doctor-change" role="alert">
+              <span class="dc-icon">⚠</span>
+              <span class="dc-text">{{ doctorChangeInfo(record) }}</span>
             </div>
             <div class="record-meta">
               <span>就诊人：{{ record.patientName || '-' }}<template v-if="record.isFamily">（{{ record.relation }}）</template></span>
@@ -2052,6 +2072,28 @@ const showSuccessCard = computed(() => {
   font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+/* 医生变更通知条：管理员调整排班后，patient 端实时看到"您的医生已变更" */
+.record-doctor-change {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: 8px 12px;
+  background: linear-gradient(90deg, #fff7e6 0%, #fff1f0 100%);
+  border: 1px solid #ffd591;
+  border-radius: var(--radius-sm);
+  color: #d4380d;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.record-doctor-change .dc-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.record-doctor-change .dc-text {
+  flex: 1;
 }
 
 .record-meta {

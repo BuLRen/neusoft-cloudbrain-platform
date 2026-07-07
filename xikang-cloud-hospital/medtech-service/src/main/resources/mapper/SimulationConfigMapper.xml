@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.SimulationConfigMapper">
+
+    <resultMap id="BaseResultMap" type="com.xikang.medtech.entity.SimulationConfig">
+        <id column="id" property="id"/>
+        <result column="config_key" property="configKey"/>
+        <result column="tech_code" property="techCode"/>
+        <result column="check_name" property="checkName"/>
+        <result column="match_keywords" property="matchKeywords"/>
+        <result column="enabled" property="enabled"/>
+        <result column="simulation_mode" property="simulationMode"/>
+        <result column="version" property="version"/>
+        <result column="prompt_sections" property="promptSections"/>
+        <result column="disease_mappings" property="diseaseMappings"/>
+        <result column="output_schema" property="outputSchema"/>
+        <result column="defaults" property="defaults"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT *
+        FROM simulation_config
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (
+                    config_key ILIKE CONCAT('%', #{keyword}, '%')
+                    OR check_name ILIKE CONCAT('%', #{keyword}, '%')
+                    OR tech_code ILIKE CONCAT('%', #{keyword}, '%')
+                    OR match_keywords ILIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY id
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM simulation_config WHERE id = #{id}
+    </select>
+
+    <select id="selectByConfigKey" resultMap="BaseResultMap">
+        SELECT * FROM simulation_config WHERE config_key = #{configKey}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO simulation_config (
+            config_key, tech_code, check_name, match_keywords, enabled, simulation_mode, version,
+            prompt_sections, disease_mappings, output_schema, defaults
+        ) VALUES (
+            #{configKey}, #{techCode}, #{checkName}, #{matchKeywords}, #{enabled}, #{simulationMode}, #{version},
+            #{promptSections}::jsonb, #{diseaseMappings}::jsonb, #{outputSchema}::jsonb, #{defaults}::jsonb
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE simulation_config
+        SET
+            config_key = #{configKey},
+            tech_code = #{techCode},
+            check_name = #{checkName},
+            match_keywords = #{matchKeywords},
+            enabled = #{enabled},
+            simulation_mode = #{simulationMode},
+            version = #{version},
+            prompt_sections = #{promptSections}::jsonb,
+            disease_mappings = #{diseaseMappings}::jsonb,
+            output_schema = #{outputSchema}::jsonb,
+            defaults = #{defaults}::jsonb,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM simulation_config WHERE id = #{id}
+    </delete>
+</mapper>

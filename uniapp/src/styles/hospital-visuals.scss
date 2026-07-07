@@ -1,0 +1,10 @@
+.page-shell .hero{isolation:isolate;background-image:linear-gradient(90deg,rgba(235,246,255,.98) 0%,rgba(226,241,255,.91) 43%,rgba(222,239,255,.28) 72%,rgba(211,233,255,.08) 100%),url('/static/auth/hospital-hero.png')!important;background-size:cover!important;background-position:center 51%!important;border:1rpx solid rgba(255,255,255,.82)}
+.page-shell .hero::after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(197,225,252,.12));pointer-events:none}
+.page-shell .hero>.hero-title,.page-shell .hero>.hero-tag,.page-shell .hero>.hero-desc{position:relative;z-index:2;text-shadow:0 1rpx 2rpx rgba(255,255,255,.8)}
+.page-shell .hero>.buildings{display:none!important}
+.page-shell .brand{isolation:isolate;background-image:linear-gradient(90deg,rgba(239,248,255,.98) 0%,rgba(226,241,255,.92) 48%,rgba(213,234,254,.28) 78%,rgba(204,228,251,.08) 100%),url('/static/auth/hospital-hero.png')!important;background-size:cover!important;background-position:center 52%!important;border:1rpx solid rgba(255,255,255,.85)}
+.page-shell .brand::after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(195,224,251,.1));pointer-events:none}
+.page-shell .brand>.logo,.page-shell .brand>.brand-copy{position:relative;z-index:2}
+.page-shell .brand>.cloud{display:none!important}
+.page-shell .brand .logo{background:rgba(255,255,255,.93);box-shadow:0 8rpx 22rpx rgba(36,100,171,.12)}
+.page-shell .brand .brand-copy .name{text-shadow:0 1rpx 2rpx rgba(255,255,255,.9)}

@@ -8,6 +8,7 @@ import com.xikang.medtech.config.FollowUpProperties;
 import com.xikang.medtech.config.GlucosePredictionProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Import;
 
@@ -15,6 +16,7 @@ import org.springframework.context.annotation.Import;
  * MedTech Service Application
  */
 @SpringBootApplication
+@EnableScheduling
 @EnableConfigurationProperties({DifyAiProperties.class, FollowUpProperties.class, GlucosePredictionProperties.class, InternalAiProperties.class})
 @Import(GlobalExceptionHandler.class)
 public class MedtechApplication {

@@ -335,6 +335,15 @@ public class PharmacyController {
     }
 
     /**
+     * 发药前主动生成用药指导单（幂等）。
+     * 已有 success 记录则直接返回，否则同步调 AI 生成。
+     */
+    @PostMapping("/medication-guide/{registerId}/generate")
+    public Result<MedicationGuide> generateMedicationGuideForRegister(@PathVariable Long registerId) {
+        return Result.success("已生成", pharmacyService.generateMedicationGuideForRegister(registerId));
+    }
+
+    /**
      * 下载用药指导单 PDF（实时渲染，不落盘）。
      * <p>用户点击按钮 → 后端取最新一条 medication_guide → JSON 转 PDF → 流式返回。
      * 浏览器识别 Content-Disposition: attachment 自动弹下载。</p>

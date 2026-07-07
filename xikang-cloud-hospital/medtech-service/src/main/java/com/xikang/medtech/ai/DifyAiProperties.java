@@ -17,6 +17,8 @@ public class DifyAiProperties {
     private String workflowFollowUpShiftSchedule = "";
     private String apiKeyFollowUpEnqueue = "";
     private String workflowFollowUpEnqueue = "";
+    private String apiKeyCriticalValueDetect = "";
+    private String workflowCriticalValueDetect = "";
     private String ctInferenceUrl = "";
     private int readTimeoutMs = 300_000;
     private int connectTimeoutMs = 30_000;
@@ -118,6 +120,22 @@ public class DifyAiProperties {
         this.workflowFollowUpEnqueue = workflowFollowUpEnqueue;
     }
 
+    public String getApiKeyCriticalValueDetect() {
+        return apiKeyCriticalValueDetect;
+    }
+
+    public void setApiKeyCriticalValueDetect(String apiKeyCriticalValueDetect) {
+        this.apiKeyCriticalValueDetect = apiKeyCriticalValueDetect;
+    }
+
+    public String getWorkflowCriticalValueDetect() {
+        return workflowCriticalValueDetect;
+    }
+
+    public void setWorkflowCriticalValueDetect(String workflowCriticalValueDetect) {
+        this.workflowCriticalValueDetect = workflowCriticalValueDetect;
+    }
+
     public String getCtInferenceUrl() {
         return ctInferenceUrl;
     }
@@ -180,6 +198,12 @@ public class DifyAiProperties {
             && !resolveFollowUpMedicalChatApiKey().isBlank();
     }
 
+    public boolean isCriticalValueDetectEnabled() {
+        return isDifyBaseConfigured()
+            && isWorkflowSwitchOn(workflowCriticalValueDetect)
+            && !resolveCriticalValueDetectApiKey().isBlank();
+    }
+
     public String resolveFollowUpCaseSummaryApiKey() {
         return apiKeyFollowUpCaseSummary == null ? "" : apiKeyFollowUpCaseSummary.trim();
     }
@@ -206,6 +230,10 @@ public class DifyAiProperties {
 
     public String resolveFollowUpEnqueueApiKey() {
         return apiKeyFollowUpEnqueue == null ? "" : apiKeyFollowUpEnqueue.trim();
+    }
+
+    public String resolveCriticalValueDetectApiKey() {
+        return apiKeyCriticalValueDetect == null ? "" : apiKeyCriticalValueDetect.trim();
     }
 
     private boolean isWorkflowSwitchOn(String switchValue) {

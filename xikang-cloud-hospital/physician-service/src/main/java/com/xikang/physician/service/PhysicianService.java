@@ -7,11 +7,14 @@ import com.xikang.common.exception.BusinessException;
 import com.xikang.common.agent.AgentToolExecutionContext;
 import com.xikang.physician.client.CtViewerClient;
 import com.xikang.physician.client.MedtechFollowUpClient;
+import com.xikang.physician.client.NotificationClient;
 import com.xikang.physician.client.PaymentClient;
 import com.xikang.physician.context.PhysicianAuthContext;
 import com.xikang.physician.mapper.PhysicianMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
@@ -40,17 +43,20 @@ public class PhysicianService {
     private final PaymentClient paymentClient;
     private final CtViewerClient ctViewerClient;
     private final MedtechFollowUpClient medtechFollowUpClient;
+    private final NotificationClient notificationClient;
 
     public PhysicianService(
         PhysicianMapper physicianMapper,
         PaymentClient paymentClient,
         CtViewerClient ctViewerClient,
-        MedtechFollowUpClient medtechFollowUpClient
+        MedtechFollowUpClient medtechFollowUpClient,
+        NotificationClient notificationClient
     ) {
         this.physicianMapper = physicianMapper;
         this.paymentClient = paymentClient;
         this.ctViewerClient = ctViewerClient;
         this.medtechFollowUpClient = medtechFollowUpClient;
+        this.notificationClient = notificationClient;
     }
 
     public Map<String, Object> getPatients(String keyword, Integer page, Integer size) {
@@ -458,6 +464,13 @@ public class PhysicianService {
     public Map<String, Object> createPrescription(Map<String, Object> prescriptionRequest) {
         Long registerId = toLong(prescriptionRequest.get("registerId"));
         assertRegisterAccess(registerId);
+        Map<String, Object> register = physicianMapper.selectRegisterById(registerId);
+        if (register == null) {
+            throw new BusinessException(404, "挂号记录不存在");
+        }
+        Long patientId = toLong(register.get("patientId"));
+        String patientName = register.get("realName") != null ? register.get("realName").toString() : null;
+
         List<Map<String, Object>> items = requestItems(prescriptionRequest);
         String diagnosis = prescriptionRequest.get("confirmedDiagnosis") == null
             ? null
@@ -472,11 +485,29 @@ public class PhysicianService {
             return toLong(row.get("id"));
         }).toList();
 
-        BigDecimal totalAmount = physicianMapper.selectPrescriptions(registerId).stream()
+        // 处方明细（含 drugName/drugPrice/drugNumber），用于汇总金额与发通知
+        List<Map<String, Object>> prescriptions = physicianMapper.selectPrescriptions(registerId);
+        BigDecimal totalAmount = prescriptions.stream()
             .map(item -> toDecimal(item.get("drugPrice")).multiply(new BigDecimal(String.valueOf(item.getOrDefault("drugNumber", "0")))))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        endVisit(registerId);
+        // 推送药品费到 payment-service（幂等：ON CONFLICT DO NOTHING）。
+        // 即使金额为 0，payment-service 也会落 status=1（已结清），避免后续 assertAllPaid 卡住。
+        if (patientId != null) {
+            paymentClient.createMedicationFee(registerId, patientId, patientName, totalAmount);
+        }
+
+        // 直接结束看诊（不走 endVisit 内部的 assertAllPaid）。
+        // 设计取舍：用户希望保持"开药即归档"的原体验，药品费/检查费等费用作为挂账留在支付中心，
+        // 患者之后自行缴费 —— 不让缴费流程卡住医生端的归档动作。
+        int current = currentVisitState(registerId);
+        if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_PENDING || current == VISIT_EXAM_COMPLETED) {
+            physicianMapper.updateVisitState(registerId, VISIT_ENDED);
+        }
+
+        // 事务 commit 后发通知，避免回滚后误推
+        registerPrescriptionSubmittedNotificationIfTxActive(
+                patientId, patientName, registerId, prescriptions, totalAmount);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("prescriptionIds", prescriptionIds);
@@ -484,6 +515,54 @@ public class PhysicianService {
         result.put("confirmedDiagnosis", prescriptionRequest.get("confirmedDiagnosis"));
         result.put("visitState", currentVisitState(registerId));
         return result;
+    }
+
+    /**
+     * 处方开具后给患者推"处方已开具"通知（事务 commit 后才发，避免回滚后误推）。
+     * <p>处方费用已推送到 payment-service（MEDICATION_FEE），所以通知里提示"请前往支付中心缴费"，
+     * 缴费完成后 payment-service 会再推一条 PAYMENT_SUCCESS 通知（含"凭电子凭证到药房取药"提示）。
+     * <p>通知失败仅 log，绝不影响开处方主流程（NotificationClient.trySend 内部已吞异常）。
+     * <p>若调用时不在事务里（理论上不会），直接同步发送。
+     */
+    private void registerPrescriptionSubmittedNotificationIfTxActive(
+            Long patientId, String patientName, Long registerId,
+            List<Map<String, Object>> prescriptions, BigDecimal totalAmount) {
+        if (patientId == null || prescriptions.isEmpty()) return;
+
+        final String greeting = (patientName == null || patientName.isBlank())
+                ? "您好" : "尊敬的 " + patientName;
+        final int drugCount = prescriptions.size();
+        // 药品名拼接（最多列 3 个，超出的显示「等 N 种药品」），避免通知过长
+        final String drugSummary;
+        List<String> names = prescriptions.stream()
+                .map(p -> p.get("drugName") != null ? p.get("drugName").toString() : "未命名药品")
+                .toList();
+        if (names.size() <= 3) {
+            drugSummary = String.join("、", names);
+        } else {
+            drugSummary = names.subList(0, 3).stream().reduce((a, b) -> a + "、" + b).orElse("")
+                    + " 等 " + names.size() + " 种药品";
+        }
+        final String totalStr = totalAmount != null ? totalAmount.toPlainString() : "0.00";
+        final String content = String.format(
+                "%s，您的处方已开具（共 %d 种药品：%s），处方总额 %s 元，请前往支付中心完成缴费，缴费后凭电子凭证到药房取药。",
+                greeting, drugCount, drugSummary, totalStr);
+
+        Runnable send = () -> notificationClient.trySend(
+                patientId, "patient", "PRESCRIPTION_CREATED",
+                "处方已开具", content,
+                "register", registerId);
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    send.run();
+                }
+            });
+        } else {
+            send.run();
+        }
     }
 
     public void deletePrescription(Long id) {
@@ -635,6 +714,9 @@ public class PhysicianService {
         if (registerId == null) {
             throw new BusinessException(400, "挂号记录不存在");
         }
+        if (physicianMapper.isRegisterPatientArchived(registerId)) {
+            throw new BusinessException(403, "该患者档案已归档，无法在医疗系统中访问");
+        }
         if (AgentToolExecutionContext.isActive()) {
             Long ownerEmployeeId = physicianMapper.selectRegisterEmployeeId(registerId);
             if (ownerEmployeeId == null) {
@@ -775,6 +857,9 @@ public class PhysicianService {
         String patientName = register.get("realName") != null ? register.get("realName").toString() : null;
         String itemCode = itemCodeForTechType(type);
 
+        // 收集通知参数（等事务 commit 后再发送，避免事务回滚后误推消息）
+        List<Map<String, Object>> pendingNotifications = new java.util.ArrayList<>();
+
         List<Long> requestIds = requestItems(request).stream().map(item -> {
             Map<String, Object> row = new HashMap<>(item);
             row.put("registerId", registerId);
@@ -796,11 +881,77 @@ public class PhysicianService {
             String techName = tech.get("techName") != null ? tech.get("techName").toString() : itemCode;
             paymentClient.createTechFee(
                     registerId, patientId, patientName, itemCode, requestId, techId, techName, unitPrice);
+
+            // 收集该 item 的通知参数（事务 afterCommit 时发送）
+            Map<String, Object> n = new HashMap<>();
+            n.put("techName", techName);
+            n.put("unitPrice", unitPrice != null ? unitPrice.toPlainString() : "0");
+            n.put("itemCode", itemCode);
+            pendingNotifications.add(n);
+
             return requestId;
         }).toList();
+
+        // afterCommit：所有 item 写完 + 事务 commit 后才发通知，避免回滚后误推
+        registerFeePendingNotificationsIfTxActive(
+                patientId, patientName, registerId, pendingNotifications);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("requestIds", requestIds);
         return result;
+    }
+
+    /**
+     * 在事务 commit 之后给患者推"待缴费提醒"通知。
+     * <p>每个开单项一条通知，让患者清楚知道哪些项目待缴费。
+     * <p>通知失败仅 log，绝不影响开单主流程（NotificationClient.trySend 内部已吞异常）。
+     * <p>若调用时不在事务里（理论上不会），直接同步发送。
+     */
+    private void registerFeePendingNotificationsIfTxActive(
+            Long patientId, String patientName, Long registerId,
+            List<Map<String, Object>> items) {
+        if (items.isEmpty() || patientId == null) return;
+
+        final String greeting = (patientName == null || patientName.isBlank())
+                ? "您好" : "尊敬的 " + patientName;
+
+        Runnable sendAll = () -> {
+            for (Map<String, Object> item : items) {
+                String techName = String.valueOf(item.get("techName"));
+                String price = String.valueOf(item.get("unitPrice"));
+                String tip = paymentTipByItemCode(String.valueOf(item.get("itemCode")));
+                String content = String.format(
+                        "%s，您的「%s」已开单，金额 %s 元，请前往支付中心完成缴费，缴费后医技科室方可执行。",
+                        greeting, techName, price);
+                if (tip != null) content = content + tip;
+                notificationClient.trySend(
+                        patientId, "patient", "EXAM_FEE_CREATED",
+                        "待缴费提醒", content,
+                        "register", registerId);
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    sendAll.run();
+                }
+            });
+        } else {
+            sendAll.run();
+        }
+    }
+
+    /** 按 itemCode 给待缴费通知补一句业务提示语。 */
+    private String paymentTipByItemCode(String itemCode) {
+        if (itemCode == null) return null;
+        return switch (itemCode) {
+            case "CHECK_FEE", "EXAMINATION_FEE" -> "缴费后请按预约时间前往相应检查科室。";
+            case "INSPECTION_FEE" -> "缴费后请前往检验科完成检验。";
+            case "DISPOSAL_FEE" -> "缴费后请按医嘱前往相应科室完成处置。";
+            default -> null;
+        };
     }
 
     private static String itemCodeForTechType(String type) {

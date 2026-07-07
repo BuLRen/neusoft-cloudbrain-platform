@@ -19,6 +19,7 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import ExpiringStockBanner from '@/modules/pharmacy/components/ExpiringStockBanner.vue'
 import MedicationGuidePrintSheet from '@/shared/components/MedicationGuidePrintSheet.vue'
+import MedicationGuidePreviewDialog from '@/shared/components/MedicationGuidePreviewDialog.vue'
 import { useMedicationGuideExport } from '@/shared/composables/useMedicationGuideExport'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
 import {
@@ -121,13 +122,8 @@ async function loadPrescriptionDetail(id?: number) {
     return
   }
   selectedPrescription.value = await pharmacyApi.prescriptionDetail(id)
-  // 处方已发药才探测指导单状态
-  const status = selectedPrescription.value?.prescription?.dispensationStatus
-  if (status === 1) {
-    void refreshGuideStatus()
-  } else {
-    guideStatus.value = null
-  }
+  // 发药前/已发药都探测指导单状态（发药前用于判断"是否已生成"）
+  void refreshGuideStatus()
 }
 
 async function refreshGuideStatus() {
@@ -170,6 +166,46 @@ async function retryGuide() {
   }
 }
 
+// ===== 发药前主动生成用药指导单 =====
+const generatingGuide = ref(false)
+const previewVisible = ref(false)
+
+async function generateGuideBeforeDispense() {
+  const prescription = selectedPrescription.value?.prescription
+  if (!prescription?.registerId) {
+    ElMessage.warning('请先选择一条处方')
+    return
+  }
+  generatingGuide.value = true
+  try {
+    const fresh = await pharmacyApi.generateMedicationGuide(prescription.registerId)
+    guideStatus.value = fresh
+    if (fresh.status === 'success') {
+      ElMessage.success('用药指导单已生成')
+      previewVisible.value = true // 生成成功后自动弹预览
+    } else if (fresh.status === 'failed') {
+      ElMessage.error(fresh.errorMessage || 'AI 生成失败，请重试')
+    }
+  } catch {
+    ElMessage.error('生成失败，请稍后重试')
+  } finally {
+    generatingGuide.value = false
+  }
+}
+
+function openGuidePreview() {
+  if (!guideStatus.value) {
+    ElMessage.warning('指导单尚未生成')
+    return
+  }
+  previewVisible.value = true
+}
+
+// 预览弹窗里点了"重新生成/生成"后同步本页 guideStatus
+function onGuideChanged(record: import('@/shared/types/pharmacy').MedicationGuideRecord) {
+  guideStatus.value = record
+}
+
 // 指导单按钮可用性：已发药 + 状态为 success
 const canDownloadGuide = computed(() => {
   return selectedPrescription.value?.prescription.dispensationStatus === 1
@@ -179,12 +215,9 @@ const canDownloadGuide = computed(() => {
 // 当前选中处方的发药状态（0待发药 / 1已发药 / 2已退药）
 const currentStatus = computed(() => selectedPrescription.value?.prescription.dispensationStatus)
 
+// 已发药分支的"下载/重试指导单"按钮文案（只在 currentStatus===1 渲染）
 const guideButtonLabel = computed(() => {
   if (guideStatusLoading.value) return '指导单查询中…'
-  if (!selectedPrescription.value?.prescription
-    || selectedPrescription.value.prescription.dispensationStatus !== 1) {
-    return '下载用药指导单'
-  }
   if (!guideStatus.value) return '指导单生成中…'
   if (guideStatus.value.status === 'failed') return '重新生成指导单'
   return '下载用药指导单'
@@ -235,6 +268,11 @@ async function dispenseSelected() {
   const prescription = selectedPrescription.value?.prescription
   if (!prescription?.registerId || !prescription.patientId) {
     ElMessage.warning('请先选择一条待发药处方')
+    return
+  }
+  // 发药前必须先生成用药指导单
+  if (guideStatus.value?.status !== 'success') {
+    ElMessage.warning('请先点击「生成用药指导单」并确认后再发药')
     return
   }
   const itemsCount = selectedPrescription.value?.details.length ?? 0
@@ -423,32 +461,55 @@ onMounted(() => {
             </ElTable>
 
             <div class="actions">
-              <!-- 待发药：审方预检 + 确认发药 -->
+              <!-- 待发药：审方预检 → 生成用药指导单 → 确认发药 -->
               <template v-if="currentStatus === 0">
-                <ElButton :loading="reviewing" :disabled="dispensing" @click="reviewBeforeDispense">审方预检</ElButton>
+                <ElButton :loading="reviewing" :disabled="dispensing || generatingGuide" @click="reviewBeforeDispense">审方预检</ElButton>
+
+                <!-- 生成用药指导单按钮：黑色（primary），状态驱动文案 -->
+                <ElButton
+                  v-if="guideStatus?.status !== 'success'"
+                  type="primary"
+                  :loading="generatingGuide || guideStatusLoading"
+                  @click="guideStatus?.status === 'failed' ? retryGuide() : generateGuideBeforeDispense()"
+                >{{ guideStatus?.status === 'failed' ? '重新生成指导单' : (generatingGuide ? '生成中…' : '生成用药指导单') }}</ElButton>
+                <ElButton v-else plain @click="openGuidePreview">查看用药指导单</ElButton>
+
                 <ElButton
                   type="primary"
                   :loading="dispensing"
-                  :disabled="!selectedPrescription.prescription.paid"
+                  :disabled="!selectedPrescription.prescription.paid || guideStatus?.status !== 'success'"
                   @click="dispenseSelected"
                 >{{ dispensing ? '发药中…' : '确认发药' }}</ElButton>
+
                 <ElAlert
                   v-if="!selectedPrescription.prescription.paid"
                   type="warning"
                   :closable="false"
                   title="患者尚未支付药品费，暂不可发药"
                 />
+                <ElAlert
+                  v-else-if="guideStatus?.status !== 'success'"
+                  type="info"
+                  :closable="false"
+                  title="请先生成用药指导单，确认后再发药"
+                />
               </template>
 
-              <!-- 已发药：退药 + 下载用药指导单 -->
+              <!-- 已发药：查看指导单 + 下载 PDF + 退药 -->
               <template v-else-if="currentStatus === 1">
-                <ElButton type="danger" plain @click="returnSelected">退药</ElButton>
+                <ElButton
+                  type="primary"
+                  plain
+                  :disabled="!guideStatus || guideStatus.status !== 'success'"
+                  @click="openGuidePreview"
+                >查看用药指导</ElButton>
                 <ElButton
                   :type="guideStatus?.status === 'failed' ? 'warning' : 'success'"
                   :loading="guideExporting || guideRetrying"
                   :disabled="!canDownloadGuide && guideStatus?.status !== 'failed'"
                   @click="guideStatus?.status === 'failed' ? retryGuide() : downloadGuide()"
                 >{{ guideButtonLabel }}</ElButton>
+                <ElButton type="danger" plain @click="returnSelected">退药</ElButton>
               </template>
 
               <!-- 已退药：纯只读，无操作按钮 -->
@@ -460,6 +521,15 @@ onMounted(() => {
         </section>
       </div>
     </GlassCard>
+
+    <!-- 用药指导单预览弹窗（生成后查看 / 病历查看入口共用） -->
+    <MedicationGuidePreviewDialog
+      v-model:visible="previewVisible"
+      :record="guideStatus"
+      :register-id="selectedPrescription?.prescription?.registerId"
+      :show-retry="currentStatus === 0"
+      @changed="onGuideChanged"
+    />
 
     <!-- PDF 渲染容器：屏幕外，用户不可见；导出时 html2pdf 截图此 DOM -->
     <div class="mg-print-host" aria-hidden="true">

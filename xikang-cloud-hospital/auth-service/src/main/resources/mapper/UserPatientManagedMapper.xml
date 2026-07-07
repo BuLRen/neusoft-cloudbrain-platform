@@ -18,4 +18,14 @@
         WHERE user_id = #{userId} AND patient_id = #{patientId}
     </delete>
 
+    <select id="selectManagersByPatientId" resultType="com.xikang.auth.dto.PatientManagedUserRow">
+        SELECT upm.user_id AS userId,
+               u.username AS username,
+               upm.relation AS relation
+        FROM user_patient_managed upm
+        LEFT JOIN users u ON u.id = upm.user_id
+        WHERE upm.patient_id = #{patientId}
+        ORDER BY upm.create_time ASC
+    </select>
+
 </mapper>

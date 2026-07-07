@@ -9,5 +9,6 @@ public class AuthUser {
     private Integer employeeId;
     private Integer departmentId;
     private String departmentName;
+    private String realName;
     private Integer status;
 }

@@ -17,6 +17,7 @@ import PatientProfile from '@/modules/patient/pages/PatientProfile.vue'
 import PatientPrescription from '@/modules/patient/pages/PatientPrescription.vue'
 import PatientPayment from '@/modules/patient/pages/PatientPayment.vue'
 import PatientDepartmentDetail from '@/modules/patient/pages/PatientDepartmentDetail.vue'
+import PatientMessages from '@/modules/patient/pages/PatientMessages.vue'
 import RegistrationWorkspace from '@/modules/registration/RegistrationWorkspace.vue'
 import PharmacyDispensingPage from '@/modules/pharmacy/pages/DispensingPage.vue'
 import PharmacyInventoryPage from '@/modules/pharmacy/pages/InventoryPage.vue'
@@ -43,12 +44,14 @@ import PhysicianResultsPage from '@/modules/physician/pages/PhysicianResultsPage
 import PhysicianCtExamPage from '@/modules/physician/pages/PhysicianCtExamPage.vue'
 import PhysicianDiagnosisPage from '@/modules/physician/pages/PhysicianDiagnosisPage.vue'
 import PhysicianPrescriptionPage from '@/modules/physician/pages/PhysicianPrescriptionPage.vue'
+import MySchedulePage from '@/modules/physician/pages/MySchedulePage.vue'
 import MedtechCheckQueuePage from '@/modules/medtech/pages/MedtechCheckQueuePage.vue'
 import MedtechCheckStartPage from '@/modules/medtech/pages/MedtechCheckStartPage.vue'
 import MedtechCheckResultPage from '@/modules/medtech/pages/MedtechCheckResultPage.vue'
 import MedtechInspectionStartPage from '@/modules/medtech/pages/MedtechInspectionStartPage.vue'
 import MedtechDisposalStartPage from '@/modules/medtech/pages/MedtechDisposalStartPage.vue'
 import FollowUpDashboardPage from '@/modules/medtech/follow-up/pages/FollowUpDashboardPage.vue'
+import CriticalValueBoardPage from '@/modules/medtech/pages/CriticalValueBoardPage.vue'
 import OutcomeAssessmentPage from '@/modules/medtech/follow-up/pages/OutcomeAssessmentPage.vue'
 import FollowUpCommunicationPage from '@/modules/medtech/follow-up/pages/FollowUpCommunicationPage.vue'
 import FollowUpRecordsPage from '@/modules/medtech/follow-up/pages/FollowUpRecordsPage.vue'
@@ -138,6 +141,12 @@ const patientRoutes: RouteRecordRaw[] = [
         name: 'PatientProfile',
         component: PatientProfile,
         meta: { title: '个人中心', requiresAuth: true, roles: ['patient', 'admin'] },
+      },
+      {
+        path: 'messages',
+        name: 'PatientMessages',
+        component: PatientMessages,
+        meta: { title: '我的消息', requiresAuth: true, roles: ['patient', 'admin'] },
       },
     ],
   },
@@ -317,6 +326,12 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: '② 处置执行', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 2, hidden: true },
           },
           {
+            path: 'critical-value-board',
+            name: 'CriticalValueBoard',
+            component: CriticalValueBoardPage,
+            meta: { title: '危急值看板', roles: ['medtech', 'admin'], requiresAuth: true, owner: 'B', group: 'exam', step: 3 },
+          },
+          {
             path: 'check-result',
             name: 'MedtechCheckResult',
             component: MedtechCheckResultPage,
@@ -469,6 +484,12 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: 'CT 影像审计', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
+            path: 'patients',
+            name: 'PatientManagement',
+            component: () => import('@/modules/admin/pages/PatientManagement.vue'),
+            meta: { title: '患者管理', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
             path: 'payment-bills',
             name: 'PaymentBillManagement',
             component: PaymentBillManagement,
@@ -530,10 +551,22 @@ export const routes: RouteRecordRaw[] = [
         meta: { hidden: true, roles: ['admin'], requiresAuth: true },
       },
       {
-        path: 'ai',
-        name: 'AiComponents',
-        component: placeholder,
-        meta: { title: 'AI 组件区', description: 'AI 结果卡片和嵌入组件预留区', icon: 'MagicStick', roles: ['physician', 'registration', 'medtech', 'pharmacy', 'patient'], requiresAuth: true, owner: '共同' },
+        path: 'schedule-mine',
+        name: 'MySchedule',
+        component: MySchedulePage,
+        meta: { title: '我的排班', description: '查看我的班次课程表与请假', icon: 'Calendar', roles: ['physician', 'registration', 'medtech', 'pharmacy', 'patient', 'admin'], requiresAuth: true, owner: '共同' },
+      },
+      {
+        path: 'physician/messages',
+        name: 'PhysicianMessages',
+        component: () => import('@/modules/physician/pages/PhysicianMessages.vue'),
+        meta: { title: '我的消息', icon: 'Bell', roles: ['physician', 'admin'], requiresAuth: true, owner: '共同', hidden: true },
+      },
+      {
+        path: 'admin/messages',
+        name: 'AdminMessages',
+        component: () => import('@/modules/admin/pages/AdminMessages.vue'),
+        meta: { title: '消息中心', icon: 'Bell', roles: ['admin'], requiresAuth: true, owner: '共同', hidden: true },
       },
       {
         path: '403',

@@ -23,11 +23,11 @@ const visitDateRange = ref<[string, string] | null>(null)
 const sortBy = ref<'visitDate' | 'departmentName' | 'physicianName'>('visitDate')
 const sortDir = ref<'desc' | 'asc'>('desc')
 
-// tab 过滤：进行中(1,2,5,6) / 已完成(3)；"全部"排除爽约(7)
-function tabFilter(visitState?: number): boolean {
+// tab 过滤：进行中(1,2,5,6) / 已完成(=看诊结束 OR 医生已归档)；"全部"排除爽约(7)
+function tabFilter(visitState?: number, archived?: boolean): boolean {
   switch (activeTab.value) {
     case 'ongoing': return [1, 2, 5, 6].includes(visitState ?? 0)
-    case 'done':    return visitState === 3
+    case 'done':    return visitState === 3 || archived === true
     default:        return visitState !== 7
   }
 }
@@ -60,7 +60,7 @@ function fieldComparable(record: ClinicalVisitSummary): string {
 
 const filteredRecords = computed(() => {
   // 第一层：tab 状态过滤
-  const byTab = records.value.filter((r) => tabFilter(r.visitState))
+  const byTab = records.value.filter((r) => tabFilter(r.visitState, r.archived))
   // 第二层：日期范围过滤
   const range = visitDateRange.value
   const byDate = (!range || !range[0] || !range[1])

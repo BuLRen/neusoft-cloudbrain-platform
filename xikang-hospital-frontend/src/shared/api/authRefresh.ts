@@ -22,7 +22,9 @@ export async function refreshAccessToken(): Promise<string> {
   }
   if (!refreshPromise) {
     refreshPromise = refreshClient
-      .post<ApiResult<{ token?: string; accessToken?: string }>>('/auth/refresh')
+      .post<ApiResult<{ token?: string; accessToken?: string }>>('/auth/refresh', {
+        refreshToken: getRefreshToken(),
+      })
       .then((response) => {
         const body = response.data
         if (body.code !== 200) {

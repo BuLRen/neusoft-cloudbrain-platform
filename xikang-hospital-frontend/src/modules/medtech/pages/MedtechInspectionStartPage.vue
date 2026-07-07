@@ -27,6 +27,8 @@ import {
 } from '@/shared/types/simulatedCheckResult'
 import { buildLabReportContextFromMedtech, canExportLabReport } from '@/shared/types/labReportPdf'
 import { useLabReportExport } from '@/shared/composables/useLabReportExport'
+import { useCriticalValueReport } from '@/shared/composables/useCriticalValueReport'
+import CriticalValueConfirmDialog from '@/shared/components/CriticalValueConfirmDialog.vue'
 import { restoreMedtechSimulationDraft } from '@/modules/medtech/composables/useMedtechSimulationDraft'
 import { ElAlert, ElButton, ElDialog, ElEmpty, ElIcon, ElMessage, ElSwitch } from 'element-plus'
 
@@ -50,6 +52,19 @@ const dialogVisible = ref(false)
 const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
 
 const { exportContext, exporting, exportPdf } = useLabReportExport()
+const {
+  dialogVisible: criticalDialogVisible,
+  reporting: criticalReporting,
+  detectResult: criticalDetect,
+  openIfSuspected,
+  confirmReport: confirmCriticalReport,
+  skipReport: skipCriticalReport,
+} = useCriticalValueReport()
+
+function finishSubmitNavigation() {
+  ElMessage.success('检验结果已提交')
+  router.push('/medtech/check-queue')
+}
 
 const id = computed(() => Number(route.query.id || 0))
 const canRecordSpecimen = computed(() => started.value && !specimenLoading.value && !specimenRecorded.value && report.value?.paid !== false)
@@ -177,12 +192,23 @@ async function submit() {
 
   loading.value = true
   try {
-    await medtechApi.submitInspectionResult(id.value, {
+    const response = await medtechApi.submitInspectionResult(id.value, {
       values: formValues.value,
       structuredOutput: structuredOutput.value ?? undefined,
     })
-    ElMessage.success('检验结果已提交')
-    router.push('/medtech/check-queue')
+    const needsConfirm = openIfSuspected(
+      response,
+      {
+        registerId: report.value?.registerId ?? 0,
+        sourceType: 'inspection',
+        sourceId: id.value,
+        techName: report.value?.techName,
+      },
+      finishSubmitNavigation,
+    )
+    if (!needsConfirm) {
+      finishSubmitNavigation()
+    }
   } finally {
     loading.value = false
   }
@@ -416,6 +442,14 @@ onMounted(() => {
   <div class="lab-report-print-host" aria-hidden="true">
     <LabReportPrintSheet ref="printSheetRef" :context="exportContext" />
   </div>
+
+  <CriticalValueConfirmDialog
+    v-model:visible="criticalDialogVisible"
+    :detect="criticalDetect"
+    :reporting="criticalReporting"
+    @confirm="confirmCriticalReport"
+    @skip="skipCriticalReport"
+  />
 </template>
 
 <style scoped>

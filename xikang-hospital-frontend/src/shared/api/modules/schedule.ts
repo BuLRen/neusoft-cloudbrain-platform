@@ -216,6 +216,13 @@ export const scheduleApi = {
     return http<LeaveRequest>({ url: `/schedule/leave/${leaveId}/approve`, method: 'POST', data: { approverId } })
   },
 
+  /**
+   * 拒绝请假申请
+   */
+  rejectLeave(leaveId: number, approverId: number) {
+    return http<LeaveRequest>({ url: `/schedule/leave/${leaveId}/reject`, method: 'POST', data: { approverId } })
+  },
+
   // ==================== 替班相关 ====================
 
   /**
@@ -264,6 +271,18 @@ export const scheduleApi = {
       url: '/schedule/adjust/reject',
       method: 'POST',
       data: { requestId, rejectedBy, reason },
+    })
+  },
+
+  /**
+   * 重新生成 AI 替班方案（驳回后调用，复用原 scheduleId）
+   * 后端会用原 leaveId 重新跑一次 Dify 工作流
+   */
+  regenAdjust(requestId: number, operatorId: number, reason: string) {
+    return http<ScheduleAdjustRequest>({
+      url: '/schedule/adjust/regen',
+      method: 'POST',
+      data: { requestId, operatorId, reason },
     })
   },
 

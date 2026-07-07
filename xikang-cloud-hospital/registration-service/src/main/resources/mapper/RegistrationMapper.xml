@@ -35,6 +35,8 @@
     <!-- 带 relation 的扩展结果集：JOIN user_patient_managed 后填充"本人/配偶"等关系 -->
     <resultMap id="ManagedResultMap" type="com.xikang.registration.entity.Register" extends="BaseResultMap">
         <result column="relation" property="relation"/>
+        <result column="schedule_modify_remark" property="scheduleModifyRemark"/>
+        <result column="schedule_status" property="scheduleStatus"/>
     </resultMap>
 
     <sql id="Base_Column_List">
@@ -68,9 +70,12 @@
             r.noon, r.deptment_id, r.employee_id, r.regist_level_id, r.settle_category_id,
             r.is_book, r.regist_method, r.regist_money, r.visit_state, r.check_in_time,
             r.call_status, r.called_time, r.answered_time, r.call_round,
-            upm.relation AS relation
+            upm.relation AS relation,
+            ds.modify_remark AS schedule_modify_remark,
+            ds.status AS schedule_status
         FROM register r
         INNER JOIN user_patient_managed upm ON upm.patient_id = r.patient_id
+        LEFT JOIN doctor_schedule ds ON ds.id = r.scheduling_id
         WHERE upm.user_id = #{userId}
           AND r.visit_state != 4
         ORDER BY r.visit_date DESC NULLS LAST, r.id DESC

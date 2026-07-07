@@ -1,0 +1,14 @@
+.records-page .header{height:265rpx;background:linear-gradient(135deg,#edf6ff 0%,#e4f1ff 62%,#f7fbff 100%)}
+.records-page .heading{left:52rpx;bottom:32rpx}
+.records-page .heading text:first-child{font-size:40rpx;font-weight:650;letter-spacing:0}
+.records-page .heading text:last-child{font-size:20rpx;color:#71829d}
+.records-page .hero-art{right:14rpx;bottom:-2rpx;width:255rpx;height:180rpx;background:url('/static/records/hero.svg') right bottom/contain no-repeat}
+.records-page .hero-art .paper,.records-page .hero-art .folder,.records-page .hero-art .leaf{display:none!important}
+.records-page .overview{gap:12rpx;margin-top:0}
+.records-page .overview>view{min-height:104rpx;padding:17rpx 12rpx;border:1rpx solid #eaf0f7;border-radius:20rpx;box-shadow:0 7rpx 18rpx rgba(43,86,145,.055)}
+.records-page .stat-icon{width:54rpx;height:54rpx;border-radius:16rpx;font-size:0;background-position:center!important;background-size:34rpx 34rpx!important;background-repeat:no-repeat!important}
+.records-page .overview>view:nth-child(1) .stat-icon{background-image:url('/static/records/visit.svg'),linear-gradient(145deg,#62b3ff,#286df2)}
+.records-page .overview>view:nth-child(2) .stat-icon{background-image:url('/static/records/archive.svg'),linear-gradient(145deg,#62d8c5,#18af98)}
+.records-page .overview>view:nth-child(3) .stat-icon{background-image:url('/static/records/diagnosis.svg'),linear-gradient(145deg,#a882fa,#7650e9)}
+.records-page .overview>view>view:last-child text:first-child{font-size:29rpx}
+.records-page .overview>view>view:last-child text:last-child{font-size:16rpx}

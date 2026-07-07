@@ -6,15 +6,18 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import AdminCheckEquipmentPage from '@/modules/admin/pages/AdminCheckEquipmentPage.vue'
 import AdminResultFormPage from '@/modules/admin/pages/AdminResultFormPage.vue'
+import AdminSimulationPromptPage from '@/modules/admin/pages/AdminSimulationPromptPage.vue'
 
 const route = useRoute()
 const router = useRouter()
 
-type MedtechItemsTab = 'catalog' | 'result-form'
+type MedtechItemsTab = 'catalog' | 'result-form' | 'simulation-prompt'
 
 const activeTab = computed<MedtechItemsTab>({
   get() {
-    return route.query.tab === 'result-form' ? 'result-form' : 'catalog'
+    if (route.query.tab === 'result-form') return 'result-form'
+    if (route.query.tab === 'simulation-prompt') return 'simulation-prompt'
+    return 'catalog'
   },
   set(tab) {
     const query: Record<string, string> = { tab }
@@ -30,7 +33,6 @@ const activeTab = computed<MedtechItemsTab>({
   <div class="medtech-items-page u-page-grid">
     <PageHeader
       title="医技项目"
-      description="维护检查/检验/处置项目目录，并配置检查结果表单字段模板。"
       eyebrow="管理员"
     />
 
@@ -41,6 +43,9 @@ const activeTab = computed<MedtechItemsTab>({
         </ElTabPane>
         <ElTabPane label="结果表单" name="result-form">
           <AdminResultFormPage embedded />
+        </ElTabPane>
+        <ElTabPane label="模拟提示词" name="simulation-prompt" lazy>
+          <AdminSimulationPromptPage embedded />
         </ElTabPane>
       </ElTabs>
     </GlassCard>

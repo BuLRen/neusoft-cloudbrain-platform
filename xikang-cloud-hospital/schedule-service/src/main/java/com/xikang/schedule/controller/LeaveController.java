@@ -1,21 +1,30 @@
 package com.xikang.schedule.controller;
 
+import com.xikang.schedule.client.NotificationClient;
+import com.xikang.schedule.dto.NotificationSendRequest;
+import com.xikang.schedule.entity.DoctorSchedule;
 import com.xikang.schedule.entity.LeaveRequest;
 import com.xikang.schedule.entity.ScheduleAdjustRequest;
+import com.xikang.schedule.service.DifyIntegrationService;
 import com.xikang.schedule.service.LeaveRequestService;
 import com.xikang.schedule.service.ScheduleAdjustService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 请假管理 Controller
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/schedule")
 @RequiredArgsConstructor
@@ -23,6 +32,16 @@ public class LeaveController {
 
     private final LeaveRequestService leaveRequestService;
     private final ScheduleAdjustService scheduleAdjustService;
+    private final DifyIntegrationService difyIntegrationService;
+    private final NotificationClient notificationClient;
+
+    /** Dify HTTP 节点回调时的简单鉴权 token（防止外部恶意调用） */
+    @Value("${dify.callback-token:schedule-internal-2026}")
+    private String difyCallbackToken;
+
+    /** 通知服务内部调用鉴权 token */
+    @Value("${notification.internal-token:notif-internal-2026}")
+    private String notificationInternalToken;
 
     // ==================== 请假申请 API ====================
 
@@ -33,7 +52,8 @@ public class LeaveController {
     public Map<String, Object> getAllLeaves(
             @RequestParam(required = false) Long physicianId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) String status) {
 
         List<LeaveRequest> leaves;
         if (physicianId != null && startDate != null && endDate != null) {
@@ -42,6 +62,13 @@ public class LeaveController {
             leaves = leaveRequestService.getByPhysician(physicianId);
         } else {
             leaves = leaveRequestService.getAll();
+        }
+
+        // 按状态过滤（前端"待审批"tab 用），后端已落"已拒绝/已批准"的不再返回
+        if (status != null && !status.isBlank()) {
+            leaves = leaves.stream()
+                    .filter(l -> status.equals(l.getStatus()))
+                    .toList();
         }
 
         return success(leaves);
@@ -85,9 +112,13 @@ public class LeaveController {
         }
 
         boolean autoProcess = body.containsKey("autoProcess") && (Boolean) body.get("autoProcess");
-        LeaveRequest created = leaveRequestService.createLeave(leave, autoProcess);
-
-        return success(created);
+        try {
+            LeaveRequest created = leaveRequestService.createLeave(leave, autoProcess);
+            return success(created);
+        } catch (RuntimeException e) {
+            log.warn("创建请假失败：{}", e.getMessage());
+            return error(e.getMessage());
+        }
     }
 
     /**
@@ -103,6 +134,9 @@ public class LeaveController {
 
         // 自动处理请假（生成调整申请）
         ScheduleAdjustRequest adjustRequest = leaveRequestService.processLeave(leaveId);
+
+        // 通知请假医生（审批结果）
+        sendLeaveDecisionNotification(leaveId, true);
 
         Map<String, Object> result = new HashMap<>();
         result.put("leave_id", leaveId);
@@ -123,7 +157,73 @@ public class LeaveController {
         Long approverId = ((Number) body.get("approverId")).longValue();
         leaveRequestService.rejectLeave(leaveId, approverId);
 
+        // 通知请假医生（审批结果）
+        sendLeaveDecisionNotification(leaveId, false);
+
         return success("已拒绝");
+    }
+
+    /**
+     * 通知请假医生审批结果
+     * <p>关键约束：通知失败不能阻塞审批流程，try-catch 兜底，仅 log warn。
+     */
+    private void sendLeaveDecisionNotification(Long leaveId, boolean approved) {
+        try {
+            LeaveRequest leave = leaveRequestService.getById(leaveId);
+            if (leave == null || leave.getPhysicianId() == null) {
+                return;
+            }
+            String dateStr = leave.getLeaveDate() != null ? leave.getLeaveDate().toString() : "未知日期";
+            String slot = leave.getTimeSlot() != null ? leave.getTimeSlot() : "全天";
+
+            NotificationSendRequest req = new NotificationSendRequest(
+                    leave.getPhysicianId(), "physician",
+                    approved ? "leave_approved" : "leave_rejected",
+                    approved ? "您的请假申请已批准" : "您的请假申请已拒绝",
+                    approved
+                            ? String.format("您 %s %s 的请假申请已批准，系统将安排替班医生。",
+                            dateStr, slot)
+                            : String.format("您 %s %s 的请假申请已被拒绝，请联系管理员。",
+                            dateStr, slot),
+                    "leave_request", leaveId);
+            notificationClient.send(req, notificationInternalToken);
+            log.info("已通知请假医生：leaveId={}, physicianId={}, approved={}",
+                    leaveId, leave.getPhysicianId(), approved);
+        } catch (Exception ex) {
+            log.warn("通知请假医生失败（不阻塞审批）：leaveId={}, err={}",
+                    leaveId, ex.getMessage());
+        }
+    }
+
+    /**
+     * 重新生成 AI 替班方案
+     * <p>管理员驳回原 AI 方案后，可选择「重新生成」再次调 Dify 工作流。
+     * <p>流程：把原 adjust 标记为「已驳回-重新生成」→ 用原 scheduleId 反查 leaveId
+     * → 调用 LeaveRequestService.processLeave 重新跑 Dify → 返回新 adjust。
+     */
+    @PostMapping("/adjust/regen")
+    public Map<String, Object> regenAdjust(@RequestBody Map<String, Object> body) {
+        Long requestId = ((Number) body.get("requestId")).longValue();
+        Long operatorId = ((Number) body.get("operatorId")).longValue();
+        String reason = body.containsKey("reason") ? (String) body.get("reason") : "重新生成";
+
+        // 1. 标记原 adjust 为「已驳回-重新生成」
+        ScheduleAdjustRequest oldAdjust = scheduleAdjustService.regenAdjust(requestId, operatorId, reason);
+
+        // 2. 通过 scheduleId 反查 leaveId
+        Long scheduleId = oldAdjust.getScheduleId();
+        Long leaveId = leaveRequestService.findLeaveIdByScheduleId(scheduleId);
+        if (leaveId == null) {
+            return error("未找到对应的请假记录，无法重新生成");
+        }
+
+        // 3. 重新跑 Dify 工作流生成新方案
+        ScheduleAdjustRequest newAdjust = leaveRequestService.processLeave(leaveId);
+        if (newAdjust == null) {
+            return error("重新生成失败：未找到对应排班");
+        }
+
+        return success(newAdjust);
     }
 
     /**
@@ -140,6 +240,65 @@ public class LeaveController {
                 departmentId, leaveDate, timeSlot, excludePhysicianId);
 
         return success(substitutes);
+    }
+
+    // ==================== Dify 回调：上下文聚合 API ====================
+
+    /**
+     * 上下文聚合端点（Dify HTTP 节点调用）
+     * <p>给 Dify 替班工作流的节点 3 用，返回请假详情 + 候选医生 + 影响患者 + 科室规则。
+     * <p>简单 token 鉴权（X-Dify-Token header），防止外部恶意调用。
+     */
+    @GetMapping("/adjust/context")
+    public Map<String, Object> getAdjustContext(
+            @RequestParam Long leaveId,
+            @RequestHeader(value = "X-Dify-Token", required = false) String token) {
+
+        if (!difyCallbackToken.equals(token)) {
+            log.warn("Dify 回调鉴权失败：leaveId={}, tokenPresent={}", leaveId, token != null);
+            return error("鉴权失败");
+        }
+
+        LeaveRequest leave = leaveRequestService.getById(leaveId);
+        if (leave == null) {
+            return error("请假记录不存在");
+        }
+
+        // 查找对应排班（拿到 departmentId / usedQuota）
+        DoctorSchedule schedule = leaveRequestService.findScheduleForLeave(leaveId);
+        if (schedule == null) {
+            return error("未找到对应排班");
+        }
+
+        // 聚合候选医生 — 必须用和 findLeaveSubstitutes 完全一致的查询，
+        // 否则 LLM 看到的候选（HTTP 节点 3）和守门员校验的候选（开始节点 brief）会不一致，
+        // LLM 推荐的 ID 不在 brief 里 → 触发 fallback。
+        List<Map<String, Object>> candidates = difyIntegrationService.findLeaveSubstitutesPublic(schedule, leave);
+
+        // 组装返回
+        Map<String, Object> leaveInfo = new LinkedHashMap<>();
+        leaveInfo.put("id", leave.getId());
+        leaveInfo.put("physicianId", leave.getPhysicianId());
+        leaveInfo.put("leaveDate", leave.getLeaveDate() != null ? leave.getLeaveDate().toString() : null);
+        leaveInfo.put("timeSlot", leave.getTimeSlot());
+        leaveInfo.put("leaveType", leave.getLeaveType());
+        leaveInfo.put("reason", leave.getReason());
+
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("leaveInfo", leaveInfo);
+        context.put("candidates", candidates);
+        context.put("affectedPatientCount", schedule.getUsedQuota() != null ? schedule.getUsedQuota() : 0);
+        context.put("departmentId", schedule.getDepartmentId());
+        context.put("departmentRule", "该科室最少需 1 人在岗");
+        context.put("statistics", Map.of(
+                "totalCandidates", candidates.size(),
+                "scheduleId", schedule.getId()
+        ));
+
+        log.info("Dify 上下文聚合：leaveId={}, candidates={}, affectedPatients={}",
+                leaveId, candidates.size(), schedule.getUsedQuota());
+
+        return success(context);
     }
 
     // ==================== 调整申请 API ====================

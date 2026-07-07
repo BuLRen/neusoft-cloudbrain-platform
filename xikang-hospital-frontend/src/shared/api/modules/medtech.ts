@@ -242,7 +242,7 @@ export const medtechApi = {
     return http<void>({ url: `/medtech/disposal/start/${id}`, method: 'PUT', data: operatorInfo })
   },
   submitDisposalResult(id: number, data: { disposalResult?: string; result?: string; disposalRemark?: string }) {
-    return http<void>({ url: `/medtech/disposal/result/${id}`, method: 'PUT', data })
+    return http<Record<string, unknown>>({ url: `/medtech/disposal/result/${id}`, method: 'PUT', data })
   },
   disposalReport(id: number) {
     return http<DisposalReport>({ url: `/medtech/disposal/report/${id}`, method: 'GET' })

@@ -89,6 +89,9 @@ xikang:
       api-key-follow-up-shift-schedule: ${DIFY_API_KEY_FOLLOW_UP_SHIFT_SCHEDULE:}
       workflow-follow-up-enqueue: ${DIFY_WORKFLOW_FOLLOW_UP_ENQUEUE:true}
       api-key-follow-up-enqueue: ${DIFY_API_KEY_FOLLOW_UP_ENQUEUE:}
+      # ----- 危急值 AI 识别（影像/文本型结果兜底）-----
+      workflow-critical-value-detect: ${DIFY_WORKFLOW_CRITICAL_VALUE_DETECT:}
+      api-key-critical-value-detect: ${DIFY_API_KEY_CRITICAL_VALUE_DETECT:}
 
 # =============================================================================
 # 随访数据源：demo=仅模拟表 | production=仅 A/C 类生产数据 | hybrid=真实患者+模拟指标回退

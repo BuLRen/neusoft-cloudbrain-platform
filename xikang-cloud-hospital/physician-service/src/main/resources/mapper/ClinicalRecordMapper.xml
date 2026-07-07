@@ -155,6 +155,29 @@
         ORDER BY p.creation_time ASC, p.id ASC
     </select>
 
+    <select id="selectCriticalValueAlerts" resultType="map">
+        SELECT
+            id,
+            register_id AS "registerId",
+            source_type AS "sourceType",
+            source_id AS "sourceId",
+            tech_name AS "techName",
+            critical_items AS "criticalItems",
+            severity,
+            reporter_name AS "reporterName",
+            doctor_name AS "doctorName",
+            status,
+            reported_time AS "reportedTime",
+            acknowledged_time AS "acknowledgedTime",
+            handled_time AS "handledTime",
+            handle_note AS "handleNote",
+            escalated_time AS "escalatedTime",
+            ack_deadline AS "ackDeadline"
+        FROM critical_value_alert
+        WHERE register_id = #{registerId}
+        ORDER BY reported_time ASC
+    </select>
+
     <select id="selectPatientClinicalProfile" resultType="map">
         SELECT
             patient_id AS "patientId",
@@ -174,6 +197,7 @@
             allergy_history AS "allergyHistory"
         FROM patient
         WHERE id = #{patientId}
+          AND delmark = 0
     </select>
 
     <insert id="upsertPatientClinicalProfile">
