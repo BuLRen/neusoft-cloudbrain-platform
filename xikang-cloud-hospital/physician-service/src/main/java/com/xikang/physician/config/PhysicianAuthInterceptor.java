@@ -77,6 +77,9 @@ public class PhysicianAuthInterceptor implements HandlerInterceptor {
         }
 
         PhysicianAuthContext.set(new PhysicianAuthContext.Context(userId, role, employeeId, adminAllAccess));
+        if (employeeId != null) {
+            request.setAttribute(PhysicianRequestAttributes.EMPLOYEE_ID, employeeId);
+        }
         return true;
     }
 

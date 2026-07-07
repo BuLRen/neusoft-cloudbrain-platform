@@ -189,9 +189,9 @@ export const routes: RouteRecordRaw[] = [
     component: ScanCheckinPage,
     meta: { title: '报到机', hidden: true },
   },
-  // 候诊叫号大屏：全院大屏，免登录，订阅 SSE /stream/global
+  // 候诊叫号大屏：全院 / 单科室，免登录，订阅 SSE /stream/global
   {
-    path: '/calling-board',
+    path: '/calling-board/:departmentId?',
     name: 'CallingBoard',
     component: CallingBoardPage,
     meta: { title: '全院候诊大屏', hidden: true },

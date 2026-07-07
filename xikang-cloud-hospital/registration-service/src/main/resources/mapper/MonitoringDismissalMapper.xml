@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.registration.mapper.MonitoringDismissalMapper">
+
+    <select id="selectStatusByAlertKey" resultType="java.lang.String">
+        SELECT status FROM monitoring_alert_dismissal WHERE alert_key = #{alertKey}
+    </select>
+
+    <insert id="upsertDismissal">
+        INSERT INTO monitoring_alert_dismissal (alert_key, status, operator_id, operator_name, dismissed_at)
+        VALUES (#{alertKey}, #{status}, #{operatorId}, #{operatorName}, CURRENT_TIMESTAMP)
+        ON CONFLICT (alert_key) DO UPDATE SET
+            status = EXCLUDED.status,
+            operator_id = EXCLUDED.operator_id,
+            operator_name = EXCLUDED.operator_name,
+            dismissed_at = CURRENT_TIMESTAMP
+    </insert>
+
+</mapper>

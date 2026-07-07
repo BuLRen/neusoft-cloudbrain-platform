@@ -30,6 +30,7 @@
         <result column="called_time" property="calledTime"/>
         <result column="answered_time" property="answeredTime"/>
         <result column="call_round" property="callRound"/>
+        <result column="queue_position" property="queuePosition"/>
     </resultMap>
 
     <!-- 带 relation 的扩展结果集：JOIN user_patient_managed 后填充"本人/配偶"等关系 -->
@@ -41,7 +42,7 @@
         id, patient_id, scheduling_id, case_number, real_name, gender, card_number, birthdate, age, age_type,
         home_address, visit_date, noon, deptment_id, employee_id, regist_level_id,
         settle_category_id, is_book, regist_method, regist_money, visit_state, check_in_time,
-        call_status, called_time, answered_time, call_round
+        call_status, called_time, answered_time, call_round, queue_position
     </sql>
 
     <select id="selectById" resultMap="BaseResultMap">
@@ -67,7 +68,7 @@
             r.card_number, r.birthdate, r.age, r.age_type, r.home_address, r.visit_date,
             r.noon, r.deptment_id, r.employee_id, r.regist_level_id, r.settle_category_id,
             r.is_book, r.regist_method, r.regist_money, r.visit_state, r.check_in_time,
-            r.call_status, r.called_time, r.answered_time, r.call_round,
+            r.call_status, r.called_time, r.answered_time, r.call_round, r.queue_position,
             upm.relation AS relation
         FROM register r
         INNER JOIN user_patient_managed upm ON upm.patient_id = r.patient_id
@@ -196,15 +197,32 @@
         UPDATE register SET check_in_time = #{checkInTime} WHERE id = #{id}
     </update>
 
+    <update id="updateCheckInTimeAndQueuePosition">
+        UPDATE register
+        SET check_in_time = #{checkInTime},
+            queue_position = #{queuePosition}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateQueuePosition">
+        UPDATE register SET queue_position = #{queuePosition} WHERE id = #{id}
+    </update>
+
+    <select id="selectMaxQueuePosition" resultType="int">
+        SELECT COALESCE(MAX(queue_position), 0)
+        FROM register
+        WHERE employee_id = #{employeeId}
+          AND DATE(visit_date) = #{visitDate}
+          AND check_in_time IS NOT NULL
+    </select>
+
     <!--
-        统计同一医生、同一天、已报到且报到时间早于当前记录的患者数。
-        用于计算"前面还有 X 人"。号序 = 该值 + 1。
-        用 CTE 把当前记录的 employee_id / visit_date / check_in_time 一次性取出来，
-        避免三次相关子查询对同一行重复扫描。
+        统计同一医生、同一天、已报到且队列序号早于当前记录的患者数。
+        号序 = 该值 + 1。
     -->
     <select id="countWaitingBefore" resultType="int">
         WITH cur AS (
-            SELECT employee_id, DATE(visit_date) AS d, check_in_time
+            SELECT employee_id, DATE(visit_date) AS d, queue_position, check_in_time
             FROM register
             WHERE id = #{id}
         )
@@ -215,7 +233,13 @@
           AND r.check_in_time IS NOT NULL
           AND r.employee_id = cur.employee_id
           AND DATE(r.visit_date) = cur.d
-          AND r.check_in_time &lt; cur.check_in_time
+          AND (
+            (r.queue_position IS NOT NULL AND cur.queue_position IS NOT NULL AND r.queue_position &lt; cur.queue_position)
+            OR (
+              (r.queue_position IS NULL OR cur.queue_position IS NULL)
+              AND r.check_in_time &lt; cur.check_in_time
+            )
+          )
     </select>
 
     <delete id="deleteById">
@@ -245,7 +269,7 @@
           AND check_in_time IS NOT NULL
           AND call_status IN (0, 3)
           AND NOT (call_status = 3 AND call_round >= 2)
-        ORDER BY check_in_time ASC
+        ORDER BY queue_position ASC NULLS LAST, check_in_time ASC
         LIMIT 1
         FOR UPDATE
     </select>
@@ -295,6 +319,14 @@
         ORDER BY called_time DESC
     </select>
 
+    <select id="selectAllActiveCalling" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM register
+        WHERE DATE(visit_date) = #{visitDate}
+          AND call_status = 1
+        ORDER BY called_time DESC
+    </select>
+
     <select id="selectWaitingByDepartment" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM register
@@ -302,7 +334,7 @@
           AND DATE(visit_date) = #{visitDate}
           AND check_in_time IS NOT NULL
           AND call_status IN (0, 1, 3)
-        ORDER BY check_in_time ASC
+        ORDER BY queue_position ASC NULLS LAST, check_in_time ASC
     </select>
 
     <select id="selectWaitingByDoctor" resultMap="BaseResultMap">
@@ -311,8 +343,9 @@
         WHERE employee_id = #{employeeId}
           AND DATE(visit_date) = #{visitDate}
           AND check_in_time IS NOT NULL
+          AND visit_state = 1
           AND call_status IN (0, 1, 3)
-        ORDER BY check_in_time ASC
+        ORDER BY queue_position ASC NULLS LAST, check_in_time ASC
     </select>
 
     <!-- 已叫 5 分钟未应答的号 -->

@@ -120,10 +120,10 @@ export const monitoringMetrics: AdminMonitoringMetric[] = [
 ]
 
 export const monitoringAlerts: AdminMonitoringAlert[] = [
-  { id: 101, module: 'AI 分诊', title: '高风险分诊超时未处理', level: 'critical', status: 'pending', owner: '管理员', updatedAt: '2026-06-08 09:18' },
-  { id: 102, module: '智能排班', title: '儿科周三下午号源不足', level: 'warning', status: 'processing', owner: '排班管理员', updatedAt: '2026-06-08 08:56' },
-  { id: 103, module: '挂号收费', title: '退款申请异常集中', level: 'warning', status: 'pending', owner: '收费主管', updatedAt: '2026-06-08 08:44' },
-  { id: 104, module: '药房', title: '阿莫西林库存低于安全线', level: 'info', status: 'resolved', owner: '药房值班', updatedAt: '2026-06-08 07:31' },
+  { alertKey: 'mock:101', module: 'AI 分诊', title: '高风险分诊超时未处理', level: 'critical', status: 'pending', owner: '管理员', updatedAt: '2026-06-08 09:18' },
+  { alertKey: 'mock:102', module: '智能排班', title: '儿科周三下午号源不足', level: 'warning', status: 'processing', owner: '排班管理员', updatedAt: '2026-06-08 08:56' },
+  { alertKey: 'mock:103', module: '挂号收费', title: '退款申请异常集中', level: 'warning', status: 'pending', owner: '收费主管', updatedAt: '2026-06-08 08:44' },
+  { alertKey: 'mock:104', module: '药房', title: '阿莫西林库存低于安全线', level: 'info', status: 'resolved', owner: '药房值班', updatedAt: '2026-06-08 07:31' },
 ]
 
 export const reportSummaryCards: ReportSummaryCard[] = [

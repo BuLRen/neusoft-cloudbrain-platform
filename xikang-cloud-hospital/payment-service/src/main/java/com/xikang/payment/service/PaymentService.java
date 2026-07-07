@@ -466,7 +466,7 @@ public class PaymentService {
     }
 
     public List<Map<String, Object>> dailyCharges(LocalDate startDate, LocalDate endDate) {
-        return expenseRecordMapper.dailyCharges(startDate.toString(), endDate.toString());
+        return expenseRecordMapper.dailyCharges(startDate, endDate);
     }
 
     // ============================================================

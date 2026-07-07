@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
  *           birthdate, age, age_type, home_address, visit_date, noon, deptment_id,
  *           employee_id, regist_level_id, settle_category_id, is_book, regist_method,
  *           regist_money, visit_state, check_in_time,
- *           call_status, called_time, answered_time, call_round
+ *           call_status, called_time, answered_time, call_round, queue_position
  */
 @Data
 public class Register implements Serializable {
@@ -49,6 +49,7 @@ public class Register implements Serializable {
     private java.time.LocalDateTime calledTime;     // called_time: 最近一次被叫时刻（5 分钟超时判断依据）
     private java.time.LocalDateTime answeredTime;   // answered_time: 患者应答（进诊室）时刻
     private Integer callRound;              // call_round: 已叫次数，>=2 后过号为终态禁重叫
+    private Integer queuePosition;          // queue_position: 医生候诊队列序号（可调序）
 
     // 辅助字段（不映射数据库）
     private String departmentName;

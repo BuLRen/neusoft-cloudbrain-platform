@@ -5,6 +5,7 @@ import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { registrationApi } from '@/shared/api/modules/registration'
+import { reportPeriodRange } from '@/modules/admin/composables/useDepartmentPatientStats'
 import type {
   DepartmentWorkloadItem,
   DailyTrendPoint,
@@ -15,6 +16,7 @@ const { embedded = false } = defineProps<{ embedded?: boolean }>()
 const loading = ref(false)
 const workload = ref<DepartmentWorkloadItem[]>([])
 const trend = ref<DailyTrendPoint[]>([])
+const chargesAvailable = ref(true)
 
 const filter = reactive({
   period: 'week' as 'week' | 'month',
@@ -58,12 +60,14 @@ function formatMoney(v: number | string) {
 async function load() {
   loading.value = true
   try {
+    const { startDate, endDate } = reportPeriodRange(periodDays.value)
     const [w, t] = await Promise.all([
-      registrationApi.departmentWorkload(),
+      registrationApi.departmentWorkload({ startDate, endDate }),
       registrationApi.dailyTrend(periodDays.value),
     ])
     workload.value = w
-    trend.value = t
+    trend.value = t.trend
+    chargesAvailable.value = t.chargesAvailable
   } finally {
     loading.value = false
   }
@@ -119,8 +123,14 @@ onMounted(load)
           <ElOption label="近 30 天" value="month" />
         </ElSelect>
         <StatusTag tone="primary">数据来自 registration-service 实时聚合</StatusTag>
+        <StatusTag v-if="!chargesAvailable" tone="warning">收费服务暂不可用，收入可能显示为 0</StatusTag>
       </div>
     </div>
+
+    <GlassCard v-if="!chargesAvailable" class="charges-warning">
+      <StatusTag tone="warning">收费服务暂不可用</StatusTag>
+      <p>无法连接 payment-service 获取收费数据，总收入与趋势图中的金额可能为 0。请确认 payment-service（8096）已启动。</p>
+    </GlassCard>
 
     <section class="summary-grid" v-loading="loading">
       <GlassCard class="summary-card">
@@ -360,6 +370,18 @@ onMounted(load)
 
 .field--small {
   width: 160px;
+}
+
+.charges-warning {
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.charges-warning p {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.6;
 }
 
 @media (max-width: 1200px) {

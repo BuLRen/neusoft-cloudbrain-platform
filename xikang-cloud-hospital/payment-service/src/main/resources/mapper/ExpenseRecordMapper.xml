@@ -202,7 +202,7 @@
         SELECT pay_time::date AS "date", COALESCE(SUM(total_amount), 0) AS "amount"
         FROM expense_record
         WHERE status = 1
-          AND pay_time::date BETWEEN #{startDate} AND #{endDate}
+          AND pay_time::date BETWEEN #{startDate}::date AND #{endDate}::date
         GROUP BY pay_time::date
     </select>
 

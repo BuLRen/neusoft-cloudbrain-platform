@@ -126,7 +126,10 @@ public class CallingEventBroadcaster {
         }
         if (reg.getEmployeeId() != null) {
             Employee doc = employeeService.getDoctor(reg.getEmployeeId());
-            if (doc != null) payload.put("doctorName", doc.getRealname());
+            if (doc != null) {
+                payload.put("doctorName", doc.getRealname());
+                payload.put("clinicRoom", doc.getClinicRoom());
+            }
         }
 
         // 号序（基于 check_in_time）

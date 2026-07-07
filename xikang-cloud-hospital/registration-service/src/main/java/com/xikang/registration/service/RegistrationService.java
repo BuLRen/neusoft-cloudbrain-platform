@@ -462,9 +462,14 @@ public class RegistrationService {
             return result;
         }
 
-        // 写入报到时间
+        // 写入报到时间与队列序号（默认排在队尾）
         LocalDateTime now = LocalDateTime.now();
-        registrationMapper.updateCheckInTime(id, now);
+        int nextPosition = 1;
+        if (register.getEmployeeId() != null) {
+            int maxPos = registrationMapper.selectMaxQueuePosition(register.getEmployeeId(), visitDay);
+            nextPosition = maxPos + 1;
+        }
+        registrationMapper.updateCheckInTimeAndQueuePosition(id, now, nextPosition);
 
         int before = registrationMapper.countWaitingBefore(id);
         result.put("checkInTime", now);

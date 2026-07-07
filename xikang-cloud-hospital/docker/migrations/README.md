@@ -33,6 +33,18 @@ docker exec -it xikang-postgres psql -U postgres -d xikang_hospital -c "\dt"
 | 4 | `migrations/001_visit_state_5_6.sql` | `register.visit_state` 扩展为 1–6（5=检验中、6=检验完成） |
 | 5 | `migrations/002_visit_state_7_missed.sql` | `register.visit_state` 扩展为 1–7，新增 7=爽约；同步迁移已被错标为 5 的历史爽约记录 |
 | 6 | `migrations/incremental_to_local_20250618.sql` | 补齐本地快照中其余差异（见脚本内注释） |
+| 7 | `migrations/037_employee_clinic_room.sql` | `employee` 表新增 `clinic_room`（诊室名称，候诊大屏） |
+| 8 | `migrations/038_register_queue_position.sql` | `register` 表新增 `queue_position`（医生候诊队列可调序） |
+
+**叫号系统增量（037 + 038）一键执行**（读取 `xikang-cloud-hospital/.env` 中的 `SPRING_PROFILES_ACTIVE` 与数据库配置）：
+
+```bash
+cd xikang-cloud-hospital
+pip install psycopg2-binary   # 首次需要
+python docker/init-db/run_calling_migrations.py
+```
+
+或在任意 SQL 客户端中依次执行 `037_employee_clinic_room.sql`、`038_register_queue_position.sql`。
 
 执行示例：
 

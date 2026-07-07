@@ -70,8 +70,17 @@ public interface RegistrationMapper {
      */
     int updateCheckInTime(@Param("id") Long id, @Param("checkInTime") java.time.LocalDateTime checkInTime);
 
+    int updateCheckInTimeAndQueuePosition(@Param("id") Long id,
+                                          @Param("checkInTime") java.time.LocalDateTime checkInTime,
+                                          @Param("queuePosition") Integer queuePosition);
+
+    int updateQueuePosition(@Param("id") Long id, @Param("queuePosition") Integer queuePosition);
+
+    int selectMaxQueuePosition(@Param("employeeId") Long employeeId,
+                               @Param("visitDate") java.time.LocalDate visitDate);
+
     /**
-     * 统计同一医生、同一天、已报到但未接诊的患者数（用于计算号序和前面等待人数）
+     * 统计同一医生、同一天、队列序号早于当前记录的患者数（用于计算号序）
      */
     int countWaitingBefore(@Param("id") Long id);
 
@@ -123,6 +132,11 @@ public interface RegistrationMapper {
      */
     List<Register> selectCallingByDepartment(@Param("departmentId") Long departmentId,
                                              @Param("visitDate") java.time.LocalDate visitDate);
+
+    /**
+     * 查询今天全院所有"已叫待应答"（call_status=1）的号，按 called_time desc。
+     */
+    List<Register> selectAllActiveCalling(@Param("visitDate") java.time.LocalDate visitDate);
 
     /**
      * 查询某科室今天所有候诊中（call_status IN 0,1,3）的号，按 check_in_time asc。
