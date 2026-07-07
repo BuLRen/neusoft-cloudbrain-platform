@@ -6,6 +6,8 @@ import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 
 const props = defineProps<{
   loading?: boolean
+  progressMessage?: string
+  elapsedSeconds?: number
   errorMessage?: string
   result?: CtSegmentResult | null
   readonly?: boolean
@@ -82,6 +84,14 @@ function formatProcessingTime(ms?: number): string {
   if (ms < 1000) return `${ms} ms`
   return `${(ms / 1000).toFixed(1)} s`
 }
+
+function formatElapsedSeconds(seconds?: number): string {
+  if (seconds == null || seconds <= 0) return '0s'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  if (mins <= 0) return `${secs}s`
+  return `${mins}m ${secs.toString().padStart(2, '0')}s`
+}
 </script>
 
 <template>
@@ -128,8 +138,18 @@ function formatProcessingTime(ms?: number): string {
     <!-- ========== 加载中 ========== -->
     <div v-if="loading" class="ai-seg-panel__loading">
       <div class="ai-seg-panel__loading-spinner" />
-      <p class="ai-seg-panel__loading-text">AI 模型推理中，请稍候…</p>
-      <p class="ai-seg-panel__loading-hint">首次分析约需 20–60 秒</p>
+      <p class="ai-seg-panel__loading-text">
+        {{ progressMessage || 'AI 模型推理中，请稍候…' }}
+      </p>
+      <p class="ai-seg-panel__loading-hint">
+        已等待 {{ formatElapsedSeconds(elapsedSeconds) }}，nnU-Net CPU 推理可能需要 10–30 分钟
+      </p>
+      <div class="ai-seg-panel__progress-track">
+        <span class="ai-seg-panel__progress-bar" />
+      </div>
+      <p v-if="(elapsedSeconds ?? 0) >= 600" class="ai-seg-panel__loading-warn">
+        已超过 10 分钟，请保持服务终端运行；若最终超时，可查看 lung-nodule-seg-service 日志确认是否仍在推理。
+      </p>
     </div>
 
     <!-- ========== 错误 ========== -->
@@ -366,6 +386,38 @@ function formatProcessingTime(ms?: number): string {
   margin: 0;
   font-size: 11px;
   color: var(--ct-text-dim);
+}
+
+.ai-seg-panel__progress-track {
+  position: relative;
+  width: min(220px, 80%);
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ct-bg-soft);
+}
+
+.ai-seg-panel__progress-bar {
+  position: absolute;
+  inset-block: 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--ct-accent), transparent);
+  animation: indeterminate-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes indeterminate-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(260%); }
+}
+
+.ai-seg-panel__loading-warn {
+  max-width: 260px;
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
+  color: #fbbf24;
 }
 
 /* ---- alert ---- */

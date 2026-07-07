@@ -111,6 +111,13 @@ const metalMinComponentSize = ref(50)
 
 const nrrdInput = ref<HTMLInputElement | null>(null)
 const dicomInput = ref<HTMLInputElement | null>(null)
+
+/** macOS 文件选择器无法正确识别 accept=".nii.gz"，需在 JS 侧校验扩展名 */
+function isSupportedVolumeFile(name: string): boolean {
+  const lower = name.toLowerCase()
+  return lower.endsWith('.nrrd') || lower.endsWith('.nii.gz') || lower.endsWith('.nii')
+}
+
 const axialCanvas = ref<HTMLCanvasElement | null>(null)
 const coronalCanvas = ref<HTMLCanvasElement | null>(null)
 const sagittalCanvas = ref<HTMLCanvasElement | null>(null)
@@ -297,6 +304,12 @@ async function handleNrrdUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const [file] = input.files ?? []
   if (!file) return
+
+  if (!isSupportedVolumeFile(file.name)) {
+    statusText.value = '仅支持 .nrrd / .nii / .nii.gz 格式的体数据文件'
+    input.value = ''
+    return
+  }
 
   isLoading.value = true
   try {
@@ -601,7 +614,13 @@ defineExpose({
       'ct-viewer-panel--fullscreen': fullscreen,
     }"
   >
-    <input ref="nrrdInput" class="hidden-input" type="file" accept=".nrrd,.nii,.nii.gz" @change="handleNrrdUpload" />
+    <input
+      ref="nrrdInput"
+      class="hidden-input"
+      type="file"
+      accept=".nrrd,.nii,.gz,application/gzip,application/octet-stream"
+      @change="handleNrrdUpload"
+    />
     <input ref="dicomInput" class="hidden-input" type="file" multiple webkitdirectory directory @change="handleDicomFolderUpload" />
 
     <div v-if="showTechBar && !embedded && technicalMetaLine" class="ct-viewer-panel__tech-bar">

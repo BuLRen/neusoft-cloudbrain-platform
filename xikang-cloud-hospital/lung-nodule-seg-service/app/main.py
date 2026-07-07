@@ -20,6 +20,7 @@ API 设计（与 ct-viewer-algo 保持一致）：
 from __future__ import annotations
 
 import asyncio
+import gc
 import os
 import time
 import traceback
@@ -50,6 +51,10 @@ _state: dict = {
     "device": config.DEVICE if config.ACTIVE_BACKEND == "monai" else config.NNUNET_DEVICE,
     "model_version": config.ACTIVE_MODEL_VERSION,
     "load_error": None,
+    "inference_running": False,
+    "inference_phase": None,
+    "inference_started_at": None,
+    "inference_source": None,
 }
 
 _inference_lock = asyncio.Lock()
@@ -67,6 +72,20 @@ def _err(http_status: int, code: int, message: str) -> JSONResponse:
         status_code=http_status,
         content={"code": code, "message": message, "data": None},
     )
+
+
+def _set_inference_phase(phase: str) -> None:
+    _state["inference_phase"] = phase
+    started_at = _state.get("inference_started_at")
+    elapsed = int(time.time() - started_at) if started_at else 0
+    print(f"[lung-nodule-seg-service] AI 分割阶段: {phase} | elapsed={elapsed}s", flush=True)
+
+
+def _clear_inference_status() -> None:
+    _state["inference_running"] = False
+    _state["inference_phase"] = None
+    _state["inference_started_at"] = None
+    _state["inference_source"] = None
 
 
 # ========================
@@ -156,6 +175,8 @@ app = FastAPI(
 # ========================
 @app.get("/health")
 async def health():
+    started_at = _state.get("inference_started_at")
+    elapsed_seconds = int(time.time() - started_at) if started_at else 0
     return {
         "ok": _state["model_loaded"],
         "model_loaded": _state["model_loaded"],
@@ -163,6 +184,10 @@ async def health():
         "device": _state["device"],
         "model_version": _state["model_version"],
         "load_error": _state["load_error"],
+        "inference_running": _state["inference_running"],
+        "inference_phase": _state["inference_phase"],
+        "inference_elapsed_seconds": elapsed_seconds,
+        "inference_source": _state["inference_source"],
     }
 
 
@@ -194,6 +219,10 @@ async def internal_segment(body: SegmentRequest):
         if not _state["model_loaded"] or _state["model"] is None:
             return _err(503, 5002, "模型权重未加载，无法推理")
 
+        _state["inference_running"] = True
+        _state["inference_started_at"] = time.time()
+        _state["inference_source"] = body.source_name or os.path.basename(body.src_nrrd_path)
+        _set_inference_phase("接收请求，准备读取 CT 体数据")
         try:
             t_total_start = time.time()
 
@@ -202,6 +231,7 @@ async def internal_segment(body: SegmentRequest):
                 from .nnunet_backend import run_nnunet_inference
 
                 try:
+                    _set_inference_phase("nnU-Net 预处理与整卷推理中")
                     infer_result = await asyncio.to_thread(
                         run_nnunet_inference, _state["model"], body.src_nrrd_path
                     )
@@ -213,9 +243,11 @@ async def internal_segment(body: SegmentRequest):
                 hu_arr = infer_result["hu_arr"]
                 resampled_image = infer_result["sitk_image"]
                 inference_ms = infer_result["inference_ms"]
+                infer_result = None
             else:
                 # ---- 预处理 ----
                 try:
+                    _set_inference_phase("MONAI 预处理 CT 体数据")
                     volume_tensor, resampled_image = await asyncio.to_thread(
                         load_and_preprocess, body.src_nrrd_path
                     )
@@ -227,6 +259,7 @@ async def internal_segment(body: SegmentRequest):
 
                 # ---- 推理（在线程池避免阻塞事件循环） ----
                 try:
+                    _set_inference_phase("MONAI 滑窗推理中")
                     infer_result = await asyncio.to_thread(
                         run_inference, _state["model"], volume_tensor
                     )
@@ -236,9 +269,12 @@ async def internal_segment(body: SegmentRequest):
                 binary_mask = infer_result["binary_mask"]
                 prob_map = infer_result["prob_map"]
                 inference_ms = infer_result["inference_ms"]
+                infer_result = None
+                volume_tensor = None
 
             # ---- 写掩码 NRRD ----
             try:
+                _set_inference_phase("写入 AI 分割掩码")
                 out_dir = os.path.dirname(body.out_nrrd_path)
                 if out_dir:
                     os.makedirs(out_dir, exist_ok=True)
@@ -246,11 +282,13 @@ async def internal_segment(body: SegmentRequest):
                 mask_sitk = sitk.GetImageFromArray(binary_mask.astype(np.uint8))
                 mask_sitk.CopyInformation(resampled_image)
                 sitk.WriteImage(mask_sitk, body.out_nrrd_path)
+                mask_sitk = None
             except Exception as e:
                 return _err(500, 5001, f"写掩码文件失败: {e}")
 
             # ---- 连通域后处理 ----
             try:
+                _set_inference_phase("提取病灶与计算指标")
                 total_ms = int(round((time.time() - t_total_start) * 1000))
                 lesions, summary = await asyncio.to_thread(
                     extract_lesions,
@@ -274,7 +312,13 @@ async def internal_segment(body: SegmentRequest):
                     "note": f"后处理失败: {e}，建议安装 scikit-image",
                 }
 
+            prob_map = None
+            hu_arr = None
+            if config.FORCE_GC_AFTER_INFERENCE:
+                gc.collect()
+
             # ---- 生成 meta（与 ct-viewer-algo 保持格式一致） ----
+            _set_inference_phase("整理返回结果")
             D, H, W = binary_mask.shape
             sp = resampled_image.GetSpacing()  # (x, y, z)
             meta = {
@@ -297,16 +341,23 @@ async def internal_segment(body: SegmentRequest):
                 f"处理耗时 {summary.get('processingTimeMs', 0)} ms"
             )
 
-            return _ok({
+            response = _ok({
                 "is_mask": True,
                 "meta": meta,
                 "lesions": lesions,
                 "summary": summary,
                 "message": message,
             })
+            binary_mask = None
+            resampled_image = None
+            if config.FORCE_GC_AFTER_INFERENCE:
+                gc.collect()
+            return response
 
         except Exception as e:
             return _err(500, 5001, f"分割服务内部错误: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        finally:
+            _clear_inference_status()
 
 
 if __name__ == "__main__":

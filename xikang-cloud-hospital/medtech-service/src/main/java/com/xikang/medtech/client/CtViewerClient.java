@@ -142,6 +142,8 @@ public class CtViewerClient {
             throw new BusinessException(500, "未配置 ct-viewer internal token，无法执行 AI 肺结节分割");
         }
         try {
+            long startedAt = System.currentTimeMillis();
+            log.info("调 ct-viewer-service AI 分割开始 | volumeId={}", volumeId);
             HttpHeaders headers = new HttpHeaders();
             headers.set(AgentContextHeaders.INTERNAL_TOKEN, internalToken);
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -153,6 +155,11 @@ public class CtViewerClient {
                 Map.class,
                 Map.of("volumeId", volumeId.trim())
             ).getBody();
+            log.info(
+                "调 ct-viewer-service AI 分割完成 | volumeId={} elapsedMs={}",
+                volumeId,
+                System.currentTimeMillis() - startedAt
+            );
             return extractData(response, "AI 肺结节分割失败");
         } catch (RestClientException e) {
             log.warn("调 ct-viewer-service AI 分割失败 | volumeId={}", volumeId, e);

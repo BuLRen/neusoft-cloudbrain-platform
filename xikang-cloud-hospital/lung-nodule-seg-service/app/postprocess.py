@@ -4,7 +4,7 @@
 
 输入：
   binary_mask  : (D, H, W) uint8，0=背景, 1=肿瘤（由推理模块输出）
-  prob_map     : (D, H, W) float32，每体素的肿瘤预测概率
+  prob_map     : (D, H, W) float32，每体素的肿瘤预测概率；低内存模式下可为 None
   hu_arr       : (D, H, W) float32，原始 HU 值（未归一化，供密度计算）
   sitk_image   : sitk.Image（RAS 方向，统一间距），用于转世界坐标
 
@@ -78,7 +78,7 @@ def _voxel_to_world(
 
 def _compute_lesion_metrics(
     region,              # skimage regionprops region 对象
-    prob_map: np.ndarray,
+    prob_map: np.ndarray | None,
     hu_arr: np.ndarray,
     sitk_image: sitk.Image,
     spacing_dhw: Tuple[float, float, float],
@@ -92,7 +92,6 @@ def _compute_lesion_metrics(
                   spacing_dhw = (spacing_z, spacing_y, spacing_x)
     """
     sd, sh, sw = spacing_dhw
-    coords = region.coords  # (N, 3)，每行 = [d, h, w]
 
     # ---- 质心 ----
     centroid_dhw = region.centroid  # (d, h, w) float
@@ -112,15 +111,22 @@ def _compute_lesion_metrics(
     volume_mm3 = round(region.num_pixels * voxel_vol_mm3, 2)
     volume_cm3 = round(volume_mm3 / 1000.0, 4)
 
-    # ---- 平均 HU 密度 ----
-    d_coords = coords[:, 0]
-    h_coords = coords[:, 1]
-    w_coords = coords[:, 2]
-    mean_hu = float(np.mean(hu_arr[d_coords, h_coords, w_coords]))
+    # ---- 平均 HU 密度 / 置信度 ----
+    # 避免 region.coords 生成 (N, 3) 巨型坐标矩阵；大连通域时可节省大量内存。
+    region_mask = region.image
+    region_slices = (
+        slice(d_min, d_max),
+        slice(h_min, h_max),
+        slice(w_min, w_max),
+    )
+    mean_hu = float(np.mean(hu_arr[region_slices], where=region_mask))
     mean_hu = round(mean_hu, 1)
 
-    # ---- 置信度（平均预测概率） ----
-    confidence = float(np.mean(prob_map[d_coords, h_coords, w_coords]))
+    if prob_map is not None:
+        confidence = float(np.mean(prob_map[region_slices], where=region_mask))
+    else:
+        # nnU-Net 低内存模式不返回整幅概率图，用二值命中近似置信度。
+        confidence = 1.0
     confidence = round(confidence, 4)
 
     # ---- 风险分级 ----
@@ -156,7 +162,7 @@ def _cc_fallback(binary_mask: np.ndarray) -> np.ndarray:
 
 def extract_lesions(
     binary_mask: np.ndarray,
-    prob_map: np.ndarray,
+    prob_map: np.ndarray | None,
     hu_arr: np.ndarray,
     sitk_image: sitk.Image,
     processing_time_ms: int = 0,
@@ -168,7 +174,7 @@ def extract_lesions(
     参数
     ----
     binary_mask      : (D, H, W) uint8，0=背景, 1=肿瘤
-    prob_map         : (D, H, W) float32，肿瘤预测概率
+    prob_map         : (D, H, W) float32，肿瘤预测概率；低内存模式下可为 None
     hu_arr           : (D, H, W) float32，原始 HU 值
     sitk_image       : 重采样后的 sitk.Image（RAS），提供 spacing 与坐标转换
     processing_time_ms : 推理耗时（毫秒）

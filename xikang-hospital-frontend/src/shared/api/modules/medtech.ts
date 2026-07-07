@@ -3,6 +3,8 @@ import type { CtAnalyzeResult, CtSegmentResult } from './ctViewer'
 import type { MedicalTechnologyCatalogItem } from '@/shared/types/medtech'
 import type { SimulatedCheckStructuredOutput } from '@/shared/types/simulatedCheckResult'
 
+const CT_AI_SEGMENT_TIMEOUT_MS = 30 * 60 * 1000
+
 export type MedtechTechType = 'check' | 'inspection' | 'disposal'
 
 export interface MedtechApplication {
@@ -235,7 +237,7 @@ export const medtechApi = {
     return http<CheckImagingInfo>({
       url: `/medtech/check/${id}/imaging/segment/ai`,
       method: 'POST',
-      timeout: 10 * 60 * 1000,
+      timeout: CT_AI_SEGMENT_TIMEOUT_MS,
     })
   },
   startInspection(id: number, operatorInfo?: Record<string, unknown>) {

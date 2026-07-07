@@ -92,6 +92,17 @@ export interface CtHealthResult {
   algoReady?: boolean
   aiCtReady?: boolean
   lungNoduleReady?: boolean
+  lungNoduleStatus?: {
+    model_loaded?: boolean
+    backend?: string
+    device?: string
+    model_version?: string
+    inference_running?: boolean
+    inference_phase?: string | null
+    inference_elapsed_seconds?: number
+    inference_source?: string | null
+    error?: string
+  }
 }
 
 interface JavaLoadResponse {

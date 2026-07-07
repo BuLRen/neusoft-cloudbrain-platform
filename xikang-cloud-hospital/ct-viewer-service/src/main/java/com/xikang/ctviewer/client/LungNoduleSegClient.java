@@ -58,7 +58,14 @@ public class LungNoduleSegClient {
 
         String url = properties.getLungNodule().getBaseUrl() + "/internal/segment";
         try {
+            long startedAt = System.currentTimeMillis();
+            log.info("lung-nodule-seg-service segment start | srcNrrd={} outNrrd={}", srcNrrdPath, outNrrdPath);
             String json = lungNoduleSegRestTemplate.postForObject(url, entity, String.class);
+            log.info(
+                "lung-nodule-seg-service segment finished | srcNrrd={} elapsedMs={}",
+                srcNrrdPath,
+                System.currentTimeMillis() - startedAt
+            );
             if (json == null || json.isBlank()) {
                 throw new BusinessException(500, "肺结节分割服务无响应");
             }
@@ -88,15 +95,27 @@ public class LungNoduleSegClient {
      * 健康检查：服务是否就绪且模型已加载。
      */
     public boolean healthCheck() {
+        Map<String, Object> status = healthStatus();
+        return Boolean.TRUE.equals(status.get("model_loaded"));
+    }
+
+    /**
+     * 健康检查详情：包含模型加载状态，以及推理中阶段/耗时（如服务端支持）。
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> healthStatus() {
         try {
-            Map<?, ?> response = lungNoduleSegRestTemplate.getForObject(
+            Map<String, Object> response = lungNoduleSegRestTemplate.getForObject(
                 properties.getLungNodule().getBaseUrl() + "/health",
                 Map.class
             );
-            return response != null && Boolean.TRUE.equals(response.get("model_loaded"));
+            return response != null ? response : Map.of("model_loaded", false);
         } catch (RestClientException ex) {
             log.warn("lung-nodule-seg-service health check failed: {}", ex.getMessage());
-            return false;
+            return Map.of(
+                "model_loaded", false,
+                "error", ex.getMessage()
+            );
         }
     }
 

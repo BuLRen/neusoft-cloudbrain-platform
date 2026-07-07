@@ -103,8 +103,18 @@ NNUNET_CHECKPOINT = os.environ.get("NNUNET_CHECKPOINT", "checkpoint_best.pth")
 # 镜像 TTA：精度更高但推理慢约 8 倍，CPU/MPS 上建议关闭
 NNUNET_USE_MIRRORING = os.environ.get("NNUNET_USE_MIRRORING", "0") not in ("0", "false", "False", "")
 NNUNET_STEP_SIZE = float(os.environ.get("NNUNET_STEP_SIZE", "0.5"))
+# 低内存模式：默认不要求 nnU-Net 返回整幅 softmax 概率图，只保留最终分割。
+# 这会让病灶 confidence 字段退化为近似值，但能明显降低 CPU 推理峰值内存。
+NNUNET_RETURN_PROBABILITIES = os.environ.get("NNUNET_RETURN_PROBABILITIES", "0") not in (
+    "0", "false", "False", ""
+)
 NNUNET_MODEL_VERSION = os.environ.get(
     "NNUNET_MODEL_VERSION", "LungNoduleSeg-nnUNet-Task06Lung-fold0"
+)
+
+# 推理结束后主动释放 Python 大数组；CPU 推理场景下有助于降低下一次请求前的驻留内存。
+FORCE_GC_AFTER_INFERENCE = os.environ.get("LUNG_NODULE_SEG_FORCE_GC", "1") not in (
+    "0", "false", "False", ""
 )
 
 

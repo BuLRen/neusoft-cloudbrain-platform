@@ -14,6 +14,7 @@ import com.xikang.ctviewer.dto.VolumeBindRequestDto;
 import com.xikang.ctviewer.dto.VolumeMetaDto;
 import com.xikang.ctviewer.repository.VolumeMetaRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,6 +28,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CtViewerService {
 
     private final VolumeStorageService storageService;
@@ -42,7 +44,9 @@ public class CtViewerService {
         status.put("ok", true);
         status.put("algoReady", algoClient.healthCheck());
         status.put("aiCtReady", aiCtClient.healthCheck());
-        status.put("lungNoduleReady", lungNoduleSegClient.healthCheck());
+        Map<String, Object> lungNoduleStatus = lungNoduleSegClient.healthStatus();
+        status.put("lungNoduleReady", Boolean.TRUE.equals(lungNoduleStatus.get("model_loaded")));
+        status.put("lungNoduleStatus", lungNoduleStatus);
         return status;
     }
 
@@ -277,6 +281,13 @@ public class CtViewerService {
     private SegmentResponseDto runAiLungNoduleSegment(VolumeMetaDto source) {
         String resultId = storageService.newVolumeId();
         try {
+            long startedAt = System.currentTimeMillis();
+            log.info(
+                "AI lung nodule segment start | sourceVolumeId={} sourceName={} resultVolumeId={}",
+                source.getVolumeId(),
+                source.getSourceName(),
+                resultId
+            );
             storageService.ensureVolumeDir(resultId);
             Path outNrrd = storageService.nrrdPath(resultId);
 
@@ -332,6 +343,13 @@ public class CtViewerService {
                     response.setOverallRiskLevel(rl);
                 }
             }
+
+            log.info(
+                "AI lung nodule segment finished | sourceVolumeId={} resultVolumeId={} elapsedMs={}",
+                source.getVolumeId(),
+                resultId,
+                System.currentTimeMillis() - startedAt
+            );
 
             return response;
         } catch (IOException ex) {

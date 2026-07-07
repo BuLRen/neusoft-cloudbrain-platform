@@ -218,11 +218,13 @@ curl -X POST http://localhost:8222/internal/segment \
 | LUNG_NODULE_SEG_NNUNET_DEVICE | cpu（无CUDA时）| nnunet 后端推理设备 |
 | NNUNET_USE_MIRRORING | 0 | 是否启用镜像 TTA（精度更高但慢 ~8 倍，CPU/MPS 建议关闭）|
 | NNUNET_STEP_SIZE | 0.5 | 滑窗步长比例（tile_step_size）|
+| NNUNET_RETURN_PROBABILITIES | 0 | 是否返回整幅 softmax 概率图；默认关闭以降低 nnU-Net 峰值内存，关闭后 confidence 用近似值 |
+| LUNG_NODULE_SEG_FORCE_GC | 1 | 推理结束后主动触发 Python GC，帮助释放大数组引用 |
 
 ## 注意事项
 
 - `models/best_model.pth`、`models/nnunet_results/` 均不入 git，需手动放置 / 脚本下载
 - monai 后端推理在 Mac M2 CPU 上约 20-60 秒（取决于体数据大小），GPU 约 3-10 秒
-- nnunet 后端网络更大（6 级、最高 320 通道），CPU 推理会明显更慢，建议先用少量样本评估耗时，生产环境建议配 GPU
+- nnunet 后端网络更大（6 级、最高 320 通道），CPU 推理会明显更慢；默认启用低内存模式，不返回概率图，生产环境建议配 GPU
 - 风险分级为简化尺寸阈值规则（非严格 Lung-RADS），UI 中已注明"仅供参考"
 - 两种后端使用的训练数据都只是公开的 MSD Task06_Lung 63 例数据集，**均未经过临床验证**，仅供研究/工程验证使用，不能作为临床诊断或治疗决策依据

@@ -103,7 +103,7 @@ def run_nnunet_inference(predictor, file_path: str) -> Dict[str, Any]:
     ----
     dict:
       binary_mask   : (D, H, W) uint8，0=背景 / 1=肿瘤（原始输入分辨率）
-      prob_map      : (D, H, W) float32，肿瘤概率图（原始输入分辨率）
+      prob_map      : (D, H, W) float32 或 None。低内存模式下不返回整幅概率图
       hu_arr        : (D, H, W) float32，原始 HU 值（未归一化，供密度计算）
       sitk_image    : RAS 方向、原始 spacing 的 sitk.Image，供后处理计算世界坐标
       inference_ms  : 推理耗时（毫秒）
@@ -111,27 +111,35 @@ def run_nnunet_inference(predictor, file_path: str) -> Dict[str, Any]:
     image = sitk.ReadImage(file_path)
     image = _to_ras(image)
 
-    hu_arr = sitk.GetArrayFromImage(image).astype(np.float32)  # (Z, Y, X)，原始 HU
+    hu_arr = sitk.GetArrayFromImage(image).astype(np.float32, copy=False)  # (Z, Y, X)，原始 HU
 
     # 按 nnU-Net SimpleITKIO 约定构造输入：(C, Z, Y, X) + spacing (sz, sy, sx)
-    npy_image = hu_arr[None].astype(np.float32)  # (1, Z, Y, X)
+    npy_image = hu_arr[None]  # (1, Z, Y, X)，只增加通道维，不复制整幅体数据
     spacing_zyx = list(image.GetSpacing())[::-1]  # (sx,sy,sz) -> (sz,sy,sx)
     props = {"spacing": [float(s) for s in spacing_zyx]}
 
     t0 = time.time()
-    segmentation, probabilities = predictor.predict_single_npy_array(
-        npy_image, props, None, None, True
+    prediction = predictor.predict_single_npy_array(
+        npy_image, props, None, None, config.NNUNET_RETURN_PROBABILITIES
     )
     inference_ms = int(round((time.time() - t0) * 1000))
+    del npy_image
+
+    if isinstance(prediction, tuple):
+        segmentation = prediction[0]
+        probabilities = prediction[1] if len(prediction) > 1 else None
+    else:
+        segmentation = prediction
+        probabilities = None
 
     # segmentation: (Z, Y, X)，label id（0=背景，1=肿瘤）
-    # probabilities: (num_classes, Z, Y, X)，softmax 概率
+    # probabilities: (num_classes, Z, Y, X)，softmax 概率；默认不保留以节省内存
     binary_mask = (segmentation == 1).astype(np.uint8)
     if probabilities is not None and probabilities.shape[0] > 1:
         prob_map = np.asarray(probabilities[1], dtype=np.float32)
     else:
-        # 极端情况下拿不到概率图，退化为用二值 mask 近似
-        prob_map = binary_mask.astype(np.float32)
+        prob_map = None
+    del segmentation, probabilities
 
     return {
         "binary_mask": binary_mask,

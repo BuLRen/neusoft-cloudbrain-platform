@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElEmpty, ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
@@ -31,6 +31,10 @@ const algoReady = ref(false)
 const lungNoduleReady = ref(false)
 const reportPanelVisible = ref(true)
 const segmentPanelVisible = ref(false)
+const aiSegmentElapsedSeconds = ref(0)
+const aiSegmentPhase = ref('')
+let aiSegmentTimer: number | undefined
+let aiSegmentStartedAt = 0
 
 const id = computed(() => Number(route.query.id || 0))
 
@@ -68,6 +72,58 @@ const technicalSubline = computed(() => {
   if (meta?.file_count) parts.push(`${meta.file_count} 张`)
   return parts.join(' · ')
 })
+
+const aiSegmentStatusText = computed(() => {
+  if (!aiSegmenting.value) return ''
+  if (aiSegmentPhase.value) return aiSegmentPhase.value
+  if (aiSegmentElapsedSeconds.value >= 600) {
+    return 'nnU-Net CPU 推理仍在运行，较大的 CT 可能需要 10–30 分钟'
+  }
+  if (aiSegmentElapsedSeconds.value >= 120) {
+    return 'nnU-Net 正在整卷推理，期间页面会持续等待结果'
+  }
+  if (aiSegmentElapsedSeconds.value >= 30) {
+    return '正在预处理 CT 并提交 AI 模型推理'
+  }
+  return '正在提交 AI 分割请求'
+})
+
+function startAiSegmentProgress() {
+  stopAiSegmentProgress()
+  aiSegmentStartedAt = Date.now()
+  aiSegmentElapsedSeconds.value = 0
+  aiSegmentPhase.value = '正在提交 AI 分割请求'
+  aiSegmentTimer = window.setInterval(() => {
+    aiSegmentElapsedSeconds.value = Math.floor((Date.now() - aiSegmentStartedAt) / 1000)
+    if (aiSegmentElapsedSeconds.value > 0 && aiSegmentElapsedSeconds.value % 5 === 0) {
+      void refreshAiSegmentProgress()
+    }
+  }, 1000)
+}
+
+function stopAiSegmentProgress() {
+  if (aiSegmentTimer != null) {
+    window.clearInterval(aiSegmentTimer)
+    aiSegmentTimer = undefined
+  }
+  aiSegmentStartedAt = 0
+}
+
+async function refreshAiSegmentProgress() {
+  if (!aiSegmenting.value) return
+  try {
+    const health = await checkCtViewerHealth()
+    const status = health.lungNoduleStatus
+    if (status?.inference_phase) {
+      aiSegmentPhase.value = status.inference_phase
+    }
+    if (typeof status?.inference_elapsed_seconds === 'number' && status.inference_elapsed_seconds > 0) {
+      aiSegmentElapsedSeconds.value = status.inference_elapsed_seconds
+    }
+  } catch {
+    // 状态轮询失败不影响主请求，继续显示本地计时。
+  }
+}
 
 async function handleImagingUploaded(payload: { volumeId: string; sourceName: string }) {
   if (!id.value) return
@@ -154,8 +210,10 @@ async function handleRunAiSegmentation() {
   aiSegmenting.value = true
   segmentationError.value = ''
   segmentPanelVisible.value = true
+  startAiSegmentProgress()
 
   try {
+    void refreshAiSegmentProgress()
     const response = await medtechApi.aiSegmentCheckImaging(id.value)
     segmentationResult.value = response.segmentationResult ?? null
     if (!segmentationResult.value) {
@@ -177,10 +235,14 @@ async function handleRunAiSegmentation() {
       }
     }
   } catch (error) {
-    segmentationError.value = error instanceof Error ? error.message : 'AI 肺结节分割失败，请稍后重试'
+    const message = error instanceof Error ? error.message : 'AI 肺结节分割失败，请稍后重试'
+    segmentationError.value = message.includes('timeout')
+      ? 'AI 分割仍未在 30 分钟内返回结果，请查看 lung-nodule-seg-service 终端日志确认是否还在推理'
+      : message
     ElMessage.error(segmentationError.value)
   } finally {
     aiSegmenting.value = false
+    stopAiSegmentProgress()
   }
 }
 
@@ -256,6 +318,10 @@ onMounted(async () => {
   await loadCheckContext(id.value)
   syncAnalysisFromReport()
   syncSegmentationFromReport()
+})
+
+onBeforeUnmount(() => {
+  stopAiSegmentProgress()
 })
 </script>
 
@@ -391,6 +457,8 @@ onMounted(async () => {
           >
             <CtAiSegmentationPanel
               :loading="aiSegmenting"
+              :progress-message="aiSegmentStatusText"
+              :elapsed-seconds="aiSegmentElapsedSeconds"
               :error-message="segmentationError"
               :result="segmentationResult"
               @run-ai-segment="handleRunAiSegmentation"
