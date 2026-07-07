@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
-import { parseQrPayload, type QrParseResult } from '@/shared/utils/qrProtocol'
+import { ref, nextTick, onMounted, onUnmounted, computed, watch } from 'vue'
+import { parseQrPayload } from '@/shared/utils/qrProtocol'
 import { http } from '@/shared/api/request'
 import type { CheckInResult } from '@/shared/types/registration'
 
@@ -13,8 +13,6 @@ const showHistory = ref(false)
 
 const successResult = ref<CheckInResult | null>(null)
 const errorMessage = ref('')
-/** 最近一次扫码的协议解析结果（联调/展示用） */
-const lastParseResult = ref<QrParseResult | null>(null)
 
 interface HistoryItem {
   time: string
@@ -106,8 +104,15 @@ async function handleScanned() {
   if (!raw) return
   input.value = ''
 
+  // 报到机持续扫码：非 idle 态下扫到新码，自动清掉上一个结果再走流程，
+  // 不再要求用户点"继续扫码"按钮。SSE 旧订阅也要关，避免串到上一个医生的频道。
+  if (status.value !== 'idle') {
+    stopCallingSubscription()
+    successResult.value = null
+    errorMessage.value = ''
+  }
+
   const parsed = parseQrPayload(raw)
-  lastParseResult.value = parsed
 
   if (!parsed.ok) {
     status.value = 'fail'
@@ -147,7 +152,6 @@ function resetToIdle() {
   status.value = 'idle'
   successResult.value = null
   errorMessage.value = ''
-  lastParseResult.value = null
   void nextTick(() => inputEl.value?.focus())
 }
 
@@ -155,21 +159,15 @@ function focusInput() {
   inputEl.value?.focus()
 }
 
-/** 解析成功时的结构化字段（便于展示；未知字段可看下方 JSON） */
-const parseDisplayFields = computed(() => {
-  if (!lastParseResult.value?.ok) return []
-  const p = lastParseResult.value
-  return [
-    { label: '医院标识', value: p.hospital },
-    { label: '业务类型', value: p.type },
-    { label: '业务 ID', value: String(p.id) },
-    { label: '校验码', value: p.checkCode },
-  ]
-})
+/** calling 态不允许外部点击关闭，避免请求中关掉造成状态悬挂；success/fail 允许点遮罩关闭 */
+function closeResultIfNotCalling() {
+  if (status.value !== 'calling') resetToIdle()
+}
 
-const parseResultJson = computed(() => {
-  if (!lastParseResult.value) return ''
-  return JSON.stringify(lastParseResult.value, null, 2)
+// 状态切换后立刻把焦点拉回输入框，保证扫码枪随时都能扫入下一张码。
+// 关键场景：报到成功卡片出现后，用户无需点任何按钮即可扫下一位患者。
+watch(status, () => {
+  void nextTick(() => inputEl.value?.focus())
 })
 
 onMounted(() => {
@@ -330,48 +328,15 @@ const isNight = computed(() => {
 
           <div class="scan-hero__footer">
             <p class="scan-tip">将就诊二维码/身份证/就诊卡对准扫码口，扫码枪扫入上方输入框后回车</p>
-            <div class="device-status">
+            <div v-if="status !== 'idle'" class="scan-again-hint">
+              <span class="pulse-ring pulse-ring--sm"></span>
+              <span>已显示报到结果，下一位请直接继续扫码</span>
+            </div>
+            <div v-else class="device-status">
               <span class="pulse-ring pulse-ring--sm"></span>
               <span>设备正常，请扫描…</span>
             </div>
           </div>
-        </div>
-
-        <!-- 解析结果展示框 -->
-        <div
-          class="parse-box"
-          :class="{
-            'parse-box--ok': lastParseResult?.ok,
-            'parse-box--fail': lastParseResult && !lastParseResult.ok,
-          }"
-        >
-          <h3 class="parse-box__title">
-            <svg class="parse-box__icon" viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z" />
-            </svg>
-            扫码解析结果
-          </h3>
-          <p v-if="!lastParseResult" class="parse-box__placeholder">扫描后将在此显示原始内容与解析字段</p>
-          <template v-else>
-            <div class="parse-row">
-              <span class="parse-label">原始序列号</span>
-              <code class="parse-value parse-value--raw">{{ lastParseResult.raw }}</code>
-            </div>
-            <template v-if="lastParseResult.ok">
-              <div v-for="field in parseDisplayFields" :key="field.label" class="parse-row">
-                <span class="parse-label">{{ field.label }}</span>
-                <code class="parse-value">{{ field.value }}</code>
-              </div>
-            </template>
-            <div v-else class="parse-row parse-row--error">
-              <span class="parse-label">解析失败</span>
-              <span class="parse-value">{{ lastParseResult.message }}</span>
-            </div>
-            <details class="parse-json-wrap">
-              <summary>完整解析 JSON（联调）</summary>
-              <pre class="parse-json">{{ parseResultJson }}</pre>
-            </details>
-          </template>
         </div>
       </section>
 
@@ -411,90 +376,101 @@ const isNight = computed(() => {
         </div>
       </aside>
 
-      <!-- 报到结果（仅中间列下方，不影响左右高度） -->
-      <div class="main-layout__spacer" aria-hidden="true"></div>
-      <section v-if="status !== 'idle'" class="center-results">
-        <!-- calling -->
-        <div v-if="status === 'calling'" class="result-card result-card--calling">
-          <div class="spinner"></div>
-          <p>正在处理，请稍候…</p>
-        </div>
-
-        <!-- success -->
-        <div v-if="status === 'success' && successResult" class="result-card result-card--success">
-          <div class="success-icon">✓</div>
-          <h2>{{ successResult.alreadyCheckedIn ? '您已报到' : '报到成功' }}</h2>
-          <p class="patient-name">{{ successResult.patientName }} 您好</p>
-
-          <div class="info-grid">
-            <div class="info-cell">
-              <div class="label">就诊科室</div>
-              <div class="value">{{ successResult.departmentName || '—' }}</div>
-            </div>
-            <div class="info-cell">
-              <div class="label">接诊医生</div>
-              <div class="value">{{ successResult.doctorName || '—' }}</div>
-            </div>
-            <div class="info-cell">
-              <div class="label">就诊日期</div>
-              <div class="value">{{ successResult.visitDate || '—' }} {{ successResult.noon || '' }}</div>
-            </div>
-            <div class="info-cell">
-              <div class="label">挂号级别</div>
-              <div class="value">{{ successResult.registLevelName || '—' }}</div>
-            </div>
-          </div>
-
-          <div class="queue-box">
-            <div class="queue-item">
-              <span class="num">{{ successResult.queueNumber }}</span>
-              <span class="cap">您的号序</span>
-            </div>
-            <div class="queue-divider"></div>
-            <div class="queue-item">
-              <span class="num">{{ successResult.waitingAhead }}</span>
-              <span class="cap">前方等待</span>
-            </div>
-            <div class="queue-divider"></div>
-            <div class="queue-item">
-              <span class="num">{{ formatClock(successResult.checkInTime) }}</span>
-              <span class="cap">报到时间</span>
-            </div>
-          </div>
-
-          <p class="notice">请到候诊区等待叫号</p>
-
-          <div v-if="currentCalling" class="calling-now" :class="{ 'calling-me': callingMe }">
-            <div class="calling-now__label">现在叫号</div>
-            <div class="calling-now__num">{{ currentCalling.queueNumber ?? '—' }} 号</div>
-            <div class="calling-now__name">{{ currentCalling.patientName || '—' }}</div>
-            <div v-if="callingMe" class="calling-now__me">★ 请您就诊 ★</div>
-          </div>
-          <div v-else class="calling-now calling-now--idle">
-            <div class="calling-now__label">当前叫号</div>
-            <div class="calling-now__idle-text">等待医生叫号中…</div>
-          </div>
-
-          <div class="voice-bar">
-            语音提示：
-            <button v-if="!voiceReady" class="voice-btn" @click.stop="enableVoice">点击开启</button>
-            <span v-else class="voice-on">已开启</span>
-          </div>
-
-          <button class="action-btn" @click.stop="resetToIdle">继续扫码</button>
-        </div>
-
-        <!-- fail -->
-        <div v-if="status === 'fail'" class="result-card result-card--fail">
-          <div class="fail-icon">!</div>
-          <h2>无法报到</h2>
-          <p class="error-text">{{ errorMessage }}</p>
-          <p class="error-hint">如有疑问，请到人工窗口咨询</p>
-          <button class="action-btn" @click.stop="resetToIdle">我知道了</button>
-        </div>
-      </section>
-      <div v-if="status !== 'idle'" class="main-layout__spacer" aria-hidden="true"></div>
+      <!-- 报到结果：弹出层（可关闭） -->
+      <!-- calling 态不显示关闭按钮，避免用户在请求中关掉，导致状态悬挂；success/fail 都可 × -->
+      <!-- success 态下显示"叫号实时推送"等内容，用户决定何时关 -->
     </main>
+
+    <!-- 报到结果弹层 -->
+    <Teleport to="body">
+      <div v-if="status !== 'idle'" class="result-overlay" @click.self="closeResultIfNotCalling">
+        <div class="result-modal" role="dialog" aria-modal="true">
+          <button
+            v-if="status !== 'calling'"
+            type="button"
+            class="result-modal__close"
+            aria-label="关闭"
+            @click.stop="resetToIdle"
+          >×</button>
+
+          <!-- calling -->
+          <div v-if="status === 'calling'" class="result-card result-card--calling">
+            <div class="spinner"></div>
+            <p>正在处理，请稍候…</p>
+          </div>
+
+          <!-- success -->
+          <div v-if="status === 'success' && successResult" class="result-card result-card--success">
+            <div class="success-icon">✓</div>
+            <h2>{{ successResult.alreadyCheckedIn ? '您已报到' : '报到成功' }}</h2>
+            <p class="patient-name">{{ successResult.patientName }} 您好</p>
+
+            <div class="info-grid">
+              <div class="info-cell">
+                <div class="label">就诊科室</div>
+                <div class="value">{{ successResult.departmentName || '—' }}</div>
+              </div>
+              <div class="info-cell">
+                <div class="label">接诊医生</div>
+                <div class="value">{{ successResult.doctorName || '—' }}</div>
+              </div>
+              <div class="info-cell">
+                <div class="label">就诊日期</div>
+                <div class="value">{{ successResult.visitDate || '—' }} {{ successResult.noon || '' }}</div>
+              </div>
+              <div class="info-cell">
+                <div class="label">挂号级别</div>
+                <div class="value">{{ successResult.registLevelName || '—' }}</div>
+              </div>
+            </div>
+
+            <div class="queue-box">
+              <div class="queue-item">
+                <span class="num">{{ successResult.queueNumber }}</span>
+                <span class="cap">您的号序</span>
+              </div>
+              <div class="queue-divider"></div>
+              <div class="queue-item">
+                <span class="num">{{ successResult.waitingAhead }}</span>
+                <span class="cap">前方等待</span>
+              </div>
+              <div class="queue-divider"></div>
+              <div class="queue-item">
+                <span class="num">{{ formatClock(successResult.checkInTime) }}</span>
+                <span class="cap">报到时间</span>
+              </div>
+            </div>
+
+            <p class="notice">请到候诊区等待叫号</p>
+
+            <div v-if="currentCalling" class="calling-now" :class="{ 'calling-me': callingMe }">
+              <div class="calling-now__label">现在叫号</div>
+              <div class="calling-now__num">{{ currentCalling.queueNumber ?? '—' }} 号</div>
+              <div class="calling-now__name">{{ currentCalling.patientName || '—' }}</div>
+              <div v-if="callingMe" class="calling-now__me">★ 请您就诊 ★</div>
+            </div>
+            <div v-else class="calling-now calling-now--idle">
+              <div class="calling-now__label">当前叫号</div>
+              <div class="calling-now__idle-text">等待医生叫号中…</div>
+            </div>
+
+            <div class="voice-bar">
+              语音提示：
+              <button v-if="!voiceReady" class="voice-btn" @click.stop="enableVoice">点击开启</button>
+              <span v-else class="voice-on">已开启</span>
+            </div>
+          </div>
+
+          <!-- fail -->
+          <div v-if="status === 'fail'" class="result-card result-card--fail">
+            <div class="fail-icon">!</div>
+            <h2>无法报到</h2>
+            <p class="error-text">{{ errorMessage }}</p>
+            <p class="error-hint">如有疑问，请到人工窗口咨询</p>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- 底部 -->
     <footer class="page-footer">
@@ -684,22 +660,11 @@ const isNight = computed(() => {
   margin: 0 auto;
 }
 
-.main-layout__spacer {
-  /* 占位：报到结果行左右留空 */
-}
-
 .center-core {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
-}
-
-.center-results {
-  grid-column: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
 .side-panel {
@@ -1001,114 +966,19 @@ const isNight = computed(() => {
   font-weight: 600;
 }
 
-/* 解析结果框 */
-.parse-box {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 18px;
-  padding: 18px 20px;
-  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.08);
-  border: 1px solid #e2e8f0;
-}
-
-.parse-box--ok {
-  border-color: #86efac;
-  background: linear-gradient(180deg, #fff 0%, #f0fdf4 100%);
-}
-
-.parse-box--fail {
-  border-color: #fca5a5;
-  background: linear-gradient(180deg, #fff 0%, #fef2f2 100%);
-}
-
-.parse-box__title {
-  margin: 0 0 10px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #1e293b;
+/* 报到结果出现后，扫码区的"继续扫码"提示 */
+.scan-again-hint {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-}
-
-.parse-box__icon {
-  color: #3b82f6;
-  flex-shrink: 0;
-}
-
-.parse-box__placeholder {
-  margin: 0;
-  font-size: 13px;
-  color: #94a3b8;
-  text-align: center;
-  padding: 16px 0;
-}
-
-.parse-row {
-  display: grid;
-  grid-template-columns: 88px 1fr;
-  gap: 8px 12px;
-  align-items: start;
-  padding: 7px 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-}
-
-.parse-row:last-of-type {
-  border-bottom: none;
-}
-
-.parse-row--error .parse-value {
-  color: #ef4444;
-  font-weight: 500;
-}
-
-.parse-label {
-  font-size: 12px;
-  color: #64748b;
-  padding-top: 2px;
-}
-
-.parse-value {
   font-size: 14px;
-  color: #1e293b;
-  word-break: break-all;
-}
-
-.parse-value--raw {
-  display: block;
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 15px;
+  color: #16a34a;
   font-weight: 600;
-  color: #2563eb;
-  background: #eff6ff;
-  padding: 8px 12px;
-  border-radius: 8px;
 }
 
-.parse-json-wrap {
-  margin-top: 10px;
-}
-
-.parse-json-wrap summary {
-  font-size: 11px;
-  color: #94a3b8;
-  cursor: pointer;
-  user-select: none;
-}
-
-.parse-json-wrap summary:hover {
-  color: #64748b;
-}
-
-.parse-json {
-  margin: 8px 0 0;
-  padding: 10px;
-  background: #1e293b;
-  color: #e2e8f0;
-  border-radius: 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  overflow-x: auto;
-  font-family: 'SFMono-Regular', Consolas, monospace;
+.scan-again-hint .pulse-ring {
+  background: #16a34a;
 }
 
 @keyframes pulse {
@@ -1178,6 +1048,64 @@ const isNight = computed(() => {
 .flow-desc {
   font-size: 11px;
   color: #94a3b8;
+}
+
+/* 报到结果弹层 */
+.result-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  backdrop-filter: blur(4px);
+  padding: 24px;
+}
+
+.result-modal {
+  position: relative;
+  width: min(560px, 95vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  animation: result-pop 0.22s ease-out;
+}
+
+@keyframes result-pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+.result-modal__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: #f3f4f6;
+  border-radius: 50%;
+  font-size: 22px;
+  line-height: 1;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+  z-index: 1;
+}
+
+.result-modal__close:hover {
+  background: #e5e7eb;
+  color: #1f2937;
+}
+
+.result-modal__close:active {
+  transform: scale(0.92);
 }
 
 /* 结果卡片 */
@@ -1632,13 +1560,8 @@ const isNight = computed(() => {
   }
 
   .side-panel--left,
-  .side-panel--right,
-  .main-layout__spacer {
+  .side-panel--right {
     display: none;
-  }
-
-  .center-results {
-    grid-column: 1;
   }
 
   .hero-title h1 {
