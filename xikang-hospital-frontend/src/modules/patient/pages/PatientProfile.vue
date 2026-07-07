@@ -12,6 +12,8 @@ const authStore = useAuthStore()
 
 // 加载状态
 const loading = ref(false)
+// 所有数据源都失败的标志，用于显示重试入口
+const loadFailed = ref(false)
 
 // 添加就诊人弹窗
 const showAddDialog = ref(false)
@@ -124,25 +126,59 @@ const age = computed(() => {
 })
 
 // 获取用户信息
+// 多数据源 fallback：
+//   主路径：authStore.userId 有值 → 调 patientApi.getPatientList
+//   回退 1：userId 空 / 接口失败，但 authStore.patients 有数据（登录时已返回）→ 用 authStore.patients
+//   回退 2：都没有 → 显示错误提示，不静默失败
 async function loadData() {
   loading.value = true
   try {
     const userId = parseInt(authStore.userId || '0')
-    if (!userId) {
-      loading.value = false
-      return
+    let patients: PatientInfo[] | null = null
+
+    if (userId) {
+      try {
+        patients = await patientApi.getPatientList(userId)
+      } catch (err) {
+        // 主路径失败不直接抛出，走 fallback
+        console.warn('[PatientProfile] getPatientList 失败，尝试用登录会话数据:', err)
+      }
     }
 
-    // 调用 API 获取完整患者信息
-    const patients = await patientApi.getPatientList(userId)
+    // 主路径没拿到 → fallback 到 authStore.patients（字段映射 patientId → id）
+    if (!patients || patients.length === 0) {
+      const sessionPatients = authStore.patients || []
+      if (sessionPatients.length > 0) {
+        patients = sessionPatients.map(p => ({
+          id: p.patientId,
+          realName: p.realName,
+          idCard: p.idCard || '',
+          gender: p.gender || '',
+          birthdate: p.birthdate || '',
+          phone: p.phone,
+          homeAddress: p.homeAddress,
+          allergyHistory: p.allergyHistory,
+          accountBalance: p.accountBalance,
+          delmark: 0,
+          relation: p.relation,
+          isPrimary: p.isPrimary,
+        }))
+        console.info('[PatientProfile] 使用 authStore.patients 渲染（userId 不可用或接口失败）')
+      }
+    }
 
     if (patients && patients.length > 0) {
       // 通过 relation 判断本人和家人
       currentPatient.value = patients.find(p => p.relation === '本人') || patients[0]
       familyPatients.value = patients.filter(p => p.relation !== '本人')
+      loadFailed.value = false
+    } else {
+      // 所有数据源都空 → 标记失败，UI 显示重试入口
+      loadFailed.value = true
     }
   } catch (error) {
     console.error('加载患者信息失败:', error)
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -475,10 +511,34 @@ onMounted(() => {
   loadData()
   loadTransactions()
 })
+
+// 数据全部加载失败时，引导用户重新登录
+async function handleRelogin() {
+  try {
+    await authStore.logout()
+  } catch {
+    /* ignore */
+  }
+  // 路由守卫会自动把未登录用户重定向到登录页
+}
 </script>
 
 <template>
   <div class="patient-profile" v-loading="loading">
+    <!-- 全部数据源都失败时的兜底提示 -->
+    <div v-if="loadFailed && !currentPatient" class="load-failed-banner">
+      <div class="load-failed-content">
+        <span class="load-failed-icon">⚠️</span>
+        <div>
+          <div class="load-failed-title">患者信息加载失败</div>
+          <div class="load-failed-desc">可能是登录状态已过期或网络异常</div>
+        </div>
+      </div>
+      <div class="load-failed-actions">
+        <button class="btn-outline" @click="loadData">重新加载</button>
+        <button class="btn-link" @click="handleRelogin">重新登录</button>
+      </div>
+    </div>
     <!-- 个人信息卡片 -->
     <GlassCard class="profile-card">
       <div class="card-header">
@@ -875,6 +935,61 @@ onMounted(() => {
   width: 80%;
   margin: 0 10%;
   padding: 24px 0;
+}
+
+/* 加载失败兜底横幅 */
+.load-failed-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(245, 108, 108, 0.08) 0%, rgba(245, 108, 108, 0.02) 100%);
+  border: 1px solid rgba(245, 108, 108, 0.3);
+}
+
+.load-failed-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.load-failed-icon {
+  font-size: 28px;
+}
+
+.load-failed-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #c84545;
+}
+
+.load-failed-desc {
+  font-size: 13px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.load-failed-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.load-failed-actions .btn-link {
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #667eea;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.load-failed-actions .btn-link:hover {
+  background: rgba(102, 126, 234, 0.1);
 }
 
 /* 卡片通用样式 */
