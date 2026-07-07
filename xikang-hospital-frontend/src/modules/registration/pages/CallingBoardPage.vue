@@ -21,6 +21,7 @@
       :hero-call="heroCall"
       :hero-flash="heroFlash"
       :flash-register-id="flashRegisterId"
+      :flash-type="flashType"
       :recent-calls="recentCalls"
       :active-rows="activeRows"
       :table-page="tablePage"
@@ -76,6 +77,7 @@ const recentCalls = ref<CallItem[]>([])
 const totalWaiting = ref(0)
 const heroCall = ref<CallItem | null>(null)
 const flashRegisterId = ref<number | null>(null)
+const flashType = ref<'called' | 'answered' | 'passed' | null>(null)
 const flashDeptId = ref<number | null>(null)
 const heroFlash = ref(false)
 const tablePage = ref(0)
@@ -160,12 +162,36 @@ function applyDeptData(data: ReturnType<typeof createMockCallingBoardData>) {
 function triggerDeptHighlight(payload: CallItem) {
   heroCall.value = payload
   flashRegisterId.value = payload.registerId ?? null
+  flashType.value = 'called'
   heroFlash.value = true
   setTimeout(() => {
     flashRegisterId.value = null
+    flashType.value = null
     heroFlash.value = false
   }, 1500)
   speak(payload, false)
+}
+
+// ANSWERED：患者进诊室。叫号"主角"离场，对应行绿闪提示"已应答"。
+// 不做 TTS（避免大厅反复播报"XX 已进诊室"造成噪音）。
+function triggerAnsweredHighlight(payload: CallItem) {
+  flashRegisterId.value = payload.registerId ?? null
+  flashType.value = 'answered'
+  setTimeout(() => {
+    flashRegisterId.value = null
+    flashType.value = null
+  }, 1200)
+}
+
+// PASSED：过号。对应行柔橙闪提示"号已过"，不立即清 heroCall
+// （医生可能马上重叫同一条，避免 hero 区抖动）。
+function triggerPassedHighlight(payload: CallItem) {
+  flashRegisterId.value = payload.registerId ?? null
+  flashType.value = 'passed'
+  setTimeout(() => {
+    flashRegisterId.value = null
+    flashType.value = null
+  }, 1000)
 }
 
 function triggerHubHighlight(payload: CallItem) {
@@ -269,25 +295,35 @@ function connectSSE() {
   es.addEventListener('CALLED', (e: MessageEvent) => {
     try { handleEvent('CALLED', JSON.parse(e.data)) } catch { /* ignore */ }
   })
-  es.addEventListener('ANSWERED', () => { refreshCurrent() })
-  es.addEventListener('PASSED', () => { refreshCurrent() })
+  es.addEventListener('ANSWERED', (e: MessageEvent) => {
+    try { handleEvent('ANSWERED', JSON.parse(e.data)) } catch { /* ignore */ }
+  })
+  es.addEventListener('PASSED', (e: MessageEvent) => {
+    try { handleEvent('PASSED', JSON.parse(e.data)) } catch { /* ignore */ }
+  })
   es.onerror = () => { connState.value = 'error' }
 }
 
 function handleEvent(type: string, payload: CallItem) {
-  if (type !== 'CALLED') {
-    refreshCurrent()
-    return
-  }
-
+  // Hub 视图：所有事件都全量刷新科室卡片即可，CALLED 时额外高亮科室
   if (isHubView.value) {
-    triggerHubHighlight(payload)
+    if (type === 'CALLED') triggerHubHighlight(payload)
     refreshHub()
     return
   }
 
-  if (payload.departmentId === departmentId.value) {
+  // Dept 视图：本科事件触发局部高亮 + 全量刷新
+  if (payload.departmentId !== departmentId.value) {
+    refreshDept()
+    return
+  }
+
+  if (type === 'CALLED') {
     triggerDeptHighlight(payload)
+  } else if (type === 'ANSWERED') {
+    triggerAnsweredHighlight(payload)
+  } else if (type === 'PASSED') {
+    triggerPassedHighlight(payload)
   }
   refreshDept()
 }

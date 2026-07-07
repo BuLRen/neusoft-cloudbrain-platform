@@ -223,6 +223,7 @@ async function enterEncounter() {
 const currentCalling = ref<CallingResult | null>(null)
 const callingBusy = ref(false)
 let callingRefreshTimer: ReturnType<typeof setInterval> | null = null
+let callingEventSource: EventSource | null = null
 
 async function refreshWaitingQueue() {
   if (authStore.role !== 'physician') return
@@ -242,6 +243,31 @@ async function refreshCurrentCalling() {
   } catch {
     // 静默失败
   }
+}
+
+// 订阅本医生的 SSE 频道，收到任意叫号事件立即拉一次 currentCalling，
+// 比纯 15s 轮询快很多（多医生场景：别人帮叫/患者应答/超时过号 → 本工作站秒级感知）。
+function connectCallingStream() {
+  disconnectCallingStream()
+  // admin 等无 employeeId 的角色不订阅（也调不了 /call/current 之外的接口）
+  if (authStore.role !== 'physician') return
+  const doctorId = authStore.employeeId
+  if (!doctorId) return
+  // /calling/stream/ 在 gateway 白名单内，无需 JWT
+  const url = `/api/registration/calling/stream/doctor/${doctorId}`
+  callingEventSource = new EventSource(url)
+  const onEvent = () => { void refreshCurrentCalling() }
+  callingEventSource.addEventListener('CALLED', onEvent)
+  callingEventSource.addEventListener('ANSWERED', onEvent)
+  callingEventSource.addEventListener('PASSED', onEvent)
+  callingEventSource.onerror = () => {
+    // EventSource 会自动重连；这里不做事，自动重连后事件会继续到达
+  }
+}
+
+function disconnectCallingStream() {
+  callingEventSource?.close()
+  callingEventSource = null
 }
 
 async function callNext() {
@@ -340,12 +366,15 @@ watch(
 onMounted(() => {
   void loadPatients()
   void refreshCurrentCalling()
-  // 每 15 秒刷一次当前叫号（兜底，SSE 没接 workstation）
+  // SSE 实时推送：医生本人频道的叫号/应答/过号事件秒级到达
+  connectCallingStream()
+  // 15 秒轮询兜底（SSE 重连间隙/网络抖动时保证最终一致）
   callingRefreshTimer = setInterval(refreshCurrentCalling, 15_000)
 })
 
 onUnmounted(() => {
   if (callingRefreshTimer) clearInterval(callingRefreshTimer)
+  disconnectCallingStream()
 })
 </script>
 
@@ -621,8 +650,8 @@ onUnmounted(() => {
                 </button>
                 <button
                   class="calling-btn calling-btn--ghost"
-                  :disabled="callingBusy"
-                  @click="callSpecific(selectedRegisterId!)"
+                  :disabled="callingBusy || !currentCalling?.hasCalling || !currentCalling?.registerId"
+                  @click="callSpecific(currentCalling!.registerId!)"
                 >
                   <span class="calling-btn__text">重呼当前</span>
                 </button>

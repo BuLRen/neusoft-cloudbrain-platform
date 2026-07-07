@@ -127,6 +127,13 @@ public interface RegistrationMapper {
                                           @Param("visitDate") java.time.LocalDate visitDate);
 
     /**
+     * 查询某医生今天"最近一次叫号"记录（含已应答/过号，仅排除 NULL）。
+     * 用于患者端候诊页：当医生叫过的号都已应答时，仍能展示"医生刚叫到第 X 号"。
+     */
+    Register selectLatestCalledByDoctor(@Param("employeeId") Long employeeId,
+                                        @Param("visitDate") java.time.LocalDate visitDate);
+
+    /**
      * 查询某科室今天所有"已叫"（call_status=1）的号，按 called_time desc。
      * 用于候诊大屏的"叫号板"。
      */

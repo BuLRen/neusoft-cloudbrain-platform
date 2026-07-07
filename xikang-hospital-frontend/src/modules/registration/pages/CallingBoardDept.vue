@@ -59,7 +59,7 @@
           <tr
             v-for="row in pagedRows"
             :key="row.registerId"
-            :class="{ 'row-flash': row.registerId === flashRegisterId }"
+            :class="rowFlashClass(row.registerId)"
           >
             <td>{{ formatClinicRoom(row) }}</td>
             <td>{{ row.doctorName || '—' }}</td>
@@ -93,6 +93,7 @@ const props = defineProps<{
   heroCall: CallItem | null
   heroFlash: boolean
   flashRegisterId: number | null
+  flashType?: 'called' | 'answered' | 'passed' | null
   recentCalls: CallItem[]
   activeRows: CallItem[]
   tablePage: number
@@ -101,6 +102,21 @@ const props = defineProps<{
 const emit = defineEmits<{
   back: []
 }>()
+
+// 根据 flashType 选择行高亮 class：
+//   called   → row-flash（金色，叫号主角上场）
+//   answered → row-flash-answered（绿色，已应答离场）
+//   passed   → row-flash-passed（橙色，过号撤号）
+// 仅对 flashRegisterId 命中的行生效。
+function rowFlashClass(registerId: number): Record<string, boolean> {
+  if (registerId !== props.flashRegisterId) return {}
+  const type = props.flashType || 'called'
+  return {
+    'row-flash': type === 'called',
+    'row-flash-answered': type === 'answered',
+    'row-flash-passed': type === 'passed',
+  }
+}
 
 const marqueeItems = computed(() => props.recentCalls.slice(0, 5))
 
@@ -253,9 +269,23 @@ const pagedRows = computed(() => {
 .active-table tbody tr { background: rgba(255, 255, 255, 0.03); }
 .active-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.06); }
 .active-table tbody tr.row-flash { animation: rowFlash 1.5s ease-out; }
+.active-table tbody tr.row-flash-answered { animation: rowFlashAnswered 1.2s ease-out; }
+.active-table tbody tr.row-flash-passed { animation: rowFlashPassed 1s ease-out; }
 
 @keyframes rowFlash {
   0% { background: rgba(251, 191, 36, 0.35); }
+  100% { background: rgba(255, 255, 255, 0.03); }
+}
+
+/* 已应答：绿色提示"已进诊室" */
+@keyframes rowFlashAnswered {
+  0% { background: rgba(34, 197, 94, 0.35); }
+  100% { background: rgba(255, 255, 255, 0.03); }
+}
+
+/* 过号：橙色提示"号已过" */
+@keyframes rowFlashPassed {
+  0% { background: rgba(251, 146, 60, 0.32); }
   100% { background: rgba(255, 255, 255, 0.03); }
 }
 

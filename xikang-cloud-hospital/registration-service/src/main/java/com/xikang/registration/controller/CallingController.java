@@ -195,6 +195,75 @@ public class CallingController {
     }
 
     /**
+     * 我的号序查询（患者端候诊页用）。
+     *
+     * 入参：registerId（患者当前挂号 ID）
+     * 返回：
+     *   - queueNumber: 我在医生今日队列里的号序（countWaitingBefore + 1）
+     *   - waitingBefore: 排在我前面还有几人
+     *   - callStatus: 我自己的叫号状态（0 未叫 / 1 已叫 / 2 已应答 / 3 过号）
+     *   - callRound: 我的叫号次数（0/1/2）
+     *   - currentCalling: 我挂的医生当前的叫号（如果医生叫过号了，null=医生还没开始叫）
+     *       含 registerId / patientName（脱敏由前端做）/ queueNumber / doctorName 等
+     *
+     * 设计目的：患者打开候诊页时回答两个核心问题——
+     *   1. "现在叫到几号了？"（看 currentCalling.queueNumber）
+     *   2. "我是几号 / 前面还有几人？"（看 queueNumber / waitingBefore）
+     *
+     * 注意：该接口查的是当下快照，SSE 事件用于后续实时更新；
+     *      两者结合后患者端能持续看到最新状态。
+     */
+    @GetMapping("/my-position")
+    public Result<Map<String, Object>> myPosition(@RequestParam Long registerId) {
+        Register reg = registrationMapper.selectById(registerId);
+        if (reg == null) {
+            return Result.error("挂号记录不存在：id=" + registerId);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", reg.getId());
+        result.put("callStatus", reg.getCallStatus());
+        result.put("callRound", reg.getCallRound());
+        result.put("checkedIn", reg.getCheckInTime() != null);
+
+        // 关键区分：
+        //   queueNumber（"我是几号"）= 报到时分配的 queue_position，是固定号牌，不变化。
+        //     即使前面的号已应答走掉，"我是几号"仍然是 3，不会变成 1。
+        //   waitingBefore（"前面还有几人"）= 当前还在候诊、排在我前面的人数，动态变化。
+        //     已应答/已过号的 visit_state != 1，不算候诊中。
+        if (reg.getCheckInTime() != null) {
+            result.put("queueNumber", reg.getQueuePosition());
+            if (reg.getId() != null) {
+                int before = registrationMapper.countWaitingBefore(reg.getId());
+                result.put("waitingBefore", before);
+            } else {
+                result.put("waitingBefore", null);
+            }
+        } else {
+            result.put("queueNumber", null);
+            result.put("waitingBefore", null);
+        }
+
+        // "当前叫号"：优先取 call_status=1（正在叫未应答），其次取医生今天最近一次叫号（含已应答/过号）。
+        // 这样医生叫过号、患者都已应答时，仍能展示"医生刚叫到第 X 号"，而不是误显示"医生尚未开始叫号"。
+        Long doctorId = reg.getEmployeeId();
+        Map<String, Object> currentCalling = null;
+        if (doctorId != null) {
+            Register cur = registrationMapper.selectCurrentCallingByDoctor(doctorId, LocalDate.now());
+            if (cur == null) {
+                cur = registrationMapper.selectLatestCalledByDoctor(doctorId, LocalDate.now());
+            }
+            if (cur != null) {
+                // 复用 toViewList 拿到平铺字段（含 queueNumber / doctorName 等）
+                currentCalling = toViewList(List.of(cur)).get(0);
+            }
+        }
+        result.put("currentCalling", currentCalling);
+
+        return Result.success(result);
+    }
+
+    /**
      * 医生今日候诊队列（含号序、叫号状态、是否可调序）。
      */
     @GetMapping("/queue/doctor")
@@ -318,8 +387,11 @@ public class CallingController {
                     m.put("clinicRoom", doc.getClinicRoom());
                 }
             }
-            // 号序
-            if (r.getId() != null) {
+            // 号序：优先用报到时分配的 queue_position（固定号牌，不随前面号应答走掉而变化）。
+            // queue_position 为 NULL（老数据 / 未报到）时退化到动态 countWaitingBefore + 1。
+            if (r.getQueuePosition() != null) {
+                m.put("queueNumber", r.getQueuePosition());
+            } else if (r.getId() != null) {
                 int before = registrationMapper.countWaitingBefore(r.getId());
                 m.put("queueNumber", before + 1);
             }

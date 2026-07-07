@@ -19,7 +19,6 @@ const functions = [
   ['病历报告', '/pages/records/index', 'compose', 'blue'],
   ['处方记录', '/pages/prescription/index', 'list', 'green'],
   ['预约挂号', '/pages/registration/index', 'calendar-filled', 'green'],
-  ['AI预问诊', '/pages/previsit/index', 'chat-filled', 'purple'],
   ['随访管理', '/pages/followup/index', 'notification-filled', 'orange'],
   ['就诊人管理', '/pages/patients/index', 'person-filled', 'purple'],
 ] as const

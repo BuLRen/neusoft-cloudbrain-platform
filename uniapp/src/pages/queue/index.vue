@@ -11,24 +11,71 @@ const loading = ref(false)
 const registrations = ref<Registration[]>([])
 const current = computed(() => registrations.value.find(item => item.patientId === currentPatient.value?.patientId && item.status !== 3 && item.status !== 4) || null)
 
-// ===== 实时叫号 =====
+// ===== 我的号序快照（进页面时主动拉一次）=====
+// 来自 /registration/calling/my-position，回答两个问题：
+//   1. 我是几号 / 前面还有几人
+//   2. 当前医生叫到几号了（currentCallingSnapshot）
+// SSE 后续事件会覆盖 latestCalling，保持实时。
+interface CurrentCallingSnapshot {
+  registerId: number
+  patientName?: string
+  queueNumber?: number
+  callRound?: number
+  doctorName?: string
+  departmentName?: string
+}
+const myPosition = ref<{
+  queueNumber: number | null
+  waitingBefore: number | null
+  callStatus: number | null
+  callRound: number | null
+  checkedIn: boolean
+} | null>(null)
+const currentCallingSnapshot = ref<CurrentCallingSnapshot | null>(null)
+
+// ===== 实时叫号（SSE）=====
 // 科室订阅句柄
 let subscription: CallingSubscription | null = null
-// 当前叫号事件（科室视角：医生叫到的最近一个号）
+// 最新叫号事件（科室视角：医生叫到的最近一个号）
+// SSE 推过来后会覆盖快照，让"当前叫号"实时更新
 const latestCalling = ref<CallingEvent | null>(null)
 // SSE 连接状态：idle | connecting | connected | error
 const sseStatus = ref<'idle' | 'connecting' | 'connected' | 'error'>('idle')
 
+// 当前叫号（合并快照 + SSE 实时）：
+//   - 若 latestCalling 存在（SSE 已推过事件），用 latestCalling
+//   - 否则退化到 my-position 拿到的快照（医生叫过号但 SSE 没推过来时）
+const currentCalling = computed(() => {
+  if (latestCalling.value) {
+    return {
+      registerId: latestCalling.value.registerId,
+      patientName: latestCalling.value.patientName,
+      queueNumber: latestCalling.value.queueNumber,
+      callRound: latestCalling.value.callRound,
+      doctorName: latestCalling.value.doctorName,
+      departmentName: latestCalling.value.departmentName,
+      type: latestCalling.value.type,
+    }
+  }
+  if (currentCallingSnapshot.value) {
+    return { ...currentCallingSnapshot.value, type: undefined }
+  }
+  return null
+})
+
 // 状态徽章：候诊中 / 请就诊 / 已过号 / 重连中 / 未订阅
 const queueBadge = computed<{ text: string; tone: 'idle' | 'waiting' | 'called' | 'passed' }>(() => {
-  const calling = latestCalling.value
+  // 优先看自己的叫号状态（来自 my-position 快照）
+  const myStatus = myPosition.value?.callStatus
+  if (myStatus === 3) return { text: '已过号', tone: 'passed' }
+  if (myStatus === 2) return { text: '已就诊', tone: 'called' }
+  if (myStatus === 1 && current.value) return { text: '请就诊', tone: 'called' }
+
   if (sseStatus.value === 'connecting') return { text: '连接中', tone: 'idle' }
   if (sseStatus.value === 'error') return { text: '重连中', tone: 'idle' }
-  if (sseStatus.value !== 'connected') return { text: '未连接叫号', tone: 'idle' }
-  if (!calling) return { text: '等待叫号', tone: 'waiting' }
-  if (calling.type === 'PASSED') return { text: '已过号', tone: 'passed' }
-  // 检查是否叫到自己（registerId 匹配）
-  if (current.value && calling.registerId === current.value.id) return { text: '请就诊', tone: 'called' }
+
+  // 没报到时不显示"等待叫号"，要引导用户先报到
+  if (!myPosition.value?.checkedIn) return { text: '请先报到', tone: 'idle' }
   return { text: '候诊中', tone: 'waiting' }
 })
 
@@ -57,13 +104,15 @@ function startSubscription() {
       try { uni.vibrateShort?.({ type: 'medium' }) } catch { /* ignore */ }
       uni.showToast({ title: '到您了，请前往就诊', icon: 'none', duration: 3000 })
     }
+    // 收到事件后，自己的号序/状态也可能变了，重新拉一次快照
+    if (current.value) refreshMyPosition(current.value.id)
   }, () => {
-    // 收到 READY：连接已建立，等待医生叫号
+    // 收到 READY：连接已建立
     sseStatus.value = 'connected'
     reconnectAttempts = 0
   }, error => {
     sseStatus.value = 'error'
-    latestCalling.value = null
+    // 注意：不清 latestCalling（保留上一次的叫号信息，避免 UI 闪烁）
     console.warn('[queue SSE]', error.message)
     // 自动重连（最多 MAX_RECONNECT 次，每次间隔 5s）
     if (reconnectAttempts < MAX_RECONNECT) {
@@ -83,6 +132,55 @@ function stopSubscription() {
   latestCalling.value = null
 }
 
+// 拉一次"我的号序"快照（进页面 + SSE 事件后调用）
+// 失败时退化到 managed 接口的 checkedIn 字段，保证页面不空白
+async function refreshMyPosition(registerId: number) {
+  try {
+    const data = await registrationApi.myPosition(registerId)
+    myPosition.value = {
+      queueNumber: data.queueNumber ?? null,
+      waitingBefore: data.waitingBefore ?? null,
+      callStatus: data.callStatus ?? null,
+      callRound: data.callRound ?? null,
+      checkedIn: data.checkedIn ?? false,
+    }
+    // 快照里的"当前叫号"仅在 SSE 还没推过事件时使用
+    if (!latestCalling.value) {
+      currentCallingSnapshot.value = data.currentCalling ?? null
+    }
+    positionApiOk.value = true
+  } catch (e) {
+    // 接口可能没部署（远程旧版本后端），降级到 managed 接口的 checkedIn
+    if (positionApiOk.value) {
+      // 之前成功过，这次突然失败 → 静默（可能是网络抖动）
+      console.warn('[my-position] 偶发失败', e)
+    } else {
+      // 一直失败 → 接口大概率不存在，使用 managed 兜底
+      console.warn('[my-position] 接口不可用，降级到 managed', e)
+      fallbackFromManaged()
+    }
+  }
+}
+
+// 降级：从 managed 接口已经拿到的 current（Registration）里取 checkedIn
+// 这种情况下号序/前面几人/叫号状态都无法显示，但至少不会让"已报到"的患者看到"尚未报到"
+function fallbackFromManaged() {
+  if (!current.value) return
+  // managed 返回的 Registration 里有 checkedIn 字段（后端 toMap 已计算）
+  const checkedIn = !!(current.value as Registration & { checkedIn?: boolean }).checkedIn
+  myPosition.value = {
+    queueNumber: null,
+    waitingBefore: null,
+    callStatus: null,
+    callRound: null,
+    checkedIn,
+  }
+}
+
+// 标记 my-position 接口是否曾成功过（用于区分"接口不存在"vs"偶发失败"）
+// ref 是为了 onShow 重新进页面时能正确重置；切页面后状态不污染
+const positionApiOk = ref(false)
+
 async function load() {
   loading.value = true
   try {
@@ -90,8 +188,13 @@ async function load() {
   } finally {
     loading.value = false
   }
-  // 加载完成后（重新）订阅当前挂号的科室叫号
-  if (current.value) startSubscription()
+  // 拉到挂号后立即查我的号序快照（回答"现在叫到几号 / 我是几号"）
+  if (current.value) {
+    // 先用 managed 的 checkedIn 兜底，避免 my-position 接口失败时显示"尚未报到"
+    fallbackFromManaged()
+    void refreshMyPosition(current.value.id)
+    startSubscription()
+  }
 }
 
 async function checkin() {
@@ -133,6 +236,25 @@ onUnmounted(stopSubscription)
         <text class="hero-time">{{ current.visitDate }} {{ current.visitTime }}</text>
       </view>
 
+      <!-- 我的号序卡（回答：我是几号 / 前面还有几人）-->
+      <view class="mypos card">
+        <view class="mypos-head">
+          <text class="mypos-title">我的号序</text>
+          <text v-if="myPosition?.queueNumber" class="mypos-num">第 {{ myPosition.queueNumber }} 号</text>
+        </view>
+        <view v-if="myPosition?.checkedIn" class="mypos-body">
+          <text v-if="myPosition.callStatus === 1" class="mypos-hint mypos-hint--called">医生正在叫您，请进诊室</text>
+          <text v-else-if="myPosition.callStatus === 2" class="mypos-hint mypos-hint--done">已就诊</text>
+          <text v-else-if="myPosition.callStatus === 3" class="mypos-hint mypos-hint--passed">已过号，请联系分诊台</text>
+          <text v-else-if="myPosition.waitingBefore != null" class="mypos-hint">前面还有 {{ myPosition.waitingBefore }} 人</text>
+          <text v-else-if="myPosition.queueNumber != null" class="mypos-hint">已报到，排队中</text>
+          <text v-else class="mypos-hint">已报到，号序计算中…</text>
+        </view>
+        <view v-else class="mypos-body">
+          <text class="mypos-hint mypos-hint--warn">尚未报到，号序待报到后生成</text>
+        </view>
+      </view>
+
       <!-- 实时叫号卡 -->
       <view class="calling card" :class="queueBadge.tone">
         <view class="calling-head">
@@ -144,15 +266,16 @@ onUnmounted(stopSubscription)
             <ServiceIcon type="registration" tone="blue" size="large" />
           </view>
           <view class="calling-info">
-            <template v-if="latestCalling">
-              <text class="calling-now">当前叫号 第 {{ latestCalling.queueNumber || '--' }} 号</text>
-              <text class="calling-patient">患者 {{ maskName(latestCalling.patientName) }}</text>
-              <text class="calling-doctor">{{ latestCalling.doctorName || '医生待定' }} · {{ latestCalling.departmentName || current.departmentName || '' }}</text>
-              <text v-if="latestCalling.callRound" class="calling-round">第 {{ latestCalling.callRound }} 次叫号</text>
+            <template v-if="currentCalling">
+              <text class="calling-now">当前叫号 第 {{ currentCalling.queueNumber || '--' }} 号</text>
+              <text class="calling-patient">患者 {{ maskName(currentCalling.patientName) }}</text>
+              <text class="calling-doctor">{{ currentCalling.doctorName || '医生待定' }} · {{ currentCalling.departmentName || current.departmentName || '' }}</text>
+              <text v-if="currentCalling.callRound" class="calling-round">第 {{ currentCalling.callRound }} 次叫号</text>
             </template>
             <text v-else-if="sseStatus === 'connecting'" class="calling-empty">正在连接叫号服务…</text>
             <text v-else-if="sseStatus === 'error'" class="calling-empty">叫号服务连接异常，正在重连…</text>
-            <text v-else-if="sseStatus === 'connected'" class="calling-empty">已连接叫号服务，等待医生开始叫号…</text>
+            <text v-else-if="myPosition?.checkedIn" class="calling-empty">医生尚未开始叫号，请耐心等待</text>
+            <text v-else-if="sseStatus === 'connected'" class="calling-empty">已连接叫号服务，报到后将显示叫号信息</text>
             <text v-else class="calling-empty">等待叫号开始…</text>
           </view>
         </view>
@@ -270,6 +393,40 @@ onUnmounted(stopSubscription)
 .calling.called { box-shadow: inset 0 0 0 2rpx #b6ebd3; }
 
 .visit { margin-top: 22rpx; padding: 26rpx; }
+
+/* 我的号序卡 */
+.mypos {
+  margin-top: 22rpx;
+  padding: 26rpx;
+}
+.mypos-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 16rpx;
+}
+.mypos-title {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #112650;
+}
+.mypos-num {
+  font-size: 42rpx;
+  font-weight: 800;
+  color: #2878ff;
+}
+.mypos-body {
+  padding: 10rpx 0;
+}
+.mypos-hint {
+  font-size: 24rpx;
+  color: #718099;
+}
+.mypos-hint--called { color: #12a67d; font-weight: 600; }
+.mypos-hint--done { color: #8894a7; }
+.mypos-hint--passed { color: #c84545; }
+.mypos-hint--warn { color: #c47b00; }
+
 .visit-head {
   display: flex;
   justify-content: space-between;

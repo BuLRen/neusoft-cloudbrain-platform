@@ -10,4 +10,29 @@ export const registrationApi = {
   create:(data:Record<string,unknown>)=>request<Record<string,any>>({url:'/registration/register',method:'POST',data}),
   cancel:(id:number)=>request<Record<string,unknown>>({url:`/registration/${id}/cancel`,method:'PUT'}),
   checkIn:(id:number)=>request<Record<string,unknown>>({url:`/registration/${id}/check-in`,method:'POST'}),
+  /**
+   * 我的号序快照（患者端候诊页用）。
+   * 返回 { queueNumber, waitingBefore, callStatus, callRound, currentCalling }
+   * 用于进页面时拿到"现在叫到几号 / 我是几号 / 前面还有几人"，
+   * SSE 后续事件负责实时刷新。
+   */
+  myPosition:(registerId:number)=>request<{
+    registerId:number
+    callStatus?:number
+    callRound?:number
+    checkedIn?:boolean
+    queueNumber?:number|null
+    waitingBefore?:number|null
+    currentCalling?:{
+      registerId:number
+      patientName?:string
+      queueNumber?:number
+      callStatus?:number
+      callRound?:number
+      doctorId?:number
+      doctorName?:string
+      departmentId?:number
+      departmentName?:string
+    } | null
+  }>({url:'/registration/calling/my-position',data:{registerId},method:'GET'}),
 }
