@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpContactMapper">
+
+    <insert id="insertContactRecord" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_contact_record (
+            register_id, employee_id, contact_date, channel,
+            duration_minutes, summary, next_action
+        ) VALUES (
+            #{registerId}, #{employeeId}, COALESCE(#{contactDate}, CURRENT_DATE),
+            COALESCE(#{channel}, 'phone'),
+            #{durationMinutes}, #{summary}, #{nextAction}
+        )
+    </insert>
+
+    <select id="selectContactRecords" resultType="map">
+        SELECT
+            c.id AS "id",
+            c.register_id AS "registerId",
+            c.employee_id AS "employeeId",
+            e.realname AS "employeeName",
+            c.contact_date AS "contactDate",
+            c.channel AS "channel",
+            c.duration_minutes AS "durationMinutes",
+            c.summary AS "summary",
+            c.next_action AS "nextAction",
+            c.created_at AS "createdAt"
+        FROM follow_up_contact_record c
+        LEFT JOIN employee e ON e.id = c.employee_id
+        WHERE c.register_id = #{registerId}
+        ORDER BY c.contact_date DESC, c.created_at DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <select id="selectContactRecordById" resultType="map">
+        SELECT
+            c.id AS "id",
+            c.register_id AS "registerId",
+            c.employee_id AS "employeeId",
+            c.contact_date AS "contactDate",
+            c.channel AS "channel",
+            c.duration_minutes AS "durationMinutes",
+            c.summary AS "summary",
+            c.next_action AS "nextAction",
+            c.created_at AS "createdAt"
+        FROM follow_up_contact_record c
+        WHERE c.id = #{id}
+        LIMIT 1
+    </select>
+
+    <update id="completeShiftContactTask">
+        UPDATE follow_up_shift_contact_task
+        SET status = 'completed',
+            completed_at = NOW()
+        WHERE shift_id = #{shiftId}
+          AND register_id = #{registerId}
+          AND status = 'planned'
+    </update>
+
+</mapper>

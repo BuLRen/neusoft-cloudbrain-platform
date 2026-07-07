@@ -75,6 +75,19 @@
         </if>
     </sql>
 
+    <sql id="enrolledPatientCondition">
+        (
+            EXISTS (
+                SELECT 1 FROM follow_up_enrollment fe_en
+                WHERE fe_en.register_id = r.id AND fe_en.status = 'active'
+            )
+            OR EXISTS (
+                SELECT 1 FROM follow_up_patient_profile fp_en
+                WHERE fp_en.register_id = r.id
+            )
+        )
+    </sql>
+
     <select id="selectDashboardPatients" resultType="map">
         SELECT
             r.id AS "registerId",
@@ -83,9 +96,9 @@
             r.gender AS "gender",
             r.age AS "age",
             r.deptment_id AS "departmentId",
-            COALESCE(fp.priority_level, 'normal') AS "priorityLevel",
-            COALESCE(fp.interview_interval_days, 7) AS "interviewIntervalDays",
-            COALESCE(fp.observation_interval_days, 1) AS "observationIntervalDays",
+            COALESCE(fe.priority_level, fp.priority_level, 'normal') AS "priorityLevel",
+            COALESCE(fe.interview_interval_days, fp.interview_interval_days, 7) AS "interviewIntervalDays",
+            COALESCE(fe.observation_interval_days, fp.observation_interval_days, 1) AS "observationIntervalDays",
             (
                 EXISTS (
                     SELECT 1 FROM follow_up_enrollment fe0
@@ -93,6 +106,19 @@
                 )
                 OR fp.register_id IS NOT NULL
             ) AS "enrolled",
+            COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) AS "monitoringEmployeeId",
+            (
+                SELECT e.realname FROM employee e
+                WHERE e.id = COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id)
+                LIMIT 1
+            ) AS "monitoringEmployeeName",
+            COALESCE(fe.monitored_at, fp.monitored_at) AS "monitoredAt",
+            COALESCE(fe.follow_up_deadline, fp.follow_up_deadline) AS "followUpDeadline",
+            (
+                SELECT MAX(c.contact_date)
+                FROM follow_up_contact_record c
+                WHERE c.register_id = r.id
+            ) AS "lastContactDate",
             (
                 SELECT MAX(s.schedule_date)
                 FROM follow_up_day_schedule s
@@ -112,6 +138,11 @@
                   AND s.item_type = 'interview'
                   AND s.status = 'planned'
             ) AS "interviewScheduledToday",
+            EXISTS (
+                SELECT 1 FROM follow_up_contact_record c
+                WHERE c.register_id = r.id
+                  AND c.contact_date = #{targetDate}
+            ) AS "contactedToday",
             (
                 SELECT MAX(s.schedule_date)
                 FROM follow_up_day_schedule s
@@ -121,6 +152,7 @@
             ) AS "lastTrackedDate"
         FROM register r
         LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
         WHERE
         <include refid="eligibleRegisterCondition"/>
         <choose>
@@ -135,7 +167,7 @@
             </otherwise>
         </choose>
         ORDER BY
-            CASE COALESCE(fp.priority_level, 'normal')
+            CASE COALESCE(fe.priority_level, fp.priority_level, 'normal')
                 WHEN 'critical' THEN 1
                 WHEN 'high' THEN 2
                 ELSE 3
@@ -277,6 +309,25 @@
             ) AS "totalPatients",
             (
                 SELECT COUNT(*)
+                FROM register r
+                LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+                WHERE
+                <include refid="eligibleRegisterCondition"/>
+                <choose>
+                    <when test="demoOnlyProfile">
+                        AND EXISTS (
+                            SELECT 1 FROM follow_up_patient_profile fp_demo
+                            WHERE fp_demo.register_id = r.id AND fp_demo.department_id = #{departmentId}
+                        )
+                    </when>
+                    <otherwise>
+                        <include refid="departmentPatientScope"/>
+                    </otherwise>
+                </choose>
+                AND <include refid="enrolledPatientCondition"/>
+            ) AS "enrolledPatients",
+            (
+                SELECT COUNT(*)
                 FROM follow_up_day_schedule s
                 WHERE s.schedule_date = #{targetDate}
                   AND s.item_type = 'interview'
@@ -331,31 +382,40 @@
     <insert id="upsertPatientProfile">
         INSERT INTO follow_up_patient_profile (
             register_id, department_id, priority_level,
-            interview_interval_days, observation_interval_days
+            interview_interval_days, observation_interval_days,
+            monitoring_employee_id, monitored_at, follow_up_deadline
         ) VALUES (
             #{registerId}, #{departmentId},
             COALESCE(#{priorityLevel}, 'normal'),
             COALESCE(#{interviewIntervalDays}, 7),
-            COALESCE(#{observationIntervalDays}, 1)
+            COALESCE(#{observationIntervalDays}, 1),
+            #{monitoringEmployeeId}, #{monitoredAt},
+            COALESCE(#{followUpDeadline}, (CURRENT_DATE + INTERVAL '180 days')::date)
         )
         ON CONFLICT (register_id) DO UPDATE SET
             department_id = EXCLUDED.department_id,
             priority_level = COALESCE(EXCLUDED.priority_level, follow_up_patient_profile.priority_level),
             interview_interval_days = COALESCE(EXCLUDED.interview_interval_days, follow_up_patient_profile.interview_interval_days),
-            observation_interval_days = COALESCE(EXCLUDED.observation_interval_days, follow_up_patient_profile.observation_interval_days)
+            observation_interval_days = COALESCE(EXCLUDED.observation_interval_days, follow_up_patient_profile.observation_interval_days),
+            monitoring_employee_id = COALESCE(EXCLUDED.monitoring_employee_id, follow_up_patient_profile.monitoring_employee_id),
+            monitored_at = COALESCE(EXCLUDED.monitored_at, follow_up_patient_profile.monitored_at),
+            follow_up_deadline = COALESCE(EXCLUDED.follow_up_deadline, follow_up_patient_profile.follow_up_deadline)
     </insert>
 
     <insert id="upsertEnrollment">
         INSERT INTO follow_up_enrollment (
             register_id, managing_department_id, priority_level,
             interview_interval_days, observation_interval_days,
-            enrolled_by, status
+            enrolled_by, status,
+            monitoring_employee_id, monitored_at, follow_up_deadline
         ) VALUES (
             #{registerId}, #{departmentId},
             COALESCE(#{priorityLevel}, 'normal'),
             COALESCE(#{interviewIntervalDays}, 7),
             COALESCE(#{observationIntervalDays}, 1),
-            #{enrolledBy}, 'active'
+            #{enrolledBy}, 'active',
+            #{monitoringEmployeeId}, #{monitoredAt},
+            COALESCE(#{followUpDeadline}, (CURRENT_DATE + INTERVAL '180 days')::date)
         )
         ON CONFLICT (register_id) DO UPDATE SET
             managing_department_id = EXCLUDED.managing_department_id,
@@ -363,21 +423,98 @@
             interview_interval_days = COALESCE(EXCLUDED.interview_interval_days, follow_up_enrollment.interview_interval_days),
             observation_interval_days = COALESCE(EXCLUDED.observation_interval_days, follow_up_enrollment.observation_interval_days),
             enrolled_by = COALESCE(EXCLUDED.enrolled_by, follow_up_enrollment.enrolled_by),
+            monitoring_employee_id = COALESCE(EXCLUDED.monitoring_employee_id, follow_up_enrollment.monitoring_employee_id),
+            monitored_at = COALESCE(EXCLUDED.monitored_at, follow_up_enrollment.monitored_at),
+            follow_up_deadline = COALESCE(EXCLUDED.follow_up_deadline, follow_up_enrollment.follow_up_deadline),
             status = 'active'
     </insert>
 
+    <update id="claimMonitoring">
+        UPDATE follow_up_enrollment
+        SET monitoring_employee_id = #{employeeId},
+            monitored_at = NOW(),
+            follow_up_deadline = COALESCE(follow_up_deadline, (enrolled_at::date + INTERVAL '180 days')::date)
+        WHERE register_id = #{registerId}
+          AND status = 'active'
+          AND (monitoring_employee_id IS NULL OR monitoring_employee_id = #{employeeId})
+    </update>
+
+    <update id="claimMonitoringProfile">
+        UPDATE follow_up_patient_profile
+        SET monitoring_employee_id = #{employeeId},
+            monitored_at = NOW(),
+            follow_up_deadline = COALESCE(follow_up_deadline, (enrolled_at::date + INTERVAL '180 days')::date)
+        WHERE register_id = #{registerId}
+          AND (monitoring_employee_id IS NULL OR monitoring_employee_id = #{employeeId})
+    </update>
+
+    <update id="releaseMonitoring">
+        UPDATE follow_up_enrollment
+        SET monitoring_employee_id = NULL,
+            monitored_at = NULL
+        WHERE register_id = #{registerId}
+          AND (monitoring_employee_id = #{employeeId} OR #{forceRelease} = TRUE)
+          AND status = 'active'
+    </update>
+
+    <update id="releaseMonitoringProfile">
+        UPDATE follow_up_patient_profile
+        SET monitoring_employee_id = NULL,
+            monitored_at = NULL
+        WHERE register_id = #{registerId}
+          AND (monitoring_employee_id = #{employeeId} OR #{forceRelease} = TRUE)
+    </update>
+
+    <select id="selectMonitoringByRegisterId" resultType="map">
+        SELECT
+            COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) AS "monitoringEmployeeId",
+            COALESCE(fe.managing_department_id, fp.department_id) AS "departmentId"
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE r.id = #{registerId}
+        LIMIT 1
+    </select>
+
     <select id="selectEnrollmentByRegisterId" resultType="map">
         SELECT
-            fp.register_id AS "registerId",
-            fp.department_id AS "departmentId",
-            fp.priority_level AS "priorityLevel",
-            fp.interview_interval_days AS "interviewIntervalDays",
-            fp.observation_interval_days AS "observationIntervalDays",
-            fp.enrolled_at AS "enrolledAt",
-            true AS "enrolled"
-        FROM follow_up_patient_profile fp
-        WHERE fp.register_id = #{registerId}
+            r.id AS "registerId",
+            COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id) AS "departmentId",
+            COALESCE(fe.priority_level, fp.priority_level, 'normal') AS "priorityLevel",
+            COALESCE(fe.interview_interval_days, fp.interview_interval_days, 7) AS "interviewIntervalDays",
+            COALESCE(fe.observation_interval_days, fp.observation_interval_days, 1) AS "observationIntervalDays",
+            COALESCE(fe.enrolled_at, fp.enrolled_at) AS "enrolledAt",
+            (fe.status = 'active') AS "enrolled"
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE r.id = #{registerId}
         LIMIT 1
+    </select>
+
+    <select id="selectEligibleRegisterIdsNotEnrolled" resultType="long">
+        SELECT r.id
+        FROM register r
+        WHERE
+        <include refid="eligibleRegisterCondition"/>
+          AND NOT EXISTS (
+              SELECT 1 FROM follow_up_enrollment fe
+              WHERE fe.register_id = r.id AND fe.status = 'active'
+          )
+        ORDER BY r.id ASC
+        LIMIT #{limit}
+        OFFSET #{offset}
+    </select>
+
+    <select id="countEligibleRegisterIdsNotEnrolled" resultType="int">
+        SELECT COUNT(*)
+        FROM register r
+        WHERE
+        <include refid="eligibleRegisterCondition"/>
+          AND NOT EXISTS (
+              SELECT 1 FROM follow_up_enrollment fe
+              WHERE fe.register_id = r.id AND fe.status = 'active'
+          )
     </select>
 
 </mapper>

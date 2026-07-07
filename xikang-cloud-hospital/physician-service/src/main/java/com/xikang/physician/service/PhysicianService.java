@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.agent.AgentToolExecutionContext;
 import com.xikang.physician.client.CtViewerClient;
+import com.xikang.physician.client.MedtechFollowUpClient;
 import com.xikang.physician.client.NotificationClient;
 import com.xikang.physician.client.PaymentClient;
 import com.xikang.physician.context.PhysicianAuthContext;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -40,17 +42,20 @@ public class PhysicianService {
     private final PhysicianMapper physicianMapper;
     private final PaymentClient paymentClient;
     private final CtViewerClient ctViewerClient;
+    private final MedtechFollowUpClient medtechFollowUpClient;
     private final NotificationClient notificationClient;
 
     public PhysicianService(
         PhysicianMapper physicianMapper,
         PaymentClient paymentClient,
         CtViewerClient ctViewerClient,
+        MedtechFollowUpClient medtechFollowUpClient,
         NotificationClient notificationClient
     ) {
         this.physicianMapper = physicianMapper;
         this.paymentClient = paymentClient;
         this.ctViewerClient = ctViewerClient;
+        this.medtechFollowUpClient = medtechFollowUpClient;
         this.notificationClient = notificationClient;
     }
 
@@ -112,6 +117,16 @@ public class PhysicianService {
         if (current == VISIT_IN_PROGRESS || current == VISIT_EXAM_PENDING || current == VISIT_EXAM_COMPLETED) {
             physicianMapper.updateVisitState(registerId, VISIT_ENDED);
         }
+        Map<String, Object> patient = physicianMapper.selectPatientByRegisterId(registerId);
+        Long departmentId = patient != null && patient.get("departmentId") != null
+            ? Long.valueOf(String.valueOf(patient.get("departmentId")))
+            : null;
+        medtechFollowUpClient.notifyVisitEnded(
+            registerId,
+            LocalDateTime.now(),
+            PhysicianAuthContext.employeeIdOrNull(),
+            departmentId
+        );
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("registerId", registerId);
         result.put("visitState", currentVisitState(registerId));

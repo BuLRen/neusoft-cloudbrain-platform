@@ -68,4 +68,29 @@ public interface FollowUpDashboardMapper {
     int upsertEnrollment(Map<String, Object> payload);
 
     Map<String, Object> selectEnrollmentByRegisterId(@Param("registerId") Long registerId);
+
+    List<Long> selectEligibleRegisterIdsNotEnrolled(
+        @Param("limit") int limit,
+        @Param("offset") int offset
+    );
+
+    int countEligibleRegisterIdsNotEnrolled();
+
+    int claimMonitoring(@Param("registerId") Long registerId, @Param("employeeId") Long employeeId);
+
+    int claimMonitoringProfile(@Param("registerId") Long registerId, @Param("employeeId") Long employeeId);
+
+    int releaseMonitoring(
+        @Param("registerId") Long registerId,
+        @Param("employeeId") Long employeeId,
+        @Param("forceRelease") boolean forceRelease
+    );
+
+    int releaseMonitoringProfile(
+        @Param("registerId") Long registerId,
+        @Param("employeeId") Long employeeId,
+        @Param("forceRelease") boolean forceRelease
+    );
+
+    Map<String, Object> selectMonitoringByRegisterId(@Param("registerId") Long registerId);
 }

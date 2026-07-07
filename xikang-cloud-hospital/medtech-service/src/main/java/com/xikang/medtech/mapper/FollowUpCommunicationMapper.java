@@ -65,4 +65,16 @@ public interface FollowUpCommunicationMapper {
     );
 
     Map<String, Object> selectPatientBriefProfile(@Param("registerId") Long registerId);
+
+    int countDoctorUnreadTotal(@Param("departmentId") Long departmentId);
+
+    List<Map<String, Object>> selectDoctorUnreadByRegister(@Param("departmentId") Long departmentId);
+
+    int countPatientUnread(@Param("registerId") Long registerId);
+
+    Long selectLatestMessageId(@Param("sessionId") Long sessionId);
+
+    int markDoctorRead(@Param("sessionId") Long sessionId, @Param("messageId") Long messageId);
+
+    int markPatientRead(@Param("registerId") Long registerId, @Param("messageId") Long messageId);
 }

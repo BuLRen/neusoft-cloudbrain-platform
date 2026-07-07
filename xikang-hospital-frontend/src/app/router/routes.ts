@@ -27,6 +27,7 @@ import PharmacyDrugDictionaryPage from '@/modules/pharmacy/pages/DrugDictionaryP
 import PharmacyPrescriptionQueryPage from '@/modules/pharmacy/pages/PrescriptionQueryPage.vue'
 import AdminWorkspace from '@/modules/admin/AdminWorkspace.vue'
 import ScheduleManagement from '@/modules/admin/pages/ScheduleManagement.vue'
+import AdminFollowUpShiftPage from '@/modules/admin/pages/AdminFollowUpShiftPage.vue'
 import MasterDataManagement from '@/modules/admin/pages/MasterDataManagement.vue'
 import UserPermissionManagement from '@/modules/admin/pages/UserPermissionManagement.vue'
 import PersonnelManagement from '@/modules/admin/pages/PersonnelManagement.vue'
@@ -49,6 +50,7 @@ import MedtechCheckStartPage from '@/modules/medtech/pages/MedtechCheckStartPage
 import MedtechCheckResultPage from '@/modules/medtech/pages/MedtechCheckResultPage.vue'
 import MedtechInspectionStartPage from '@/modules/medtech/pages/MedtechInspectionStartPage.vue'
 import MedtechDisposalStartPage from '@/modules/medtech/pages/MedtechDisposalStartPage.vue'
+import FollowUpDashboardPage from '@/modules/medtech/follow-up/pages/FollowUpDashboardPage.vue'
 import CriticalValueBoardPage from '@/modules/medtech/pages/CriticalValueBoardPage.vue'
 import OutcomeAssessmentPage from '@/modules/medtech/follow-up/pages/OutcomeAssessmentPage.vue'
 import FollowUpCommunicationPage from '@/modules/medtech/follow-up/pages/FollowUpCommunicationPage.vue'
@@ -341,9 +343,15 @@ export const routes: RouteRecordRaw[] = [
         path: 'follow-up',
         name: 'FollowUp',
         component: RouteGroupView,
-        redirect: '/follow-up/outcome',
-        meta: { title: '随访系统', description: '疗效评估、医患沟通、随访记录', icon: 'Calendar', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up' },
+        redirect: '/follow-up/dashboard',
+        meta: { title: '随访系统', description: '工作台、疗效评估、医患沟通、随访记录', icon: 'Calendar', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up' },
         children: [
+          {
+            path: 'dashboard',
+            name: 'FollowUpDashboard',
+            component: FollowUpDashboardPage,
+            meta: { title: '工作台', roles: ['medtech', 'followup', 'admin'], requiresAuth: true, owner: 'B', group: 'follow-up', step: 0 },
+          },
           {
             path: 'outcome',
             name: 'FollowUpOutcome',
@@ -438,6 +446,12 @@ export const routes: RouteRecordRaw[] = [
             name: 'ScheduleManagement',
             component: ScheduleManagement,
             meta: { title: '智能排班', roles: ['admin'], requiresAuth: true, owner: 'B' },
+          },
+          {
+            path: 'follow-up-schedule',
+            name: 'AdminFollowUpShift',
+            component: AdminFollowUpShiftPage,
+            meta: { title: '随访排班', roles: ['admin'], requiresAuth: true, owner: 'B' },
           },
           {
             path: 'personnel',

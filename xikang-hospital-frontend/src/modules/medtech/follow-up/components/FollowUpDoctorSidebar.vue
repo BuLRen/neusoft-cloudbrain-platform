@@ -10,6 +10,13 @@ import type { FollowUpDashboardContext } from '@/shared/types/medtechFollowUp'
 const props = defineProps<{
   context: FollowUpDashboardContext | null
   targetDate: string
+  communicationUnread?: number
+  contactStats?: {
+    myMonitoring?: number
+    contacted?: number
+    due?: number
+    overdue?: number
+  }
 }>()
 
 const router = useRouter()
@@ -20,6 +27,7 @@ const displayName = computed(
 )
 
 const stats = computed(() => props.context?.stats ?? {})
+const contactStats = computed(() => props.contactStats ?? {})
 </script>
 
 <template>
@@ -41,21 +49,41 @@ const stats = computed(() => props.context?.stats ?? {})
       <div class="follow-up-sidebar__stats">
         <div>
           <span>在管患者</span>
+          <strong>{{ stats.enrolledPatients ?? stats.totalPatients ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>我的监视</span>
+          <strong>{{ contactStats?.myMonitoring ?? stats.myMonitoringCount ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>科室池</span>
           <strong>{{ stats.totalPatients ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>今日已联系</span>
+          <strong>{{ contactStats?.contacted ?? stats.todayContacted ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>待联系</span>
+          <strong>{{ contactStats?.due ?? 0 }}</strong>
+        </div>
+        <div>
+          <span>联系逾期</span>
+          <strong>{{ contactStats?.overdue ?? stats.contactOverdue ?? 0 }}</strong>
         </div>
         <div>
           <span>今日待访谈</span>
           <strong>{{ stats.todayInterviewsPlanned ?? 0 }}</strong>
-        </div>
-        <div>
-          <span>今日待观察</span>
-          <strong>{{ stats.todayObservationPending ?? 0 }}</strong>
         </div>
       </div>
 
       <div class="follow-up-sidebar__actions">
         <ElButton type="primary" plain @click="router.push('/follow-up/outcome')">
           疗效评估
+        </ElButton>
+        <ElButton plain @click="router.push('/follow-up/communication')">
+          医患沟通
+          <span v-if="(communicationUnread ?? 0) > 0" class="follow-up-sidebar__badge">{{ communicationUnread }}</span>
         </ElButton>
       </div>
     </GlassCard>
@@ -137,5 +165,21 @@ const stats = computed(() => props.context?.stats ?? {})
 .follow-up-sidebar__actions {
   display: grid;
   gap: var(--space-2);
+}
+
+.follow-up-sidebar__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-inline-start: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-danger, #e74c3c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 </style>
