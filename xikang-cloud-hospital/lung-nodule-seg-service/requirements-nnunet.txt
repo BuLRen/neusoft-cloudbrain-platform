@@ -1,0 +1,9 @@
+# nnU-Net 推理后端可选依赖
+# 仅在 LUNG_NODULE_SEG_BACKEND=nnunet 时需要安装：
+#   pip install -r requirements.txt -r requirements-nnunet.txt
+#
+# 注意：nnunetv2 依赖较重（batchgenerators/acvl_utils 等），
+# 会明显增大环境体积，默认不随主 requirements.txt 安装。
+
+nnunetv2>=2.5
+huggingface_hub>=0.24

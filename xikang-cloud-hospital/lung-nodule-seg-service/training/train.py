@@ -38,6 +38,7 @@ from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
 from monai.transforms import AsDiscrete, Compose
 from monai.utils import set_determinism
+from tqdm import tqdm
 
 # 添加项目根目录到 path，确保 training.* 可以正常导入
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -203,13 +204,30 @@ def train(args: argparse.Namespace) -> None:
     # ========================
     # 训练循环
     # ========================
-    for epoch in range(start_epoch, max_epochs):
+    epoch_bar = tqdm(
+        range(start_epoch, max_epochs),
+        initial=start_epoch,
+        total=max_epochs,
+        desc="训练进度",
+        unit="epoch",
+        dynamic_ncols=True,
+    )
+
+    for epoch in epoch_bar:
         model.train()
         epoch_loss = 0.0
         step = 0
         t0 = time.time()
 
-        for batch_data in train_loader:
+        batch_bar = tqdm(
+            train_loader,
+            desc=f"  Epoch {epoch + 1:04d}/{max_epochs} 训练",
+            unit="batch",
+            leave=False,
+            dynamic_ncols=True,
+        )
+
+        for batch_data in batch_bar:
             # RandCropByPosNegLabeld 会把 batch_size×num_samples 的 list 返回，
             # 需要把 list 中的样本堆叠成一个 batch
             if isinstance(batch_data["image"], list):
@@ -227,14 +245,20 @@ def train(args: argparse.Namespace) -> None:
             epoch_loss += loss.item()
             step += 1
 
+            # 实时更新 batch 进度条右侧信息
+            batch_bar.set_postfix(loss=f"{loss.item():.4f}", refresh=False)
+
+        batch_bar.close()
         scheduler.step()
         avg_loss = epoch_loss / max(step, 1)
         elapsed = time.time() - t0
-        print(
-            f"[train] epoch {epoch + 1:04d}/{max_epochs} "
-            f"loss={avg_loss:.4f}  "
-            f"lr={scheduler.get_last_lr()[0]:.2e}  "
-            f"time={elapsed:.1f}s"
+
+        # 更新 epoch 进度条右侧信息
+        epoch_bar.set_postfix(
+            loss=f"{avg_loss:.4f}",
+            lr=f"{scheduler.get_last_lr()[0]:.1e}",
+            best_dice=f"{best_dice:.4f}",
+            time=f"{elapsed:.0f}s",
         )
 
         # ---- 保存最后 epoch checkpoint ----
@@ -244,7 +268,14 @@ def train(args: argparse.Namespace) -> None:
         if (epoch + 1) % val_interval == 0:
             model.eval()
             with torch.no_grad():
-                for val_data in val_loader:
+                val_bar = tqdm(
+                    val_loader,
+                    desc=f"  Epoch {epoch + 1:04d}/{max_epochs} 验证",
+                    unit="case",
+                    leave=False,
+                    dynamic_ncols=True,
+                )
+                for val_data in val_bar:
                     val_inputs = val_data["image"].to(device)
                     val_labels = val_data["label"].to(device)
 
@@ -264,9 +295,11 @@ def train(args: argparse.Namespace) -> None:
                     val_labels_post = [post_label(x) for x in val_labels_list]
                     dice_metric(y_pred=val_outputs_post, y=val_labels_post)
 
+                val_bar.close()
+
             mean_dice = dice_metric.aggregate().item()
             dice_metric.reset()
-            print(f"[val]   epoch {epoch + 1:04d}  mean_dice={mean_dice:.4f}")
+            tqdm.write(f"[val] epoch {epoch + 1:04d}/{max_epochs}  mean_dice={mean_dice:.4f}")
 
             if mean_dice > best_dice:
                 best_dice = mean_dice
@@ -274,10 +307,19 @@ def train(args: argparse.Namespace) -> None:
                     best_model_path, model, optimizer, scheduler,
                     epoch + 1, best_dice, "best"
                 )
-                print(f"[val]   -> 新最优！best_dice={best_dice:.4f}，已保存 {best_model_path}")
+                tqdm.write(f"[val] ★ 新最优！best_dice={best_dice:.4f}，已保存 {best_model_path}")
 
-    print(f"\n训练完成。最优验证 Dice: {best_dice:.4f}")
-    print(f"最优权重路径: {best_model_path}")
+                # 同步更新 epoch 进度条中的 best_dice
+                epoch_bar.set_postfix(
+                    loss=f"{avg_loss:.4f}",
+                    lr=f"{scheduler.get_last_lr()[0]:.1e}",
+                    best_dice=f"{best_dice:.4f}",
+                    time=f"{elapsed:.0f}s",
+                )
+
+    epoch_bar.close()
+    tqdm.write(f"\n训练完成。最优验证 Dice: {best_dice:.4f}")
+    tqdm.write(f"最优权重路径: {best_model_path}")
 
 
 # ========================

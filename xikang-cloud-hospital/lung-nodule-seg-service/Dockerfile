@@ -10,14 +10,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ ./app/
+# 可选：nnU-Net 推理后端。默认不安装（体积较大），
+# 需要时构建镜像加 --build-arg INSTALL_NNUNET=1
+ARG INSTALL_NNUNET=0
+COPY requirements-nnunet.txt .
+RUN if [ "$INSTALL_NNUNET" = "1" ]; then pip install --no-cache-dir -r requirements-nnunet.txt; fi
 
-# 模型权重目录（挂载或手动拷贝 best_model.pth 到此处）
+COPY app/ ./app/
+COPY scripts/ ./scripts/
+
+# 模型权重目录（挂载或手动拷贝 best_model.pth / nnunet_results 到此处）
 RUN mkdir -p ./models
 
-EXPOSE 8107
+EXPOSE 8222
 
-ENV LUNG_NODULE_SEG_PORT=8107
+ENV LUNG_NODULE_SEG_PORT=8222
 ENV LUNG_NODULE_SEG_DEVICE=cpu
+ENV LUNG_NODULE_SEG_BACKEND=monai
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8107"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8222"]

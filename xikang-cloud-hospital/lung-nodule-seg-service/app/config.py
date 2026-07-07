@@ -12,7 +12,7 @@ import os
 # 服务
 # ========================
 SERVICE_HOST = "0.0.0.0"
-SERVICE_PORT = int(os.environ.get("LUNG_NODULE_SEG_PORT", 8107))
+SERVICE_PORT = int(os.environ.get("LUNG_NODULE_SEG_PORT", 8222))
 
 # ========================
 # 模型权重
@@ -67,6 +67,59 @@ RISK_LEVELS = [
 ]
 
 MODEL_VERSION = "LungNoduleSeg-v1.0"
+
+# ========================
+# 推理后端选择
+# ========================
+# "monai"  ：本仓库 training/ 自训练的轻量 3D UNet（默认，与 MODEL_PATH 配套）
+# "nnunet" ：官方 nnU-Net v2 框架推理（更大网络、更长训练，需额外安装
+#            requirements-nnunet.txt 并通过 scripts/download_nnunet_weights.py
+#            下载权重）
+ACTIVE_BACKEND = os.environ.get("LUNG_NODULE_SEG_BACKEND", "monai").strip().lower()
+if ACTIVE_BACKEND not in ("monai", "nnunet"):
+    raise ValueError(
+        f"不支持的 LUNG_NODULE_SEG_BACKEND={ACTIVE_BACKEND!r}，只能是 'monai' 或 'nnunet'"
+    )
+
+# ========================
+# nnU-Net 后端配置
+# ========================
+# nnUNet_results 目录，结构需为：
+#   {NNUNET_RESULTS_DIR}/{NNUNET_DATASET_NAME}/
+#     {NNUNET_TRAINER}__{NNUNET_PLANS}__{NNUNET_CONFIGURATION}/
+#       dataset.json, plans.json, dataset_fingerprint.json
+#       fold_{NNUNET_FOLD}/{NNUNET_CHECKPOINT}
+# 参考 scripts/download_nnunet_weights.py 自动生成该结构。
+NNUNET_RESULTS_DIR = os.environ.get(
+    "NNUNET_RESULTS_DIR",
+    os.path.join(SERVICE_ROOT, "models", "nnunet_results"),
+)
+NNUNET_DATASET_NAME = os.environ.get("NNUNET_DATASET_NAME", "Dataset502_MSDLung")
+NNUNET_TRAINER = os.environ.get("NNUNET_TRAINER", "nnUNetTrainer")
+NNUNET_PLANS = os.environ.get("NNUNET_PLANS", "nnUNetPlans")
+NNUNET_CONFIGURATION = os.environ.get("NNUNET_CONFIGURATION", "3d_fullres")
+NNUNET_FOLD = int(os.environ.get("NNUNET_FOLD", "0"))
+NNUNET_CHECKPOINT = os.environ.get("NNUNET_CHECKPOINT", "checkpoint_best.pth")
+# 镜像 TTA：精度更高但推理慢约 8 倍，CPU/MPS 上建议关闭
+NNUNET_USE_MIRRORING = os.environ.get("NNUNET_USE_MIRRORING", "0") not in ("0", "false", "False", "")
+NNUNET_STEP_SIZE = float(os.environ.get("NNUNET_STEP_SIZE", "0.5"))
+NNUNET_MODEL_VERSION = os.environ.get(
+    "NNUNET_MODEL_VERSION", "LungNoduleSeg-nnUNet-Task06Lung-fold0"
+)
+
+
+def _select_nnunet_device() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    # nnU-Net 官方代码只针对 cuda 做了 perform_everything_on_device 优化，
+    # mps 支持不完善，稳妥起见默认退回 cpu（可用环境变量强制指定）。
+    return "cpu"
+
+
+NNUNET_DEVICE = os.environ.get("LUNG_NODULE_SEG_NNUNET_DEVICE", _select_nnunet_device())
+
+# 当前生效的模型版本号（写入 summary.modelVersion / health 接口）
+ACTIVE_MODEL_VERSION = NNUNET_MODEL_VERSION if ACTIVE_BACKEND == "nnunet" else MODEL_VERSION
 
 # ========================
 # 并发

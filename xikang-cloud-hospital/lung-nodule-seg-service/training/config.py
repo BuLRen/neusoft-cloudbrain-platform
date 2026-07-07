@@ -53,12 +53,12 @@ MODEL_STRIDES = (2, 2, 2)         # len = len(channels) - 1
 # 训练
 # ========================
 BATCH_SIZE = 2
-MAX_EPOCHS = 300
+MAX_EPOCHS = 50
 VAL_INTERVAL = 5                  # 每 N 个 epoch 验证一次
 
 LEARNING_RATE = 2e-4
 WEIGHT_DECAY = 1e-5
-LR_T_MAX = 300                    # CosineAnnealing T_max = MAX_EPOCHS
+LR_T_MAX = 50                     # CosineAnnealing T_max = MAX_EPOCHS
 
 # ========================
 # checkpoint

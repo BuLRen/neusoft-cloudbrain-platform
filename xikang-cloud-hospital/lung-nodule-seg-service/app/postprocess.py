@@ -160,6 +160,7 @@ def extract_lesions(
     hu_arr: np.ndarray,
     sitk_image: sitk.Image,
     processing_time_ms: int = 0,
+    model_version: str | None = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     从二值掩码中提取独立病灶实例，计算各项指标。
@@ -241,7 +242,7 @@ def extract_lesions(
         "totalVolumeMm3": total_volume_mm3,
         "totalVolumeCm3": total_volume_cm3,
         "overallRiskLevel": overall_risk,
-        "modelVersion": config.MODEL_VERSION,
+        "modelVersion": model_version or config.ACTIVE_MODEL_VERSION,
         "processingTimeMs": processing_time_ms,
         "note": "AI 辅助结果仅供参考，非临床诊断依据，请结合临床综合判断。",
     }

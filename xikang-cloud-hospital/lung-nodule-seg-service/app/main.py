@@ -1,5 +1,9 @@
 """
-lung-nodule-seg-service — 肺结节 AI 分割推理服务（FastAPI + MONAI UNet）
+lung-nodule-seg-service — 肺结节 AI 分割推理服务（FastAPI）
+
+支持两种可切换的推理后端（LUNG_NODULE_SEG_BACKEND 环境变量控制）：
+  - "monai"  ：本仓库 training/ 自训练的轻量 3D UNet（默认）
+  - "nnunet" ：官方 nnU-Net v2 框架权重（更大网络，参见 app/nnunet_backend.py）
 
 路由：
   GET  /health               健康检查（裸 JSON，不走统一格式）
@@ -40,9 +44,11 @@ from .postprocess import extract_lesions
 # 全局状态
 # ========================
 _state: dict = {
-    "model": None,
+    "backend": config.ACTIVE_BACKEND,
+    "model": None,           # monai 后端：torch.nn.Module；nnunet 后端：nnUNetPredictor
     "model_loaded": False,
-    "device": config.DEVICE,
+    "device": config.DEVICE if config.ACTIVE_BACKEND == "monai" else config.NNUNET_DEVICE,
+    "model_version": config.ACTIVE_MODEL_VERSION,
     "load_error": None,
 }
 
@@ -101,15 +107,31 @@ def _load_model() -> Optional[torch.nn.Module]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    model = _load_model()
-    if model is not None:
-        _state["model"] = model
-        _state["model_loaded"] = True
-        print(f"[lung-nodule-seg-service] 模型加载成功: {config.MODEL_PATH}")
+    if config.ACTIVE_BACKEND == "nnunet":
+        from .nnunet_backend import load_predictor
+
+        print(f"[lung-nodule-seg-service] 使用 nnU-Net 后端，正在加载权重...")
+        predictor, err = load_predictor()
+        if predictor is not None:
+            _state["model"] = predictor
+            _state["model_loaded"] = True
+            _state["load_error"] = None
+            print(f"[lung-nodule-seg-service] nnU-Net 模型加载成功: {config.NNUNET_MODEL_VERSION}")
+        else:
+            _state["model"] = None
+            _state["model_loaded"] = False
+            _state["load_error"] = err
+            print(f"[lung-nodule-seg-service] nnU-Net 模型未加载（服务仍可启动）: {err}")
     else:
-        _state["model"] = None
-        _state["model_loaded"] = False
-        print(f"[lung-nodule-seg-service] 模型未加载（服务仍可启动）: {_state['load_error']}")
+        model = _load_model()
+        if model is not None:
+            _state["model"] = model
+            _state["model_loaded"] = True
+            print(f"[lung-nodule-seg-service] 模型加载成功: {config.MODEL_PATH}")
+        else:
+            _state["model"] = None
+            _state["model_loaded"] = False
+            print(f"[lung-nodule-seg-service] 模型未加载（服务仍可启动）: {_state['load_error']}")
     yield
     _state["model"] = None
     _state["model_loaded"] = False
@@ -120,7 +142,10 @@ async def lifespan(app: FastAPI):
 # ========================
 app = FastAPI(
     title="lung-nodule-seg-service",
-    description="肺结节 AI 分割推理服务（3D UNet，基于 Task06_Lung 训练）",
+    description=(
+        f"肺结节 AI 分割推理服务（当前后端: {config.ACTIVE_BACKEND}，"
+        f"模型版本: {config.ACTIVE_MODEL_VERSION}，基于 Task06_Lung 训练）"
+    ),
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -134,8 +159,10 @@ async def health():
     return {
         "ok": _state["model_loaded"],
         "model_loaded": _state["model_loaded"],
+        "backend": _state["backend"],
         "device": _state["device"],
-        "model_version": config.MODEL_VERSION,
+        "model_version": _state["model_version"],
+        "load_error": _state["load_error"],
     }
 
 
@@ -170,28 +197,45 @@ async def internal_segment(body: SegmentRequest):
         try:
             t_total_start = time.time()
 
-            # ---- 预处理 ----
-            try:
-                volume_tensor, resampled_image = await asyncio.to_thread(
-                    load_and_preprocess, body.src_nrrd_path
-                )
-                hu_arr, _ = await asyncio.to_thread(
-                    get_original_hu_array, body.src_nrrd_path
-                )
-            except Exception as e:
-                return _err(422, 4221, f"文件预处理失败: {e}")
+            # ---- 预处理 + 推理（两种后端分支，产出统一变量供后续复用） ----
+            if _state["backend"] == "nnunet":
+                from .nnunet_backend import run_nnunet_inference
 
-            # ---- 推理（在线程池避免阻塞事件循环） ----
-            try:
-                infer_result = await asyncio.to_thread(
-                    run_inference, _state["model"], volume_tensor
-                )
-            except Exception as e:
-                return _err(500, 5001, f"推理失败: {type(e).__name__}: {e}")
+                try:
+                    infer_result = await asyncio.to_thread(
+                        run_nnunet_inference, _state["model"], body.src_nrrd_path
+                    )
+                except Exception as e:
+                    return _err(500, 5001, f"nnU-Net 推理失败: {type(e).__name__}: {e}")
 
-            binary_mask = infer_result["binary_mask"]
-            prob_map = infer_result["prob_map"]
-            inference_ms = infer_result["inference_ms"]
+                binary_mask = infer_result["binary_mask"]
+                prob_map = infer_result["prob_map"]
+                hu_arr = infer_result["hu_arr"]
+                resampled_image = infer_result["sitk_image"]
+                inference_ms = infer_result["inference_ms"]
+            else:
+                # ---- 预处理 ----
+                try:
+                    volume_tensor, resampled_image = await asyncio.to_thread(
+                        load_and_preprocess, body.src_nrrd_path
+                    )
+                    hu_arr, _ = await asyncio.to_thread(
+                        get_original_hu_array, body.src_nrrd_path
+                    )
+                except Exception as e:
+                    return _err(422, 4221, f"文件预处理失败: {e}")
+
+                # ---- 推理（在线程池避免阻塞事件循环） ----
+                try:
+                    infer_result = await asyncio.to_thread(
+                        run_inference, _state["model"], volume_tensor
+                    )
+                except Exception as e:
+                    return _err(500, 5001, f"推理失败: {type(e).__name__}: {e}")
+
+                binary_mask = infer_result["binary_mask"]
+                prob_map = infer_result["prob_map"]
+                inference_ms = infer_result["inference_ms"]
 
             # ---- 写掩码 NRRD ----
             try:
@@ -215,6 +259,7 @@ async def internal_segment(body: SegmentRequest):
                     hu_arr,
                     resampled_image,
                     total_ms,
+                    _state["model_version"],
                 )
             except Exception as e:
                 lesions = []
@@ -224,7 +269,7 @@ async def internal_segment(body: SegmentRequest):
                     "totalVolumeMm3": 0.0,
                     "totalVolumeCm3": 0.0,
                     "overallRiskLevel": "低风险",
-                    "modelVersion": config.MODEL_VERSION,
+                    "modelVersion": _state["model_version"],
                     "processingTimeMs": inference_ms,
                     "note": f"后处理失败: {e}，建议安装 scikit-image",
                 }

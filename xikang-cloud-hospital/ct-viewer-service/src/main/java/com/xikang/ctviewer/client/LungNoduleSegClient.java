@@ -21,7 +21,7 @@ import java.util.Map;
 /**
  * lung-nodule-seg-service HTTP 客户端。
  * <p>
- * 调用 lung-nodule-seg-service（默认 http://127.0.0.1:8107）执行 AI 肺结节分割。
+ * 调用 lung-nodule-seg-service（默认 http://127.0.0.1:8222）执行 AI 肺结节分割。
  * 请求/响应格式与 ct-viewer-algo 保持一致（JSON body，{code,message,data} 包装）。
  */
 @Slf4j

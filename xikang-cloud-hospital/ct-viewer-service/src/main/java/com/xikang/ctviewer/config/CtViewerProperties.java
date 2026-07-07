@@ -112,7 +112,7 @@ public class CtViewerProperties {
     }
 
     public static class LungNodule {
-        private String baseUrl = "http://127.0.0.1:8107";
+        private String baseUrl = "http://127.0.0.1:8222";
         private int connectTimeoutMs = 30_000;
         private int readTimeoutMs = 600_000;
 
@@ -121,7 +121,7 @@ public class CtViewerProperties {
         }
 
         public void setBaseUrl(String baseUrl) {
-            this.baseUrl = baseUrl == null ? "http://127.0.0.1:8107" : baseUrl.trim();
+            this.baseUrl = baseUrl == null ? "http://127.0.0.1:8222" : baseUrl.trim();
         }
 
         public int getConnectTimeoutMs() {

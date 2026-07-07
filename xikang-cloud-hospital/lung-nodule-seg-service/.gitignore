@@ -4,6 +4,9 @@ models/*.pt
 models/*.onnx
 models/*.bin
 
+# nnU-Net 权重目录（体积大，通过 scripts/download_nnunet_weights.py 生成）
+models/nnunet_results/
+
 # 训练数据集（本地路径，不入库）
 data/
 datasets/

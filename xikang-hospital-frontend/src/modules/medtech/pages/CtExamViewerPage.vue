@@ -144,7 +144,7 @@ async function handleRunAiSegmentation() {
 
   await refreshAiCtHealth()
   if (!lungNoduleReady.value) {
-    const message = 'AI 肺结节分割服务未就绪，请先启动 lung-nodule-seg-service（默认端口 8107）并放置模型权重'
+    const message = 'AI 肺结节分割服务未就绪，请先启动 lung-nodule-seg-service（默认端口 8222）并放置模型权重'
     segmentationError.value = message
     segmentPanelVisible.value = true
     ElMessage.warning(message)
@@ -357,7 +357,7 @@ onMounted(async () => {
         <ElAlert
           v-if="started && !lungNoduleReady && !errorMessage"
           type="warning"
-          title="AI 肺结节分割服务未就绪：请启动 lung-nodule-seg-service（端口 8107）并放置模型权重"
+          title="AI 肺结节分割服务未就绪：请启动 lung-nodule-seg-service（端口 8222）并放置模型权重"
           show-icon
           :closable="false"
           class="ct-exam-alert"
