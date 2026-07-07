@@ -30,10 +30,12 @@ interface ChunkedRequestTask {
 }
 
 interface SubscribeOptions {
-  /** 订阅 topic 路径，如 /api/registration/calling/stream/department/3 */
+  /** 订阅 topic 路径，如 /registration/calling/stream/department/3（API_BASE_URL 已含 /api 前缀） */
   path: string
   /** 业务事件回调（CALLED/ANSWERED/PASSED） */
   onEvent: (event: CallingEvent) => void
+  /** 连接成功回调（收到后端 READY 事件后触发一次，用于把状态切到 connected） */
+  onConnected?: () => void
   /** 连接错误回调（可选） */
   onError?: (error: Error) => void
 }
@@ -147,7 +149,12 @@ export function subscribeCalling(opts: SubscribeOptions): CallingSubscription {
         if (line.startsWith('event:')) event = line.slice(6).trim()
         if (line.startsWith('data:')) values.push(line.slice(5).trim())
       })
-      if (event === 'HEARTBEAT' || event === 'READY' || event === 'PING') continue
+      if (event === 'HEARTBEAT' || event === 'PING') continue
+      // 后端连接建立后立即推 READY，触发 onConnected 让上层把状态切到 connected
+      if (event === 'READY') {
+        opts.onConnected?.()
+        continue
+      }
       const value = values.join('\n')
       if (!value) continue
       if (event === 'CALLED' || event === 'ANSWERED' || event === 'PASSED') {
@@ -220,6 +227,6 @@ export function subscribeCalling(opts: SubscribeOptions): CallingSubscription {
 }
 
 /** 订阅指定科室的叫号流 */
-export function subscribeDepartment(departmentId: number, onEvent: (event: CallingEvent) => void, onError?: (error: Error) => void): CallingSubscription {
-  return subscribeCalling({ path: `/api/registration/calling/stream/department/${departmentId}`, onEvent, onError })
+export function subscribeDepartment(departmentId: number, onEvent: (event: CallingEvent) => void, onConnected?: () => void, onError?: (error: Error) => void): CallingSubscription {
+  return subscribeCalling({ path: `/registration/calling/stream/department/${departmentId}`, onEvent, onConnected, onError })
 }

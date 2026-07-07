@@ -49,8 +49,7 @@ function startSubscription() {
   if (!deptId) return
   sseStatus.value = 'connecting'
   subscription = subscribeDepartment(deptId, event => {
-    sseStatus.value = 'connected'
-    // 连接成功后重置重连计数
+    // 收到任何业务事件说明连接肯定已建立，重置重连计数
     reconnectAttempts = 0
     latestCalling.value = event
     // 叫到自己时震动提醒
@@ -58,6 +57,10 @@ function startSubscription() {
       try { uni.vibrateShort?.({ type: 'medium' }) } catch { /* ignore */ }
       uni.showToast({ title: '到您了，请前往就诊', icon: 'none', duration: 3000 })
     }
+  }, () => {
+    // 收到 READY：连接已建立，等待医生叫号
+    sseStatus.value = 'connected'
+    reconnectAttempts = 0
   }, error => {
     sseStatus.value = 'error'
     latestCalling.value = null
@@ -148,7 +151,8 @@ onUnmounted(stopSubscription)
               <text v-if="latestCalling.callRound" class="calling-round">第 {{ latestCalling.callRound }} 次叫号</text>
             </template>
             <text v-else-if="sseStatus === 'connecting'" class="calling-empty">正在连接叫号服务…</text>
-            <text v-else-if="sseStatus === 'error'" class="calling-empty">叫号服务连接中，请稍候…</text>
+            <text v-else-if="sseStatus === 'error'" class="calling-empty">叫号服务连接异常，正在重连…</text>
+            <text v-else-if="sseStatus === 'connected'" class="calling-empty">已连接叫号服务，等待医生开始叫号…</text>
             <text v-else class="calling-empty">等待叫号开始…</text>
           </view>
         </view>
