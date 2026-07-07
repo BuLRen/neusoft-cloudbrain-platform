@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
 
@@ -76,6 +77,24 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public Result<Void> handleNoHandlerFoundException(NoHandlerFoundException e) {
         log.warn("No handler found: {}", e.getMessage());
+        return Result.error(404, "Resource not found");
+    }
+
+    /**
+     * Handle NoResourceFoundException (Spring Boot 3.2 / Spring MVC 6.1+)
+     *
+     * Spring MVC 6.1 起请求路径找不到 handler 时抛 NoResourceFoundException（不再是 NoHandlerFoundException），
+     * 它会落到兜底的 ResourceHttpRequestHandler 上。如果不显式处理，会被下方 handleException(Exception)
+     * 兜底返回 500 + 把"No static resource xxx"信息泄漏给前端。
+     *
+     * 典型触发场景：
+     *   - 路径真的不存在（拼写错误）
+     *   - @RequestParam(required=true) 缺参数时，Spring 6.1 在某些情况下也会抛此异常（而非 MissingServletRequestParameterException）
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Result<Void> handleNoResourceFoundException(NoResourceFoundException e) {
+        log.warn("No resource found: {}", e.getMessage());
         return Result.error(404, "Resource not found");
     }
 
