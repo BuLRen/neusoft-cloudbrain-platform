@@ -34,19 +34,21 @@
         WHERE id_card = #{idCard} AND delmark = 0
     </select>
 
+    <!--
+        用户-患者关系完全由 user_patient_managed 表管理（f7b78e7 重构后）
+        不再 LEFT JOIN users 取已删除的 patient_id 列；改用 INNER JOIN 简化。
+        relation 字段允许 NULL（表结构没有 NOT NULL 约束），保留 COALESCE 兜底。
+    -->
     <select id="selectByUserId" resultMap="BaseResultMap">
-        SELECT DISTINCT ON (p.id)
-               p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
+        SELECT p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
                p.allergy_history, p.account_balance, p.delmark, p.create_time, p.update_time,
                COALESCE(upm.relation, '本人') AS relation,
                CASE WHEN COALESCE(upm.relation, '本人') = '本人' THEN 1 ELSE 0 END AS is_primary
         FROM patient p
-        LEFT JOIN user_patient_managed upm ON p.id = upm.patient_id AND upm.user_id = #{userId}
-        LEFT JOIN users u ON u.id = #{userId}
-        WHERE p.delmark = 0
-          AND (upm.user_id IS NOT NULL OR p.id = u.patient_id)
-        ORDER BY p.id,
-                 CASE WHEN COALESCE(upm.relation, '本人') = '本人' THEN 0 ELSE 1 END,
+        INNER JOIN user_patient_managed upm ON p.id = upm.patient_id
+        WHERE upm.user_id = #{userId}
+          AND p.delmark = 0
+        ORDER BY CASE WHEN COALESCE(upm.relation, '本人') = '本人' THEN 0 ELSE 1 END,
                  p.create_time ASC
     </select>
 
