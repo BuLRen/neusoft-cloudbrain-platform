@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   ElButton,
   ElDialog,
@@ -11,11 +11,20 @@ import {
 } from 'element-plus'
 import { Document, MagicStick, View } from '@element-plus/icons-vue'
 import type { ClinicalExamItem, ClinicalNotebook } from '@/shared/api/modules/clinicalRecord'
+import type { EncounterPatientSummary } from '@/app/stores/encounter'
 import LabReportPrintSheet from '@/shared/components/LabReportPrintSheet.vue'
+import CtFilmPrintSheet from '@/shared/components/CtFilmPrintSheet.vue'
+import CtDiagnosisReportPrintSheet from '@/shared/components/CtDiagnosisReportPrintSheet.vue'
 import ResultPayloadViewer from '@/shared/components/ResultPayloadViewer.vue'
 import SimulatedCheckResultContent from '@/shared/components/SimulatedCheckResultContent.vue'
 import { useLabReportExport } from '@/shared/composables/useLabReportExport'
+import { useCtReportExport } from '@/shared/composables/useCtReportExport'
+import { usePhysicianCtCheckContext } from '@/modules/physician/composables/usePhysicianCtCheckContext'
 import { buildLabReportContextFromClinicalNotebook } from '@/shared/types/labReportPdf'
+import {
+  buildCtDiagnosisReportPdfContext,
+  buildCtFilmPdfContext,
+} from '@/shared/types/ctReportPdf'
 import {
   canExportExamItemPdf,
   canViewFullExamResult,
@@ -24,6 +33,7 @@ import {
   formatVisitDate,
   hasExamAiAnalysis,
   hasStructuredExamResult,
+  isCtExamItem,
   resolveExamStateTone,
   resolveExamStructuredOutput,
 } from '@/shared/utils/clinicalNotebook'
@@ -42,11 +52,48 @@ const props = withDefaults(defineProps<{
 })
 
 const printSheetRef = ref<InstanceType<typeof LabReportPrintSheet> | null>(null)
+const filmPrintRef = ref<InstanceType<typeof CtFilmPrintSheet> | null>(null)
+const ctDiagnosisPrintRef = ref<InstanceType<typeof CtDiagnosisReportPrintSheet> | null>(null)
+
 const { exportContext, exporting, exportPdf } = useLabReportExport()
+const {
+  filmExportContext,
+  diagnosisExportContext,
+  exportingFilm,
+  exportingReport,
+  exportFilmPdf,
+  exportDiagnosisPdf,
+} = useCtReportExport()
+const ctContext = usePhysicianCtCheckContext()
 
 const resultDialogVisible = ref(false)
 const resultDialogTitle = ref('结果详情')
 const resultDialogItem = ref<ClinicalExamItem | null>(null)
+
+const isCtResultDialog = computed(() =>
+  props.mode === 'physician' &&
+  Boolean(resultDialogItem.value && isCtExamItem(resultDialogItem.value)),
+)
+
+const ctExportPreparing = ref(false)
+
+const resultDialogWidth = computed(() => {
+  if (!resultDialogItem.value) return 'min(560px, 92vw)'
+  if (isCtResultDialog.value) return 'min(480px, 92vw)'
+  if (hasStructuredExamResult(resultDialogItem.value)) return 'min(760px, 94vw)'
+  return 'min(560px, 92vw)'
+})
+
+function notebookPatientSummary(): EncounterPatientSummary | null {
+  const header = props.notebook?.header
+  if (!header) return null
+  return {
+    realName: header.realName,
+    caseNumber: header.caseNumber,
+    gender: header.gender,
+    age: header.age,
+  }
+}
 
 const aiDialogVisible = ref(false)
 const aiDialogTitle = ref('AI 分析')
@@ -57,6 +104,20 @@ function openResultDialog(item: ClinicalExamItem) {
   resultDialogTitle.value = item.techName ? `${item.techName} · 结果详情` : '结果详情'
   resultDialogItem.value = item
   resultDialogVisible.value = true
+}
+
+async function ensureCtContextLoaded(): Promise<boolean> {
+  const item = resultDialogItem.value
+  const registerId = props.notebook?.registerId
+  if (!item || !registerId) return false
+  if (ctContext.checkResult.value?.id === item.id) return true
+  ctExportPreparing.value = true
+  try {
+    const row = await ctContext.loadCheckContext(registerId, item.id)
+    return Boolean(row)
+  } finally {
+    ctExportPreparing.value = false
+  }
 }
 
 function openAiDialog(item: ClinicalExamItem) {
@@ -77,6 +138,40 @@ async function handleExportResultPdf() {
   await exportPdf(
     buildLabReportContextFromClinicalNotebook(item, structuredOutput, props.notebook?.header),
     printSheetRef,
+  )
+}
+
+async function handleExportCtFilm() {
+  if (!(await ensureCtContextLoaded())) {
+    ElMessage.error(ctContext.errorMessage.value || '加载 CT 检查信息失败')
+    return
+  }
+  const row = ctContext.checkResult.value
+  if (!row || !ctContext.canViewImaging.value) {
+    ElMessage.warning('该检查尚未绑定 CT 影像')
+    return
+  }
+  await exportFilmPdf(
+    buildCtFilmPdfContext(row, notebookPatientSummary()),
+    filmPrintRef,
+    ctContext.fetchNrrd,
+  )
+}
+
+async function handleExportCtReport() {
+  if (!(await ensureCtContextLoaded())) {
+    ElMessage.error(ctContext.errorMessage.value || '加载 CT 检查信息失败')
+    return
+  }
+  const row = ctContext.checkResult.value
+  const schema = ctContext.resultFormSchema.value
+  if (!row || !schema) {
+    ElMessage.warning('暂无诊断报告可导出')
+    return
+  }
+  await exportDiagnosisPdf(
+    buildCtDiagnosisReportPdfContext(row, schema, notebookPatientSummary()),
+    ctDiagnosisPrintRef,
   )
 }
 </script>
@@ -264,13 +359,16 @@ async function handleExportResultPdf() {
     <ElDialog
       v-model="resultDialogVisible"
       :title="resultDialogTitle"
-      :width="resultDialogItem && hasStructuredExamResult(resultDialogItem) ? 'min(760px, 94vw)' : 'min(560px, 92vw)'"
+      :width="resultDialogWidth"
       align-center
       append-to-body
       destroy-on-close
       class="clinical-notebook__result-dialog"
     >
-      <div class="clinical-notebook__dialog-scroll">
+      <p v-if="isCtResultDialog" class="clinical-notebook__ct-export-hint">
+        请选择要导出的 PDF 类型。完整阅片请前往「检查/检验结果」页。
+      </p>
+      <div v-else class="clinical-notebook__dialog-scroll">
         <SimulatedCheckResultContent
           v-if="resultDialogItem && hasStructuredExamResult(resultDialogItem)"
           :data="resolveExamStructuredOutput(resultDialogItem)"
@@ -278,16 +376,40 @@ async function handleExportResultPdf() {
         <ResultPayloadViewer v-else-if="resultDialogItem" :raw="resultDialogItem.resultRaw" />
       </div>
       <template #footer>
-        <ElButton @click="resultDialogVisible = false">关闭</ElButton>
-        <ElButton
-          v-if="resultDialogItem && canExportExamItemPdf(resultDialogItem)"
-          :loading="exporting"
-          type="primary"
-          @click="handleExportResultPdf"
-        >
-          <ElIcon><Document /></ElIcon>
-          导出 PDF
-        </ElButton>
+        <div class="clinical-notebook__result-footer">
+          <ElButton @click="resultDialogVisible = false">关闭</ElButton>
+          <div
+            v-if="isCtResultDialog || (resultDialogItem && canExportExamItemPdf(resultDialogItem))"
+            class="clinical-notebook__result-footer-actions"
+          >
+            <template v-if="isCtResultDialog">
+              <ElButton
+                :loading="ctExportPreparing || exportingFilm"
+                @click="handleExportCtFilm"
+              >
+                <ElIcon><Document /></ElIcon>
+                导出胶片 PDF
+              </ElButton>
+              <ElButton
+                :loading="ctExportPreparing || exportingReport"
+                type="primary"
+                @click="handleExportCtReport"
+              >
+                <ElIcon><Document /></ElIcon>
+                导出报告 PDF
+              </ElButton>
+            </template>
+            <ElButton
+              v-else-if="resultDialogItem && canExportExamItemPdf(resultDialogItem)"
+              :loading="exporting"
+              type="primary"
+              @click="handleExportResultPdf"
+            >
+              <ElIcon><Document /></ElIcon>
+              导出 PDF
+            </ElButton>
+          </div>
+        </div>
       </template>
     </ElDialog>
 
@@ -310,6 +432,12 @@ async function handleExportResultPdf() {
 
     <div class="lab-report-print-host" aria-hidden="true">
       <LabReportPrintSheet ref="printSheetRef" :context="exportContext" />
+      <CtFilmPrintSheet
+        ref="filmPrintRef"
+        :context="filmExportContext"
+        :volume-meta="ctContext.volumeMeta"
+      />
+      <CtDiagnosisReportPrintSheet ref="ctDiagnosisPrintRef" :context="diagnosisExportContext" />
     </div>
   </div>
 </template>
@@ -459,6 +587,30 @@ async function handleExportResultPdf() {
   padding-inline-end: 2px;
 }
 
+.clinical-notebook__ct-export-hint {
+  margin: 0;
+  padding: var(--space-2) 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #6b6256;
+  text-align: center;
+}
+
+.clinical-notebook__result-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.clinical-notebook__result-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .clinical-notebook__table-wrap {
   overflow-x: auto;
 }
@@ -536,5 +688,9 @@ async function handleExportResultPdf() {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.clinical-notebook__result-dialog .el-dialog__footer {
+  padding-block: var(--space-3) var(--space-4);
 }
 </style>
