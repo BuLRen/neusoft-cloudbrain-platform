@@ -44,7 +44,7 @@
     </select>
 
     <select id="selectPending" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Column_List"/> FROM triage_desk_record WHERE status IN (0, 1) ORDER BY create_time DESC
+        SELECT <include refid="Base_Column_List"/> FROM triage_desk_record WHERE status = 0 ORDER BY create_time DESC
     </select>
 
     <select id="selectByPatientId" resultMap="BaseResultMap">

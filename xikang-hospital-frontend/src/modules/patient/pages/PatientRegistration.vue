@@ -8,6 +8,7 @@ import { aiApi } from '@/shared/api/modules/ai'
 import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
 import type { RegistrationRecord } from '@/shared/types/registration'
 import { useAuthStore } from '@/app/stores/auth'
+import { submitTriageDeskRecord } from '@/shared/utils/triageDesk'
 import { Warning } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
@@ -887,6 +888,12 @@ async function runTriage() {
     }
     triageResult.value = result
     ElMessage.success('AI 导诊结果已生成')
+    void submitTriageDeskRecord({
+      symptoms: triageForm.value.symptoms,
+      aiTriageResult: result,
+      patientId: getCurrentPatientId(),
+      patient: authStore.currentPatient,
+    })
   } catch (err: any) {
     console.error('[AI导诊] API 调用失败:', err?.message)
     // 网络/超时/服务端异常：弹窗提示用户，并清掉 mock fallback（避免显示假数据误导）

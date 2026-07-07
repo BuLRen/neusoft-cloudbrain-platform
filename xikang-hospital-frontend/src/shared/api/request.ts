@@ -31,18 +31,13 @@ function shouldSkipAuthHandling(config?: (AxiosRequestConfig & RequestOptions) |
 }
 
 function forceRedirectToLogin() {
-  console.warn('[DEBUG forceRedirectToLogin] 被调用！当前 URL =', window.location.href)
-  console.trace('[DEBUG forceRedirectToLogin] 调用栈')
   if (sessionExpiredRedirecting) {
-    console.warn('[DEBUG forceRedirectToLogin] sessionExpiredRedirecting 已为 true，跳过')
     return
   }
   sessionExpiredRedirecting = true
   if (typeof window !== 'undefined') {
     sessionStorage.setItem(sessionExpiredMessageKey, sessionExpiredMessage)
     if (!isOnLoginPage()) {
-      // 直接走 location 替换，避免和 router 守卫竞争
-      console.warn('[DEBUG forceRedirectToLogin] 即将执行 window.location.replace(/login)')
       window.location.replace(loginRoutePath)
     }
   }
@@ -90,15 +85,12 @@ request.interceptors.response.use(
     const status = error.response?.status
     const bodyCode = error.response?.data?.code
     const isAuthFailure = status === 401 || bodyCode === 401
-    console.warn('[DEBUG response.error]', originalRequest?.url, 'status=', status, 'bodyCode=', bodyCode, 'isAuthFailure=', isAuthFailure)
 
     if (isAuthFailure && shouldSkipAuthHandling(originalRequest as AxiosRequestConfig & RequestOptions)) {
-      console.log('[DEBUG] skipAuthHandling 命中，不跳登录，直接 reject')
       return Promise.reject(new Error(error.response?.data?.message || sessionExpiredMessage))
     }
 
     if (isAuthFailure && originalRequest && !(originalRequest as any).__isRetryRequest) {
-      console.warn('[DEBUG] 401 触发 token refresh...')
       ;(originalRequest as any).__isRetryRequest = true
       try {
         await refreshSessionOnce()
@@ -110,8 +102,7 @@ request.interceptors.response.use(
           }
         }
         return request.request(originalRequest)
-      } catch (refreshErr) {
-        console.warn('[DEBUG] refresh 失败，触发跳登录', refreshErr)
+      } catch {
         authStore.clearSession()
         forceRedirectToLogin()
         return Promise.reject(new Error(sessionExpiredMessage))
@@ -119,7 +110,6 @@ request.interceptors.response.use(
     }
 
     if (isAuthFailure) {
-      console.warn('[DEBUG] 401 已重试过仍失败，触发跳登录')
       authStore.clearSession()
       forceRedirectToLogin()
       return Promise.reject(new Error(sessionExpiredMessage))

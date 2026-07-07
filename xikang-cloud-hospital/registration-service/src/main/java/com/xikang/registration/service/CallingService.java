@@ -12,8 +12,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 叫号系统业务服务（设计文档 §4.1）。
@@ -205,6 +210,97 @@ public class CallingService {
         Map<String, Object> result = toCallResult(reg, false);
         result.put("hasCalling", true);
         return result;
+    }
+
+    /**
+     * 医生今日候诊队列（含号序与是否可调序）。
+     */
+    public List<Map<String, Object>> doctorWaitingQueue(Long employeeId) {
+        if (employeeId == null) {
+            return List.of();
+        }
+        List<Register> list = registrationMapper.selectWaitingByDoctor(employeeId, LocalDate.now());
+        List<Map<String, Object>> result = new ArrayList<>(list.size());
+        for (Register reg : list) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("registerId", reg.getId());
+            item.put("realName", reg.getRealName());
+            item.put("caseNumber", reg.getCaseNumber());
+            item.put("callStatus", reg.getCallStatus());
+            item.put("callRound", reg.getCallRound());
+            item.put("checkInTime", reg.getCheckInTime());
+            item.put("queuePosition", reg.getQueuePosition());
+            int before = registrationMapper.countWaitingBefore(reg.getId());
+            item.put("queueNumber", before + 1);
+            item.put("canReorder", canReorder(reg));
+            result.add(item);
+        }
+        return result;
+    }
+
+    /**
+     * 调整医生候诊队列顺序。
+     * registerIds 为完整队列的新顺序（含锁定中的 call_status=1 患者，且其位置不可变）。
+     */
+    @Transactional
+    public void reorderQueue(Long employeeId, List<Long> registerIds) {
+        if (employeeId == null) {
+            throw new IllegalArgumentException("缺少医生身份");
+        }
+        if (registerIds == null || registerIds.isEmpty()) {
+            throw new IllegalArgumentException("队列不能为空");
+        }
+        LocalDate today = LocalDate.now();
+        List<Register> current = registrationMapper.selectWaitingByDoctor(employeeId, today);
+        if (current.size() != registerIds.size()) {
+            throw new IllegalStateException("队列成员已变化，请刷新后重试");
+        }
+
+        Set<Long> currentIds = new HashSet<>();
+        Map<Long, Integer> oldIndex = new HashMap<>();
+        for (int i = 0; i < current.size(); i++) {
+            Register reg = current.get(i);
+            currentIds.add(reg.getId());
+            oldIndex.put(reg.getId(), i);
+        }
+        Set<Long> requestIds = new HashSet<>(registerIds);
+        if (!currentIds.equals(requestIds)) {
+            throw new IllegalStateException("队列成员与请求不一致，请刷新后重试");
+        }
+
+        for (int i = 0; i < registerIds.size(); i++) {
+            Long id = registerIds.get(i);
+            Register reg = current.stream()
+                    .filter(r -> r.getId().equals(id))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("挂号记录不存在：" + id));
+
+            if (Integer.valueOf(1).equals(reg.getCallStatus())) {
+                if (!oldIndex.get(id).equals(i)) {
+                    throw new IllegalStateException("正在叫号的患者不能调整顺序");
+                }
+            } else if (!canReorder(reg)) {
+                throw new IllegalStateException("该患者不允许调整顺序（registerId=" + id + "）");
+            }
+        }
+
+        for (int i = 0; i < registerIds.size(); i++) {
+            registrationMapper.updateQueuePosition(registerIds.get(i), i + 1);
+        }
+        log.info("[QUEUE] 医生 {} 调整候诊队列，共 {} 人", employeeId, registerIds.size());
+    }
+
+    private boolean canReorder(Register reg) {
+        if (Integer.valueOf(1).equals(reg.getCallStatus())) {
+            return false;
+        }
+        if (Integer.valueOf(3).equals(reg.getCallStatus())
+                && reg.getCallRound() != null
+                && reg.getCallRound() >= MAX_CALL_ROUND) {
+            return false;
+        }
+        return Integer.valueOf(0).equals(reg.getCallStatus())
+                || Integer.valueOf(3).equals(reg.getCallStatus());
     }
 
     // ==================== 内部辅助 ====================

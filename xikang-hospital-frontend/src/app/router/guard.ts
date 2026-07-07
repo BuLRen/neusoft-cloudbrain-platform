@@ -15,11 +15,9 @@ function isPublicPath(path: string) {
 export function setupRouterGuard(router: Router) {
   router.beforeEach(async (to) => {
     const authStore = useAuthStore()
-    console.log('[DEBUG guard] 进入守卫: to.path =', to.path, 'sessionChecked =', authStore.sessionChecked, 'hasToken =', Boolean(localStorage.getItem('access_token')))
 
     // 公共页面（候诊大屏 / 报到机）：完全跳过 session 加载与登录跳转
     if (isPublicPath(to.path)) {
-      console.log('[DEBUG guard] 命中公共页面，直接放行: ', to.path)
       return true
     }
 

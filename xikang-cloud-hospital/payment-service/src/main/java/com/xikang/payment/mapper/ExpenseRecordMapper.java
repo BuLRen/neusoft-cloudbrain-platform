@@ -4,6 +4,7 @@ import com.xikang.payment.entity.ExpenseRecord;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -78,8 +79,8 @@ public interface ExpenseRecordMapper {
     /**
      * 每日已缴费金额聚合（v3.2 替代 StatsMapper.dailyTrend 中的 charge 子查询）。
      */
-    List<java.util.Map<String, Object>> dailyCharges(@Param("startDate") String startDate,
-                                                    @Param("endDate") String endDate);
+    List<java.util.Map<String, Object>> dailyCharges(@Param("startDate") LocalDate startDate,
+                                                    @Param("endDate") LocalDate endDate);
 
     /**
      * 清理 orphan 行（v3.2 §4.2 定时任务）：status=0 且 register 不存在且创建超过 10 分钟。

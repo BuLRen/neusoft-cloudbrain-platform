@@ -20,6 +20,7 @@ import { useEncounterStore } from '@/app/stores/encounter'
 import ClinicalRecordDrawer from '../components/ClinicalRecordDrawer.vue'
 import EncounterProgressCard from '../components/EncounterProgressCard.vue'
 import MedicalRecordSummaryCard from '../components/MedicalRecordSummaryCard.vue'
+import PhysicianWaitingQueue from '../components/PhysicianWaitingQueue.vue'
 import { physicianRoute, resumePathForVisitState, visitStateLabel, VISIT_STATE } from '../constants/visitState'
 
 const VISIT_STATE_FILTER_OPTIONS = [
@@ -47,6 +48,7 @@ const notebookDrawerVisible = ref(false)
 const medicalRecord = ref<MedicalRecord | null>(null)
 const recordLoading = ref(false)
 let recordLoadSeq = 0
+const waitingQueueRef = ref<InstanceType<typeof PhysicianWaitingQueue> | null>(null)
 
 const selectedRegisterId = computed(() => selectedPatient.value?.registerId)
 
@@ -202,6 +204,7 @@ async function loadPatients() {
       if (refreshed) selectedPatient.value = refreshed
       syncSelectedPatientAfterFilter()
     }
+    await refreshWaitingQueue()
   } finally {
     loading.value = false
   }
@@ -221,6 +224,18 @@ const currentCalling = ref<CallingResult | null>(null)
 const callingBusy = ref(false)
 let callingRefreshTimer: ReturnType<typeof setInterval> | null = null
 
+async function refreshWaitingQueue() {
+  if (authStore.role !== 'physician') return
+  await waitingQueueRef.value?.refresh()
+}
+
+function onQueueSelect(registerId: number) {
+  const patient = allPatients.value.find((p) => p.registerId === registerId)
+  if (patient) {
+    selectedPatient.value = patient
+  }
+}
+
 async function refreshCurrentCalling() {
   try {
     currentCalling.value = await callingApi.currentCalling()
@@ -237,6 +252,7 @@ async function callNext() {
     currentCalling.value = result
     ElMessage.success(`已叫：${result.patientName || ''}（${result.queueNumber ?? '-'}号）`)
     await loadPatients()
+    await refreshWaitingQueue()
   } catch (e: any) {
     ElMessage.error(e?.message || '叫号失败')
   } finally {
@@ -252,6 +268,7 @@ async function callSpecific(registerId: number) {
     currentCalling.value = result
     ElMessage.success(`已叫：${result.patientName || ''}`)
     await loadPatients()
+    await refreshWaitingQueue()
   } catch (e: any) {
     ElMessage.error(e?.message || '叫号失败')
   } finally {
@@ -267,6 +284,7 @@ async function answerCurrent(registerId: number) {
     currentCalling.value = null
     ElMessage.success('已应答，进入接诊')
     await loadPatients()
+    await refreshWaitingQueue()
   } catch (e: any) {
     ElMessage.error(e?.message || '应答失败')
   } finally {
@@ -282,6 +300,7 @@ async function passCurrent(registerId: number) {
     currentCalling.value = null
     ElMessage.info('已标记过号')
     await loadPatients()
+    await refreshWaitingQueue()
   } catch (e: any) {
     ElMessage.error(e?.message || '过号失败')
   } finally {
@@ -363,6 +382,12 @@ onUnmounted(() => {
 
     <section class="queue-grid">
       <aside class="queue-sidebar">
+        <PhysicianWaitingQueue
+          v-if="authStore.role === 'physician'"
+          ref="waitingQueueRef"
+          :selected-register-id="selectedRegisterId"
+          @select="onQueueSelect"
+        />
         <GlassCard class="patient-panel">
         <div class="panel-heading">
           <h2>待诊 / 进行中患者</h2>

@@ -39,7 +39,7 @@ public class StatsController {
      * 每日趋势（默认近 7 天）
      */
     @GetMapping("/daily-trend")
-    public Result<List<Map<String, Object>>> dailyTrend(
+    public Result<Map<String, Object>> dailyTrend(
             @RequestParam(required = false, defaultValue = "7") Integer days) {
         return Result.success(statsService.dailyTrend(days));
     }

@@ -76,13 +76,14 @@ export interface AdminMonitoringMetric {
 }
 
 export interface AdminMonitoringAlert {
-  id: number
+  alertKey: string
   module: string
   title: string
   level: 'critical' | 'warning' | 'info'
   status: 'pending' | 'processing' | 'resolved'
   owner: string
   updatedAt: string
+  summary?: string
 }
 
 export interface ReportSummaryCard {

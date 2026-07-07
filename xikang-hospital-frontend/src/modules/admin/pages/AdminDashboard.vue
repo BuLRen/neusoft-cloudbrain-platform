@@ -7,6 +7,8 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { registrationApi } from '@/shared/api/modules/registration'
 import { pharmacyApi } from '@/shared/api/modules/pharmacy'
+import DepartmentPatientStatsPanel from '@/modules/admin/components/DepartmentPatientStatsPanel.vue'
+import { todayWorkloadRange } from '@/modules/admin/composables/useDepartmentPatientStats'
 import type {
   DepartmentWorkloadItem,
   DailyTrendPoint,
@@ -52,14 +54,15 @@ function open(path: string) {
 async function load() {
   loading.value = true
   try {
+    const { startDate, endDate } = todayWorkloadRange()
     const [k, t, w, ls] = await Promise.all([
       registrationApi.kpi(),
       registrationApi.dailyTrend(7),
-      registrationApi.departmentWorkload(),
+      registrationApi.departmentWorkload({ startDate, endDate }),
       pharmacyApi.lowStockDrugs({ page: 1, pageSize: 200 }),
     ])
     kpi.value = k
-    trend.value = t
+    trend.value = t.trend
     workload.value = w
     lowStock.value = ls.list
   } finally {
@@ -90,6 +93,8 @@ onMounted(load)
         <span class="kpi-hint">点击查看详情</span>
       </GlassCard>
     </section>
+
+    <DepartmentPatientStatsPanel />
 
     <section class="content-grid">
       <GlassCard class="panel panel--trend">
@@ -135,8 +140,8 @@ onMounted(load)
       <GlassCard class="panel panel--table">
         <div class="panel__header">
           <div>
-            <h3>科室工作量 Top 8</h3>
-            <p>按挂号量排序的主要科室业务概览。</p>
+            <h3>今日科室工作量 Top 8</h3>
+            <p>按今日挂号量排序的主要科室业务概览。</p>
           </div>
         </div>
         <ElTable :data="workloadTop">

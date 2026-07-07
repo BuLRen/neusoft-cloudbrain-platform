@@ -650,3 +650,24 @@ export const callingApi = {
     return http<CallingResult>({ url: '/physician/call/current', method: 'GET' })
   },
 }
+
+export interface PhysicianQueueItem {
+  registerId: number
+  realName?: string
+  caseNumber?: string
+  queueNumber?: number
+  queuePosition?: number
+  callStatus?: number
+  callRound?: number
+  checkInTime?: string
+  canReorder?: boolean
+}
+
+export const queueApi = {
+  waiting() {
+    return http<PhysicianQueueItem[]>({ url: '/physician/queue/waiting', method: 'GET' })
+  },
+  reorder(registerIds: number[]) {
+    return http<void>({ url: '/physician/queue/reorder', method: 'PUT', data: { registerIds } })
+  },
+}
