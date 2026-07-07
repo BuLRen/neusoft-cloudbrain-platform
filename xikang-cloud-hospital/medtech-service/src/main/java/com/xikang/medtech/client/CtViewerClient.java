@@ -134,6 +134,33 @@ public class CtViewerClient {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
+    public Map<String, Object> aiSegmentVolume(String volumeId) {
+        if (!StringUtils.hasText(volumeId)) {
+            throw new BusinessException(400, "volumeId 不能为空");
+        }
+        if (!StringUtils.hasText(internalToken)) {
+            throw new BusinessException(500, "未配置 ct-viewer internal token，无法执行 AI 肺结节分割");
+        }
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(AgentContextHeaders.INTERNAL_TOKEN, internalToken);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(Map.of(), headers);
+            Map<String, Object> response = restTemplate.exchange(
+                ctViewerBaseUrl + "/api/ct-viewer/internal/volume/{volumeId}/segment/ai",
+                HttpMethod.POST,
+                entity,
+                Map.class,
+                Map.of("volumeId", volumeId.trim())
+            ).getBody();
+            return extractData(response, "AI 肺结节分割失败");
+        } catch (RestClientException e) {
+            log.warn("调 ct-viewer-service AI 分割失败 | volumeId={}", volumeId, e);
+            throw new BusinessException(500, "AI 肺结节分割服务暂时不可用", e);
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public Map<String, Object> getVolumeMeta(String volumeId) {
         try {
             Map<String, Object> response = restTemplate.getForObject(

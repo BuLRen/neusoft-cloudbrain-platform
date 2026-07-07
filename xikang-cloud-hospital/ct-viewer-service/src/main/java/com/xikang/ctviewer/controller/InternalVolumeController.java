@@ -64,4 +64,9 @@ public class InternalVolumeController {
     public Result<SegmentResponseDto> segmentVolume(@PathVariable String volumeId) {
         return Result.success(ctViewerService.segmentVolumeInternal(volumeId, null));
     }
+
+    @PostMapping("/{volumeId}/segment/ai")
+    public Result<SegmentResponseDto> aiSegmentVolume(@PathVariable String volumeId) {
+        return Result.success(ctViewerService.aiSegmentVolumeInternal(volumeId));
+    }
 }

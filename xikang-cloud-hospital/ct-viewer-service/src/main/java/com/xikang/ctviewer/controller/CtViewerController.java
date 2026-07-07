@@ -66,6 +66,11 @@ public class CtViewerController {
         return Result.success(ctViewerService.segmentVolume(volumeId, null));
     }
 
+    @PostMapping("/volume/{volumeId}/segment/ai")
+    public Result<SegmentResponseDto> aiSegment(@PathVariable String volumeId) {
+        return Result.success(ctViewerService.aiSegmentVolume(volumeId));
+    }
+
     @GetMapping("/volume/{volumeId}/save")
     public ResponseEntity<byte[]> saveVolume(
         @PathVariable String volumeId,

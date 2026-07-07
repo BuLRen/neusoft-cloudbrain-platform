@@ -44,6 +44,8 @@ export interface CtAnalyzeResult {
   inference_ms: number
 }
 
+export type CtRiskLevel = '低风险' | '中风险' | '高风险'
+
 export interface CtLesionItem {
   id: number
   label: string
@@ -54,12 +56,20 @@ export interface CtLesionItem {
   bbox: number[]
   confidence: number
   volumeMm3: number
+  volumeCm3?: number
+  meanDensityHU?: number
+  riskLevel?: CtRiskLevel
   source?: string
 }
 
 export interface CtSegmentSummary {
   lesionCount: number
   maxDiameterMm: number
+  totalVolumeMm3?: number
+  totalVolumeCm3?: number
+  overallRiskLevel?: CtRiskLevel
+  modelVersion?: string
+  processingTimeMs?: number
   method?: string
   note?: string
 }
@@ -71,12 +81,17 @@ export interface CtSegmentResult {
   meta?: CtVolumeMeta
   lesions: CtLesionItem[]
   summary: CtSegmentSummary
+  /** AI 分割附加字段（规则分割时为空）*/
+  modelVersion?: string
+  processingTimeMs?: number
+  overallRiskLevel?: CtRiskLevel
 }
 
 export interface CtHealthResult {
   ok?: boolean
   algoReady?: boolean
   aiCtReady?: boolean
+  lungNoduleReady?: boolean
 }
 
 interface JavaLoadResponse {
@@ -98,6 +113,9 @@ interface JavaSegmentResponse {
   meta?: CtVolumeMeta
   lesions?: CtLesionItem[]
   summary?: CtSegmentSummary
+  modelVersion?: string
+  processingTimeMs?: number
+  overallRiskLevel?: CtRiskLevel
 }
 
 function mapLoadResult(data: JavaLoadResponse): CtLoadResult {
@@ -124,6 +142,9 @@ function mapSegmentResult(data: JavaSegmentResponse): CtSegmentResult {
     meta: data.meta,
     lesions: data.lesions ?? [],
     summary: data.summary ?? { lesionCount: 0, maxDiameterMm: 0 },
+    modelVersion: data.modelVersion,
+    processingTimeMs: data.processingTimeMs,
+    overallRiskLevel: data.overallRiskLevel,
   }
 }
 
@@ -196,6 +217,15 @@ export async function analyzeCtVolume(volumeId: string): Promise<CtAnalyzeResult
 export async function segmentCtVolume(volumeId: string): Promise<CtSegmentResult> {
   const data = await http<JavaSegmentResponse>({
     url: `/ct-viewer/volume/${volumeId}/segment`,
+    method: 'POST',
+    timeout: UPLOAD_TIMEOUT_MS,
+  })
+  return mapSegmentResult(data)
+}
+
+export async function aiSegmentCtVolume(volumeId: string): Promise<CtSegmentResult> {
+  const data = await http<JavaSegmentResponse>({
+    url: `/ct-viewer/volume/${volumeId}/segment/ai`,
     method: 'POST',
     timeout: UPLOAD_TIMEOUT_MS,
   })

@@ -9,6 +9,7 @@ public class CtViewerProperties {
     private long volumeTtlSeconds = 7200;
     private Algo algo = new Algo();
     private AiCt aiCt = new AiCt();
+    private LungNodule lungNodule = new LungNodule();
 
     public String getWorkDir() {
         return workDir;
@@ -40,6 +41,14 @@ public class CtViewerProperties {
 
     public void setAiCt(AiCt aiCt) {
         this.aiCt = aiCt;
+    }
+
+    public LungNodule getLungNodule() {
+        return lungNodule;
+    }
+
+    public void setLungNodule(LungNodule lungNodule) {
+        this.lungNodule = lungNodule;
     }
 
     public static class Algo {
@@ -83,6 +92,36 @@ public class CtViewerProperties {
 
         public void setBaseUrl(String baseUrl) {
             this.baseUrl = baseUrl == null ? "http://127.0.0.1:8105" : baseUrl.trim();
+        }
+
+        public int getConnectTimeoutMs() {
+            return connectTimeoutMs;
+        }
+
+        public void setConnectTimeoutMs(int connectTimeoutMs) {
+            this.connectTimeoutMs = connectTimeoutMs;
+        }
+
+        public int getReadTimeoutMs() {
+            return readTimeoutMs;
+        }
+
+        public void setReadTimeoutMs(int readTimeoutMs) {
+            this.readTimeoutMs = readTimeoutMs;
+        }
+    }
+
+    public static class LungNodule {
+        private String baseUrl = "http://127.0.0.1:8107";
+        private int connectTimeoutMs = 30_000;
+        private int readTimeoutMs = 600_000;
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl == null ? "http://127.0.0.1:8107" : baseUrl.trim();
         }
 
         public int getConnectTimeoutMs() {

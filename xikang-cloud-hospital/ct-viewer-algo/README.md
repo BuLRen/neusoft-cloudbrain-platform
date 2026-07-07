@@ -21,6 +21,7 @@ python -m app.main
 | GET | `/health` | 健康检查 |
 | POST | `/internal/convert` | DICOM/NRRD → NRRD |
 | POST | `/internal/filter` | 滤波 |
+| POST | `/internal/segment` | AI 病灶分割（掩码 + 病灶清单） |
 | POST | `/internal/export` | 导出 nii/nii.gz |
 
 响应格式：`{code, message, data}`。

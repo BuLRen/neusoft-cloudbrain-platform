@@ -1,0 +1,12 @@
+# 推理服务运行时依赖
+# GPU: pip install torch --index-url https://download.pytorch.org/whl/cu121
+# Mac: pip install torch  (含 MPS)
+torch>=2.0.0
+monai>=1.3.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+SimpleITK>=2.3.0
+numpy>=1.24.0
+scikit-image>=0.21.0
+pydantic>=2.0.0
+python-multipart>=0.0.9

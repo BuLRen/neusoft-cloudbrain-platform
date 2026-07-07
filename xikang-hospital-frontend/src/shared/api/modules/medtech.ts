@@ -231,6 +231,13 @@ export const medtechApi = {
       timeout: CT_IMAGING_ANALYZE_TIMEOUT_MS,
     })
   },
+  aiSegmentCheckImaging(id: number) {
+    return http<CheckImagingInfo>({
+      url: `/medtech/check/${id}/imaging/segment/ai`,
+      method: 'POST',
+      timeout: 10 * 60 * 1000,
+    })
+  },
   startInspection(id: number, operatorInfo?: Record<string, unknown>) {
     return http<void>({ url: `/medtech/inspection/start/${id}`, method: 'PUT', data: operatorInfo })
   },

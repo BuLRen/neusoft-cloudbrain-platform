@@ -18,10 +18,10 @@ export function maskOverlayToRgb(
   windowCenter: number,
   windowWidth: number,
   alpha = 0.65,
+  overlayColor: [number, number, number] = [255, 80, 40],
 ) {
   const gray = windowToUint8(baseSlice, windowCenter, windowWidth)
   const rgb = new Uint8ClampedArray(gray.length * 3)
-  const overlayColor = [255, 80, 40]
 
   for (let i = 0; i < gray.length; i += 1) {
     const g = gray[i]

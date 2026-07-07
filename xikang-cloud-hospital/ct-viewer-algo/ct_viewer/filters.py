@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import SimpleITK as sitk
 
+from .segmentation import LESION_DEMO_FILTER_NAME, generate_synthetic_lesion_mask
+
 METAL_MASK_FILTER_NAME = "金属伪影掩码 Metal Artifact Mask"
 
 
@@ -56,6 +58,11 @@ def run_filter(image: sitk.Image, filter_name: str, params: dict) -> tuple[sitk.
 
     if filter_name == METAL_MASK_FILTER_NAME:
         return _run_metal_mask_filter(image_float, params)
+
+    if filter_name == LESION_DEMO_FILTER_NAME:
+        source_name = str(params.get("source_name", ""))
+        mask, _ = generate_synthetic_lesion_mask(image_float, source_name)
+        return mask, True
 
     raise RuntimeError(f"未知滤波器：{filter_name}")
 

@@ -5,7 +5,7 @@ import { ElAlert, ElButton, ElEmpty, ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import CtViewerPanel from '@/modules/medtech/ct-viewer/components/CtViewerPanel.vue'
 import CtArtifactAnalysisDialog from '@/modules/medtech/ct-viewer/components/CtArtifactAnalysisDialog.vue'
-import CtSegmentationDialog from '@/modules/medtech/ct-viewer/components/CtSegmentationDialog.vue'
+import CtAiSegmentationPanel from '@/modules/medtech/ct-viewer/components/CtAiSegmentationPanel.vue'
 import CtDiagnosisReportPanel from '@/modules/medtech/components/CtDiagnosisReportPanel.vue'
 import type { CtAnalyzeResult, CtLesionItem, CtSegmentResult, CtVolumeMeta } from '@/shared/api/modules/ctViewer'
 import { checkCtViewerHealth } from '@/shared/api/modules/ctViewer'
@@ -20,15 +20,17 @@ const reportPanelRef = ref<HTMLElement | null>(null)
 const volumeMeta = ref<CtVolumeMeta | null>(null)
 const analyzing = ref(false)
 const segmenting = ref(false)
+const aiSegmenting = ref(false)
 const analysisDialogVisible = ref(false)
-const segmentationDialogVisible = ref(false)
 const analysisResult = ref<CtAnalyzeResult | null>(null)
 const segmentationResult = ref<CtSegmentResult | null>(null)
 const analysisError = ref('')
 const segmentationError = ref('')
 const aiCtReady = ref(false)
 const algoReady = ref(false)
+const lungNoduleReady = ref(false)
 const reportPanelVisible = ref(true)
+const segmentPanelVisible = ref(false)
 
 const id = computed(() => Number(route.query.id || 0))
 
@@ -90,9 +92,11 @@ async function refreshAiCtHealth() {
     const health = await checkCtViewerHealth()
     aiCtReady.value = Boolean(health.aiCtReady)
     algoReady.value = Boolean(health.algoReady)
+    lungNoduleReady.value = Boolean(health.lungNoduleReady)
   } catch {
     aiCtReady.value = false
     algoReady.value = false
+    lungNoduleReady.value = false
   }
 }
 
@@ -135,29 +139,27 @@ async function handleRunAnalysis() {
   }
 }
 
-async function handleRunSegmentation() {
+async function handleRunAiSegmentation() {
   if (!imagingVolumeId.value || !canInfer.value || !id.value) return
 
   await refreshAiCtHealth()
-  if (!algoReady.value) {
-    const message = 'CT 算法服务未就绪，请先启动 ct-viewer-algo（默认端口 8106）'
+  if (!lungNoduleReady.value) {
+    const message = 'AI 肺结节分割服务未就绪，请先启动 lung-nodule-seg-service（默认端口 8107）并放置模型权重'
     segmentationError.value = message
-    segmentationResult.value = null
-    segmentationDialogVisible.value = true
+    segmentPanelVisible.value = true
     ElMessage.warning(message)
     return
   }
 
-  segmenting.value = true
+  aiSegmenting.value = true
   segmentationError.value = ''
-  segmentationResult.value = null
-  segmentationDialogVisible.value = true
+  segmentPanelVisible.value = true
 
   try {
-    const response = await medtechApi.segmentCheckImaging(id.value)
+    const response = await medtechApi.aiSegmentCheckImaging(id.value)
     segmentationResult.value = response.segmentationResult ?? null
     if (!segmentationResult.value) {
-      segmentationError.value = '分割完成但未返回结果数据'
+      segmentationError.value = 'AI 分割完成但未返回结果数据'
       return
     }
 
@@ -175,10 +177,10 @@ async function handleRunSegmentation() {
       }
     }
   } catch (error) {
-    segmentationError.value = error instanceof Error ? error.message : 'CT 病灶分割失败，请稍后重试'
+    segmentationError.value = error instanceof Error ? error.message : 'AI 肺结节分割失败，请稍后重试'
     ElMessage.error(segmentationError.value)
   } finally {
-    segmenting.value = false
+    aiSegmenting.value = false
   }
 }
 
@@ -195,17 +197,21 @@ function handleViewSegmentation() {
   if (!segmentationResult.value && report.value?.imagingSegmentationResult) {
     segmentationResult.value = report.value.imagingSegmentationResult
   }
-  if (!segmentationResult.value) {
-    ElMessage.info('暂无已保存的分割结果')
-    return
-  }
-  segmentationError.value = ''
-  segmentationDialogVisible.value = true
+  segmentPanelVisible.value = true
 }
 
 function handleSelectLesion(lesion: CtLesionItem) {
   viewerPanelRef.value?.navigateToLesion(lesion)
-  segmentationDialogVisible.value = false
+}
+
+function handleToggleMask() {
+  if (segmentationResult.value?.maskVolumeId) {
+    viewerPanelRef.value?.loadSegmentationMask?.(segmentationResult.value.maskVolumeId)
+  }
+}
+
+function toggleSegmentPanel() {
+  segmentPanelVisible.value = !segmentPanelVisible.value
 }
 
 function syncAnalysisFromReport() {
@@ -287,11 +293,11 @@ onMounted(async () => {
             查看质控
           </ElButton>
           <ElButton
-            v-if="report?.hasImagingSegmentation"
             class="ct-exam-btn-secondary"
-            @click="handleViewSegmentation"
+            :type="segmentPanelVisible ? 'primary' : 'default'"
+            @click="toggleSegmentPanel"
           >
-            查看分割
+            AI 分割面板
           </ElButton>
           <ElButton
             class="ct-exam-btn-secondary"
@@ -302,11 +308,11 @@ onMounted(async () => {
           </ElButton>
           <ElButton
             class="ct-exam-btn-secondary"
-            :loading="segmenting"
+            :loading="aiSegmenting"
             :disabled="!canInfer"
-            @click="handleRunSegmentation"
+            @click="handleRunAiSegmentation"
           >
-            AI 病灶分割
+            AI 肺结节分割
           </ElButton>
           <ElButton
             class="ct-exam-btn-primary"
@@ -349,9 +355,9 @@ onMounted(async () => {
           class="ct-exam-alert"
         />
         <ElAlert
-          v-if="started && !algoReady && !errorMessage"
+          v-if="started && !lungNoduleReady && !errorMessage"
           type="warning"
-          title="CT 算法服务未就绪：请启动 ct-viewer-algo（端口 8106），再点击「AI 病灶分割」"
+          title="AI 肺结节分割服务未就绪：请启动 lung-nodule-seg-service（端口 8107）并放置模型权重"
           show-icon
           :closable="false"
           class="ct-exam-alert"
@@ -376,6 +382,20 @@ onMounted(async () => {
               @uploaded="handleImagingUploaded"
               @cleared="handleImagingCleared"
               @meta-updated="handleMetaUpdated"
+            />
+          </div>
+
+          <div
+            v-show="segmentPanelVisible"
+            class="ct-exam-seg-panel"
+          >
+            <CtAiSegmentationPanel
+              :loading="aiSegmenting"
+              :error-message="segmentationError"
+              :result="segmentationResult"
+              @run-ai-segment="handleRunAiSegmentation"
+              @select-lesion="handleSelectLesion"
+              @toggle-mask="handleToggleMask"
             />
           </div>
 
@@ -405,13 +425,6 @@ onMounted(async () => {
       :result="analysisResult"
     />
 
-    <CtSegmentationDialog
-      v-model:visible="segmentationDialogVisible"
-      :loading="segmenting"
-      :error-message="segmentationError"
-      :result="segmentationResult"
-      @select-lesion="handleSelectLesion"
-    />
   </div>
 </template>
 
@@ -585,6 +598,14 @@ onMounted(async () => {
   flex-direction: column;
 }
 
+.ct-exam-seg-panel {
+  flex-shrink: 0;
+  width: min(320px, 32vw);
+  min-height: 0;
+  overflow: hidden;
+  border-inline-start: 1px solid var(--ct-border);
+}
+
 .ct-exam-report {
   flex-shrink: 0;
   width: min(380px, 38vw);
@@ -604,6 +625,13 @@ onMounted(async () => {
 
   .ct-exam-body {
     flex-direction: column;
+  }
+
+  .ct-exam-seg-panel {
+    width: 100%;
+    max-height: 50vh;
+    border-block-start: 1px solid var(--ct-border);
+    border-inline-start: none;
   }
 
   .ct-exam-report {

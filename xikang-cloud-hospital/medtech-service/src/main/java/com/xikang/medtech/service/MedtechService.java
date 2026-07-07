@@ -227,6 +227,34 @@ public class MedtechService {
     }
 
     /**
+     * AI 肺结节分割（调用 lung-nodule-seg-service，结果同步落库）。
+     */
+    @Transactional
+    public Map<String, Object> aiSegmentCheckImaging(Long id) {
+        CheckRequest request = requireCtImagingContext(id, true);
+        String volumeId = request.getImagingVolumeId();
+        Map<String, Object> segmentData = ctViewerClient.aiSegmentVolume(volumeId);
+        LocalDateTime segmentedAt = LocalDateTime.now();
+
+        String maskVolumeId = segmentData.get("maskVolumeId") != null
+            ? String.valueOf(segmentData.get("maskVolumeId"))
+            : null;
+        try {
+            String json = objectMapper.writeValueAsString(segmentData);
+            checkRequestMapper.updateImagingSegmentation(id, json, segmentedAt, maskVolumeId);
+            request.setImagingSegmentationResult(json);
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException(500, "AI 分割结果序列化失败", ex);
+        }
+        request.setImagingSegmentedAt(segmentedAt);
+        request.setImagingSegmentationMaskVolumeId(maskVolumeId);
+        log.info("AI 肺结节分割完成 | checkRequestId={} volumeId={} maskVolumeId={}", id, volumeId, maskVolumeId);
+        Map<String, Object> response = buildImagingMap(request);
+        response.put("segmentationResult", segmentData);
+        return response;
+    }
+
+    /**
      * 绑定 CT 影像 volume 到检查单
      */
     @Transactional

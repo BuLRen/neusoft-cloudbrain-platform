@@ -4,6 +4,7 @@ import com.xikang.common.exception.BusinessException;
 import com.xikang.ctviewer.audit.CtImagingAuditAction;
 import com.xikang.ctviewer.client.AiCtClient;
 import com.xikang.ctviewer.client.CtViewerAlgoClient;
+import com.xikang.ctviewer.client.LungNoduleSegClient;
 import com.xikang.ctviewer.context.CtViewerAuthContext;
 import com.xikang.ctviewer.dto.FilterRequestDto;
 import com.xikang.ctviewer.dto.FilterResponseDto;
@@ -34,12 +35,14 @@ public class CtViewerService {
     private final CtImagingAuditService auditService;
     private final CtViewerAlgoClient algoClient;
     private final AiCtClient aiCtClient;
+    private final LungNoduleSegClient lungNoduleSegClient;
 
     public Map<String, Object> health() {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("ok", true);
         status.put("algoReady", algoClient.healthCheck());
         status.put("aiCtReady", aiCtClient.healthCheck());
+        status.put("lungNoduleReady", lungNoduleSegClient.healthCheck());
         return status;
     }
 
@@ -193,6 +196,22 @@ public class CtViewerService {
         return runSegment(source, params);
     }
 
+    /**
+     * AI 肺结节分割（外部调用，需鉴权）。
+     */
+    public SegmentResponseDto aiSegmentVolume(String volumeId) {
+        VolumeMetaDto source = volumeAccessService.requireReadableVolume(volumeId);
+        return runAiLungNoduleSegment(source);
+    }
+
+    /**
+     * AI 肺结节分割（medtech-service 内部调用，上游已完成业务鉴权）。
+     */
+    public SegmentResponseDto aiSegmentVolumeInternal(String volumeId) {
+        VolumeMetaDto source = metaRepository.requireById(volumeId);
+        return runAiLungNoduleSegment(source);
+    }
+
     @SuppressWarnings("unchecked")
     private SegmentResponseDto runSegment(VolumeMetaDto source, Map<String, Object> params) {
         String resultId = storageService.newVolumeId();
@@ -243,6 +262,81 @@ public class CtViewerService {
         } catch (IOException ex) {
             storageService.deleteVolumeDirectory(resultId);
             throw new BusinessException(500, "创建分割结果目录失败", ex);
+        } catch (RuntimeException ex) {
+            storageService.deleteVolumeDirectory(resultId);
+            throw ex;
+        }
+    }
+
+    /**
+     * 调用 lung-nodule-seg-service 执行 AI 肺结节分割。
+     * <p>
+     * 流程：source NRRD → 调用 AI 服务 → 写掩码 NRRD → 持久化元信息 → 审计
+     */
+    @SuppressWarnings("unchecked")
+    private SegmentResponseDto runAiLungNoduleSegment(VolumeMetaDto source) {
+        String resultId = storageService.newVolumeId();
+        try {
+            storageService.ensureVolumeDir(resultId);
+            Path outNrrd = storageService.nrrdPath(resultId);
+
+            Map<String, Object> algoData = lungNoduleSegClient.segment(
+                source.getNrrdPath(),
+                storageService.absolutePath(outNrrd),
+                source.getSourceName()
+            );
+
+            Map<String, Object> metaMap = (Map<String, Object>) algoData.get("meta");
+            long now = System.currentTimeMillis();
+            VolumeMetaDto resultMeta = VolumeMetaDto.fromAlgoMeta(
+                resultId,
+                storageService.absolutePath(outNrrd),
+                metaMap,
+                now
+            );
+            resultMeta.inheritAccessFrom(source, resultId);
+            metaRepository.save(resultMeta);
+
+            auditService.logSuccess(
+                CtImagingAuditAction.AI_SEGMENT,
+                resultId,
+                source.getVolumeId(),
+                source.getBoundCheckRequestId(),
+                source.getBoundRegisterId()
+            );
+
+            SegmentResponseDto response = new SegmentResponseDto();
+            response.setMaskVolumeId(resultId);
+            Object isMask = algoData.get("is_mask");
+            response.setMask(Boolean.TRUE.equals(isMask));
+            response.setMessage(String.valueOf(algoData.getOrDefault("message", "AI 分割完成")));
+            response.setMeta(resultMeta.toFrontendMeta());
+
+            Object lesions = algoData.get("lesions");
+            if (lesions instanceof List<?> lesionList) {
+                response.setLesions((List<Map<String, Object>>) lesionList);
+            }
+
+            Object summaryObj = algoData.get("summary");
+            if (summaryObj instanceof Map<?, ?> summaryMap) {
+                Map<String, Object> summary = (Map<String, Object>) summaryMap;
+                response.setSummary(summary);
+                // 冗余到顶层，方便前端直接读取
+                if (summary.get("modelVersion") instanceof String mv) {
+                    response.setModelVersion(mv);
+                }
+                if (summary.get("processingTimeMs") instanceof Number pt) {
+                    response.setProcessingTimeMs(pt.longValue());
+                }
+                if (summary.get("overallRiskLevel") instanceof String rl) {
+                    response.setOverallRiskLevel(rl);
+                }
+            }
+
+            return response;
+        } catch (IOException ex) {
+            storageService.deleteVolumeDirectory(resultId);
+            throw new BusinessException(500, "创建 AI 分割结果目录失败", ex);
         } catch (RuntimeException ex) {
             storageService.deleteVolumeDirectory(resultId);
             throw ex;

@@ -141,6 +141,12 @@ public class MedtechController {
         return Result.success("CT 病灶分割完成", response);
     }
 
+    @PostMapping("/check/{id}/imaging/segment/ai")
+    public Result<Map<String, Object>> aiSegmentCheckImaging(@PathVariable Long id) {
+        Map<String, Object> response = medtechService.aiSegmentCheckImaging(id);
+        return Result.success("AI 肺结节分割完成", response);
+    }
+
     /**
      * 解析检查结果录入表单 schema
      */
