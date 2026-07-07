@@ -113,6 +113,9 @@ public class CheckSimulationService {
         if (request.getImagingAnalysisResult() != null && !request.getImagingAnalysisResult().isBlank()) {
             ctInput.put("imagingAnalysisResult", request.getImagingAnalysisResult());
         }
+        if (request.getImagingSegmentationResult() != null && !request.getImagingSegmentationResult().isBlank()) {
+            ctInput.put("imagingSegmentationResult", request.getImagingSegmentationResult());
+        }
 
         Map<String, Object> ctResult = ctInferenceService.infer(ctInput);
         Map<String, Object> simulatedValues = outputMapper.mapCtInferenceToFormValues(ctResult);

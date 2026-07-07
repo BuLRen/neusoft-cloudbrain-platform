@@ -199,6 +199,34 @@ public class MedtechService {
     }
 
     /**
+     * 执行 CT 病灶分割并持久化到检查单
+     */
+    @Transactional
+    public Map<String, Object> segmentCheckImaging(Long id) {
+        CheckRequest request = requireCtImagingContext(id, true);
+        String volumeId = request.getImagingVolumeId();
+        Map<String, Object> segmentData = ctViewerClient.segmentVolume(volumeId);
+        LocalDateTime segmentedAt = LocalDateTime.now();
+
+        String maskVolumeId = segmentData.get("maskVolumeId") != null
+            ? String.valueOf(segmentData.get("maskVolumeId"))
+            : null;
+        try {
+            String json = objectMapper.writeValueAsString(segmentData);
+            checkRequestMapper.updateImagingSegmentation(id, json, segmentedAt, maskVolumeId);
+            request.setImagingSegmentationResult(json);
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException(500, "分割结果序列化失败", ex);
+        }
+        request.setImagingSegmentedAt(segmentedAt);
+        request.setImagingSegmentationMaskVolumeId(maskVolumeId);
+        log.info("CT 病灶分割完成 | checkRequestId={} volumeId={} maskVolumeId={}", id, volumeId, maskVolumeId);
+        Map<String, Object> response = buildImagingMap(request);
+        response.put("segmentationResult", segmentData);
+        return response;
+    }
+
+    /**
      * 绑定 CT 影像 volume 到检查单
      */
     @Transactional
@@ -847,10 +875,17 @@ public class MedtechService {
         map.put("imagingAnalyzedAt", request.getImagingAnalyzedAt());
         map.put("hasImaging", hasImaging(request));
         map.put("hasImagingAnalysis", hasImagingAnalysis(request));
+        map.put("hasImagingSegmentation", hasImagingSegmentation(request));
         Map<String, Object> analysis = parseImagingAnalysis(request.getImagingAnalysisResult());
         if (analysis != null) {
             map.put("imagingAnalysisResult", analysis);
         }
+        Map<String, Object> segmentation = parseImagingAnalysis(request.getImagingSegmentationResult());
+        if (segmentation != null) {
+            map.put("imagingSegmentationResult", segmentation);
+        }
+        map.put("imagingSegmentationMaskVolumeId", request.getImagingSegmentationMaskVolumeId());
+        map.put("imagingSegmentedAt", request.getImagingSegmentedAt());
     }
 
     private Map<String, Object> buildImagingMap(CheckRequest request) {
@@ -860,11 +895,18 @@ public class MedtechService {
         map.put("uploadedAt", request.getImagingUploadedAt());
         map.put("sourceName", request.getImagingSourceName());
         map.put("analyzedAt", request.getImagingAnalyzedAt());
+        map.put("segmentedAt", request.getImagingSegmentedAt());
         map.put("hasImaging", hasImaging(request));
         map.put("hasImagingAnalysis", hasImagingAnalysis(request));
+        map.put("hasImagingSegmentation", hasImagingSegmentation(request));
+        map.put("maskVolumeId", request.getImagingSegmentationMaskVolumeId());
         Map<String, Object> analysis = parseImagingAnalysis(request.getImagingAnalysisResult());
         if (analysis != null) {
             map.put("analysisResult", analysis);
+        }
+        Map<String, Object> segmentation = parseImagingAnalysis(request.getImagingSegmentationResult());
+        if (segmentation != null) {
+            map.put("segmentationResult", segmentation);
         }
         return map;
     }
@@ -883,6 +925,10 @@ public class MedtechService {
 
     private static boolean hasImagingAnalysis(CheckRequest request) {
         return request.getImagingAnalysisResult() != null && !request.getImagingAnalysisResult().isBlank();
+    }
+
+    private static boolean hasImagingSegmentation(CheckRequest request) {
+        return request.getImagingSegmentationResult() != null && !request.getImagingSegmentationResult().isBlank();
     }
 
     private Map<String, Object> toInspectionMap(InspectionRequest request) {

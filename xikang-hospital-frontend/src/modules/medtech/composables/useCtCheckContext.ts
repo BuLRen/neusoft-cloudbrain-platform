@@ -135,6 +135,10 @@ export function useCtCheckContext() {
           hasImagingAnalysis: false,
           imagingAnalyzedAt: undefined,
           imagingAnalysisResult: undefined,
+          hasImagingSegmentation: false,
+          imagingSegmentedAt: undefined,
+          imagingSegmentationResult: undefined,
+          imagingSegmentationMaskVolumeId: undefined,
         }
       }
       ElMessage.success('CT 影像已绑定到当前检查单')
@@ -162,6 +166,10 @@ export function useCtCheckContext() {
           hasImagingAnalysis: false,
           imagingAnalyzedAt: undefined,
           imagingAnalysisResult: undefined,
+          hasImagingSegmentation: false,
+          imagingSegmentedAt: undefined,
+          imagingSegmentationResult: undefined,
+          imagingSegmentationMaskVolumeId: undefined,
         }
       }
       ElMessage.info('已清除影像绑定，可重新上传')

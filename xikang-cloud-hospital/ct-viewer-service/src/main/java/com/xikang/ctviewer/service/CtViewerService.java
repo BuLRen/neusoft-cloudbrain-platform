@@ -8,6 +8,7 @@ import com.xikang.ctviewer.context.CtViewerAuthContext;
 import com.xikang.ctviewer.dto.FilterRequestDto;
 import com.xikang.ctviewer.dto.FilterResponseDto;
 import com.xikang.ctviewer.dto.LoadResponseDto;
+import com.xikang.ctviewer.dto.SegmentResponseDto;
 import com.xikang.ctviewer.dto.VolumeBindRequestDto;
 import com.xikang.ctviewer.dto.VolumeMetaDto;
 import com.xikang.ctviewer.repository.VolumeMetaRepository;
@@ -20,6 +21,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -171,6 +173,76 @@ public class CtViewerService {
         } catch (IOException ex) {
             storageService.deleteVolumeDirectory(resultId);
             throw new BusinessException(500, "创建滤波结果目录失败", ex);
+        } catch (RuntimeException ex) {
+            storageService.deleteVolumeDirectory(resultId);
+            throw ex;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public SegmentResponseDto segmentVolume(String volumeId, Map<String, Object> params) {
+        VolumeMetaDto source = volumeAccessService.requireReadableVolume(volumeId);
+        return runSegment(source, params);
+    }
+
+    /**
+     * 供 medtech-service 内部调用（已在上游完成业务鉴权）。
+     */
+    public SegmentResponseDto segmentVolumeInternal(String volumeId, Map<String, Object> params) {
+        VolumeMetaDto source = metaRepository.requireById(volumeId);
+        return runSegment(source, params);
+    }
+
+    @SuppressWarnings("unchecked")
+    private SegmentResponseDto runSegment(VolumeMetaDto source, Map<String, Object> params) {
+        String resultId = storageService.newVolumeId();
+        try {
+            storageService.ensureVolumeDir(resultId);
+            Path outNrrd = storageService.nrrdPath(resultId);
+            Map<String, Object> algoData = algoClient.segment(
+                source.getNrrdPath(),
+                storageService.absolutePath(outNrrd),
+                source.getSourceName(),
+                params
+            );
+
+            Map<String, Object> metaMap = (Map<String, Object>) algoData.get("meta");
+            long now = System.currentTimeMillis();
+            VolumeMetaDto resultMeta = VolumeMetaDto.fromAlgoMeta(
+                resultId,
+                storageService.absolutePath(outNrrd),
+                metaMap,
+                now
+            );
+            resultMeta.inheritAccessFrom(source, resultId);
+            metaRepository.save(resultMeta);
+
+            auditService.logSuccess(
+                CtImagingAuditAction.SEGMENT,
+                resultId,
+                source.getVolumeId(),
+                source.getBoundCheckRequestId(),
+                source.getBoundRegisterId()
+            );
+
+            SegmentResponseDto response = new SegmentResponseDto();
+            response.setMaskVolumeId(resultId);
+            Object isMask = algoData.get("is_mask");
+            response.setMask(Boolean.TRUE.equals(isMask));
+            response.setMessage(String.valueOf(algoData.getOrDefault("message", "分割完成")));
+            response.setMeta(resultMeta.toFrontendMeta());
+            Object lesions = algoData.get("lesions");
+            if (lesions instanceof List<?> lesionList) {
+                response.setLesions((List<Map<String, Object>>) lesionList);
+            }
+            Object summary = algoData.get("summary");
+            if (summary instanceof Map<?, ?> summaryMap) {
+                response.setSummary((Map<String, Object>) summaryMap);
+            }
+            return response;
+        } catch (IOException ex) {
+            storageService.deleteVolumeDirectory(resultId);
+            throw new BusinessException(500, "创建分割结果目录失败", ex);
         } catch (RuntimeException ex) {
             storageService.deleteVolumeDirectory(resultId);
             throw ex;

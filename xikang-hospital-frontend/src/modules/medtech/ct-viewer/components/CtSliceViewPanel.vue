@@ -45,6 +45,7 @@ const scaleBarPx = computed(() => Math.max(Math.round(scaleBarMm / Math.max(prop
     <header class="ct-slice-panel__header">
       <span class="ct-slice-panel__title">{{ title }}</span>
       <div class="ct-slice-panel__header-actions">
+        <slot name="header-extra" />
         <span class="ct-slice-panel__zoom">{{ zoomLabel }}</span>
       </div>
     </header>

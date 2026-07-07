@@ -44,6 +44,35 @@ export interface CtAnalyzeResult {
   inference_ms: number
 }
 
+export interface CtLesionItem {
+  id: number
+  label: string
+  sliceIndex: number
+  plane: string
+  centroidXyz: number[]
+  diameterMm: number
+  bbox: number[]
+  confidence: number
+  volumeMm3: number
+  source?: string
+}
+
+export interface CtSegmentSummary {
+  lesionCount: number
+  maxDiameterMm: number
+  method?: string
+  note?: string
+}
+
+export interface CtSegmentResult {
+  maskVolumeId: string
+  isMask: boolean
+  message: string
+  meta?: CtVolumeMeta
+  lesions: CtLesionItem[]
+  summary: CtSegmentSummary
+}
+
 export interface CtHealthResult {
   ok?: boolean
   algoReady?: boolean
@@ -62,6 +91,15 @@ interface JavaFilterResponse {
   meta: CtVolumeMeta
 }
 
+interface JavaSegmentResponse {
+  maskVolumeId: string
+  isMask: boolean
+  message: string
+  meta?: CtVolumeMeta
+  lesions?: CtLesionItem[]
+  summary?: CtSegmentSummary
+}
+
 function mapLoadResult(data: JavaLoadResponse): CtLoadResult {
   return {
     volume_id: data.volumeId,
@@ -75,6 +113,17 @@ function mapFilterResult(data: JavaFilterResponse): CtFilterResult {
     is_mask: data.isMask,
     message: data.message,
     meta: data.meta,
+  }
+}
+
+function mapSegmentResult(data: JavaSegmentResponse): CtSegmentResult {
+  return {
+    maskVolumeId: data.maskVolumeId,
+    isMask: data.isMask,
+    message: data.message,
+    meta: data.meta,
+    lesions: data.lesions ?? [],
+    summary: data.summary ?? { lesionCount: 0, maxDiameterMm: 0 },
   }
 }
 
@@ -142,6 +191,15 @@ export async function analyzeCtVolume(volumeId: string): Promise<CtAnalyzeResult
     method: 'POST',
     timeout: UPLOAD_TIMEOUT_MS,
   })
+}
+
+export async function segmentCtVolume(volumeId: string): Promise<CtSegmentResult> {
+  const data = await http<JavaSegmentResponse>({
+    url: `/ct-viewer/volume/${volumeId}/segment`,
+    method: 'POST',
+    timeout: UPLOAD_TIMEOUT_MS,
+  })
+  return mapSegmentResult(data)
 }
 
 export async function downloadCtVolume(volumeId: string, format: string) {

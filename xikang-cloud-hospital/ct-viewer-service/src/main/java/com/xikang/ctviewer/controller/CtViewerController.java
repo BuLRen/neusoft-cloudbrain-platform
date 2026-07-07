@@ -4,6 +4,7 @@ import com.xikang.common.result.Result;
 import com.xikang.ctviewer.dto.FilterRequestDto;
 import com.xikang.ctviewer.dto.FilterResponseDto;
 import com.xikang.ctviewer.dto.LoadResponseDto;
+import com.xikang.ctviewer.dto.SegmentResponseDto;
 import com.xikang.ctviewer.service.CtViewerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -58,6 +59,11 @@ public class CtViewerController {
     @PostMapping("/volume/{volumeId}/analyze")
     public Result<Map<String, Object>> analyze(@PathVariable String volumeId) {
         return Result.success(ctViewerService.analyzeVolume(volumeId));
+    }
+
+    @PostMapping("/volume/{volumeId}/segment")
+    public Result<SegmentResponseDto> segment(@PathVariable String volumeId) {
+        return Result.success(ctViewerService.segmentVolume(volumeId, null));
     }
 
     @GetMapping("/volume/{volumeId}/save")

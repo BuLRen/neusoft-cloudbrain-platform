@@ -32,8 +32,18 @@ import {
   maskOverlayToRgb,
   windowToUint8,
 } from '@/modules/medtech/ct-viewer/lib/volumeUtils'
+import {
+  drawLesionAnnotations,
+  getLesionsForAxialSlice,
+  getLesionsForCoronalSlice,
+  getLesionsForSagittalSlice,
+} from '@/modules/medtech/ct-viewer/lib/lesionAnnotationUtils'
+import type { CtLesionItem } from '@/shared/api/modules/ctViewer'
 
 const METAL_MASK_FILTER_NAME = '金属伪影掩码 Metal Artifact Mask'
+const LESION_DEMO_FILTER_NAME = '病灶分割演示 Lesion Segmentation (Demo)'
+const METAL_OVERLAY_COLOR: [number, number, number] = [255, 80, 40]
+const LESION_OVERLAY_COLOR: [number, number, number] = [80, 220, 120]
 
 const props = withDefaults(
   defineProps<{
@@ -75,6 +85,9 @@ const filteredVolume = ref<ReturnType<typeof parseNrrdArrayBuffer> | null>(null)
 const originalMeta = ref<CtVolumeMeta | null>(null)
 const filteredMeta = ref<CtVolumeMeta | null>(null)
 const filteredIsMask = ref(false)
+const maskOverlayColor = ref<[number, number, number]>(METAL_OVERLAY_COLOR)
+const segmentationLesions = ref<CtLesionItem[]>([])
+const showLesionBoxAnnotations = ref(false)
 
 const axialSlice = ref(0)
 const coronalSlice = ref(0)
@@ -104,7 +117,9 @@ const sagittalCanvas = ref<HTMLCanvasElement | null>(null)
 
 const activeVolume = computed(() => filteredVolume.value ?? originalVolume.value)
 const activeMeta = computed(() => filteredMeta.value ?? originalMeta.value)
-const displayIsMask = computed(() => filteredIsMask.value && !!filteredVolume.value)
+const displayIsMask = computed(
+  () => filteredIsMask.value && !!filteredVolume.value && !showLesionBoxAnnotations.value,
+)
 const effectiveAllowUpload = computed(() => props.allowUpload && !props.readOnly)
 const showFilterSection = computed(() => !props.readOnly)
 const effectiveShowSave = computed(() => props.showSave && !props.readOnly)
@@ -183,6 +198,10 @@ const showIter = computed(
 )
 const showConductance = computed(() => filterName.value === '各向异性扩散 Anisotropic Diffusion')
 const showMetal = computed(() => filterName.value === METAL_MASK_FILTER_NAME)
+const showLesionDemo = computed(() => filterName.value === LESION_DEMO_FILTER_NAME)
+const maskOverlayLabel = computed(() =>
+  maskOverlayColor.value === LESION_OVERLAY_COLOR ? '病灶掩码' : '金属掩码',
+)
 
 function getFilterParams() {
   return {
@@ -342,9 +361,16 @@ async function applyFilter() {
   }
   isLoading.value = true
   try {
-    const result = await runCtFilter(sourceVolumeId.value, filterName.value, getFilterParams())
+    const params: Record<string, unknown> = { ...getFilterParams() }
+    if (filterName.value === LESION_DEMO_FILTER_NAME) {
+      params.source_name = originalMeta.value?.source_name ?? sourceVolumeId.value
+    }
+    const result = await runCtFilter(sourceVolumeId.value, filterName.value, params)
     filteredVolumeId.value = result.volume_id
     filteredIsMask.value = Boolean(result.is_mask)
+    maskOverlayColor.value = filterName.value === LESION_DEMO_FILTER_NAME
+      ? LESION_OVERLAY_COLOR
+      : METAL_OVERLAY_COLOR
     filteredMeta.value = result.meta
     await loadVolumeById(filteredVolumeId.value, 'filtered')
     applyDefaultWindow(result.meta)
@@ -354,6 +380,60 @@ async function applyFilter() {
   } finally {
     isLoading.value = false
   }
+}
+
+async function loadSegmentationMask(maskVolumeId: string) {
+  if (!sourceVolumeId.value || !maskVolumeId) return
+  isLoading.value = true
+  try {
+    filteredVolumeId.value = maskVolumeId
+    filteredIsMask.value = true
+    showLesionBoxAnnotations.value = false
+    segmentationLesions.value = []
+    maskOverlayColor.value = LESION_OVERLAY_COLOR
+    await loadVolumeById(maskVolumeId, 'filtered')
+    filteredMeta.value = { ...(filteredMeta.value ?? {}), is_mask: true }
+    statusText.value = '已加载 AI 病灶分割掩码'
+  } catch (error) {
+    statusText.value = `加载分割掩码失败：${error instanceof Error ? error.message : '未知错误'}`
+  } finally {
+    isLoading.value = false
+  }
+}
+
+function applySegmentationLesions(lesions: CtLesionItem[]) {
+  segmentationLesions.value = lesions ?? []
+  showLesionBoxAnnotations.value = segmentationLesions.value.length > 0
+  if (showLesionBoxAnnotations.value) {
+    filteredVolumeId.value = ''
+    filteredVolume.value = null
+    filteredMeta.value = null
+    filteredIsMask.value = false
+    statusText.value = `AI 病灶标注：${segmentationLesions.value.length} 处`
+    void nextTick().then(() => refresh2DViews())
+  }
+}
+
+function navigateToLesion(lesion: { sliceIndex?: number; centroidXyz?: number[] }) {
+  if (typeof lesion.sliceIndex === 'number') {
+    axialSlice.value = Math.max(0, Math.min(zCount.value - 1, lesion.sliceIndex))
+  }
+  if (lesion.centroidXyz?.length === 3) {
+    const [x, y, z] = lesion.centroidXyz
+    sagittalSlice.value = Math.max(0, Math.min(xCount.value - 1, x))
+    coronalSlice.value = Math.max(0, Math.min(yCount.value - 1, y))
+    axialSlice.value = Math.max(0, Math.min(zCount.value - 1, z))
+  }
+}
+
+function clearSegmentationOverlay() {
+  filteredVolumeId.value = ''
+  filteredVolume.value = null
+  filteredMeta.value = null
+  filteredIsMask.value = false
+  maskOverlayColor.value = METAL_OVERLAY_COLOR
+  segmentationLesions.value = []
+  showLesionBoxAnnotations.value = false
 }
 
 function resetSlicePositions() {
@@ -407,7 +487,14 @@ function renderPlane(
   if (displayIsMask.value && filteredVolume.value) {
     const baseSlice = extractor(originalVolume.value, index)
     const maskSlice = extractor(filteredVolume.value, index)
-    const rgb = maskOverlayToRgb(baseSlice.data, maskSlice.data, windowCenter.value, windowWidth.value)
+    const rgb = maskOverlayToRgb(
+      baseSlice.data,
+      maskSlice.data,
+      windowCenter.value,
+      windowWidth.value,
+      0.65,
+      maskOverlayColor.value,
+    )
     drawSlice(canvas, rgb, baseSlice.width, baseSlice.height, 3)
     return
   }
@@ -417,11 +504,34 @@ function renderPlane(
   drawSlice(canvas, gray, slice.width, slice.height, 1)
 }
 
+function drawLesionBoxesOnCanvas(
+  canvas: HTMLCanvasElement | null,
+  plane: 'axial' | 'coronal' | 'sagittal',
+  sliceIndex: number,
+) {
+  if (!canvas || !showLesionBoxAnnotations.value || !segmentationLesions.value.length) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  let rects
+  if (plane === 'axial') {
+    rects = getLesionsForAxialSlice(segmentationLesions.value, sliceIndex)
+  } else if (plane === 'coronal') {
+    rects = getLesionsForCoronalSlice(segmentationLesions.value, sliceIndex, zCount.value)
+  } else {
+    rects = getLesionsForSagittalSlice(segmentationLesions.value, sliceIndex, zCount.value)
+  }
+  drawLesionAnnotations(ctx, rects)
+}
+
 function refresh2DViews() {
   if (!originalVolume.value) return
   renderPlane(axialCanvas.value, extractSliceZyx, axialSlice.value)
+  drawLesionBoxesOnCanvas(axialCanvas.value, 'axial', axialSlice.value)
   renderPlane(coronalCanvas.value, extractCoronalSlice, coronalSlice.value)
+  drawLesionBoxesOnCanvas(coronalCanvas.value, 'coronal', coronalSlice.value)
   renderPlane(sagittalCanvas.value, extractSagittalSlice, sagittalSlice.value)
+  drawLesionBoxesOnCanvas(sagittalCanvas.value, 'sagittal', sagittalSlice.value)
 }
 
 function saveCurrentSlicePng() {
@@ -453,7 +563,7 @@ watch(
   },
 )
 
-watch([originalVolume, filteredVolume, axialSlice, coronalSlice, sagittalSlice, windowCenter, windowWidth], async () => {
+watch([originalVolume, filteredVolume, axialSlice, coronalSlice, sagittalSlice, windowCenter, windowWidth, segmentationLesions, showLesionBoxAnnotations], async () => {
   await nextTick()
   refresh2DViews()
 })
@@ -473,7 +583,14 @@ onMounted(async () => {
   }
 })
 
-defineExpose({ resetVolumeState, loadBoundVolume })
+defineExpose({
+  resetVolumeState,
+  loadBoundVolume,
+  loadSegmentationMask,
+  applySegmentationLesions,
+  navigateToLesion,
+  clearSegmentationOverlay,
+})
 </script>
 
 <template>
@@ -567,7 +684,12 @@ defineExpose({ resetVolumeState, loadBoundVolume })
                   <ElOption label="曲率流平滑 Curvature Flow" value="曲率流平滑 Curvature Flow" />
                   <ElOption label="各向异性扩散 Anisotropic Diffusion" value="各向异性扩散 Anisotropic Diffusion" />
                   <ElOption :label="METAL_MASK_FILTER_NAME" :value="METAL_MASK_FILTER_NAME" />
+                  <ElOption :label="LESION_DEMO_FILTER_NAME" :value="LESION_DEMO_FILTER_NAME" />
                 </ElSelect>
+              </ElFormItem>
+
+              <ElFormItem v-if="showLesionDemo">
+                <p class="ct-sidebar-hint">演示用合成病灶掩码，结果可复现；正式分割请使用页头「AI 病灶分割」。</p>
               </ElFormItem>
 
               <ElFormItem v-if="showSpatial" label="空间 Sigma">
@@ -637,18 +759,43 @@ defineExpose({ resetVolumeState, loadBoundVolume })
 
       <section class="ct-viewer-workspace">
         <div class="view-grid">
-          <CtSliceViewPanel
-            title="轴状图 Axial"
-            plane="axial"
-            :slice-index="axialSlice"
-            :slice-total="zCount"
-            :window-center="windowCenter"
-            :window-width="windowWidth"
-            :spacing-mm="spacingXy"
-            :series-label="seriesLabel"
-          >
-            <canvas ref="axialCanvas" />
-          </CtSliceViewPanel>
+          <div class="volume-panel volume-panel--compact">
+            <header class="volume-panel__header">
+              <div class="volume-panel__title-row">
+                <span class="volume-panel__title">三维体渲染</span>
+                <ElTag v-if="displayIsMask" type="warning" size="small">{{ maskOverlayLabel }}</ElTag>
+              </div>
+              <div class="volume-panel__mode">
+                <span>表面渲染</span>
+              </div>
+            </header>
+
+            <div class="volume-panel__body">
+              <div class="volume-panel__toolbar volume-panel__toolbar--top">
+                <span class="volume-tool" title="选择">◎</span>
+                <span class="volume-tool" title="旋转">↻</span>
+                <span class="volume-tool" title="平移">✥</span>
+                <span class="volume-tool" title="缩放">⊕</span>
+                <span class="volume-tool" title="裁剪">▭</span>
+                <span class="volume-tool" title="测量">⌖</span>
+              </div>
+
+              <div class="volume-panel__orient-cube">
+                <span class="cube-face cube-face--r">R</span>
+                <span class="cube-face cube-face--a">A</span>
+                <span class="cube-face cube-face--s">S</span>
+              </div>
+
+              <VtkVolumeViewer
+                :volume-data="activeVolume"
+                :window-center="windowCenter"
+                :window-width="windowWidth"
+                :is-mask="displayIsMask"
+                :data-min="activeMeta?.min ?? 0"
+                :data-max="activeMeta?.max ?? 1"
+              />
+            </div>
+          </div>
           <CtSliceViewPanel
             title="冠状图 Coronal"
             plane="coronal"
@@ -675,53 +822,22 @@ defineExpose({ resetVolumeState, loadBoundVolume })
           </CtSliceViewPanel>
         </div>
 
-        <div class="volume-panel">
-          <header class="volume-panel__header">
-            <div class="volume-panel__title-row">
-              <span class="volume-panel__title">三维体渲染</span>
-              <ElTag v-if="displayIsMask" type="warning" size="small">金属掩码</ElTag>
-            </div>
-            <div class="volume-panel__mode">
-              <span>表面渲染</span>
-            </div>
-          </header>
-
-          <div class="volume-panel__body">
-            <div class="volume-panel__toolbar volume-panel__toolbar--top">
-              <span class="volume-tool" title="选择">◎</span>
-              <span class="volume-tool" title="旋转">↻</span>
-              <span class="volume-tool" title="平移">✥</span>
-              <span class="volume-tool" title="缩放">⊕</span>
-              <span class="volume-tool" title="裁剪">▭</span>
-              <span class="volume-tool" title="测量">⌖</span>
-            </div>
-
-            <div class="volume-panel__orient-cube">
-              <span class="cube-face cube-face--r">R</span>
-              <span class="cube-face cube-face--a">A</span>
-              <span class="cube-face cube-face--s">S</span>
-            </div>
-
-            <div class="volume-panel__toolbar volume-panel__toolbar--side">
-              <button type="button" class="volume-side-btn">重置视图</button>
-              <button type="button" class="volume-side-btn">放大</button>
-              <button type="button" class="volume-side-btn">缩小</button>
-              <button type="button" class="volume-side-btn">旋转</button>
-              <button type="button" class="volume-side-btn">平移</button>
-              <button type="button" class="volume-side-btn">窗宽窗位</button>
-              <button type="button" class="volume-side-btn">渲染设置</button>
-            </div>
-
-            <VtkVolumeViewer
-              :volume-data="activeVolume"
-              :window-center="windowCenter"
-              :window-width="windowWidth"
-              :is-mask="displayIsMask"
-              :data-min="activeMeta?.min ?? 0"
-              :data-max="activeMeta?.max ?? 1"
-            />
-          </div>
-        </div>
+        <CtSliceViewPanel
+          class="axial-panel--primary"
+          title="轴状图 Axial"
+          plane="axial"
+          :slice-index="axialSlice"
+          :slice-total="zCount"
+          :window-center="windowCenter"
+          :window-width="windowWidth"
+          :spacing-mm="spacingXy"
+          :series-label="seriesLabel"
+        >
+          <template v-if="showLesionBoxAnnotations" #header-extra>
+            <ElTag type="danger" size="small" effect="dark">AI 病灶标注</ElTag>
+          </template>
+          <canvas ref="axialCanvas" />
+        </CtSliceViewPanel>
       </section>
     </div>
   </div>
@@ -859,9 +975,16 @@ defineExpose({ resetVolumeState, loadBoundVolume })
 }
 
 .ct-sidebar-meta {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   font-size: 11px;
-  font-family: var(--ct-font-mono);
+  line-height: 1.5;
+  color: var(--ct-text-dim);
+}
+
+.ct-sidebar-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--ct-text-dim);
 }
 
@@ -958,9 +1081,18 @@ defineExpose({ resetVolumeState, loadBoundVolume })
   gap: 10px;
 }
 
-.view-grid :deep(.ct-slice-panel) {
+.view-grid :deep(.ct-slice-panel),
+.view-grid .volume-panel {
   min-height: 0;
   height: 100%;
+}
+
+.axial-panel--primary {
+  min-height: 0;
+}
+
+.volume-panel--compact .volume-panel__toolbar--side {
+  display: none;
 }
 
 .volume-panel {

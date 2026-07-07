@@ -30,6 +30,9 @@ public class CheckRequest implements Serializable {
     private String imagingSourceName;
     private String imagingAnalysisResult;
     private LocalDateTime imagingAnalyzedAt;
+    private String imagingSegmentationResult;
+    private LocalDateTime imagingSegmentedAt;
+    private String imagingSegmentationMaskVolumeId;
 
     // JOIN 展示字段
     private String caseNumber;
