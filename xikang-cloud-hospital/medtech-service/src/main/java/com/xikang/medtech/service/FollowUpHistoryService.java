@@ -139,6 +139,98 @@ public class FollowUpHistoryService {
         );
     }
 
+    public void recordMonitoringAssigned(Long registerId, Long nurseId) {
+        recordEvent(
+            registerId,
+            "monitoring_assigned",
+            "nurse",
+            nurseId,
+            "分配监视医生",
+            "管理员已指定随访医生负责该患者的日常监视",
+            Map.of("monitoringEmployeeId", nurseId),
+            "follow_up_enrollment",
+            null,
+            LocalDateTime.now()
+        );
+    }
+
+    public void recordMonitoringTransferRequested(
+        Long registerId,
+        Long fromEmployeeId,
+        Long toEmployeeId,
+        String reason
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("fromEmployeeId", fromEmployeeId);
+        if (toEmployeeId != null) {
+            payload.put("toEmployeeId", toEmployeeId);
+        }
+        payload.put("reason", reason);
+        recordEvent(
+            registerId,
+            "monitoring_transfer_requested",
+            "nurse",
+            fromEmployeeId,
+            "申请调换监视",
+            reason,
+            payload,
+            "follow_up_monitoring_transfer_request",
+            null,
+            LocalDateTime.now()
+        );
+    }
+
+    public void recordMonitoringTransferApproved(Long registerId, Long reviewerId, String note) {
+        recordEvent(
+            registerId,
+            "monitoring_transfer_approved",
+            "nurse",
+            reviewerId,
+            "调换申请已通过",
+            note != null ? note : "管理员已同意监视调换",
+            Map.of(),
+            "follow_up_monitoring_transfer_request",
+            null,
+            LocalDateTime.now()
+        );
+    }
+
+    public void recordMonitoringTransferRejected(Long registerId, Long reviewerId, String note) {
+        recordEvent(
+            registerId,
+            "monitoring_transfer_rejected",
+            "nurse",
+            reviewerId,
+            "调换申请已驳回",
+            note != null ? note : "管理员已驳回调换申请",
+            Map.of(),
+            "follow_up_monitoring_transfer_request",
+            null,
+            LocalDateTime.now()
+        );
+    }
+
+    public void recordContactCompleted(
+        Long registerId,
+        Long nurseId,
+        String channel,
+        String summary,
+        Long contactRecordId
+    ) {
+        recordEvent(
+            registerId,
+            "contact_completed",
+            "nurse",
+            nurseId,
+            "患者联系记录",
+            summary,
+            Map.of("channel", channel != null ? channel : "phone"),
+            "follow_up_contact_record",
+            contactRecordId,
+            LocalDateTime.now()
+        );
+    }
+
     public void recordInterviewScheduled(Long registerId, Long nurseId, String reason) {
         recordEvent(
             registerId,

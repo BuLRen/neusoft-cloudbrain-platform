@@ -127,4 +127,20 @@ public class FollowUpPatientPortalController {
     ) {
         return Result.success(patientPortalService.getSharedCaseSummary(patientId, registerId));
     }
+
+    @GetMapping("/communication/unread-summary")
+    public Result<Map<String, Object>> unreadSummary(
+        @RequestParam(required = false) Long patientId,
+        @RequestParam Long registerId
+    ) {
+        return Result.success(patientPortalService.getPatientUnreadSummary(patientId, registerId));
+    }
+
+    @PostMapping("/communication/sessions/{registerId}/mark-read")
+    public Result<Map<String, Object>> markSessionRead(
+        @RequestParam(required = false) Long patientId,
+        @PathVariable Long registerId
+    ) {
+        return Result.success(patientPortalService.markPatientSessionRead(patientId, registerId));
+    }
 }

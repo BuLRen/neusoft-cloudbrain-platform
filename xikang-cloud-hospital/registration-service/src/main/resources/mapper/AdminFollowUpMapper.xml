@@ -62,4 +62,29 @@
         WHERE e.id = #{id}
     </select>
 
+    <select id="selectFollowUpEmployeeAll" resultType="com.xikang.registration.dto.FollowUpAdminView">
+        SELECT DISTINCT ON (e.id)
+            e.id,
+            e.deptment_id AS deptmentId,
+            d.dept_name AS deptName,
+            e.realname,
+            e.delmark,
+            u.id AS userId,
+            u.username,
+            u.status AS accountStatus
+        <include refid="FollowUp_Employee_Base"/>
+        <include refid="FollowUp_Employee_Filters"/>
+        ORDER BY e.id, e.deptment_id
+    </select>
+
+    <select id="existsActiveFollowUpEmployee" resultType="int">
+        SELECT COUNT(*)
+        FROM employee e
+        INNER JOIN department d ON d.id = e.deptment_id AND d.dept_type = '临床科室'
+        INNER JOIN users u ON u.employee_id = e.id AND u.user_type = 7
+        WHERE e.delmark = 0
+          AND e.realname = #{realname}
+          AND e.deptment_id = #{deptmentId}
+    </select>
+
 </mapper>

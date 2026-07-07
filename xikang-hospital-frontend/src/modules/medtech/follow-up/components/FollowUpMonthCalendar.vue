@@ -10,13 +10,25 @@ const props = defineProps<{
   month: number
   todayYmd: string
   schedules: FollowUpDayScheduleItem[]
+  shiftDates?: string[]
 }>()
 
 const emit = defineEmits<{
   'update:year': [value: number]
   'update:month': [value: number]
   openDay: [date: string]
+  openShiftDay: [date: string]
 }>()
+
+const shiftDateSet = computed(() => new Set(props.shiftDates ?? []))
+
+function onCellClick(date: string) {
+  if (shiftDateSet.value.has(date)) {
+    emit('openShiftDay', date)
+  } else {
+    emit('openDay', date)
+  }
+}
 
 const weekdayLabels = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -81,9 +93,12 @@ function nextMonth() {
           'follow-up-calendar__cell--muted': !cell.inMonth,
           'follow-up-calendar__cell--today': cell.isToday,
         }"
-        @click="emit('openDay', cell.date)"
+        @click="onCellClick(cell.date)"
       >
-        <span class="follow-up-calendar__day">{{ cell.date.slice(-2) }}</span>
+        <span class="follow-up-calendar__day">
+          {{ cell.date.slice(-2) }}
+          <em v-if="shiftDateSet.has(cell.date)" class="follow-up-calendar__shift">班</em>
+        </span>
         <div class="follow-up-calendar__chips">
           <span
             v-for="item in (schedulesByDate.get(cell.date) ?? []).slice(0, 2)"
@@ -180,8 +195,20 @@ function nextMonth() {
 }
 
 .follow-up-calendar__day {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 13px;
+  font-weight: 700;
+}
+
+.follow-up-calendar__shift {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(124, 92, 255, 0.18);
+  color: #7c5cff;
+  font-size: 9px;
+  font-style: normal;
   font-weight: 700;
 }
 

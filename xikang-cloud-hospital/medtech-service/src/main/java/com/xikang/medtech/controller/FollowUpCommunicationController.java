@@ -144,4 +144,14 @@ public class FollowUpCommunicationController {
     public Result<List<Map<String, Object>>> suggestDiagnoses(@RequestParam Long registerId) {
         return Result.success(communicationService.suggestDiagnoses(registerId));
     }
+
+    @GetMapping("/unread-summary")
+    public Result<Map<String, Object>> unreadSummary(@RequestParam(required = false) Long departmentId) {
+        return Result.success(communicationService.getDoctorUnreadSummary(departmentId));
+    }
+
+    @PostMapping("/sessions/{id}/mark-read")
+    public Result<Map<String, Object>> markSessionRead(@PathVariable Long id) {
+        return Result.success(communicationService.markDoctorSessionRead(id));
+    }
 }

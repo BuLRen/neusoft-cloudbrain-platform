@@ -161,6 +161,7 @@
             r.visit_state AS "visitState",
             r.noon AS "noon",
             d.dept_name AS "deptName",
+            r.deptment_id AS "departmentId",
             e.realname AS "physicianName",
             ac.chief_complaint AS "chiefComplaint",
             ac.symptom_duration AS "symptomDuration",

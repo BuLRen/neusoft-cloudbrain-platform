@@ -30,7 +30,7 @@ export function setupRouterGuard(router: Router) {
     if (to.path === loginRoutePath) {
       if (authStore.isAuthenticated) {
         if (authStore.role === 'patient') return '/patient/overview'
-        if (authStore.role === 'followup') return '/follow-up/outcome'
+        if (authStore.role === 'followup') return '/follow-up/dashboard'
         return defaultRoutePath
       }
       if (to.query.redirect) {
@@ -52,10 +52,10 @@ export function setupRouterGuard(router: Router) {
     if (authStore.role === 'followup' && authStore.isAuthenticated) {
       const blockedPaths = ['/admin', '/physician', '/medtech', '/pharmacy', '/registration']
       if (blockedPaths.some(path => to.path.startsWith(path))) {
-        return '/follow-up/outcome'
+        return '/follow-up/dashboard'
       }
       if (to.path === '/dashboard' || to.path === '/') {
-        return '/follow-up/outcome'
+        return '/follow-up/dashboard'
       }
     }
 

@@ -5,6 +5,7 @@ import com.xikang.registration.dto.PersonnelImportResult;
 import com.xikang.registration.entity.Department;
 import com.xikang.registration.entity.Employee;
 import com.xikang.registration.entity.RegistLevel;
+import com.xikang.registration.mapper.AdminFollowUpMapper;
 import com.xikang.registration.mapper.AdminMedtechMapper;
 import com.xikang.registration.mapper.DepartmentMapper;
 import com.xikang.registration.mapper.EmployeeMapper;
@@ -22,6 +23,7 @@ public class AdminPersonnelImportExecutor {
 
     private final EmployeeMapper employeeMapper;
     private final AdminMedtechMapper adminMedtechMapper;
+    private final AdminFollowUpMapper adminFollowUpMapper;
     private final DepartmentMapper departmentMapper;
     private final RegistLevelMapper registLevelMapper;
     private final AdminEmployeeAccountHelper accountHelper;
@@ -64,6 +66,26 @@ public class AdminPersonnelImportExecutor {
             employee.getId(),
             realname,
             AdminEmployeeAccountHelper.MEDTECH_DEFAULT_PASSWORD
+        );
+        return ImportRowOutcome.success(employee.getId(), username);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ImportRowOutcome importFollowUpRow(Map<String, String> row) {
+        String realname = requiredValue(row, "姓名");
+        String deptName = requiredValue(row, "临床科室");
+
+        Department department = resolveClinicalDepartment(deptName);
+
+        if (adminFollowUpMapper.existsActiveFollowUpEmployee(realname, department.getId()) > 0) {
+            return ImportRowOutcome.skipped("相同在职随访档案已存在，已跳过");
+        }
+
+        Employee employee = accountHelper.insertFollowUpEmployee(realname, department.getId());
+        String username = accountHelper.createFollowUpAccountWithPrefix(
+            employee.getId(),
+            realname,
+            AdminEmployeeAccountHelper.FOLLOWUP_DEFAULT_PASSWORD
         );
         return ImportRowOutcome.success(employee.getId(), username);
     }

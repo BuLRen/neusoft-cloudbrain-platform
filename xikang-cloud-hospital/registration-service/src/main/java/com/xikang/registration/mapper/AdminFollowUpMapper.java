@@ -24,4 +24,15 @@ public interface AdminFollowUpMapper {
     );
 
     FollowUpAdminView selectFollowUpEmployeeById(@Param("id") Long id);
+
+    List<FollowUpAdminView> selectFollowUpEmployeeAll(
+        @Param("departmentId") Long departmentId,
+        @Param("keyword") String keyword,
+        @Param("includeDisabled") Boolean includeDisabled
+    );
+
+    int existsActiveFollowUpEmployee(
+        @Param("realname") String realname,
+        @Param("deptmentId") Long deptmentId
+    );
 }

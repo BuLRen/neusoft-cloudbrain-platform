@@ -150,6 +150,16 @@ export interface FollowUpDashboardPatient {
   interviewScheduledToday?: boolean
   trackedDates?: FollowUpTrackedDate[]
   diseases?: FollowUpDisease[]
+  monitoringEmployeeId?: number
+  monitoringEmployeeName?: string
+  isMine?: boolean
+  monitoredAt?: string
+  followUpDeadline?: string
+  daysUntilDeadline?: number
+  lastContactDate?: string
+  daysSinceLastContact?: number
+  contactedToday?: boolean
+  contactStatus?: 'contacted_today' | 'due' | 'overdue' | 'within_limit'
 }
 
 export interface FollowUpDayScheduleItem {
@@ -168,8 +178,13 @@ export interface FollowUpDayScheduleItem {
 
 export interface FollowUpDashboardStats {
   totalPatients?: number
+  enrolledPatients?: number
   todayInterviewsPlanned?: number
   todayObservationPending?: number
+  myMonitoringCount?: number
+  todayContactDue?: number
+  todayContacted?: number
+  contactOverdue?: number
 }
 
 export interface FollowUpDashboardContext {
@@ -277,6 +292,7 @@ export interface FollowUpCommunicationSession {
   age?: number
   priorityLevel?: FollowUpPriorityLevel
   patientMessageCount?: number
+  unreadCount?: number
   lastMessagePreview?: string
   lastMessageTime?: string
 }
@@ -481,4 +497,84 @@ export interface GlucoseAdvice {
   forecastMax?: number
   modelId?: string
   confidence?: number
+}
+
+export interface FollowUpContactRecord {
+  id: number
+  registerId: number
+  employeeId?: number
+  employeeName?: string
+  contactDate: string
+  channel: 'phone' | 'wechat' | 'visit' | 'other'
+  durationMinutes?: number
+  summary: string
+  nextAction?: string
+  createdAt?: string
+}
+
+export interface FollowUpContactRecordPayload {
+  registerId: number
+  contactDate?: string
+  channel?: string
+  durationMinutes?: number
+  summary: string
+  nextAction?: string
+}
+
+export interface FollowUpStaffShift {
+  id: number
+  planId?: number
+  employeeId?: number
+  employeeName?: string
+  departmentId?: number
+  workDate: string
+  shiftType?: 'full' | 'am' | 'pm'
+  status?: string
+  contactTasks?: FollowUpShiftContactTask[]
+}
+
+export interface FollowUpShiftContactTask {
+  id?: number
+  shiftId?: number
+  registerId: number
+  patientName?: string
+  caseNumber?: string
+  priorityLevel?: string
+  status?: 'planned' | 'completed' | 'skipped'
+}
+
+export interface FollowUpShiftChangeRequest {
+  id: number
+  employeeId?: number
+  employeeName?: string
+  departmentId?: number
+  originalShiftId?: number
+  originalWorkDate?: string
+  requestedWorkDate: string
+  reason: string
+  status?: string
+  createdAt?: string
+}
+
+export interface FollowUpMonitoringTransferRequest {
+  id: number
+  registerId: number
+  departmentId?: number
+  fromEmployeeId?: number
+  fromEmployeeName?: string
+  toEmployeeId?: number
+  toEmployeeName?: string
+  patientName?: string
+  caseNumber?: string
+  reason: string
+  status?: string
+  createdAt?: string
+}
+
+export interface FollowUpShiftAiTask {
+  taskKey?: string
+  status: string
+  message?: string
+  percent?: number
+  result?: Record<string, unknown>
 }
