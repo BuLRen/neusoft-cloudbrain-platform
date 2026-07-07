@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -56,9 +57,7 @@ public class PatientService {
      * 会检查身份证号是否已存在，已存在则直接关联，不存在则新建
      */
     public void createPatientWithRelation(Long userId, Patient patient, String relation) {
-        if (patient.getIdCard() == null || patient.getIdCard().isBlank()) {
-            throw new com.xikang.common.exception.BusinessException(400, "身份证号不能为空");
-        }
+        normalizeAndValidateIdentity(patient, true);
         if (userId == null) {
             throw new com.xikang.common.exception.BusinessException(400, "用户ID不能为空");
         }
@@ -70,6 +69,9 @@ public class PatientService {
 
         Patient existing = patientMapper.selectByIdCard(patient.getIdCard());
         if (existing != null) {
+            if (existing.getRealName() != null && !existing.getRealName().equals(patient.getRealName())) {
+                throw new com.xikang.common.exception.BusinessException(409, "身份证号与姓名不匹配");
+            }
             patientId = existing.getId();
             log.info("Patient already exists for idCard: {}, patientId: {}", patient.getIdCard(), patientId);
         } else {
@@ -89,6 +91,11 @@ public class PatientService {
         if (patient.getId() == null) {
             throw new com.xikang.common.exception.BusinessException(400, "患者ID不能为空");
         }
+        normalizeAndValidateIdentity(patient, true);
+        Patient sameIdCard = patientMapper.selectByIdCard(patient.getIdCard());
+        if (sameIdCard != null && !sameIdCard.getId().equals(patient.getId())) {
+            throw new com.xikang.common.exception.BusinessException(409, "该身份证号已存在其他患者档案");
+        }
         patientMapper.update(patient);
         log.info("Patient updated: id={}", patient.getId());
     }
@@ -96,6 +103,50 @@ public class PatientService {
     public void deletePatient(Integer patientId) {
         patientMapper.deleteById(patientId);
         log.info("Patient deleted: id={}", patientId);
+    }
+
+    private void normalizeAndValidateIdentity(Patient patient, boolean phoneRequired) {
+        String realName = patient.getRealName() == null ? null : patient.getRealName().trim();
+        String idCard = patient.getIdCard() == null ? null : patient.getIdCard().trim().toUpperCase();
+        String phone = patient.getPhone() == null ? null : patient.getPhone().trim();
+        if (realName == null || realName.isBlank()) {
+            throw new com.xikang.common.exception.BusinessException(400, "真实姓名不能为空");
+        }
+        if (!isValidChineseIdCard(idCard)) {
+            throw new com.xikang.common.exception.BusinessException(400, "请输入正确的18位身份证号");
+        }
+        if ((phoneRequired || (phone != null && !phone.isBlank())) && (phone == null || !phone.matches("^1[3-9]\\d{9}$"))) {
+            throw new com.xikang.common.exception.BusinessException(400, "请输入正确的11位手机号");
+        }
+        patient.setRealName(realName);
+        patient.setIdCard(idCard);
+        patient.setPhone(phone);
+        patient.setBirthdate(parseBirthdate(idCard));
+        patient.setGender(((idCard.charAt(16) - '0') % 2 == 1) ? "男" : "女");
+    }
+
+    private boolean isValidChineseIdCard(String idCard) {
+        if (idCard == null || !idCard.matches("^\\d{17}[0-9X]$")) return false;
+        String validProvinces = "|11|12|13|14|15|21|22|23|31|32|33|34|35|36|37|41|42|43|44|45|46|50|51|52|53|54|61|62|63|64|65|71|81|82|";
+        if (!validProvinces.contains("|" + idCard.substring(0, 2) + "|")
+                || "000000".equals(idCard.substring(0, 6))
+                || "000".equals(idCard.substring(14, 17))) return false;
+        LocalDate birthdate = parseBirthdate(idCard);
+        if (birthdate == null || birthdate.isAfter(LocalDate.now()) || birthdate.isBefore(LocalDate.of(1900, 1, 1))) return false;
+        int[] weights = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
+        char[] checks = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
+        int sum = 0;
+        for (int i = 0; i < 17; i++) sum += (idCard.charAt(i) - '0') * weights[i];
+        return idCard.charAt(17) == checks[sum % 11];
+    }
+
+    private LocalDate parseBirthdate(String idCard) {
+        if (idCard == null || idCard.length() < 14) return null;
+        try {
+            return LocalDate.of(Integer.parseInt(idCard.substring(6, 10)), Integer.parseInt(idCard.substring(10, 12)), Integer.parseInt(idCard.substring(12, 14)));
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public BigDecimal getBalance(Integer patientId) {

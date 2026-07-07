@@ -1,11 +1,13 @@
 package com.xikang.registration.service;
 
 import com.xikang.common.exception.BusinessException;
+import com.xikang.registration.dto.FollowUpAdminView;
 import com.xikang.registration.dto.MedtechAdminView;
 import com.xikang.registration.dto.PersonnelImportResult;
 import com.xikang.registration.dto.PersonnelImportRowResult;
 import com.xikang.registration.dto.PhysicianAdminView;
 import com.xikang.registration.entity.Department;
+import com.xikang.registration.mapper.AdminFollowUpMapper;
 import com.xikang.registration.mapper.AdminMedtechMapper;
 import com.xikang.registration.mapper.DepartmentMapper;
 import com.xikang.registration.mapper.EmployeeMapper;
@@ -29,9 +31,11 @@ public class AdminPersonnelExcelService {
 
     private static final List<String> PHYSICIAN_IMPORT_HEADERS = List.of("姓名", "科室", "挂号级别");
     private static final List<String> MEDTECH_IMPORT_HEADERS = List.of("姓名", "医技科室");
+    private static final List<String> FOLLOWUP_IMPORT_HEADERS = List.of("姓名", "临床科室");
 
     private final EmployeeMapper employeeMapper;
     private final AdminMedtechMapper adminMedtechMapper;
+    private final AdminFollowUpMapper adminFollowUpMapper;
     private final DepartmentMapper departmentMapper;
     private final RegistLevelMapper registLevelMapper;
     private final AdminPersonnelImportExecutor importExecutor;
@@ -43,6 +47,10 @@ public class AdminPersonnelExcelService {
 
     public byte[] medtechTemplate() {
         return PersonnelExcelWriter.writeMedtechTemplate(departmentMapper.selectByType("医技科室"));
+    }
+
+    public byte[] followUpTemplate() {
+        return PersonnelExcelWriter.writeFollowUpTemplate(departmentMapper.selectByType("临床科室"));
     }
 
     public byte[] exportPhysicians(Long departmentId, String keyword, Boolean includeDisabled) {
@@ -74,6 +82,21 @@ public class AdminPersonnelExcelService {
             })
             .collect(Collectors.toList());
         return PersonnelExcelWriter.writeMedtechExport(rows);
+    }
+
+    public byte[] exportFollowUpEmployees(Long departmentId, String keyword, Boolean includeDisabled) {
+        List<FollowUpAdminView> records = adminFollowUpMapper.selectFollowUpEmployeeAll(departmentId, keyword, includeDisabled);
+        List<String[]> rows = records.stream()
+            .map(record -> new String[] {
+                String.valueOf(record.getId()),
+                nullToEmpty(record.getRealname()),
+                nullToEmpty(record.getDeptName()),
+                employeeStatusLabel(record.getDelmark()),
+                record.getUsername() == null ? "" : record.getUsername(),
+                accountStatusLabel(record.getUserId(), record.getAccountStatus()),
+            })
+            .collect(Collectors.toList());
+        return PersonnelExcelWriter.writeFollowUpExport(rows);
     }
 
     public PersonnelImportResult importPhysicians(MultipartFile file) {
@@ -116,6 +139,26 @@ public class AdminPersonnelExcelService {
         return result;
     }
 
+    public PersonnelImportResult importFollowUpEmployees(MultipartFile file) {
+        validateXlsx(file);
+        List<Map<String, String>> rows = readRows(file, FOLLOWUP_IMPORT_HEADERS);
+        PersonnelImportResult result = new PersonnelImportResult();
+        result.setTotalRows(rows.size());
+        for (int i = 0; i < rows.size(); i++) {
+            int rowNumber = i + 2;
+            Map<String, String> row = rows.get(i);
+            try {
+                AdminPersonnelImportExecutor.ImportRowOutcome outcome = importExecutor.importFollowUpRow(row);
+                addRowResult(result, rowNumber, outcome.status(), outcome.message(), outcome.employeeId(), outcome.username());
+            } catch (BusinessException ex) {
+                addRowResult(result, rowNumber, "failed", ex.getMessage(), null, null);
+            } catch (Exception ex) {
+                addRowResult(result, rowNumber, "failed", "导入失败：" + ex.getMessage(), null, null);
+            }
+        }
+        return result;
+    }
+
     public String physicianExportFilename() {
         return "诊疗医生_" + today() + ".xlsx";
     }
@@ -146,6 +189,22 @@ public class AdminPersonnelExcelService {
 
     public String medtechTemplateAsciiFilename() {
         return "medtech_import_template.xlsx";
+    }
+
+    public String followUpExportFilename() {
+        return "随访人员_" + today() + ".xlsx";
+    }
+
+    public String followUpExportAsciiFilename() {
+        return "followup_employees_" + today() + ".xlsx";
+    }
+
+    public String followUpTemplateFilename() {
+        return "随访人员导入模板.xlsx";
+    }
+
+    public String followUpTemplateAsciiFilename() {
+        return "followup_import_template.xlsx";
     }
 
     private List<Map<String, String>> readRows(MultipartFile file, List<String> headers) {

@@ -34,19 +34,21 @@
         WHERE id_card = #{idCard} AND delmark = 0
     </select>
 
+    <!--
+        用户-患者关系完全由 user_patient_managed 表管理（f7b78e7 重构后）
+        不再 LEFT JOIN users 取已删除的 patient_id 列；改用 INNER JOIN 简化。
+        relation 字段允许 NULL（表结构没有 NOT NULL 约束），保留 COALESCE 兜底。
+    -->
     <select id="selectByUserId" resultMap="BaseResultMap">
-        SELECT DISTINCT ON (p.id)
-               p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
+        SELECT p.id, p.real_name, p.id_card, p.gender, p.birthdate, p.phone, p.avatar, p.home_address,
                p.allergy_history, p.account_balance, p.delmark, p.create_time, p.update_time,
                COALESCE(upm.relation, '本人') AS relation,
                CASE WHEN COALESCE(upm.relation, '本人') = '本人' THEN 1 ELSE 0 END AS is_primary
         FROM patient p
-        LEFT JOIN user_patient_managed upm ON p.id = upm.patient_id AND upm.user_id = #{userId}
-        LEFT JOIN users u ON u.id = #{userId}
-        WHERE p.delmark = 0
-          AND (upm.user_id IS NOT NULL OR p.id = u.patient_id)
-        ORDER BY p.id,
-                 CASE WHEN COALESCE(upm.relation, '本人') = '本人' THEN 0 ELSE 1 END,
+        INNER JOIN user_patient_managed upm ON p.id = upm.patient_id
+        WHERE upm.user_id = #{userId}
+          AND p.delmark = 0
+        ORDER BY CASE WHEN COALESCE(upm.relation, '本人') = '本人' THEN 0 ELSE 1 END,
                  p.create_time ASC
     </select>
 
@@ -106,7 +108,7 @@
         SELECT id, real_name, id_card, gender, birthdate, phone, avatar, home_address, allergy_history,
                account_balance, delmark, create_time, update_time
         FROM patient
-        WHERE delmark = 1
+        WHERE delmark = 0
           AND (
               real_name ILIKE CONCAT('%', #{keyword}, '%')
               OR phone ILIKE CONCAT('%', #{keyword}, '%')
@@ -115,5 +117,62 @@
         ORDER BY real_name ASC, id ASC
         LIMIT #{limit}
     </select>
+
+    <resultMap id="AdminViewResultMap" type="com.xikang.auth.dto.PatientAdminView">
+        <id column="id" property="id" jdbcType="INTEGER"/>
+        <result column="real_name" property="realName" jdbcType="VARCHAR"/>
+        <result column="id_card" property="idCard" jdbcType="VARCHAR"/>
+        <result column="gender" property="gender" jdbcType="VARCHAR"/>
+        <result column="birthdate" property="birthdate" jdbcType="DATE"/>
+        <result column="phone" property="phone" jdbcType="VARCHAR"/>
+        <result column="home_address" property="homeAddress" jdbcType="VARCHAR"/>
+        <result column="allergy_history" property="allergyHistory" jdbcType="VARCHAR"/>
+        <result column="account_balance" property="accountBalance" jdbcType="DECIMAL"/>
+        <result column="delmark" property="delmark" jdbcType="INTEGER"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="adminWhere">
+        <where>
+            <if test="includeDisabled == null or includeDisabled == false">
+                AND delmark = 0
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    real_name ILIKE CONCAT('%', #{keyword}, '%')
+                    OR phone ILIKE CONCAT('%', #{keyword}, '%')
+                    OR id_card ILIKE CONCAT('%', #{keyword}, '%')
+                    OR CAST(id AS TEXT) LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="countForAdmin" resultType="long">
+        SELECT COUNT(*)
+        FROM patient
+        <include refid="adminWhere"/>
+    </select>
+
+    <select id="selectPageForAdmin" resultMap="AdminViewResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        <include refid="adminWhere"/>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="selectAdminViewById" resultMap="AdminViewResultMap">
+        SELECT id, real_name, id_card, gender, birthdate, phone, home_address, allergy_history,
+               account_balance, delmark, create_time, update_time
+        FROM patient
+        WHERE id = #{id}
+    </select>
+
+    <update id="restoreById">
+        UPDATE patient SET delmark = 0, update_time = NOW() WHERE id = #{id}
+    </update>
 
 </mapper>

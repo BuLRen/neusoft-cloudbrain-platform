@@ -1,0 +1,23 @@
+<view class="page-shell profile-page">
+  <view class="page-title">个人中心</view>
+  <view class="profile-hero">
+    <view class="profile-row">
+      <view class="avatar"><view class="avatar-head"></view><view class="avatar-body"></view></view>
+      <view class="identity">
+        <view class="name-row"><text class="name">张三</text><text class="verified">✓ 已实名认证</text></view>
+        <text class="phone">150****1234</text>
+      </view>
+      <view class="setting">账户设置 ›</view>
+    </view>
+    <view class="account-stats">
+      <view><text class="stat-value">2张</text><text>我的就诊卡</text></view>
+      <view><text class="stat-value">3人</text><text>就诊人管理</text></view>
+      <view><text class="stat-value">5位</text><text>我的医生</text></view>
+      <view><text class="stat-value">12项</text><text>我的收藏</text></view>
+    </view>
+  </view>
+  <view class="section card"><view class="section-title title-mark">就诊记录</view><view class="grid menu"><view class="grid-item" wx:for="{{records}}" wx:key="*this" data-name="{{item}}" bindtap="tap"><view class="service-icon blue-icon">医</view><text class="grid-label">{{item}}</text></view></view></view>
+  <view class="section card"><view class="section-title title-mark">常用功能</view><view class="grid menu"><view class="grid-item" wx:for="{{common}}" wx:key="*this" data-name="{{item}}" bindtap="tap"><view class="service-icon green-icon">康</view><text class="grid-label">{{item}}</text></view></view></view>
+  <view class="section card"><view class="section-title title-mark">其他服务</view><view class="grid menu small-menu"><view class="grid-item" wx:for="{{other}}" wx:key="*this" data-name="{{item}}" bindtap="tap"><view class="service-icon purple-icon">服</view><text class="grid-label">{{item}}</text></view></view></view>
+  <view class="follow-card card"><view class="follow-copy"><text class="follow-title">关注熙康云医院</text><text class="follow-desc">获取更多就医资讯和健康服务</text><view class="follow-button">去关注</view></view><view class="qr-box"><text>熙康</text><text>云医院</text></view></view>
+</view>

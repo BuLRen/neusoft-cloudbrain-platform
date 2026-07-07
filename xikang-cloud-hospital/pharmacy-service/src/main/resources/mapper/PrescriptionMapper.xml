@@ -231,8 +231,11 @@
         LEFT  JOIN employee   e ON e.id = r.employee_id
         LEFT  JOIN drug_info  d ON d.id = p.drug_id
         <where>
+            (r.patient_id IS NULL OR NOT EXISTS (
+                SELECT 1 FROM patient p WHERE p.id = r.patient_id AND p.delmark = 1
+            ))
             <if test="registrationId != null">
-                p.register_id = #{registrationId}
+                AND p.register_id = #{registrationId}
             </if>
         </where>
         GROUP BY r.id, r.patient_id, r.real_name, r.employee_id, e.realname

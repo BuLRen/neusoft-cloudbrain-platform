@@ -1,5 +1,5 @@
 import type { ClinicalExamItem } from '@/shared/api/modules/clinicalRecord'
-import { formatPrimaryResultSummary } from '@/shared/types/resultForm'
+import { formatPrimaryResultSummary, parseResultPayload } from '@/shared/types/resultForm'
 import {
   hasExportableLabReportPayload,
   resolveSimulationDisplayOutput,
@@ -54,10 +54,48 @@ export function hasExamAiAnalysis(item: ClinicalExamItem): boolean {
   return Boolean(item.aiAnalysis?.trim())
 }
 
+export function isCtExamItem(item: ClinicalExamItem): boolean {
+  if (item.category !== 'check') return false
+  if (/CT/i.test(item.techName || '')) return true
+  const payload = parseResultPayload(item.resultRaw)
+  return Boolean(payload?.categoryCode?.startsWith('imaging_ct'))
+}
+
 export function canExportExamItemPdf(item: ClinicalExamItem): boolean {
   if (item.category !== 'inspection') return false
   if (!canViewFullExamResult(item)) return false
   return hasExportableLabReportPayload(item.resultRaw)
+}
+
+export function getCompletedExamItemsForExportSelection(items: ClinicalExamItem[]): ClinicalExamItem[] {
+  return items.filter(canViewFullExamResult)
+}
+
+export function describeExamItemExportCapability(
+  item: ClinicalExamItem,
+  mode: 'physician' | 'patient',
+): { exportable: boolean; reason?: string } {
+  if (!canViewFullExamResult(item)) {
+    return { exportable: false, reason: '暂无结果' }
+  }
+  if (item.category === 'inspection') {
+    if (!hasExportableLabReportPayload(item.resultRaw)) {
+      return { exportable: false, reason: '无结构化检验明细' }
+    }
+    return { exportable: true }
+  }
+  if (isCtExamItem(item)) {
+    const payload = parseResultPayload(item.resultRaw)
+    if (mode !== 'physician' && (!payload?.values || !Object.keys(payload.values).length)) {
+      return { exportable: false, reason: '无诊断报告内容' }
+    }
+    return { exportable: true }
+  }
+  const structured = resolveExamStructuredOutput(item)
+  if (structured && ((structured.resultItems?.length ?? 0) > 0 || structured.conclusion?.trim())) {
+    return { exportable: true }
+  }
+  return { exportable: false, reason: '暂无可导出格式' }
 }
 
 export function formatExamResultSummary(item: ClinicalExamItem): string {

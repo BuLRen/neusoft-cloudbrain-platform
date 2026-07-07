@@ -18,6 +18,7 @@ import {
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import PersonnelExcelToolbar from '@/modules/admin/components/PersonnelExcelToolbar.vue'
 import { adminFollowUpApi, type FollowUpAdminRecord } from '@/shared/api/modules/adminFollowUp'
 import { registrationApi } from '@/shared/api/modules/registration'
 import type { DepartmentOption } from '@/shared/types/registration'
@@ -241,6 +242,7 @@ onMounted(async () => {
         </div>
         <div class="personnel-toolbar__actions">
           <ElButton type="primary" @click="openCreate">新增随访人员</ElButton>
+          <PersonnelExcelToolbar kind="followup" :filters="filters" @imported="loadRecords" />
           <ElButton @click="loadRecords">刷新</ElButton>
         </div>
       </div>

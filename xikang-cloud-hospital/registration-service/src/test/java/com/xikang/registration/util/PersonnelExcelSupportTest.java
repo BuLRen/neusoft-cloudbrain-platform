@@ -37,6 +37,17 @@ class PersonnelExcelSupportTest {
     }
 
     @Test
+    void followUpTemplateHasExpectedHeaders() throws Exception {
+        byte[] bytes = PersonnelExcelWriter.writeFollowUpTemplate(List.of());
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
+            var sheet = workbook.getSheetAt(0);
+            var row = sheet.getRow(0);
+            assertEquals("姓名*", row.getCell(0).getStringCellValue());
+            assertEquals("临床科室*", row.getCell(1).getStringCellValue());
+        }
+    }
+
+    @Test
     void attachmentUsesAsciiAndUtf8Filename() {
         ResponseEntity<byte[]> response = PersonnelExcelHttpSupport.attachment(
             new byte[] { 1, 2, 3 },

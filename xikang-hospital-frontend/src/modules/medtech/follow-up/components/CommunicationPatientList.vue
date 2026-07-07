@@ -46,6 +46,7 @@ function priorityTone(priority?: string) {
       >
         <div class="comm-patient-list__head">
           <strong>{{ item.realName ?? '未知' }}</strong>
+          <span v-if="(item.unreadCount ?? 0) > 0" class="comm-patient-list__unread">{{ item.unreadCount }}</span>
           <StatusTag v-if="item.priorityLevel" :tone="priorityTone(item.priorityLevel)" compact>
             {{ FOLLOW_UP_PRIORITY_LABELS[item.priorityLevel] }}
           </StatusTag>
@@ -91,6 +92,20 @@ function priorityTone(priority?: string) {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+.comm-patient-list__unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-danger, #e74c3c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .comm-patient-list__meta {

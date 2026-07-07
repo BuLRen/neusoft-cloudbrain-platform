@@ -4,6 +4,8 @@ import com.xikang.physician.simulation.entity.SimulationConfig;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface SimulationConfigMapper {
 
@@ -11,4 +13,16 @@ public interface SimulationConfigMapper {
         @Param("techCode") String techCode,
         @Param("checkName") String checkName
     );
+
+    List<SimulationConfig> selectAll(@Param("keyword") String keyword);
+
+    SimulationConfig selectById(@Param("id") Integer id);
+
+    SimulationConfig selectByConfigKey(@Param("configKey") String configKey);
+
+    int insert(SimulationConfig config);
+
+    int update(SimulationConfig config);
+
+    int deleteById(@Param("id") Integer id);
 }

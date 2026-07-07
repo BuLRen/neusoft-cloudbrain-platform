@@ -47,7 +47,7 @@ function forceRedirectToLogin() {
 request.interceptors.request.use(
   (config) => {
     const token = getAccessToken()
-    if (token && !config.headers.has('Authorization')) {
+    if (token) {
       config.headers.set('Authorization', `Bearer ${token}`)
     }
     return config
@@ -66,14 +66,14 @@ request.interceptors.response.use(
   (response) => {
     const body = response.data as ApiResult
     if (body && typeof body.code === 'number' && body.code !== 200) {
-      const config = response.config as AxiosRequestConfig & RequestOptions
-      const authStore = useAuthStore()
       if (body.code === 401) {
-        if (!shouldSkipAuthHandling(config)) {
-          authStore.clearSession()
-          forceRedirectToLogin()
-        }
-        return Promise.reject(new Error(body.message || sessionExpiredMessage))
+        // 将 body.code=401 转为标准 401 错误，走下方统一的 refresh 逻辑
+        const authError = Object.assign(new Error(body.message || sessionExpiredMessage), {
+          response: { ...response, status: 401, data: body },
+          config: response.config,
+          isAxiosError: true,
+        }) as AxiosError<ApiResult>
+        return Promise.reject(authError)
       }
       return Promise.reject(new Error(body.message || '请求失败'))
     }
@@ -94,6 +94,13 @@ request.interceptors.response.use(
       ;(originalRequest as any).__isRetryRequest = true
       try {
         await refreshSessionOnce()
+        console.log('[DEBUG] refresh 成功，重试原请求')
+        if (originalRequest.headers) {
+          const nextToken = getAccessToken()
+          if (nextToken) {
+            originalRequest.headers.set('Authorization', `Bearer ${nextToken}`)
+          }
+        }
         return request.request(originalRequest)
       } catch {
         authStore.clearSession()

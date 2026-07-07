@@ -1,0 +1,13 @@
+.patients-page .add-card{position:relative;height:168rpx;gap:0;background:linear-gradient(135deg,rgba(255,255,255,.76),rgba(241,247,255,.78));box-shadow:inset 0 0 0 1rpx rgba(255,255,255,.7)}
+.patients-page .add-card>view{position:static!important;width:42rpx!important;height:42rpx!important;margin:0 0 11rpx!important;border:5rpx solid #e6f1ff;box-sizing:border-box;background:#2f83f6!important;font-size:29rpx!important;line-height:31rpx!important;box-shadow:0 6rpx 14rpx rgba(47,131,246,.2)}
+.patients-page .add-card>text:nth-child(2){font-size:27rpx!important;line-height:1.2}
+.patients-page .add-card>text:last-child{margin-top:10rpx!important}
+.patients-page .patient-card{transition:border-color .2s,box-shadow .2s,background .2s}
+.patients-page .patient-card.current{border:2rpx solid #75adfa;background:linear-gradient(105deg,#fff,#f5f9ff);box-shadow:0 11rpx 28rpx rgba(42,116,226,.12)}
+.patients-page .patient-actions{width:94rpx;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:14rpx}
+.patients-page .patient-actions button{width:84rpx;height:48rpx;margin:0;padding:0;border:1rpx solid #83b4f8;border-radius:16rpx;background:#edf5ff;color:#2878f5;font-size:19rpx;line-height:46rpx}
+.patients-page .patient-actions button::after{border:0}
+.patients-page .current-label{height:45rpx;padding:0 12rpx;display:flex;align-items:center;gap:5rpx;border-radius:15rpx;background:#e6f3ff;color:#2478f3;font-size:18rpx;font-weight:600}
+.patients-page .current-label text:first-child{width:22rpx;height:22rpx;border-radius:50%;background:#2c81f5;color:#fff;text-align:center;line-height:22rpx;font-size:14rpx}
+.patients-page .patient-actions .edit{display:flex;align-items:center;gap:4rpx;color:#71829b;font-size:18rpx}
+.patients-page .patient-actions .edit text:last-child{color:#2878ff;font-size:28rpx}

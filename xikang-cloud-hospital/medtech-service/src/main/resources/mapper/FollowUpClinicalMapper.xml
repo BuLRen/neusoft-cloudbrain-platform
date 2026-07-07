@@ -83,6 +83,25 @@
         WHERE r.id = #{registerId}
     </select>
 
+    <select id="selectRegisterDepartmentBrief" resultType="map">
+        SELECT
+            r.deptment_id AS "departmentId",
+            d.dept_name AS "departmentName"
+        FROM register r
+        LEFT JOIN department d ON d.id = r.deptment_id
+        WHERE r.id = #{registerId}
+        LIMIT 1
+    </select>
+
+    <select id="selectRegisterDepartmentBriefByDepartmentId" resultType="map">
+        SELECT
+            d.id AS "departmentId",
+            d.dept_name AS "departmentName"
+        FROM department d
+        WHERE d.id = #{departmentId}
+        LIMIT 1
+    </select>
+
     <insert id="upsertLastVisitSnapshot">
         INSERT INTO follow_up_last_visit_snapshot (
             register_id, visit_date, diagnosis_summary, professional_metrics,

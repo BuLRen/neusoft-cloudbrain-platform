@@ -40,6 +40,20 @@ import MedicalRecordSummaryCard from '../components/MedicalRecordSummaryCard.vue
 import AgentActionCard from '../components/AgentActionCard.vue'
 import AgentConfirmCard from '../components/AgentConfirmCard.vue'
 import { applyConfirmCompletions, enrichAssistantMessage, parseStoredThoughts, sanitizeAgentContent, stripBlocksForDisplay } from '../utils/copilotConfirm'
+import {
+  WORKFLOW_CATALOG,
+  detectRunningWorkflow,
+  emptyWorkflowCompletion,
+  fetchWorkflowCompletion,
+  mergeWorkflowCompletion,
+  resolveWorkflowState,
+  workflowCompletionFromMessages,
+  workflowResultRoute,
+  workflowStatusLabel,
+  type WorkflowCatalogItem,
+  type WorkflowId,
+  type WorkflowRunState,
+} from '../utils/workflowStatus'
 import { copilotApi } from '@/shared/api/modules/copilot'
 import { physicianApi, type MedicalRecord, type PhysicianPatient } from '@/shared/api/modules/physician'
 import { useEncounterStore } from '@/app/stores/encounter'
@@ -69,10 +83,12 @@ const loading = ref(false)
 const historyLoading = ref(false)
 const sessionsLoading = ref(false)
 const chatScrollRef = ref<InstanceType<typeof ElScrollbar> | null>(null)
-const composerInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const patient = ref<PhysicianPatient | null>(null)
 const medicalRecord = ref<MedicalRecord | null>(null)
 const medicalRecordLoading = ref(false)
+const workflowCompletion = ref(emptyWorkflowCompletion())
+const pendingWorkflowId = ref<WorkflowId | null>(null)
+const workflowStatusLoading = ref(false)
 type ContextPanel = 'ai-consult' | 'medical-record'
 const contextPanel = ref<ContextPanel | null>(null)
 const actionStates = reactive<Record<string, AgentActionStatus>>({})
@@ -125,14 +141,6 @@ const knowledgeBaseItems = [
   { label: '影像知识库', count: '420 条' },
 ] as const
 
-const workflowCatalog = [
-  { id: 'w1', label: 'W1 病历结构化', prompt: '请运行病历结构化工作流' },
-  { id: 'w2', label: 'W2 检查推荐', prompt: '请运行检查推荐工作流' },
-  { id: 'w3', label: 'W3 结果解读', prompt: '请运行结果解读工作流' },
-  { id: 'w4', label: 'W4 确诊推理', prompt: '请运行确诊推理工作流' },
-  { id: 'w5', label: 'W5 智能荐药', prompt: '请运行智能荐药工作流' },
-] as const
-
 const recommendedActions = ref([...composerPrompts.slice(0, 4)])
 
 const draftCharCount = computed(() => draft.value.length)
@@ -164,6 +172,76 @@ const medicalRecordDraftPreview = computed(() => {
   return parts.join('\n\n').trim()
 })
 
+const runningWorkflowId = computed(() =>
+  pendingWorkflowId.value ?? detectRunningWorkflow(messages.value, loading.value),
+)
+
+const workflowItems = computed(() =>
+  WORKFLOW_CATALOG.map((item) => ({
+    ...item,
+    state: resolveWorkflowState(item.id, workflowCompletion.value, runningWorkflowId.value),
+    statusLabel: workflowStatusLabel(
+      resolveWorkflowState(item.id, workflowCompletion.value, runningWorkflowId.value),
+    ),
+  })),
+)
+
+async function refreshWorkflowStatus(options?: { skipMedicalRecordFetch?: boolean }) {
+  if (!registerId.value) {
+    workflowCompletion.value = emptyWorkflowCompletion()
+    return
+  }
+
+  workflowStatusLoading.value = true
+  try {
+    let record = medicalRecord.value
+    if (!options?.skipMedicalRecordFetch) {
+      try {
+        record = await physicianApi.medicalRecord(registerId.value)
+        medicalRecord.value = record
+      } catch {
+        record = medicalRecord.value
+      }
+    }
+
+    const fromServer = await fetchWorkflowCompletion(registerId.value, record)
+    const fromChat = workflowCompletionFromMessages(messages.value)
+    workflowCompletion.value = mergeWorkflowCompletion(fromServer, fromChat)
+  } finally {
+    workflowStatusLoading.value = false
+  }
+}
+
+async function runWorkflow(item: WorkflowCatalogItem) {
+  if (loading.value || !currentSessionId.value) return
+  pendingWorkflowId.value = item.id
+  try {
+    await sendMessage(item.prompt)
+  } finally {
+    pendingWorkflowId.value = null
+  }
+}
+
+function handleWorkflowClick(item: WorkflowCatalogItem & { state: WorkflowRunState }) {
+  if (item.state === 'running') return
+  if (item.state === 'completed') {
+    if (!registerId.value) return
+    void router.push(workflowResultRoute(item.id, registerId.value))
+    return
+  }
+  void runWorkflow(item)
+}
+
+function workflowClickDisabled(item: { state: WorkflowRunState }) {
+  if (item.state === 'completed') return !registerId.value
+  if (item.state === 'running') return true
+  return loading.value || !currentSessionId.value
+}
+
+function workflowStateClass(state: ReturnType<typeof resolveWorkflowState>) {
+  return `is-${state}`
+}
+
 function refreshRecommendedActions() {
   const shuffled = [...composerPrompts].sort(() => Math.random() - 0.5)
   recommendedActions.value = shuffled.slice(0, 4)
@@ -172,14 +250,6 @@ function refreshRecommendedActions() {
 function handleSessionSelect(sessionId: number | string) {
   const id = typeof sessionId === 'string' ? Number(sessionId) : sessionId
   if (Number.isFinite(id)) void switchSession(id)
-}
-
-function applyComposerPrompt(text: string) {
-  if (loading.value || !currentSessionId.value) return
-  draft.value = text
-  void nextTick(() => {
-    composerInputRef.value?.focus?.()
-  })
 }
 
 function actionStateKey(messageIndex: number, actionIndex: number) {
@@ -303,9 +373,11 @@ async function loadMedicalRecord(id: number) {
     const record = await physicianApi.medicalRecord(id)
     if (seq !== medicalRecordLoadSeq) return
     medicalRecord.value = record
+    await refreshWorkflowStatus({ skipMedicalRecordFetch: true })
   } catch {
     if (seq !== medicalRecordLoadSeq) return
     medicalRecord.value = null
+    await refreshWorkflowStatus({ skipMedicalRecordFetch: true })
   } finally {
     if (seq === medicalRecordLoadSeq) medicalRecordLoading.value = false
   }
@@ -355,6 +427,7 @@ async function loadHistory(regId: number, sessionId: number) {
     resetChatState()
     messages.value = [...normalized, ...localResults]
     Object.assign(confirmStates, applyConfirmCompletions(messages.value, completions))
+    await refreshWorkflowStatus()
     await scrollToBottom()
   } finally {
     historyLoading.value = false
@@ -512,6 +585,7 @@ async function sendMessage(text?: string) {
   } finally {
     loading.value = false
     abortController = null
+    await refreshWorkflowStatus()
     await scrollToBottom()
   }
 }
@@ -547,6 +621,7 @@ async function handleActionConfirm(messageIndex: number, actionIndex: number, ac
     })
 
     await loadPatient(registerId.value)
+    await refreshWorkflowStatus()
     await scrollToBottom()
   } catch (error) {
     actionStates[key] = 'pending'
@@ -585,6 +660,7 @@ async function handleConfirmSubmit(
     confirmStates[key] = 'done'
 
     await loadPatient(registerId.value)
+    await refreshWorkflowStatus()
     await scrollToBottom()
   } catch (error) {
     confirmStates[key] = 'pending'
@@ -626,6 +702,7 @@ watch(registerId, (id, prevId) => {
     contextPanel.value = null
     sessions.value = []
     currentSessionId.value = null
+    workflowCompletion.value = emptyWorkflowCompletion()
     resetChatState()
     return
   }
@@ -902,30 +979,13 @@ onMounted(() => {
                   </div>
                 </template>
 
-                <p v-else>{{ msg.content }}</p>
+                <p v-else class="agent-chat__text">{{ msg.content }}</p>
               </div>
             </ElScrollbar>
 
             <div class="agent-composer">
-              <div v-if="currentSessionId" class="agent-composer__suggestions">
-                <span class="agent-composer__suggestions-label">快捷提问</span>
-                <div class="agent-composer__suggestions-list">
-                  <button
-                    v-for="item in composerPrompts"
-                    :key="`composer-${item}`"
-                    type="button"
-                    class="agent-composer__suggestion-btn"
-                    :disabled="loading"
-                    @click="applyComposerPrompt(item)"
-                  >
-                    {{ item }}
-                  </button>
-                </div>
-              </div>
-
               <div class="agent-composer__input-wrap">
                 <ElInput
-                  ref="composerInputRef"
                   v-model="draft"
                   type="textarea"
                   :rows="3"
@@ -972,11 +1032,23 @@ onMounted(() => {
             <div class="agent-side__head">
               <h3>工作流</h3>
             </div>
-            <ul class="agent-workflow-list">
-              <li v-for="item in workflowCatalog" :key="item.id">
-                <button type="button" class="agent-workflow-list__btn" @click="sendMessage(item.prompt)">
+            <ul class="agent-workflow-list" v-loading="workflowStatusLoading">
+              <li v-for="item in workflowItems" :key="item.id">
+                <button
+                  type="button"
+                  class="agent-workflow-list__btn"
+                  :class="{ 'is-completed': item.state === 'completed' }"
+                  :disabled="workflowClickDisabled(item)"
+                  :aria-label="item.state === 'completed' ? `查看${item.label}结果` : `运行${item.label}`"
+                  @click="handleWorkflowClick(item)"
+                >
                   <span>{{ item.label }}</span>
-                  <span class="agent-workflow-list__status">未运行</span>
+                  <span
+                    class="agent-workflow-list__status"
+                    :class="workflowStateClass(item.state)"
+                  >
+                    {{ item.state === 'completed' ? '查看结果' : item.statusLabel }}
+                  </span>
                 </button>
               </li>
             </ul>
@@ -1021,23 +1093,26 @@ onMounted(() => {
 
 <style scoped>
 .agent-shell {
-  --agent-bg: #0a0f18;
-  --agent-surface: #111926;
-  --agent-surface-2: #162030;
-  --agent-border: rgba(148, 163, 184, 0.14);
-  --agent-text: #e8eef7;
-  --agent-muted: #8b9cb3;
-  --agent-accent: #20c2d3;
-  --agent-accent-soft: rgba(32, 194, 211, 0.12);
-  --agent-success: #34d399;
-  --agent-warning: #fbbf24;
-  color-scheme: dark;
+  --agent-bg: #f4f8fc;
+  --agent-surface: #ffffff;
+  --agent-surface-2: #f7fbff;
+  --agent-border: rgba(72, 118, 169, 0.14);
+  --agent-text: #243c55;
+  --agent-muted: #8ba0b6;
+  --agent-accent: #0b7cdf;
+  --agent-accent-soft: #e9f4ff;
+  --agent-success: #059669;
+  --agent-warning: #d97706;
+  --agent-msg-max-height: min(360px, 42vh);
+  color-scheme: light;
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   background:
-    radial-gradient(circle at 12% 0%, rgba(32, 194, 211, 0.08), transparent 28%),
-    radial-gradient(circle at 88% 12%, rgba(59, 130, 246, 0.08), transparent 24%),
+    radial-gradient(circle at 12% 0%, rgba(47, 141, 247, 0.1), transparent 28%),
+    radial-gradient(circle at 88% 12%, rgba(32, 194, 211, 0.08), transparent 24%),
     var(--agent-bg);
   color: var(--agent-text);
 }
@@ -1061,8 +1136,9 @@ onMounted(() => {
   gap: 16px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--agent-border);
-  background: rgba(10, 15, 24, 0.92);
+  background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(12px);
+  box-shadow: 0 1px 0 rgba(72, 118, 169, 0.06);
 }
 
 .agent-topbar__left,
@@ -1109,8 +1185,8 @@ onMounted(() => {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(52, 211, 153, 0.1);
-  color: #86efac;
+  background: #ecfdf5;
+  color: #059669;
   font-size: 12px;
 }
 
@@ -1119,7 +1195,7 @@ onMounted(() => {
   height: 7px;
   border-radius: 50%;
   background: #34d399;
-  box-shadow: 0 0 10px rgba(52, 211, 153, 0.8);
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.45);
 }
 
 .agent-topbar__center {
@@ -1157,8 +1233,8 @@ onMounted(() => {
   --el-button-bg-color: var(--agent-surface);
   --el-button-border-color: var(--agent-border);
   --el-button-text-color: var(--agent-text);
-  --el-button-hover-bg-color: var(--agent-surface-2);
-  --el-button-hover-border-color: rgba(32, 194, 211, 0.35);
+  --el-button-hover-bg-color: var(--agent-accent-soft);
+  --el-button-hover-border-color: rgba(11, 124, 223, 0.28);
   --el-button-hover-text-color: var(--agent-accent);
 }
 
@@ -1168,6 +1244,7 @@ onMounted(() => {
   grid-template-columns: 280px minmax(0, 1fr) 300px;
   gap: 14px;
   min-height: 0;
+  overflow: hidden;
   padding: 14px;
 }
 
@@ -1190,7 +1267,8 @@ onMounted(() => {
 .agent-card {
   border: 1px solid var(--agent-border);
   border-radius: 14px;
-  background: rgba(17, 25, 38, 0.88);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(49, 105, 171, 0.06);
   backdrop-filter: blur(10px);
 }
 
@@ -1272,8 +1350,8 @@ onMounted(() => {
 }
 
 .agent-sessions__item.is-active {
-  box-shadow: inset 0 0 0 1px rgba(32, 194, 211, 0.45);
-  background: rgba(32, 194, 211, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(11, 124, 223, 0.28);
+  background: var(--agent-accent-soft);
 }
 
 .agent-sessions__btn {
@@ -1333,7 +1411,7 @@ onMounted(() => {
 
 .agent-context-actions__btn:hover,
 .agent-context-actions__btn.is-active {
-  border-color: rgba(32, 194, 211, 0.45);
+  border-color: rgba(11, 124, 223, 0.32);
   color: var(--agent-accent);
   background: var(--agent-accent-soft);
 }
@@ -1417,8 +1495,10 @@ onMounted(() => {
 }
 
 .agent-chat__scroll {
-  flex: 1;
+  flex: 1 1 0;
+  height: 0;
   min-height: 0;
+  overflow: hidden;
   padding: 16px;
 }
 
@@ -1428,6 +1508,10 @@ onMounted(() => {
 
 .agent-chat__scroll :deep(.el-scrollbar__wrap) {
   overflow-x: hidden;
+}
+
+.agent-chat__scroll :deep(.el-scrollbar__view) {
+  padding-bottom: 4px;
 }
 
 .agent-chat__welcome-lead {
@@ -1458,8 +1542,8 @@ onMounted(() => {
 }
 
 .agent-onboarding__card:hover {
-  border-color: rgba(32, 194, 211, 0.45);
-  background: rgba(32, 194, 211, 0.06);
+  border-color: rgba(11, 124, 223, 0.32);
+  background: var(--agent-accent-soft);
 }
 
 .agent-onboarding__index {
@@ -1492,23 +1576,36 @@ onMounted(() => {
   border-radius: 14px;
   line-height: 1.75;
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.agent-chat__text {
+  margin: 0;
+  max-height: var(--agent-msg-max-height);
+  overflow-y: auto;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overscroll-behavior: contain;
 }
 
 .agent-chat__bubble.is-user {
   margin-inline-start: auto;
-  color: #d9f7ff;
-  background: rgba(32, 194, 211, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(32, 194, 211, 0.28);
+  color: #1f5c91;
+  background: #dceeff;
+  box-shadow: inset 0 0 0 1px rgba(119, 183, 246, 0.28);
 }
 
 .agent-chat__bubble.is-assistant {
-  background: var(--agent-surface-2);
-  box-shadow: inset 0 0 0 1px var(--agent-border);
+  background: #ffffff;
+  box-shadow:
+    0 6px 18px rgba(54, 96, 143, 0.05),
+    inset 0 0 0 1px var(--agent-border);
 }
 
 .agent-chat__bubble.is-action_result {
-  background: rgba(52, 211, 153, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.24);
+  background: #ecfff7;
+  box-shadow: inset 0 0 0 1px rgba(40, 186, 132, 0.26);
 }
 
 .agent-chat__agent-status {
@@ -1539,7 +1636,7 @@ onMounted(() => {
 .agent-agent-thoughts {
   margin-top: 10px;
   border: none;
-  background: rgba(10, 15, 24, 0.5);
+  background: #f8fbff;
   border-radius: 10px;
 }
 
@@ -1565,6 +1662,11 @@ onMounted(() => {
 .agent-action-result__head p {
   margin: 4px 0 0;
   color: var(--agent-muted);
+  max-height: var(--agent-msg-max-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .agent-action-result__head .el-icon.is-success { color: var(--agent-success); }
@@ -1574,7 +1676,7 @@ onMounted(() => {
   margin: 0;
   padding: 10px;
   border-radius: 8px;
-  background: rgba(10, 15, 24, 0.6);
+  background: #f8fafc;
   color: var(--agent-muted);
   font-size: 12px;
   overflow-x: auto;
@@ -1582,42 +1684,7 @@ onMounted(() => {
 
 .agent-composer {
   border-top: 1px solid var(--agent-border);
-  background: rgba(10, 15, 24, 0.72);
-}
-
-.agent-composer__suggestions {
-  display: flex;
-  gap: 10px;
-  padding: 10px 16px 0;
-}
-
-.agent-composer__suggestions-label {
-  flex-shrink: 0;
-  padding-top: 6px;
-  color: var(--agent-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.agent-composer__suggestions-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.agent-composer__suggestion-btn {
-  padding: 6px 12px;
-  border: 1px solid var(--agent-border);
-  border-radius: 999px;
-  background: var(--agent-surface-2);
-  color: var(--agent-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.agent-composer__suggestion-btn:hover:not(:disabled) {
-  border-color: rgba(32, 194, 211, 0.45);
-  color: var(--agent-accent);
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .agent-composer__input-wrap {
@@ -1627,9 +1694,9 @@ onMounted(() => {
 .agent-composer__input-wrap :deep(.el-textarea__inner) {
   min-height: 88px !important;
   padding: 12px 14px;
-  border: 1px solid var(--agent-border);
+  border: 1px solid #d7e8f7;
   border-radius: 12px;
-  background: var(--agent-surface-2);
+  background: #fbfdff;
   color: var(--agent-text);
   box-shadow: none;
 }
@@ -1673,8 +1740,8 @@ onMounted(() => {
 .agent-composer__send {
   --el-button-bg-color: var(--agent-accent);
   --el-button-border-color: var(--agent-accent);
-  --el-button-hover-bg-color: #1ab0c0;
-  --el-button-hover-border-color: #1ab0c0;
+  --el-button-hover-bg-color: #0969c7;
+  --el-button-hover-border-color: #0969c7;
   min-height: 40px;
   border-radius: 10px;
 }
@@ -1706,9 +1773,27 @@ onMounted(() => {
   cursor: pointer;
 }
 
+.agent-workflow-list__btn.is-completed:not(:disabled):hover {
+  border-color: rgba(5, 150, 105, 0.32);
+  background: #ecfff7;
+}
+
+.agent-workflow-list__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .agent-workflow-list__status {
   color: var(--agent-muted);
   font-size: 11px;
+}
+
+.agent-workflow-list__status.is-running {
+  color: var(--agent-accent);
+}
+
+.agent-workflow-list__status.is-completed {
+  color: var(--agent-success);
 }
 
 .agent-knowledge-list li {
@@ -1743,14 +1828,16 @@ onMounted(() => {
 
 .agent-chat :deep(.markdown-content) {
   color: var(--agent-text);
-  background: rgba(10, 15, 24, 0.45);
+  background: #f8fbff;
   border-color: var(--agent-border);
+  max-height: var(--agent-msg-max-height);
+  overscroll-behavior: contain;
 }
 
 .agent-chat :deep(.agent-action-card),
 .agent-chat :deep(.agent-confirm-card) {
   border-color: var(--agent-border);
-  background: rgba(10, 15, 24, 0.55);
+  background: #ffffff;
   color: var(--agent-text);
 }
 

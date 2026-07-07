@@ -115,6 +115,9 @@ public class ClinicalRecordService {
         if (registerId == null) {
             throw new BusinessException(400, "挂号记录不存在");
         }
+        if (physicianMapper.isRegisterPatientArchived(registerId)) {
+            throw new BusinessException(403, "该患者档案已归档，无法在医疗系统中访问");
+        }
         if (AgentToolExecutionContext.isActive()) {
             Long ownerEmployeeId = physicianMapper.selectRegisterEmployeeId(registerId);
             if (ownerEmployeeId == null) {
@@ -303,6 +306,25 @@ public class ClinicalRecordService {
             events.add(event("prescription", occurredAt, "处方",
                 summary, "completed", "prescription", toLong(prescriptions.get(0).get("id")),
                 includeDetail ? Map.of("items", prescriptions) : null));
+        }
+
+        for (Map<String, Object> row : clinicalRecordMapper.selectCriticalValueAlerts(registerId)) {
+            String status = stringValue(row.get("status"));
+            String timelineStatus = "HANDLED".equals(status) || "CLOSED".equals(status)
+                ? "completed"
+                : ("ESCALATED".equals(status) ? "escalated" : "pending");
+            String summary = stringValue(row.get("techName"));
+            if (hasText(row.get("handleNote"))) {
+                summary = summary + " · 处置：" + row.get("handleNote");
+            }
+            events.add(event("critical_value",
+                firstNonNull(row.get("handledTime"), firstNonNull(row.get("acknowledgedTime"), row.get("reportedTime"))),
+                "危急值闭环",
+                summary,
+                timelineStatus,
+                "critical_value_alert",
+                toLong(row.get("id")),
+                includeDetail ? row : null));
         }
 
         if (header != null && header.get("clinicalArchivedAt") != null) {

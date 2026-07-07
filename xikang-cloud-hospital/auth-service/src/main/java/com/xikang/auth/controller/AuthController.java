@@ -5,6 +5,7 @@ import com.xikang.auth.service.PatientService;
 import com.xikang.auth.service.CaptchaService;
 import com.xikang.auth.entity.Patient;
 import com.xikang.auth.dto.LoginRequest;
+import com.xikang.auth.dto.RefreshRequest;
 import com.xikang.auth.dto.CaptchaResponse;
 import com.xikang.auth.dto.UserInfoResponse.PatientInfo;
 import com.xikang.common.utils.JwtUtils;
@@ -74,7 +75,7 @@ public class AuthController {
                 .httpOnly(true)
                 .sameSite("Lax")
                 .path("/")
-                .maxAge(60 * 60)
+                .maxAge(2 * 60 * 60)
                 .build();
 
         ResponseCookie refreshCookie = ResponseCookie.from(REFRESH_COOKIE_NAME, refreshToken)
@@ -135,8 +136,18 @@ public class AuthController {
      */
     @PostMapping("/refresh")
     public ResponseEntity<Result<Map<String, Object>>> refresh(
-            @CookieValue(value = REFRESH_COOKIE_NAME, required = false) String refreshToken
+            @CookieValue(value = REFRESH_COOKIE_NAME, required = false) String cookieRefreshToken,
+            @RequestBody(required = false) RefreshRequest refreshRequest,
+            @RequestHeader(value = "X-Refresh-Token", required = false) String headerRefreshToken
     ) {
+        String refreshToken = cookieRefreshToken;
+        if (refreshToken == null || refreshToken.isBlank()) {
+            if (refreshRequest != null && refreshRequest.getRefreshToken() != null && !refreshRequest.getRefreshToken().isBlank()) {
+                refreshToken = refreshRequest.getRefreshToken();
+            } else if (headerRefreshToken != null && !headerRefreshToken.isBlank()) {
+                refreshToken = headerRefreshToken;
+            }
+        }
         Map<String, String> refreshed = authService.refresh(refreshToken);
 
         String accessToken = refreshed.get("accessToken");
@@ -145,7 +156,7 @@ public class AuthController {
                 .httpOnly(true)
                 .sameSite("Lax")
                 .path("/")
-                .maxAge(60 * 60)
+                .maxAge(2 * 60 * 60)
                 .build();
 
         HttpHeaders headers = new HttpHeaders();

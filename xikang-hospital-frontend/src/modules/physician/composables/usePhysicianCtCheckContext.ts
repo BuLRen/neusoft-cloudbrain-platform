@@ -58,14 +58,16 @@ export function usePhysicianCtCheckContext() {
       checkResult.value = row
 
       if (row.checkState === '已完成' && row.checkResult) {
-        try {
-          resultFormSchema.value = await physicianApi.resolveCheckResultForm(checkRequestId)
-        } catch {
-          resultFormSchema.value = buildCtReportSchemaFallback(row)
-        }
-        if (!resultFormSchema.value) {
-          resultFormSchema.value = buildCtReportSchemaFallback(row)
-        }
+        resultFormSchema.value = buildCtReportSchemaFallback(row)
+        void physicianApi.resolveCheckResultForm(checkRequestId)
+          .then((resolved) => {
+            if (checkResult.value?.id === checkRequestId) {
+              resultFormSchema.value = resolved
+            }
+          })
+          .catch(() => {
+            // 保留本地 fallback schema，避免阻塞导出
+          })
       }
 
       if (row.hasImaging && row.imagingVolumeId) {

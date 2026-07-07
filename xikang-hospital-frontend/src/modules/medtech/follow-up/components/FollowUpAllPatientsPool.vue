@@ -14,11 +14,12 @@ const emit = defineEmits<{
   open: [patient: FollowUpDashboardPatient]
   scheduleToday: [patient: FollowUpDashboardPatient]
   enroll: [patient: FollowUpDashboardPatient]
+  transfer: [patient: FollowUpDashboardPatient]
 }>()
 
 const keyword = ref('')
 const priorityFilter = ref<'all' | FollowUpPriorityLevel>('all')
-const statusFilter = ref<'all' | 'interview' | 'observation' | 'observed'>('all')
+const statusFilter = ref<'all' | 'interview' | 'observation' | 'observed' | 'unmonitored' | 'mine'>('all')
 
 const filteredPatients = computed(() => {
   const q = keyword.value.trim().toLowerCase()
@@ -29,6 +30,8 @@ const filteredPatients = computed(() => {
     if (statusFilter.value === 'interview' && !patient.interviewScheduledToday) return false
     if (statusFilter.value === 'observation' && !patient.observationDueToday) return false
     if (statusFilter.value === 'observed' && !patient.observedToday) return false
+    if (statusFilter.value === 'unmonitored' && patient.monitoringEmployeeId) return false
+    if (statusFilter.value === 'mine' && !patient.isMine) return false
     if (!q) return true
     const haystack = [
       patient.realName,
@@ -43,6 +46,7 @@ const filteredPatients = computed(() => {
 })
 
 const statusSummary = computed(() => ({
+  enrolled: props.patients.filter((p) => p.enrolled).length,
   total: props.patients.length,
   interview: props.patients.filter((p) => p.interviewScheduledToday).length,
   observation: props.patients.filter((p) => p.observationDueToday).length,
@@ -70,6 +74,8 @@ const statusSummary = computed(() => ({
       </ElSelect>
       <ElSelect v-model="statusFilter" class="all-patients-pool__filter">
         <ElOption label="全部状态" value="all" />
+        <ElOption label="我监视的" value="mine" />
+        <ElOption label="未监视" value="unmonitored" />
         <ElOption label="今日有访谈" value="interview" />
         <ElOption label="待观察" value="observation" />
         <ElOption label="已观察" value="observed" />
@@ -77,7 +83,8 @@ const statusSummary = computed(() => ({
     </div>
 
     <div class="all-patients-pool__summary">
-      <ElTag effect="plain">在管 {{ statusSummary.total }}</ElTag>
+      <ElTag effect="plain">在管 {{ statusSummary.enrolled }}</ElTag>
+      <ElTag type="info" effect="plain">科室池 {{ statusSummary.total }}</ElTag>
       <ElTag type="warning" effect="plain">今日访谈 {{ statusSummary.interview }}</ElTag>
       <ElTag type="danger" effect="plain">待观察 {{ statusSummary.observation }}</ElTag>
       <ElTag type="success" effect="plain">已观察 {{ statusSummary.observed }}</ElTag>
@@ -95,10 +102,23 @@ const statusSummary = computed(() => ({
           :dim-observed="false"
           compact
           show-status-row
+          show-contact-info
           :draggable="false"
           @click="emit('open', patient)"
         />
         <div class="all-patients-pool__actions">
+          <ElTag v-if="!patient.monitoringEmployeeId" type="info" effect="plain">
+            待管理员分配监视医生
+          </ElTag>
+          <ElButton
+            v-if="patient.isMine"
+            size="small"
+            type="warning"
+            plain
+            @click.stop="emit('transfer', patient)"
+          >
+            申请调换
+          </ElButton>
           <ElButton
             v-if="!patient.enrolled"
             size="small"

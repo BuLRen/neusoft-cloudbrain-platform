@@ -1,5 +1,6 @@
 package com.xikang.schedule.service;
 
+import com.xikang.schedule.dto.DifyLeaveAdjustResult;
 import com.xikang.schedule.entity.DoctorSchedule;
 import com.xikang.schedule.entity.LeaveRequest;
 import com.xikang.schedule.entity.ScheduleAdjustRequest;
@@ -60,25 +61,30 @@ public class LeaveRequestService {
 
     /**
      * 创建请假申请
-     * 如果启用 Dify，会自动生成调整方案
+     * <p>只落库，不触发 AI。AI 替班推荐由 {@link #processLeave} 在审批通过后调用。
+     * <p>autoProcess 参数保留兼容性，当前忽略（审批流程才触发 Dify）。
+     * <p>业务规则：请假日期必须距今 ≥ 3 天（给医院时间安排替班 + 通知患者改约）。
      */
     @Transactional
     public LeaveRequest createLeave(LeaveRequest leaveRequest, boolean autoProcess) {
+        // 三天规则校验
+        if (leaveRequest.getLeaveDate() == null) {
+            throw new RuntimeException("请假日期不能为空");
+        }
+        long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), leaveRequest.getLeaveDate());
+        if (daysBetween < 3) {
+            throw new RuntimeException(
+                    String.format("请假日期需至少提前 3 天申请（当前距 %s 仅 %d 天）",
+                            leaveRequest.getLeaveDate(), daysBetween));
+        }
+
         leaveRequest.setStatus("待审批");
         leaveRequest.setAutoProcessed(autoProcess);
         leaveRequestMapper.insert(leaveRequest);
 
-        log.info("创建请假申请：医生ID={}, 日期={}, 时段={}",
-                leaveRequest.getPhysicianId(), leaveRequest.getLeaveDate(), leaveRequest.getTimeSlot());
-
-        if (autoProcess) {
-            // 调用 Dify 生成调整方案（预留，明天填充）
-            try {
-                difyIntegrationService.processLeaveWithAI(leaveRequest);
-            } catch (Exception e) {
-                log.warn("AI处理请假失败，将手动处理：{}", e.getMessage());
-            }
-        }
+        log.info("创建请假申请：医生ID={}, 日期={}, 时段={}, 距今天数={}, autoProcess={}",
+                leaveRequest.getPhysicianId(), leaveRequest.getLeaveDate(),
+                leaveRequest.getTimeSlot(), daysBetween, autoProcess);
 
         return leaveRequest;
     }
@@ -110,7 +116,8 @@ public class LeaveRequestService {
 
     /**
      * 处理请假（生成调整申请）
-     * 由 Dify 触发或管理员手动触发
+     * <p>审批通过后触发：先调 Dify 7 节点工作流拿 AI 推荐替班方案，再落库为「待确认」调整记录。
+     * <p>Dify 调用失败时不阻塞业务，降级为「待管理员手动指定替班」。
      */
     @Transactional
     public ScheduleAdjustRequest processLeave(Long leaveId) {
@@ -129,7 +136,7 @@ public class LeaveRequestService {
             return null;
         }
 
-        // 创建调整申请
+        // 创建调整申请基础信息
         ScheduleAdjustRequest adjustRequest = new ScheduleAdjustRequest();
         adjustRequest.setScheduleId(schedule.getId());
         adjustRequest.setAdjustType("leave_ai");
@@ -140,18 +147,73 @@ public class LeaveRequestService {
         adjustRequest.setTriggeredBy(leave.getPhysicianId());
         adjustRequest.setAffectPatients(schedule.getUsedQuota());
 
+        // 调 Dify 工作流生成 AI 替班方案（失败降级为 null，由管理员手动指定）
+        try {
+            DifyLeaveAdjustResult aiResult = difyIntegrationService.processLeaveWithAI(leave, schedule);
+            if (aiResult != null) {
+                if (aiResult.getSubstitutePhysicianId() != null) {
+                    adjustRequest.setNewPhysicianId(aiResult.getSubstitutePhysicianId());
+                }
+                if (aiResult.getSubstitutePhysicianName() != null) {
+                    adjustRequest.setSubstitutePhysicianName(aiResult.getSubstitutePhysicianName());
+                }
+                if (aiResult.getReason() != null) {
+                    adjustRequest.setReason(aiResult.getReason());
+                }
+                adjustRequest.setAiSuggestion(aiResult.getRawJson());
+                log.info("AI 替班方案生成成功：leaveId={}, substituteId={}, source={}",
+                        leaveId, aiResult.getSubstitutePhysicianId(), aiResult.getSource());
+            }
+        } catch (Exception e) {
+            log.warn("AI 替班方案生成失败，降级为手动指定：leaveId={}, err={}", leaveId, e.getMessage());
+            adjustRequest.setAiSuggestion("AI 推理失败：" + e.getMessage());
+        }
+
         return scheduleAdjustService.createRequest(adjustRequest);
     }
 
     /**
+     * 查询某请假记录对应的排班（给 Controller 的上下文聚合端点用）
+     */
+    public DoctorSchedule findScheduleForLeave(Long leaveId) {
+        LeaveRequest leave = leaveRequestMapper.selectById(leaveId);
+        if (leave == null) return null;
+        return doctorScheduleMapper.selectByPhysicianAndDate(
+                leave.getPhysicianId(), leave.getLeaveDate(),
+                leave.getTimeSlot() != null ? leave.getTimeSlot() : "上午");
+    }
+
+    /**
+     * 通过排班 ID 反查请假记录 ID（给 regenAdjust 用）
+     * <p>规则：找到 schedule 表对应的 physicianId/workDate/timeSlot，
+     * 再去 leave 表匹配同医生同日期的请假记录。
+     */
+    public Long findLeaveIdByScheduleId(Long scheduleId) {
+        DoctorSchedule schedule = doctorScheduleMapper.selectById(scheduleId);
+        if (schedule == null) return null;
+
+        // 反查 leave：physicianId + leaveDate = schedule.workDate
+        List<LeaveRequest> leaves = leaveRequestMapper.selectByPhysician(schedule.getPhysicianId());
+        return leaves.stream()
+                .filter(l -> schedule.getWorkDate() != null
+                        && schedule.getWorkDate().equals(l.getLeaveDate()))
+                .filter(l -> l.getTimeSlot() == null || l.getTimeSlot().equals(schedule.getTimeSlot()))
+                .map(LeaveRequest::getId)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
      * 查询可用替班医生
+     * <p>修复：原代码 s.getPhysicianId().equals(excludePhysicianId) 写反，
+     * 应该是 !equals 排除请假医生本人。
      */
     public List<DoctorSchedule> getAvailableSubstitutes(Long departmentId, LocalDate date, String timeSlot, Long excludePhysicianId) {
         List<DoctorSchedule> schedules = doctorScheduleMapper.selectAvailable(departmentId, date);
         return schedules.stream()
-                .filter(s -> s.getPhysicianId().equals(excludePhysicianId))
-                .filter(s -> s.getStatus().equals("正常"))
-                .filter(s -> s.getAvailableQuota() > 0)
+                .filter(s -> !s.getPhysicianId().equals(excludePhysicianId))
+                .filter(s -> s.getStatus() != null && s.getStatus().equals("正常"))
+                .filter(s -> s.getAvailableQuota() != null && s.getAvailableQuota() > 0)
                 .collect(java.util.stream.Collectors.toList());
     }
 }

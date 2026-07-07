@@ -61,6 +61,7 @@ public class FollowUpDashboardService {
     public List<Map<String, Object>> listPatients(LocalDate targetDate, Long departmentIdOverride) {
         LocalDate date = targetDate != null ? targetDate : LocalDate.now();
         Long departmentId = resolveDepartmentId(departmentIdOverride);
+        Long currentEmployeeId = MedtechAuthContext.employeeIdOrNull();
 
         List<Map<String, Object>> patients = followUpDashboardMapper.selectDashboardPatients(
             departmentId,
@@ -70,9 +71,33 @@ public class FollowUpDashboardService {
         );
         List<Map<String, Object>> enriched = new ArrayList<>();
         for (Map<String, Object> patient : patients) {
-            enriched.add(enrichPatient(patient, date));
+            enriched.add(enrichPatient(patient, date, currentEmployeeId));
         }
         return enriched;
+    }
+
+    public Map<String, Object> claimMonitoring(Long registerId) {
+        if (registerId == null) {
+            throw new BusinessException("registerId 不能为空");
+        }
+        throw new BusinessException(
+            "监视医生须由管理员分配；如需调换负责医生，请在工作台提交「申请调换监视」"
+        );
+    }
+
+    @Transactional
+    public Map<String, Object> releaseMonitoring(Long registerId) {
+        if (registerId == null) {
+            throw new BusinessException("registerId 不能为空");
+        }
+        Long employeeId = MedtechAuthContext.employeeIdOrNull();
+        boolean forceRelease = MedtechAuthContext.isAdminAllAccess();
+        if (employeeId == null && !forceRelease) {
+            throw new BusinessException(403, "当前账号未绑定员工");
+        }
+        followUpDashboardMapper.releaseMonitoring(registerId, employeeId, forceRelease);
+        followUpDashboardMapper.releaseMonitoringProfile(registerId, employeeId, forceRelease);
+        return Map.of("registerId", registerId, "released", true);
     }
 
     @Transactional
@@ -233,12 +258,33 @@ public class FollowUpDashboardService {
         return result;
     }
 
-    private Map<String, Object> enrichPatient(Map<String, Object> patient, LocalDate targetDate) {
+    private Map<String, Object> enrichPatient(Map<String, Object> patient, LocalDate targetDate, Long currentEmployeeId) {
         Map<String, Object> row = new LinkedHashMap<>(patient);
         boolean observedToday = toBoolean(patient.get("observedToday"));
         boolean interviewScheduledToday = toBoolean(patient.get("interviewScheduledToday"));
+        boolean contactedToday = toBoolean(patient.get("contactedToday"));
         int intervalDays = toInt(patient.get("interviewIntervalDays"), 7);
         LocalDate lastInterview = parseDate(patient.get("lastInterviewDate"));
+        LocalDate lastContact = parseDate(patient.get("lastContactDate"));
+        LocalDate deadline = parseDate(patient.get("followUpDeadline"));
+
+        Long monitoringEmployeeId = toLong(patient.get("monitoringEmployeeId"));
+        row.put("isMine", currentEmployeeId != null && currentEmployeeId.equals(monitoringEmployeeId));
+
+        if (deadline == null && toBoolean(patient.get("enrolled"))) {
+            deadline = targetDate.plusDays(180);
+            row.put("followUpDeadline", deadline.toString());
+        }
+        if (deadline != null) {
+            long daysUntil = java.time.temporal.ChronoUnit.DAYS.between(targetDate, deadline);
+            row.put("daysUntilDeadline", daysUntil);
+        }
+
+        String contactStatus = resolveContactStatus(contactedToday, lastContact, deadline, targetDate);
+        row.put("contactStatus", contactStatus);
+        if (lastContact != null) {
+            row.put("daysSinceLastContact", java.time.temporal.ChronoUnit.DAYS.between(lastContact, targetDate));
+        }
 
         boolean interviewDueToday = interviewScheduledToday;
         if (!interviewDueToday && lastInterview != null) {
@@ -250,6 +296,7 @@ public class FollowUpDashboardService {
         row.put("observedToday", observedToday);
         row.put("interviewDueToday", interviewDueToday);
         row.put("observationDueToday", toBoolean(patient.get("enrolled")) && !observedToday);
+        row.put("contactedToday", contactedToday);
 
         Long registerId = toLong(patient.get("registerId"));
         if (registerId != null) {
@@ -258,6 +305,22 @@ public class FollowUpDashboardService {
             row.put("diseases", followUpOutcomeMapper.selectPatientDiseases(registerId));
         }
         return row;
+    }
+
+    private String resolveContactStatus(boolean contactedToday, LocalDate lastContact, LocalDate deadline, LocalDate targetDate) {
+        if (contactedToday) {
+            return "contacted_today";
+        }
+        if (deadline != null && targetDate.isAfter(deadline)) {
+            return "overdue";
+        }
+        if (lastContact != null && java.time.temporal.ChronoUnit.DAYS.between(lastContact, targetDate) > 1) {
+            return "due";
+        }
+        if (lastContact == null && deadline != null) {
+            return "due";
+        }
+        return "within_limit";
     }
 
     private Long resolveDepartmentId(Long override) {

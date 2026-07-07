@@ -63,6 +63,10 @@ public class DifyWorkflowClient {
         return properties.isFollowUpMedicalChatEnabled();
     }
 
+    public boolean isCriticalValueDetectEnabled() {
+        return properties.isCriticalValueDetectEnabled();
+    }
+
     public DifyWorkflowRunResult runFollowUpCaseSummaryBlocking(Map<String, Object> inputs, String user, String traceId) {
         String apiKey = properties.resolveFollowUpCaseSummaryApiKey();
         if (apiKey.isBlank()) {
@@ -76,6 +80,42 @@ public class DifyWorkflowClient {
         if (apiKey.isBlank()) {
             throw new DifyWorkflowException("随访医疗对话 API Key 未配置");
         }
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
+    public DifyWorkflowRunResult runFollowUpShiftScheduleBlocking(Map<String, Object> inputs, String user, String traceId) {
+        if (!properties.isDifyBaseConfigured()) {
+            throw new DifyWorkflowException("Dify 未启用或未配置 base-url");
+        }
+        String apiKey = properties.resolveFollowUpShiftScheduleApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("随访排班 API Key 未配置");
+        }
+        log.info("Dify follow-up shift schedule blocking request traceId={} baseUrl={}", traceId, properties.getBaseUrl());
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
+    public DifyWorkflowRunResult runFollowUpEnqueueBlocking(Map<String, Object> inputs, String user, String traceId) {
+        if (!properties.isDifyBaseConfigured()) {
+            throw new DifyWorkflowException("Dify 未启用或未配置 base-url");
+        }
+        String apiKey = properties.resolveFollowUpEnqueueApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("随访入队排班 API Key 未配置");
+        }
+        log.info("Dify follow-up enqueue blocking request traceId={} baseUrl={}", traceId, properties.getBaseUrl());
+        return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
+    }
+
+    public DifyWorkflowRunResult runCriticalValueDetectBlocking(Map<String, Object> inputs, String user, String traceId) {
+        if (!properties.isDifyBaseConfigured()) {
+            throw new DifyWorkflowException("Dify 未启用或未配置 base-url");
+        }
+        String apiKey = properties.resolveCriticalValueDetectApiKey();
+        if (apiKey.isBlank()) {
+            throw new DifyWorkflowException("危急值识别 API Key 未配置");
+        }
+        log.info("Dify critical-value-detect blocking request traceId={} baseUrl={}", traceId, properties.getBaseUrl());
         return runWorkflowBlockingInternal(properties.getBaseUrl(), apiKey, inputs, user, traceId);
     }
 

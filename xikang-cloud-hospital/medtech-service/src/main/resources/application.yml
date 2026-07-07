@@ -60,6 +60,9 @@ services:
 # 未启用或调用失败时走内置 CheckSimulationFallbackEngine
 # =============================================================================
 xikang:
+  internal:
+    ai:
+      token: ${INTERNAL_AI_TOKEN:}
   physician:
     base-url: ${PHYSICIAN_SERVICE_URL:http://localhost:8092}
     w3-auto-trigger-enabled: ${W3_AUTO_TRIGGER_ENABLED:true}
@@ -71,7 +74,7 @@ xikang:
       workflow-check-simulate: ${DIFY_WORKFLOW_CHECK_SIMULATE:true}
       api-key-check-simulate: ${DIFY_API_KEY_CHECK_SIMULATE:${DIFY_API_KEY_SIMULATE:}}
       connect-timeout-ms: ${DIFY_CONNECT_TIMEOUT_MS:30000}
-      read-timeout-ms: ${DIFY_READ_TIMEOUT_MS:300000}
+      read-timeout-ms: ${DIFY_READ_TIMEOUT_MS:600000}
       ct-inference-url: ${CT_INFERENCE_URL:}
       check-simulate-output-keys:
         values-root: ${DIFY_CHECK_SIM_OUTPUT_VALUES:simulatedValues}
@@ -82,6 +85,13 @@ xikang:
       api-key-follow-up-case-summary: ${DIFY_API_KEY_FOLLOW_UP_CASE_SUMMARY:}
       workflow-follow-up-medical-chat: ${DIFY_WORKFLOW_FOLLOW_UP_MEDICAL_CHAT:true}
       api-key-follow-up-medical-chat: ${DIFY_API_KEY_FOLLOW_UP_MEDICAL_CHAT:}
+      workflow-follow-up-shift-schedule: ${DIFY_WORKFLOW_FOLLOW_UP_SHIFT_SCHEDULE:true}
+      api-key-follow-up-shift-schedule: ${DIFY_API_KEY_FOLLOW_UP_SHIFT_SCHEDULE:}
+      workflow-follow-up-enqueue: ${DIFY_WORKFLOW_FOLLOW_UP_ENQUEUE:true}
+      api-key-follow-up-enqueue: ${DIFY_API_KEY_FOLLOW_UP_ENQUEUE:}
+      # ----- 危急值 AI 识别（影像/文本型结果兜底）-----
+      workflow-critical-value-detect: ${DIFY_WORKFLOW_CRITICAL_VALUE_DETECT:}
+      api-key-critical-value-detect: ${DIFY_API_KEY_CRITICAL_VALUE_DETECT:}
 
 # =============================================================================
 # 随访数据源：demo=仅模拟表 | production=仅 A/C 类生产数据 | hybrid=真实患者+模拟指标回退

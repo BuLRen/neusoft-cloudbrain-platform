@@ -49,6 +49,35 @@ public class PaymentClient {
         return postForMap("/api/payment/internal/items", body, "推送医技费用失败");
     }
 
+    /**
+     * 开完处方后推送药品费（幂等）。
+     * <p>category=2（药品费），与 pharmacy-service 保持一致；payment-service 走 ON CONFLICT DO NOTHING，
+     * 所以即使 patient 已经在"我的处方"页触发过 pharmacy-service 的 ensureMedicationFeeCreated，这里再调也只会返回既有行。
+     * <p>金额 ≤ 0 视为数据异常：payment-service 内部会判 amount 必须 ≥ 0，
+     * 所以此处给 0 时 payment-service 会落 status=1（已结清）—— 为了不让 endVisit 的 assertAllPaid 卡住，
+     * 这里也把 0 金额按 status=1 处理（与 pharmacy-service ensureMedicationFeeCreated 一致）。
+     */
+    public Map<String, Object> createMedicationFee(Long registerId, Long patientId, String patientName,
+                                                   BigDecimal amount) {
+        boolean zeroAmount = amount == null || amount.compareTo(BigDecimal.ZERO) <= 0;
+        Map<String, Object> body = new HashMap<>();
+        body.put("registerId", registerId);
+        body.put("patientId", patientId);
+        body.put("patientName", patientName);
+        body.put("itemCode", "MEDICATION_FEE");
+        body.put("categoryId", 2);
+        body.put("categoryName", "药品费");
+        body.put("itemId", 0);
+        body.put("itemName", "药品费");
+        body.put("quantity", 1);
+        body.put("unitPrice", zeroAmount ? BigDecimal.ZERO : amount);
+        body.put("totalAmount", zeroAmount ? BigDecimal.ZERO : amount);
+        // 金额为 0 直接视为已结清，避免 payMedication 因 amount<=0 抛异常卡死后续流程
+        body.put("initialStatus", zeroAmount ? 1 : 0);
+        body.put("remark", "医生开药后出账");
+        return postForMap("/api/payment/internal/items", body, "推送药品费失败");
+    }
+
     public void assertAllPaid(Long registerId) {
         Map<String, Object> status = getForMap(
                 "/api/payment/internal/check-paid/register/{registerId}",

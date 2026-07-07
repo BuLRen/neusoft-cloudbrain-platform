@@ -11,6 +11,9 @@ INIT_DB = ROOT / "docker" / "init-db"
 MIGRATIONS = [
     "migrate_020_follow_up_production.sql",
     "migrate_021_remove_follow_up_demo_seeds.sql",
+    "migrate_036_follow_up_clinical_backfill.sql",
+    "migrate_037_communication_read_cursor.sql",
+    "migrate_038_follow_up_pending_schedule.sql",
 ]
 
 CHECKS = [

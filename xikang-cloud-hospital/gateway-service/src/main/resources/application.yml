@@ -61,6 +61,14 @@ spring:
           uri: lb://schedule-service
           predicates:
             - Path=/api/schedule/**
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notification/**
+        - id: notification-websocket
+          uri: lb://notification-service
+          predicates:
+            - Path=/ws/notification/**
         - id: ai-triage-service
           uri: lb://ai-triage-service
           predicates:

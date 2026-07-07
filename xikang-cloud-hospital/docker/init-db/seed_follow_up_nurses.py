@@ -546,7 +546,7 @@ def ensure_clinical_data(cur, rid: int, dept_id: int, snap: dict) -> None:
         )
 
 
-def ensure_patient_bundle(cur, p: dict, patient_cols: set[str]) -> None:
+def ensure_patient_bundle(cur, p: dict, patient_cols: set[str], monitor_employee_id: int | None = None) -> None:
     rid, pid = p["register_id"], p["patient_id"]
     dept_id = p["dept_id"]
 
@@ -632,6 +632,28 @@ def ensure_patient_bundle(cur, p: dict, patient_cols: set[str]) -> None:
         """,
         (rid, dept_id),
     )
+
+    if monitor_employee_id:
+        cur.execute(
+            """
+            UPDATE follow_up_enrollment
+            SET monitoring_employee_id = %s,
+                monitored_at = COALESCE(monitored_at, NOW()),
+                follow_up_deadline = COALESCE(follow_up_deadline, (enrolled_at::date + INTERVAL '180 days')::date)
+            WHERE register_id = %s AND status = 'active'
+            """,
+            (monitor_employee_id, rid),
+        )
+        cur.execute(
+            """
+            UPDATE follow_up_patient_profile
+            SET monitoring_employee_id = %s,
+                monitored_at = COALESCE(monitored_at, NOW()),
+                follow_up_deadline = COALESCE(follow_up_deadline, (enrolled_at::date + INTERVAL '180 days')::date)
+            WHERE register_id = %s
+            """,
+            (monitor_employee_id, rid),
+        )
 
     cur.execute(
         """
@@ -798,13 +820,15 @@ def main() -> None:
     print("  follow_up_history_event、快照扩展列已就绪")
 
     print("创建随访护士账号...")
+    nurse_by_dept: dict[int, int] = {}
     for n in NURSES:
         eid = ensure_nurse(cur, n["username"], n["realname"], n["dept_id"])
+        nurse_by_dept[n["dept_id"]] = eid
         print(f"  {n['username']} / {DEFAULT_PASSWORD}  科室={n['dept_id']}  employee_id={eid}")
 
     print("创建/对齐在管演示患者...")
     for p in PATIENTS:
-        ensure_patient_bundle(cur, p, patient_cols)
+        ensure_patient_bundle(cur, p, patient_cols, nurse_by_dept.get(p["dept_id"]))
         print(f"  register {p['register_id']} {p['real_name']} 科室={p['dept_id']}  账号 {p['username']}/{PATIENT_PASSWORD}")
 
     print("补充同一患者多科室看诊记录...")

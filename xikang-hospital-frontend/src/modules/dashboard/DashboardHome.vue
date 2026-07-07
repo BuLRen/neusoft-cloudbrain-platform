@@ -17,7 +17,7 @@ const isFollowup = computed(() => authStore.role === 'followup')
 const modules = [
   { title: '诊疗流程', owner: '人员A', path: '/physician/queue', description: '医生接诊、病历、申请、确诊、开方。' },
   { title: '入口与支撑流程', owner: '人员B', path: '/registration', description: '导诊、挂号、收费、执行、发药、随访。' },
-  { title: 'AI 组件区', owner: '共同', path: '/ai', description: 'AI 结果卡片和页面嵌入能力预留。' },
+  { title: '我的排班', owner: '共同', path: '/schedule-mine', description: '查看个人排班课程表，申请请假。' },
 ]
 </script>
 
@@ -31,7 +31,7 @@ const modules = [
       description="您已登录为随访人员，请进入随访系统管理在管患者。"
       eyebrow="随访系统"
     />
-    <GlassCard class="dashboard__card" @click="router.push('/follow-up/outcome')">
+    <GlassCard class="dashboard__card" @click="router.push('/follow-up/dashboard')">
       <StatusTag tone="primary">随访</StatusTag>
       <h2>进入随访系统</h2>
       <p>工作台、疗效评估、医患沟通与随访记录。</p>

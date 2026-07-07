@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ElButton,
-  ElEmpty,
   ElIcon,
   ElInput,
   ElMessage,
@@ -454,6 +453,7 @@ onMounted(() => {
             </ElButton>
           </header>
 
+          <div class="orders-ai__body">
           <section class="orders-section">
             <h3 class="orders-section__title">AI 初步判断</h3>
             <div v-if="hasW2Assessment" class="orders-ai-assessments">
@@ -475,14 +475,9 @@ onMounted(() => {
             <p v-else class="orders-ai-placeholder">运行此工作流后，AI 将基于病历与初步判断给出推荐的检查项目</p>
           </section>
 
-          <section class="orders-section">
+          <section v-if="w2Output?.recommendedExaminations?.length" class="orders-section">
             <h3 class="orders-section__title">AI 推荐</h3>
-            <ElEmpty
-              v-if="!w2Output?.recommendedExaminations?.length"
-              description="暂无 AI 推荐，请运行该工作流"
-              class="orders-ai-empty"
-            />
-            <ul v-else class="orders-rec-list">
+            <ul class="orders-rec-list">
               <li
                 v-for="item in w2Output?.recommendedExaminations || []"
                 :key="`w2-${item.techId}`"
@@ -511,7 +506,7 @@ onMounted(() => {
             </ul>
           </section>
 
-          <section v-if="w2Output?.unmatchedSuggestions?.length" class="orders-section">
+          <!-- <section v-if="w2Output?.unmatchedSuggestions?.length" class="orders-section">
             <h3 class="orders-section__title">需人工核对</h3>
             <div class="orders-ai-assessments">
               <div
@@ -523,7 +518,8 @@ onMounted(() => {
                 <p class="orders-ai-box__text">{{ item.name }}：{{ item.reason }}</p>
               </div>
             </div>
-          </section>
+          </section> -->
+          </div>
         </GlassCard>
       </div>
     </div>
@@ -532,10 +528,29 @@ onMounted(() => {
 
 <style scoped>
 .orders-page__grid {
+  --orders-sticky-top: calc(var(--header-height) + var(--space-6));
+  --orders-panel-max-height: calc(100vh - var(--orders-sticky-top) - 120px);
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
   gap: var(--space-6);
   align-items: start;
+}
+
+.orders-page__card--ai {
+  position: sticky;
+  top: var(--orders-sticky-top);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--orders-panel-max-height);
+  min-height: 0;
+}
+
+.orders-ai__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .orders-page__card {
@@ -733,6 +748,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
+  flex-shrink: 0;
   margin-block-end: var(--space-2);
   padding-block-end: var(--space-5);
   border-block-end: 1px solid var(--color-border);
@@ -832,10 +848,6 @@ onMounted(() => {
   text-align: center;
 }
 
-.orders-ai-empty {
-  padding-block: var(--space-4);
-}
-
 .orders-rec-list {
   display: flex;
   flex-direction: column;
@@ -920,6 +932,11 @@ onMounted(() => {
 @media (max-width: 960px) {
   .orders-page__grid {
     grid-template-columns: 1fr;
+  }
+
+  .orders-page__card--ai {
+    position: static;
+    max-height: min(72vh, 720px);
   }
 
   .orders-form__row {
