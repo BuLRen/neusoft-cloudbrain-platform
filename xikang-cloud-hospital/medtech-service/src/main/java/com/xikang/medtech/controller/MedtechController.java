@@ -142,8 +142,11 @@ public class MedtechController {
     }
 
     @PostMapping("/check/{id}/imaging/segment/ai")
-    public Result<Map<String, Object>> aiSegmentCheckImaging(@PathVariable Long id) {
-        Map<String, Object> response = medtechService.aiSegmentCheckImaging(id);
+    public Result<Map<String, Object>> aiSegmentCheckImaging(
+        @PathVariable Long id,
+        @RequestParam(required = false) String modelId
+    ) {
+        Map<String, Object> response = medtechService.aiSegmentCheckImaging(id, modelId);
         return Result.success("AI 肺结节分割完成", response);
     }
 

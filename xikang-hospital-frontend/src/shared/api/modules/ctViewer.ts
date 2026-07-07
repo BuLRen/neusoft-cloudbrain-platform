@@ -87,6 +87,17 @@ export interface CtSegmentResult {
   overallRiskLevel?: CtRiskLevel
 }
 
+export interface CtAiModelOption {
+  id: string
+  label?: string
+  description?: string
+  version?: string
+  backend?: string
+  device?: string
+  loaded: boolean
+  error?: string | null
+}
+
 export interface CtHealthResult {
   ok?: boolean
   algoReady?: boolean
@@ -97,10 +108,15 @@ export interface CtHealthResult {
     backend?: string
     device?: string
     model_version?: string
+    /** 服务端默认模型 id（未指定 modelId 时使用） */
+    default_model_id?: string
+    /** 服务启动时尝试加载的全部模型列表，供前端渲染选择下拉框 */
+    available_models?: CtAiModelOption[]
     inference_running?: boolean
     inference_phase?: string | null
     inference_elapsed_seconds?: number
     inference_source?: string | null
+    inference_model_id?: string | null
     error?: string
   }
 }
@@ -234,10 +250,11 @@ export async function segmentCtVolume(volumeId: string): Promise<CtSegmentResult
   return mapSegmentResult(data)
 }
 
-export async function aiSegmentCtVolume(volumeId: string): Promise<CtSegmentResult> {
+export async function aiSegmentCtVolume(volumeId: string, modelId?: string): Promise<CtSegmentResult> {
   const data = await http<JavaSegmentResponse>({
     url: `/ct-viewer/volume/${volumeId}/segment/ai`,
     method: 'POST',
+    data: modelId ? { modelId } : undefined,
     timeout: UPLOAD_TIMEOUT_MS,
   })
   return mapSegmentResult(data)

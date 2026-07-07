@@ -4,10 +4,17 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElEmpty, ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import CtViewerPanel from '@/modules/medtech/ct-viewer/components/CtViewerPanel.vue'
+import type { CtPatientInfoField } from '@/modules/medtech/ct-viewer/components/CtPatientInfoPanel.vue'
 import CtArtifactAnalysisDialog from '@/modules/medtech/ct-viewer/components/CtArtifactAnalysisDialog.vue'
 import CtAiSegmentationPanel from '@/modules/medtech/ct-viewer/components/CtAiSegmentationPanel.vue'
 import CtDiagnosisReportPanel from '@/modules/medtech/components/CtDiagnosisReportPanel.vue'
-import type { CtAnalyzeResult, CtLesionItem, CtSegmentResult, CtVolumeMeta } from '@/shared/api/modules/ctViewer'
+import type {
+  CtAiModelOption,
+  CtAnalyzeResult,
+  CtLesionItem,
+  CtSegmentResult,
+  CtVolumeMeta,
+} from '@/shared/api/modules/ctViewer'
 import { checkCtViewerHealth } from '@/shared/api/modules/ctViewer'
 import { medtechApi } from '@/shared/api/modules/medtech'
 import { useCtCheckContext } from '@/modules/medtech/composables/useCtCheckContext'
@@ -29,6 +36,8 @@ const segmentationError = ref('')
 const aiCtReady = ref(false)
 const algoReady = ref(false)
 const lungNoduleReady = ref(false)
+const availableAiModels = ref<CtAiModelOption[]>([])
+const selectedAiModelId = ref<string>('')
 const reportPanelVisible = ref(true)
 const segmentPanelVisible = ref(false)
 const aiSegmentElapsedSeconds = ref(0)
@@ -59,6 +68,22 @@ const canEditReport = computed(
   () => started.value && report.value?.checkState === '检查中' && report.value?.paid !== false,
 )
 
+const patientInfoFields = computed<CtPatientInfoField[]>(() => {
+  const meta = volumeMeta.value
+  return [
+    { label: '检查号', value: report.value?.id },
+    { label: '病历号', value: report.value?.caseNumber },
+    { label: '检查部位', value: report.value?.position || examTitle.value },
+    { label: '检查日期', value: report.value?.checkTime || report.value?.creationTime },
+    { label: '影像来源', value: imagingSourceName.value },
+    { label: '矩阵', value: meta?.size_xyz?.length ? meta.size_xyz.join(' × ') : undefined },
+    {
+      label: '体素间距(mm)',
+      value: meta?.spacing_xyz?.length ? meta.spacing_xyz.map((v) => v.toFixed(2)).join(' × ') : undefined,
+    },
+  ]
+})
+
 const technicalSubline = computed(() => {
   const meta = volumeMeta.value
   const parts: string[] = []
@@ -73,14 +98,23 @@ const technicalSubline = computed(() => {
   return parts.join(' · ')
 })
 
+const selectedAiModelIsHeavy = computed(() => {
+  const current = availableAiModels.value.find((m) => m.id === selectedAiModelId.value)
+  // monai/nnunet 是整卷 3D 推理，CPU 上耗时明显；segnet 逐切片 2D 推理通常很快。
+  return current ? current.backend !== 'segnet' : true
+})
+
 const aiSegmentStatusText = computed(() => {
   if (!aiSegmenting.value) return ''
   if (aiSegmentPhase.value) return aiSegmentPhase.value
+  if (!selectedAiModelIsHeavy.value) {
+    return '正在提交 AI 分割请求'
+  }
   if (aiSegmentElapsedSeconds.value >= 600) {
-    return 'nnU-Net CPU 推理仍在运行，较大的 CT 可能需要 10–30 分钟'
+    return '3D 模型 CPU 推理仍在运行，较大的 CT 可能需要 10–30 分钟'
   }
   if (aiSegmentElapsedSeconds.value >= 120) {
-    return 'nnU-Net 正在整卷推理，期间页面会持续等待结果'
+    return '3D 模型正在整卷推理，期间页面会持续等待结果'
   }
   if (aiSegmentElapsedSeconds.value >= 30) {
     return '正在预处理 CT 并提交 AI 模型推理'
@@ -149,6 +183,18 @@ async function refreshAiCtHealth() {
     aiCtReady.value = Boolean(health.aiCtReady)
     algoReady.value = Boolean(health.algoReady)
     lungNoduleReady.value = Boolean(health.lungNoduleReady)
+
+    const status = health.lungNoduleStatus
+    availableAiModels.value = status?.available_models ?? []
+    const currentStillValid = availableAiModels.value.some(
+      (m) => m.id === selectedAiModelId.value && m.loaded,
+    )
+    if (!currentStillValid) {
+      const preferred =
+        availableAiModels.value.find((m) => m.id === status?.default_model_id && m.loaded) ??
+        availableAiModels.value.find((m) => m.loaded)
+      selectedAiModelId.value = preferred?.id ?? status?.default_model_id ?? ''
+    }
   } catch {
     aiCtReady.value = false
     algoReady.value = false
@@ -214,7 +260,7 @@ async function handleRunAiSegmentation() {
 
   try {
     void refreshAiSegmentProgress()
-    const response = await medtechApi.aiSegmentCheckImaging(id.value)
+    const response = await medtechApi.aiSegmentCheckImaging(id.value, selectedAiModelId.value || undefined)
     segmentationResult.value = response.segmentationResult ?? null
     if (!segmentationResult.value) {
       segmentationError.value = 'AI 分割完成但未返回结果数据'
@@ -445,9 +491,12 @@ onBeforeUnmount(() => {
               :show-save="false"
               :show-tech-bar="false"
               :initial-volume-id="imagingVolumeId"
+              :patient-name="report?.patientName"
+              :patient-fields="patientInfoFields"
               @uploaded="handleImagingUploaded"
               @cleared="handleImagingCleared"
               @meta-updated="handleMetaUpdated"
+              @toggle-report="toggleReportPanel"
             />
           </div>
 
@@ -461,9 +510,12 @@ onBeforeUnmount(() => {
               :elapsed-seconds="aiSegmentElapsedSeconds"
               :error-message="segmentationError"
               :result="segmentationResult"
+              :available-models="availableAiModels"
+              :model-id="selectedAiModelId"
               @run-ai-segment="handleRunAiSegmentation"
               @select-lesion="handleSelectLesion"
               @toggle-mask="handleToggleMask"
+              @update:model-id="(value) => (selectedAiModelId = value)"
             />
           </div>
 

@@ -133,8 +133,15 @@ public class CtViewerClient {
         }
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     public Map<String, Object> aiSegmentVolume(String volumeId) {
+        return aiSegmentVolume(volumeId, null);
+    }
+
+    /**
+     * @param modelId 可选，指定使用的 AI 分割模型（monai / segnet / nnunet），为空时使用服务端默认模型
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public Map<String, Object> aiSegmentVolume(String volumeId, String modelId) {
         if (!StringUtils.hasText(volumeId)) {
             throw new BusinessException(400, "volumeId 不能为空");
         }
@@ -143,11 +150,14 @@ public class CtViewerClient {
         }
         try {
             long startedAt = System.currentTimeMillis();
-            log.info("调 ct-viewer-service AI 分割开始 | volumeId={}", volumeId);
+            log.info("调 ct-viewer-service AI 分割开始 | volumeId={} modelId={}", volumeId, modelId);
             HttpHeaders headers = new HttpHeaders();
             headers.set(AgentContextHeaders.INTERNAL_TOKEN, internalToken);
             headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(Map.of(), headers);
+            Map<String, Object> requestBody = StringUtils.hasText(modelId)
+                ? Map.of("modelId", modelId.trim())
+                : Map.of();
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
             Map<String, Object> response = restTemplate.exchange(
                 ctViewerBaseUrl + "/api/ct-viewer/internal/volume/{volumeId}/segment/ai",
                 HttpMethod.POST,

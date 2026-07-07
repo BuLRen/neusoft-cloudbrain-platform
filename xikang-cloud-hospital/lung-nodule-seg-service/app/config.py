@@ -72,13 +72,19 @@ MODEL_VERSION = "LungNoduleSeg-v1.0"
 # 推理后端选择
 # ========================
 # "monai"  ：本仓库 training/ 自训练的轻量 3D UNet（默认，与 MODEL_PATH 配套）
+# "segnet" ：移植自 Ola-Vish/lung-tumor-segmentation 的 2D SegNet（轻量演示模型）
 # "nnunet" ：官方 nnU-Net v2 框架推理（更大网络、更长训练，需额外安装
 #            requirements-nnunet.txt 并通过 scripts/download_nnunet_weights.py
 #            下载权重）
+#
+# 注意：从本版本开始，服务在启动时会尝试加载全部已配置权重的模型（见下方
+# “多模型注册表”），供前端在运行时通过 model_id 字段任选一个，而不再要求
+# 重启服务切换后端。LUNG_NODULE_SEG_BACKEND 仅决定“默认模型”（未显式传
+# model_id 时使用哪一个），兼容旧版单后端部署方式。
 ACTIVE_BACKEND = os.environ.get("LUNG_NODULE_SEG_BACKEND", "monai").strip().lower()
-if ACTIVE_BACKEND not in ("monai", "nnunet"):
+if ACTIVE_BACKEND not in ("monai", "segnet", "nnunet"):
     raise ValueError(
-        f"不支持的 LUNG_NODULE_SEG_BACKEND={ACTIVE_BACKEND!r}，只能是 'monai' 或 'nnunet'"
+        f"不支持的 LUNG_NODULE_SEG_BACKEND={ACTIVE_BACKEND!r}，只能是 'monai' / 'segnet' / 'nnunet'"
     )
 
 # ========================
@@ -112,6 +118,13 @@ NNUNET_MODEL_VERSION = os.environ.get(
     "NNUNET_MODEL_VERSION", "LungNoduleSeg-nnUNet-Task06Lung-fold0"
 )
 
+# 是否启用 nnunet 后端（默认关闭：依赖体积大且默认不推荐使用）。
+# 设置 LUNG_NODULE_SEG_BACKEND=nnunet 会自动启用；也可单独用该变量开启。
+ENABLE_NNUNET = os.environ.get(
+    "LUNG_NODULE_SEG_ENABLE_NNUNET",
+    "1" if ACTIVE_BACKEND == "nnunet" else "0",
+) not in ("0", "false", "False", "")
+
 # 推理结束后主动释放 Python 大数组；CPU 推理场景下有助于降低下一次请求前的驻留内存。
 FORCE_GC_AFTER_INFERENCE = os.environ.get("LUNG_NODULE_SEG_FORCE_GC", "1") not in (
     "0", "false", "False", ""
@@ -128,8 +141,65 @@ def _select_nnunet_device() -> str:
 
 NNUNET_DEVICE = os.environ.get("LUNG_NODULE_SEG_NNUNET_DEVICE", _select_nnunet_device())
 
-# 当前生效的模型版本号（写入 summary.modelVersion / health 接口）
-ACTIVE_MODEL_VERSION = NNUNET_MODEL_VERSION if ACTIVE_BACKEND == "nnunet" else MODEL_VERSION
+# ========================
+# SegNet 后端配置
+# ========================
+# 移植自 Ola-Vish/lung-tumor-segmentation（MIT License，
+# https://github.com/Ola-Vish/lung-tumor-segmentation）。原仓库在 MSD
+# Task06_Lung 上训练了一个 VGG16-BN 编码器的 2D SegNet，逐轴位切片推理，
+# 网络体积远小于 nnU-Net，CPU 上跑得动，适合低配设备演示。
+#
+# 权重获取方式（无官方 API，需手动下载 + 转换，见 README「SegNet 后端」一节）：
+#   1. 从原仓库 README 中的 Google Drive 链接下载作者提供的 checkpoint
+#   2. python -m scripts.convert_segnet_checkpoint --src <下载的 .ckpt>
+#   3. 转换脚本默认输出到下面的 SEGNET_MODEL_PATH
+SEGNET_MODEL_PATH = os.environ.get(
+    "SEGNET_MODEL_PATH",
+    os.path.join(SERVICE_ROOT, "models", "segnet_lung_tumor.pth"),
+)
+SEGNET_INPUT_SIZE = (224, 224)      # (H, W)，与原仓库训练分辨率一致，不可更改
+SEGNET_SCALING_VALUE = 3071.0       # 原仓库预处理：CT 原始值 / 3071（不做 clip）
+SEGNET_BATCH_SIZE = int(os.environ.get("SEGNET_BATCH_SIZE", "4"))
+SEGNET_MODEL_VERSION = os.environ.get(
+    "SEGNET_MODEL_VERSION", "LungTumorSeg-SegNet-OlaVish-v1"
+)
+SEGNET_DEVICE = os.environ.get("LUNG_NODULE_SEG_SEGNET_DEVICE", DEVICE)
+
+# ========================
+# 多模型注册表
+# ========================
+# 供 /health 的 available_models 与 /internal/segment 的 model_id 字段使用。
+# 服务启动时会尝试加载下列全部模型（nnunet 除外，需 ENABLE_NNUNET=1 才尝试），
+# 加载失败不影响服务启动，只是该模型在 available_models 中 loaded=false。
+DEFAULT_MODEL_ID = os.environ.get("LUNG_NODULE_SEG_DEFAULT_MODEL", ACTIVE_BACKEND).strip().lower()
+if DEFAULT_MODEL_ID == "nnunet":
+    ENABLE_NNUNET = True
+
+MODEL_REGISTRY_META = {
+    "monai": {
+        "label": "MONAI 3D UNet（自训练，默认）",
+        "description": "本仓库 training/ 自训练的轻量 3D UNet，整卷滑窗推理。",
+    },
+    "segnet": {
+        "label": "SegNet 2D（VGG16 编码器，轻量演示模型）",
+        "description": (
+            "移植自 Ola-Vish/lung-tumor-segmentation（MIT License），逐轴位切片 "
+            "2D 推理，模型体积小、CPU 推理快，适合设备资源有限时的演示场景。"
+        ),
+    },
+    "nnunet": {
+        "label": "nnU-Net v2（体积较大，默认不启用）",
+        "description": "官方 nnU-Net v2 框架权重，精度更高但网络更大、CPU 推理慢，需要额外安装依赖。",
+    },
+}
+
+# 当前默认模型的版本号（写入 summary.modelVersion / health 接口的兜底值）
+_DEFAULT_VERSION_BY_MODEL = {
+    "monai": MODEL_VERSION,
+    "segnet": SEGNET_MODEL_VERSION,
+    "nnunet": NNUNET_MODEL_VERSION,
+}
+ACTIVE_MODEL_VERSION = _DEFAULT_VERSION_BY_MODEL.get(DEFAULT_MODEL_ID, MODEL_VERSION)
 
 # ========================
 # 并发

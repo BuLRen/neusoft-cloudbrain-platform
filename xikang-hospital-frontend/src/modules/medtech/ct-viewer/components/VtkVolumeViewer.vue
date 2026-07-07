@@ -19,6 +19,8 @@ const props = withDefaults(
     isMask?: boolean
     dataMin?: number
     dataMax?: number
+    /** isMask=true 时的高亮颜色（0~1 归一化 RGB），默认橙红 */
+    maskColor?: [number, number, number]
   }>(),
   {
     volumeData: null,
@@ -27,6 +29,7 @@ const props = withDefaults(
     isMask: false,
     dataMin: 0,
     dataMax: 1,
+    maskColor: () => [1.0, 0.35, 0.15],
   },
 )
 
@@ -47,8 +50,9 @@ function applyTransfer() {
   const opacity = vtkPiecewiseFunction.newInstance()
 
   if (props.isMask) {
+    const [r, g, b] = props.maskColor
     color.addRGBPoint(0, 0.0, 0.0, 0.0)
-    color.addRGBPoint(255, 1.0, 0.35, 0.15)
+    color.addRGBPoint(255, r, g, b)
     opacity.addPoint(0, 0.0)
     opacity.addPoint(254, 0.0)
     opacity.addPoint(255, 0.85)
@@ -95,8 +99,14 @@ function renderVolume() {
 }
 
 function handleResize() {
-  genericRenderWindow?.resize()
+  if (!genericRenderWindow || !renderer || !renderWindow) return
+  genericRenderWindow.resize()
+  // 容器尺寸变化（如网格布局/侧栏切换）后重新居中相机，避免画面偏移或被裁切
+  renderer.resetCamera()
+  renderWindow.render()
 }
+
+let resizeObserver: ResizeObserver | null = null
 
 onMounted(() => {
   if (!containerRef.value) return
@@ -122,6 +132,12 @@ onMounted(() => {
   volumeProperty.setShade(true)
 
   window.addEventListener('resize', handleResize)
+  // 容器由 flex/grid 分配尺寸，其变化（如布局模式切换）不一定触发 window resize，
+  // 必须用 ResizeObserver 监听容器本身，否则 vtk 内部画布尺寸与可视区域不一致，
+  // 导致渲染内容被裁切、看起来不居中。
+  resizeObserver = new ResizeObserver(() => handleResize())
+  resizeObserver.observe(containerRef.value)
+
   renderVolume()
 })
 
@@ -133,7 +149,7 @@ watch(
 )
 
 watch(
-  () => [props.windowCenter, props.windowWidth, props.isMask, props.dataMin, props.dataMax],
+  () => [props.windowCenter, props.windowWidth, props.isMask, props.dataMin, props.dataMax, props.maskColor],
   () => {
     applyTransfer()
   },
@@ -141,6 +157,8 @@ watch(
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   if (genericRenderWindow) {
     genericRenderWindow.delete()
     genericRenderWindow = null
@@ -156,7 +174,10 @@ onBeforeUnmount(() => {
 .vtk-container {
   width: 100%;
   height: 100%;
-  min-height: 280px;
+  /* 不要设固定 min-height：容器由父级 flex/grid 精确分配尺寸，
+     若最小高度大于实际分配高度，会把 vtk 画布撑大后被父级裁切，
+     导致三维渲染看起来偏移/不居中。 */
+  min-height: 0;
   border: none;
   border-radius: 0;
   overflow: hidden;

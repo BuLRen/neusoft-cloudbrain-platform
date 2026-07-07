@@ -202,18 +202,22 @@ public class CtViewerService {
 
     /**
      * AI 肺结节分割（外部调用，需鉴权）。
+     *
+     * @param modelId 可选，指定使用的 AI 分割模型（monai / segnet / nnunet），为空时使用服务端默认模型
      */
-    public SegmentResponseDto aiSegmentVolume(String volumeId) {
+    public SegmentResponseDto aiSegmentVolume(String volumeId, String modelId) {
         VolumeMetaDto source = volumeAccessService.requireReadableVolume(volumeId);
-        return runAiLungNoduleSegment(source);
+        return runAiLungNoduleSegment(source, modelId);
     }
 
     /**
      * AI 肺结节分割（medtech-service 内部调用，上游已完成业务鉴权）。
+     *
+     * @param modelId 可选，指定使用的 AI 分割模型（monai / segnet / nnunet），为空时使用服务端默认模型
      */
-    public SegmentResponseDto aiSegmentVolumeInternal(String volumeId) {
+    public SegmentResponseDto aiSegmentVolumeInternal(String volumeId, String modelId) {
         VolumeMetaDto source = metaRepository.requireById(volumeId);
-        return runAiLungNoduleSegment(source);
+        return runAiLungNoduleSegment(source, modelId);
     }
 
     @SuppressWarnings("unchecked")
@@ -278,15 +282,16 @@ public class CtViewerService {
      * 流程：source NRRD → 调用 AI 服务 → 写掩码 NRRD → 持久化元信息 → 审计
      */
     @SuppressWarnings("unchecked")
-    private SegmentResponseDto runAiLungNoduleSegment(VolumeMetaDto source) {
+    private SegmentResponseDto runAiLungNoduleSegment(VolumeMetaDto source, String modelId) {
         String resultId = storageService.newVolumeId();
         try {
             long startedAt = System.currentTimeMillis();
             log.info(
-                "AI lung nodule segment start | sourceVolumeId={} sourceName={} resultVolumeId={}",
+                "AI lung nodule segment start | sourceVolumeId={} sourceName={} resultVolumeId={} modelId={}",
                 source.getVolumeId(),
                 source.getSourceName(),
-                resultId
+                resultId,
+                modelId
             );
             storageService.ensureVolumeDir(resultId);
             Path outNrrd = storageService.nrrdPath(resultId);
@@ -294,7 +299,8 @@ public class CtViewerService {
             Map<String, Object> algoData = lungNoduleSegClient.segment(
                 source.getNrrdPath(),
                 storageService.absolutePath(outNrrd),
-                source.getSourceName()
+                source.getSourceName(),
+                modelId
             );
 
             Map<String, Object> metaMap = (Map<String, Object>) algoData.get("meta");

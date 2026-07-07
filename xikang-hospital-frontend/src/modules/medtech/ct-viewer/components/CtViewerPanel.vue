@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   ElButton,
   ElDivider,
@@ -21,17 +21,22 @@ import {
   uploadCtNrrdFile,
   type CtVolumeMeta,
 } from '@/shared/api/modules/ctViewer'
-import CtSliceViewPanel from '@/modules/medtech/ct-viewer/components/CtSliceViewPanel.vue'
+import CtSliceViewPanel, { type CtViewTool } from '@/modules/medtech/ct-viewer/components/CtSliceViewPanel.vue'
+import CtToolbar, { type CtLayoutMode } from '@/modules/medtech/ct-viewer/components/CtToolbar.vue'
+import CtFilmstrip from '@/modules/medtech/ct-viewer/components/CtFilmstrip.vue'
+import CtPatientInfoPanel, { type CtPatientInfoField } from '@/modules/medtech/ct-viewer/components/CtPatientInfoPanel.vue'
 import VtkVolumeViewer from '@/modules/medtech/ct-viewer/components/VtkVolumeViewer.vue'
 import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 import { parseNrrdArrayBuffer } from '@/modules/medtech/ct-viewer/lib/nrrdToVtkImageData'
 import {
+  extractAxialThumbnail,
   extractCoronalSlice,
   extractSagittalSlice,
   extractSliceZyx,
   maskOverlayToRgb,
   windowToUint8,
 } from '@/modules/medtech/ct-viewer/lib/volumeUtils'
+import { computeRegionStats, type RegionStats } from '@/modules/medtech/ct-viewer/lib/imageInteraction'
 import {
   drawLesionAnnotations,
   getLesionsForAxialSlice,
@@ -55,6 +60,8 @@ const props = withDefaults(
     showTechBar?: boolean
     readOnly?: boolean
     nrrdFetcher?: (volumeId: string) => Promise<ArrayBuffer>
+    patientName?: string
+    patientFields?: CtPatientInfoField[]
   }>(),
   {
     embedded: false,
@@ -64,6 +71,8 @@ const props = withDefaults(
     showSave: true,
     showTechBar: true,
     readOnly: false,
+    patientName: '',
+    patientFields: () => [],
   },
 )
 
@@ -71,6 +80,7 @@ const emit = defineEmits<{
   uploaded: [payload: { volumeId: string; sourceName: string; meta: CtVolumeMeta }]
   cleared: []
   'meta-updated': [meta: CtVolumeMeta | null]
+  'toggle-report': []
 }>()
 
 const statusText = ref('正在检查 CT 影像服务…')
@@ -95,6 +105,23 @@ const sagittalSlice = ref(0)
 const windowCenter = ref(50)
 const windowWidth = ref(350)
 const filterName = ref('无滤波')
+
+const activeTool = ref<CtViewTool>('wlww')
+const layoutMode = ref<CtLayoutMode>('quad')
+const crosshairEnabled = ref(true)
+const maskOverlayVisible = ref(true)
+const roiResults = reactive<Record<'axial' | 'coronal' | 'sagittal', RegionStats | null>>({
+  axial: null,
+  coronal: null,
+  sagittal: null,
+})
+const filmstripThumbnails = ref<string[]>([])
+const filmstripPlaying = ref(false)
+let filmstripTimer: number | undefined
+
+const axialPanelRef = ref<InstanceType<typeof CtSliceViewPanel> | null>(null)
+const coronalPanelRef = ref<InstanceType<typeof CtSliceViewPanel> | null>(null)
+const sagittalPanelRef = ref<InstanceType<typeof CtSliceViewPanel> | null>(null)
 
 const spatialSigma = ref(1.0)
 const rangeSigma = ref(50.0)
@@ -125,7 +152,11 @@ const sagittalCanvas = ref<HTMLCanvasElement | null>(null)
 const activeVolume = computed(() => filteredVolume.value ?? originalVolume.value)
 const activeMeta = computed(() => filteredMeta.value ?? originalMeta.value)
 const displayIsMask = computed(
-  () => filteredIsMask.value && !!filteredVolume.value && !showLesionBoxAnnotations.value,
+  () =>
+    filteredIsMask.value &&
+    !!filteredVolume.value &&
+    !showLesionBoxAnnotations.value &&
+    maskOverlayVisible.value,
 )
 const effectiveAllowUpload = computed(() => props.allowUpload && !props.readOnly)
 const showFilterSection = computed(() => !props.readOnly)
@@ -141,22 +172,35 @@ const volumeDescription = computed(() => {
   return `Size ${meta.size_xyz?.join(' x ') ?? '-'} | Spacing ${meta.spacing_xyz?.map((v) => v.toFixed(3)).join(', ') ?? '-'}`
 })
 
-const spacingXy = computed(() => {
-  const spacing = originalMeta.value?.spacing_xyz
-  if (!spacing?.length) return 0.5
-  return (spacing[0] + spacing[1]) / 2
+const spacingX = computed(() => originalMeta.value?.spacing_xyz?.[0] ?? 0.7)
+const spacingY = computed(() => originalMeta.value?.spacing_xyz?.[1] ?? 0.7)
+const spacingZ = computed(() => originalMeta.value?.spacing_xyz?.[2] ?? spacingY.value)
+
+const hasMaskOverlay = computed(() => filteredIsMask.value || showLesionBoxAnnotations.value)
+
+/** 三视图十字线联动：axial/coronal/sagittal 归一化坐标（0~1），基于当前三个切片索引换算 */
+const axialCrosshair = computed(() => {
+  if (!crosshairEnabled.value || !xCount.value || !yCount.value) return null
+  return {
+    x: sagittalSlice.value / Math.max(xCount.value - 1, 1),
+    y: coronalSlice.value / Math.max(yCount.value - 1, 1),
+  }
 })
 
-const spacingXz = computed(() => {
-  const spacing = originalMeta.value?.spacing_xyz
-  if (!spacing?.length) return 0.5
-  return (spacing[0] + (spacing[2] ?? spacing[0])) / 2
+const coronalCrosshair = computed(() => {
+  if (!crosshairEnabled.value || !xCount.value || !zCount.value) return null
+  return {
+    x: sagittalSlice.value / Math.max(xCount.value - 1, 1),
+    y: 1 - axialSlice.value / Math.max(zCount.value - 1, 1),
+  }
 })
 
-const spacingYz = computed(() => {
-  const spacing = originalMeta.value?.spacing_xyz
-  if (!spacing?.length) return 0.5
-  return (spacing[1] + (spacing[2] ?? spacing[1])) / 2
+const sagittalCrosshair = computed(() => {
+  if (!crosshairEnabled.value || !yCount.value || !zCount.value) return null
+  return {
+    x: coronalSlice.value / Math.max(yCount.value - 1, 1),
+    y: 1 - axialSlice.value / Math.max(zCount.value - 1, 1),
+  }
 })
 
 const seriesLabel = computed(() => {
@@ -522,7 +566,8 @@ function drawLesionBoxesOnCanvas(
   plane: 'axial' | 'coronal' | 'sagittal',
   sliceIndex: number,
 ) {
-  if (!canvas || !showLesionBoxAnnotations.value || !segmentationLesions.value.length) return
+  if (!canvas || !showLesionBoxAnnotations.value || !maskOverlayVisible.value || !segmentationLesions.value.length)
+    return
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
@@ -545,6 +590,127 @@ function refresh2DViews() {
   drawLesionBoxesOnCanvas(coronalCanvas.value, 'coronal', coronalSlice.value)
   renderPlane(sagittalCanvas.value, extractSagittalSlice, sagittalSlice.value)
   drawLesionBoxesOnCanvas(sagittalCanvas.value, 'sagittal', sagittalSlice.value)
+}
+
+function clampIndex(value: number, count: number) {
+  if (!count) return 0
+  return Math.max(0, Math.min(count - 1, value))
+}
+
+function handleAxialWheel(delta: number) {
+  axialSlice.value = clampIndex(axialSlice.value + delta, zCount.value)
+}
+
+function handleCoronalWheel(delta: number) {
+  coronalSlice.value = clampIndex(coronalSlice.value + delta, yCount.value)
+}
+
+function handleSagittalWheel(delta: number) {
+  sagittalSlice.value = clampIndex(sagittalSlice.value + delta, xCount.value)
+}
+
+function handleWindowDelta(dx: number, dy: number) {
+  windowWidth.value = Math.max(1, Math.round(windowWidth.value + dx * 2))
+  windowCenter.value = Math.round(windowCenter.value - dy * 2)
+}
+
+function handleAxialCrosshairSet(point: { x: number; y: number }) {
+  sagittalSlice.value = Math.round(point.x * Math.max(xCount.value - 1, 0))
+  coronalSlice.value = Math.round(point.y * Math.max(yCount.value - 1, 0))
+}
+
+function handleCoronalCrosshairSet(point: { x: number; y: number }) {
+  sagittalSlice.value = Math.round(point.x * Math.max(xCount.value - 1, 0))
+  axialSlice.value = Math.round((1 - point.y) * Math.max(zCount.value - 1, 0))
+}
+
+function handleSagittalCrosshairSet(point: { x: number; y: number }) {
+  coronalSlice.value = Math.round(point.x * Math.max(yCount.value - 1, 0))
+  axialSlice.value = Math.round((1 - point.y) * Math.max(zCount.value - 1, 0))
+}
+
+function handleRoiRequest(plane: 'axial' | 'coronal' | 'sagittal', rect: { x0: number; y0: number; x1: number; y1: number }) {
+  if (!originalVolume.value) return
+  let slice: { data: Float32Array; width: number; height: number }
+  let colSpacing: number
+  let rowSpacing: number
+
+  if (plane === 'axial') {
+    slice = extractSliceZyx(originalVolume.value, axialSlice.value)
+    colSpacing = spacingX.value
+    rowSpacing = spacingY.value
+  } else if (plane === 'coronal') {
+    slice = extractCoronalSlice(originalVolume.value, coronalSlice.value)
+    colSpacing = spacingX.value
+    rowSpacing = spacingZ.value
+  } else {
+    slice = extractSagittalSlice(originalVolume.value, sagittalSlice.value)
+    colSpacing = spacingY.value
+    rowSpacing = spacingZ.value
+  }
+
+  roiResults[plane] = computeRegionStats(slice.data, slice.width, slice.height, rect, colSpacing, rowSpacing)
+}
+
+function handleResetView() {
+  axialPanelRef.value?.resetView()
+  coronalPanelRef.value?.resetView()
+  sagittalPanelRef.value?.resetView()
+}
+
+function handleToggleMaskOverlay() {
+  maskOverlayVisible.value = !maskOverlayVisible.value
+  void nextTick().then(() => refresh2DViews())
+}
+
+function handlePrint() {
+  window.print()
+}
+
+function regenerateFilmstripThumbnails() {
+  if (!originalVolume.value || !zCount.value) {
+    filmstripThumbnails.value = []
+    return
+  }
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const thumbs: string[] = []
+  for (let i = 0; i < zCount.value; i += 1) {
+    const thumb = extractAxialThumbnail(originalVolume.value, i, windowCenter.value, windowWidth.value, 64)
+    canvas.width = thumb.width
+    canvas.height = thumb.height
+    const imageData = ctx.createImageData(thumb.width, thumb.height)
+    for (let p = 0; p < thumb.data.length; p += 1) {
+      const g = thumb.data[p]
+      const offset = p * 4
+      imageData.data[offset] = g
+      imageData.data[offset + 1] = g
+      imageData.data[offset + 2] = g
+      imageData.data[offset + 3] = 255
+    }
+    ctx.putImageData(imageData, 0, 0)
+    thumbs.push(canvas.toDataURL('image/png'))
+  }
+  filmstripThumbnails.value = thumbs
+}
+
+let thumbnailDebounceTimer: number | undefined
+function scheduleThumbnailRegen() {
+  window.clearTimeout(thumbnailDebounceTimer)
+  thumbnailDebounceTimer = window.setTimeout(regenerateFilmstripThumbnails, 300)
+}
+
+function toggleFilmstripPlay() {
+  filmstripPlaying.value = !filmstripPlaying.value
+  if (filmstripPlaying.value) {
+    filmstripTimer = window.setInterval(() => {
+      axialSlice.value = zCount.value ? (axialSlice.value + 1) % zCount.value : 0
+    }, 200)
+  } else if (filmstripTimer != null) {
+    window.clearInterval(filmstripTimer)
+    filmstripTimer = undefined
+  }
 }
 
 function saveCurrentSlicePng() {
@@ -576,10 +742,12 @@ watch(
   },
 )
 
-watch([originalVolume, filteredVolume, axialSlice, coronalSlice, sagittalSlice, windowCenter, windowWidth, segmentationLesions, showLesionBoxAnnotations], async () => {
+watch([originalVolume, filteredVolume, axialSlice, coronalSlice, sagittalSlice, windowCenter, windowWidth, segmentationLesions, showLesionBoxAnnotations, maskOverlayVisible], async () => {
   await nextTick()
   refresh2DViews()
 })
+
+watch([originalVolume, windowCenter, windowWidth], () => scheduleThumbnailRegen())
 
 watch(
   originalMeta,
@@ -594,6 +762,11 @@ onMounted(async () => {
   if (props.initialVolumeId) {
     await loadBoundVolume(props.initialVolumeId)
   }
+})
+
+onBeforeUnmount(() => {
+  if (filmstripTimer != null) window.clearInterval(filmstripTimer)
+  window.clearTimeout(thumbnailDebounceTimer)
 })
 
 defineExpose({
@@ -634,6 +807,12 @@ defineExpose({
     <div class="ct-viewer-layout">
       <aside class="ct-viewer-sidebar">
         <ElScrollbar>
+          <CtPatientInfoPanel
+            v-if="patientName || patientFields.length"
+            :patient-name="patientName"
+            :fields="patientFields"
+          />
+
           <section v-if="effectiveAllowUpload" class="ct-sidebar-section">
             <h3 class="ct-sidebar-section__title">数据加载</h3>
             <div class="ct-btn-stack">
@@ -777,28 +956,113 @@ defineExpose({
       </aside>
 
       <section class="ct-viewer-workspace">
-        <div class="view-grid">
-          <div class="volume-panel volume-panel--compact">
+        <CtToolbar
+          :tool="activeTool"
+          :layout-mode="layoutMode"
+          :crosshair-enabled="crosshairEnabled"
+          :mask-overlay-enabled="maskOverlayVisible"
+          :has-mask-overlay="hasMaskOverlay"
+          @update:tool="(value) => (activeTool = value)"
+          @update:layout-mode="(value) => (layoutMode = value)"
+          @toggle-crosshair="crosshairEnabled = !crosshairEnabled"
+          @toggle-mask-overlay="handleToggleMaskOverlay"
+          @reset-view="handleResetView"
+          @export="saveCurrentSlicePng"
+          @print="handlePrint"
+          @toggle-report="emit('toggle-report')"
+        />
+
+        <div class="ct-quad-grid" :class="`ct-quad-grid--${layoutMode}`">
+          <CtSliceViewPanel
+            ref="axialPanelRef"
+            class="ct-quad-cell ct-quad-cell--axial"
+            title="轴状图 Axial"
+            plane="axial"
+            :slice-index="axialSlice"
+            :slice-total="zCount"
+            :window-center="windowCenter"
+            :window-width="windowWidth"
+            :row-spacing-mm="spacingY"
+            :col-spacing-mm="spacingX"
+            :natural-width="xCount"
+            :natural-height="yCount"
+            :series-label="seriesLabel"
+            :tool="activeTool"
+            :crosshair="axialCrosshair"
+            :roi-result="roiResults.axial"
+            @wheel-slice="handleAxialWheel"
+            @window-delta="handleWindowDelta"
+            @crosshair-set="handleAxialCrosshairSet"
+            @roi-request="(rect) => handleRoiRequest('axial', rect)"
+          >
+            <template v-if="showLesionBoxAnnotations" #header-extra>
+              <ElTag type="danger" size="small" effect="dark">AI 病灶标注</ElTag>
+            </template>
+            <canvas ref="axialCanvas" />
+          </CtSliceViewPanel>
+
+          <CtSliceViewPanel
+            ref="coronalPanelRef"
+            class="ct-quad-cell ct-quad-cell--coronal"
+            title="冠状图 Coronal"
+            plane="coronal"
+            :slice-index="coronalSlice"
+            :slice-total="yCount"
+            :window-center="windowCenter"
+            :window-width="windowWidth"
+            :row-spacing-mm="spacingZ"
+            :col-spacing-mm="spacingX"
+            :natural-width="xCount"
+            :natural-height="zCount"
+            :series-label="seriesLabel"
+            :tool="activeTool"
+            :crosshair="coronalCrosshair"
+            :roi-result="roiResults.coronal"
+            @wheel-slice="handleCoronalWheel"
+            @window-delta="handleWindowDelta"
+            @crosshair-set="handleCoronalCrosshairSet"
+            @roi-request="(rect) => handleRoiRequest('coronal', rect)"
+          >
+            <canvas ref="coronalCanvas" />
+          </CtSliceViewPanel>
+
+          <CtSliceViewPanel
+            ref="sagittalPanelRef"
+            class="ct-quad-cell ct-quad-cell--sagittal"
+            title="矢状图 Sagittal"
+            plane="sagittal"
+            :slice-index="sagittalSlice"
+            :slice-total="xCount"
+            :window-center="windowCenter"
+            :window-width="windowWidth"
+            :row-spacing-mm="spacingZ"
+            :col-spacing-mm="spacingY"
+            :natural-width="yCount"
+            :natural-height="zCount"
+            :series-label="seriesLabel"
+            :tool="activeTool"
+            :crosshair="sagittalCrosshair"
+            :roi-result="roiResults.sagittal"
+            @wheel-slice="handleSagittalWheel"
+            @window-delta="handleWindowDelta"
+            @crosshair-set="handleSagittalCrosshairSet"
+            @roi-request="(rect) => handleRoiRequest('sagittal', rect)"
+          >
+            <canvas ref="sagittalCanvas" />
+          </CtSliceViewPanel>
+
+          <div class="ct-quad-cell ct-quad-cell--volume volume-panel">
             <header class="volume-panel__header">
               <div class="volume-panel__title-row">
                 <span class="volume-panel__title">三维体渲染</span>
                 <ElTag v-if="displayIsMask" type="warning" size="small">{{ maskOverlayLabel }}</ElTag>
               </div>
               <div class="volume-panel__mode">
-                <span>表面渲染</span>
+                <span>体渲染 VR</span>
               </div>
             </header>
 
             <div class="volume-panel__body">
-              <div class="volume-panel__toolbar volume-panel__toolbar--top">
-                <span class="volume-tool" title="选择">◎</span>
-                <span class="volume-tool" title="旋转">↻</span>
-                <span class="volume-tool" title="平移">✥</span>
-                <span class="volume-tool" title="缩放">⊕</span>
-                <span class="volume-tool" title="裁剪">▭</span>
-                <span class="volume-tool" title="测量">⌖</span>
-              </div>
-
               <div class="volume-panel__orient-cube">
                 <span class="cube-face cube-face--r">R</span>
                 <span class="cube-face cube-face--a">A</span>
@@ -815,48 +1079,17 @@ defineExpose({
               />
             </div>
           </div>
-          <CtSliceViewPanel
-            title="冠状图 Coronal"
-            plane="coronal"
-            :slice-index="coronalSlice"
-            :slice-total="yCount"
-            :window-center="windowCenter"
-            :window-width="windowWidth"
-            :spacing-mm="spacingXz"
-            :series-label="seriesLabel"
-          >
-            <canvas ref="coronalCanvas" />
-          </CtSliceViewPanel>
-          <CtSliceViewPanel
-            title="矢状图 Sagittal"
-            plane="sagittal"
-            :slice-index="sagittalSlice"
-            :slice-total="xCount"
-            :window-center="windowCenter"
-            :window-width="windowWidth"
-            :spacing-mm="spacingYz"
-            :series-label="seriesLabel"
-          >
-            <canvas ref="sagittalCanvas" />
-          </CtSliceViewPanel>
         </div>
 
-        <CtSliceViewPanel
-          class="axial-panel--primary"
-          title="轴状图 Axial"
-          plane="axial"
-          :slice-index="axialSlice"
-          :slice-total="zCount"
-          :window-center="windowCenter"
-          :window-width="windowWidth"
-          :spacing-mm="spacingXy"
-          :series-label="seriesLabel"
-        >
-          <template v-if="showLesionBoxAnnotations" #header-extra>
-            <ElTag type="danger" size="small" effect="dark">AI 病灶标注</ElTag>
-          </template>
-          <canvas ref="axialCanvas" />
-        </CtSliceViewPanel>
+        <CtFilmstrip
+          v-if="zCount"
+          :thumbnails="filmstripThumbnails"
+          :current-index="axialSlice"
+          :total="zCount"
+          :playing="filmstripPlaying"
+          @update:current-index="(value) => (axialSlice = value)"
+          @toggle-play="toggleFilmstripPlay"
+        />
       </section>
     </div>
   </div>
@@ -890,7 +1123,7 @@ defineExpose({
 }
 
 .ct-viewer-panel--fullscreen .ct-viewer-workspace {
-  grid-template-rows: minmax(180px, 34%) minmax(280px, 1fr);
+  min-height: 0;
 }
 
 .ct-viewer-panel__tech-bar {
@@ -1086,31 +1319,51 @@ defineExpose({
 
 .ct-viewer-workspace {
   min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(200px, 36%) minmax(360px, 1fr);
-  gap: 10px;
-  padding: 10px;
+  display: flex;
+  flex-direction: column;
   background: var(--ct-bg);
 }
 
-.view-grid {
+.ct-quad-grid {
+  flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas:
+    'axial coronal'
+    'sagittal volume';
+  gap: 8px;
+  padding: 8px;
 }
 
-.view-grid :deep(.ct-slice-panel),
-.view-grid .volume-panel {
+.ct-quad-cell--axial { grid-area: axial; }
+.ct-quad-cell--coronal { grid-area: coronal; }
+.ct-quad-cell--sagittal { grid-area: sagittal; }
+.ct-quad-cell--volume { grid-area: volume; }
+
+.ct-quad-cell {
   min-height: 0;
-  height: 100%;
+  min-width: 0;
 }
 
-.axial-panel--primary {
-  min-height: 0;
+.ct-quad-grid--axial {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: 'axial';
 }
 
-.volume-panel--compact .volume-panel__toolbar--side {
+.ct-quad-grid--axial .ct-quad-cell:not(.ct-quad-cell--axial) {
+  display: none;
+}
+
+.ct-quad-grid--3d {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: 'volume';
+}
+
+.ct-quad-grid--3d .ct-quad-cell:not(.ct-quad-cell--volume) {
   display: none;
 }
 
@@ -1159,37 +1412,6 @@ defineExpose({
   min-height: 0;
 }
 
-.volume-panel__toolbar--top {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 3;
-  display: flex;
-  gap: 4px;
-  padding: 4px 6px;
-  border-radius: 8px;
-  border: 1px solid var(--ct-border);
-  background: rgba(11, 14, 20, 0.82);
-  backdrop-filter: blur(8px);
-}
-
-.volume-tool {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--ct-text-muted);
-  cursor: default;
-}
-
-.volume-tool:hover {
-  color: var(--ct-accent);
-  background: var(--ct-accent-soft);
-}
-
 .volume-panel__orient-cube {
   position: absolute;
   top: 10px;
@@ -1227,39 +1449,6 @@ defineExpose({
   left: 4px;
 }
 
-.volume-panel__toolbar--side {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  border-radius: 8px;
-  border: 1px solid var(--ct-border);
-  background: rgba(11, 14, 20, 0.82);
-  backdrop-filter: blur(8px);
-}
-
-.volume-side-btn {
-  padding: 4px 8px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--ct-text-dim);
-  font-size: 10px;
-  white-space: nowrap;
-  cursor: default;
-  text-align: left;
-}
-
-.volume-side-btn:hover {
-  color: var(--ct-accent);
-  background: var(--ct-accent-soft);
-}
-
 @media (max-width: 1180px) {
   .ct-viewer-layout {
     grid-template-columns: 1fr;
@@ -1269,8 +1458,16 @@ defineExpose({
     min-height: 900px;
   }
 
-  .view-grid {
+  .ct-quad-grid,
+  .ct-quad-grid--axial,
+  .ct-quad-grid--3d {
     grid-template-columns: 1fr;
+    grid-template-rows: repeat(4, minmax(240px, 1fr));
+    grid-template-areas:
+      'axial'
+      'coronal'
+      'sagittal'
+      'volume';
   }
 
   .ct-wl-form {

@@ -89,6 +89,42 @@ export function extractSagittalSlice(volume: VolumeSliceData, xIndex: number) {
   return { data: output, width: yDim, height: zDim }
 }
 
+/** 生成轴状切片缩略图（最近邻降采样），供底部胶片条使用，避免逐张渲染整幅原图 */
+export function extractAxialThumbnail(
+  volume: VolumeSliceData,
+  sliceIndex: number,
+  windowCenter: number,
+  windowWidth: number,
+  targetSize = 64,
+): { data: Uint8ClampedArray; width: number; height: number } {
+  const { scalars, dimensions } = volume
+  const [xDim, yDim, zDim] = dimensions
+  const z = Math.max(0, Math.min(zDim - 1, sliceIndex))
+  const sliceLength = xDim * yDim
+  const zOffset = z * sliceLength
+
+  const aspect = xDim / yDim
+  const width = aspect >= 1 ? targetSize : Math.max(1, Math.round(targetSize * aspect))
+  const height = aspect >= 1 ? Math.max(1, Math.round(targetSize / aspect)) : targetSize
+
+  const width2 = Math.max(windowWidth, 1)
+  const lower = windowCenter - width2 / 2
+  const upper = windowCenter + width2 / 2
+
+  const output = new Uint8ClampedArray(width * height)
+  for (let ty = 0; ty < height; ty += 1) {
+    const srcY = Math.min(yDim - 1, Math.floor((ty / height) * yDim))
+    for (let tx = 0; tx < width; tx += 1) {
+      const srcX = Math.min(xDim - 1, Math.floor((tx / width) * xDim))
+      const value = Number(scalars[zOffset + srcY * xDim + srcX])
+      const mapped = ((value - lower) / (upper - lower)) * 255
+      output[ty * width + tx] = Math.max(0, Math.min(255, mapped))
+    }
+  }
+
+  return { data: output, width, height }
+}
+
 export function normalizeFilterNameForMask(filterName: string) {
   return filterName === '金属伪影掩码 Metal Artifact Mask'
 }

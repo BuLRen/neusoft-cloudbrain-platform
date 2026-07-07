@@ -228,12 +228,14 @@ public class MedtechService {
 
     /**
      * AI 肺结节分割（调用 lung-nodule-seg-service，结果同步落库）。
+     *
+     * @param modelId 可选，指定使用的 AI 分割模型（monai / segnet / nnunet），为空时使用服务端默认模型
      */
     @Transactional
-    public Map<String, Object> aiSegmentCheckImaging(Long id) {
+    public Map<String, Object> aiSegmentCheckImaging(Long id, String modelId) {
         CheckRequest request = requireCtImagingContext(id, true);
         String volumeId = request.getImagingVolumeId();
-        Map<String, Object> segmentData = ctViewerClient.aiSegmentVolume(volumeId);
+        Map<String, Object> segmentData = ctViewerClient.aiSegmentVolume(volumeId, modelId);
         LocalDateTime segmentedAt = LocalDateTime.now();
 
         String maskVolumeId = segmentData.get("maskVolumeId") != null

@@ -11,6 +11,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -34,23 +35,40 @@ public class LungNoduleSegClient {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * 执行 AI 肺结节分割。
+     * 执行 AI 肺结节分割（使用服务端默认模型）。
      *
      * @param srcNrrdPath  源 NRRD 文件的绝对路径（服务可直接读取）
      * @param outNrrdPath  输出掩码 NRRD 的绝对路径（服务写入）
      * @param sourceName   体数据来源名称（可为 null）
      * @return data 字段的 Map，包含 is_mask / meta / lesions / summary / message
      */
+    public Map<String, Object> segment(String srcNrrdPath, String outNrrdPath, String sourceName) {
+        return segment(srcNrrdPath, outNrrdPath, sourceName, null);
+    }
+
+    /**
+     * 执行 AI 肺结节分割，可指定使用的模型。
+     *
+     * @param srcNrrdPath  源 NRRD 文件的绝对路径（服务可直接读取）
+     * @param outNrrdPath  输出掩码 NRRD 的绝对路径（服务写入）
+     * @param sourceName   体数据来源名称（可为 null）
+     * @param modelId      模型 id：monai / segnet / nnunet（可为 null，使用服务端默认模型）
+     * @return data 字段的 Map，包含 is_mask / meta / lesions / summary / message
+     */
     @SuppressWarnings("unchecked")
     public Map<String, Object> segment(
         String srcNrrdPath,
         String outNrrdPath,
-        String sourceName
+        String sourceName,
+        String modelId
     ) {
         Map<String, Object> body = new HashMap<>();
         body.put("src_nrrd_path", srcNrrdPath);
         body.put("out_nrrd_path", outNrrdPath);
         body.put("source_name", sourceName == null ? "" : sourceName);
+        if (StringUtils.hasText(modelId)) {
+            body.put("model_id", modelId.trim());
+        }
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -121,7 +139,7 @@ public class LungNoduleSegClient {
 
     private int mapHttpStatus(int businessCode) {
         return switch (businessCode) {
-            case 4001, 4221 -> 400;
+            case 4001, 4002, 4221 -> 400;
             case 5002, 5003 -> 503;
             default -> 500;
         };
@@ -130,9 +148,12 @@ public class LungNoduleSegClient {
     private String mapFriendlyMessage(int code, String fallback) {
         return switch (code) {
             case 4001 -> "源文件不存在或格式不支持";
+            case 4002 -> fallback != null && !fallback.isBlank() ? fallback : "指定的 AI 分割模型不存在";
             case 4221 -> fallback != null && !fallback.isBlank() ? fallback : "文件预处理失败";
             case 5001 -> fallback != null && !fallback.isBlank() ? fallback : "AI 推理失败";
-            case 5002 -> "肺结节分割模型未加载，请先放置权重文件 models/best_model.pth 并重启服务";
+            case 5002 -> fallback != null && !fallback.isBlank()
+                ? fallback
+                : "肺结节分割模型未加载，请先放置权重文件并重启服务";
             case 5003 -> "肺结节分割服务繁忙，请稍后重试";
             default -> fallback != null && !fallback.isBlank() ? fallback : "肺结节分割失败";
         };

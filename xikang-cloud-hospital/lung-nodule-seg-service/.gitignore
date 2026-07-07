@@ -1,6 +1,7 @@
 # 模型权重（不入库，部署时手动放置）
 models/*.pth
 models/*.pt
+models/*.ckpt
 models/*.onnx
 models/*.bin
 

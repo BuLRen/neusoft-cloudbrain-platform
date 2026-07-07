@@ -1,6 +1,7 @@
 package com.xikang.ctviewer.controller;
 
 import com.xikang.common.result.Result;
+import com.xikang.ctviewer.dto.AiSegmentRequestDto;
 import com.xikang.ctviewer.dto.FilterRequestDto;
 import com.xikang.ctviewer.dto.FilterResponseDto;
 import com.xikang.ctviewer.dto.LoadResponseDto;
@@ -67,8 +68,12 @@ public class CtViewerController {
     }
 
     @PostMapping("/volume/{volumeId}/segment/ai")
-    public Result<SegmentResponseDto> aiSegment(@PathVariable String volumeId) {
-        return Result.success(ctViewerService.aiSegmentVolume(volumeId));
+    public Result<SegmentResponseDto> aiSegment(
+        @PathVariable String volumeId,
+        @RequestBody(required = false) AiSegmentRequestDto request
+    ) {
+        String modelId = request != null ? request.getModelId() : null;
+        return Result.success(ctViewerService.aiSegmentVolume(volumeId, modelId));
     }
 
     @GetMapping("/volume/{volumeId}/save")
