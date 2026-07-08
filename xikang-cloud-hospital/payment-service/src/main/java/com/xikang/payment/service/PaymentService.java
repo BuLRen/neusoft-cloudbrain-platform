@@ -230,10 +230,14 @@ public class PaymentService {
 
         String businessType = businessTypeFor(item.getItemCode());
 
+        // businessId 必须用 expense_record 主键（itemId），不能用 registerId。
+        // 否则同一挂号下多条相同 itemCode 的费用（如多张检查单）会命中 auth-service
+        // 的 (patientId, DEDUCT, businessType, businessId) 幂等键，第二笔起只标记
+        // 已付不实际扣款 —— 一键支付只扣第一笔的 bug 根因。
         Map<String, Object> deductBody = new HashMap<>();
         deductBody.put("amount", amount);
         deductBody.put("businessType", businessType);
-        deductBody.put("businessId", item.getRegisterId());
+        deductBody.put("businessId", item.getId());
         deductBody.put("operatorId", operatorId);
         deductBody.put("operatorName", operatorName != null ? operatorName : "系统");
         deductBody.put("remark", "支付 " + item.getItemName());
@@ -377,10 +381,11 @@ public class PaymentService {
         }
 
         String businessType = businessTypeFor(item.getItemCode());
+        // 与 payItem 同理：businessId 用 expense_record 主键避免幂等误命中
         Map<String, Object> body = new HashMap<>();
         body.put("amount", amount);
         body.put("businessType", businessType);
-        body.put("businessId", item.getRegisterId());
+        body.put("businessId", item.getId());
         body.put("operatorId", operatorId);
         body.put("operatorName", operatorName != null ? operatorName : "系统");
         body.put("remark", reason != null ? reason : "退款");

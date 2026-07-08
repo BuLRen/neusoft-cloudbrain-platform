@@ -4,7 +4,23 @@ import { disconnectNotification } from '../stores/notification'
 import { replacePage } from '../utils/navigation'
 
 export interface ApiResult<T> { code:number; message:string; data:T }
-export interface RequestOptions { url:string; method?:UniApp.RequestOptions['method']; data?:unknown; header?:Record<string,string>; skipAuth?:boolean; showError?:boolean; _retried?:boolean }
+export interface RequestOptions { url:string; method?:UniApp.RequestOptions['method']; data?:unknown; params?:Record<string, unknown>; header?:Record<string,string>; skipAuth?:boolean; showError?:boolean; _retried?:boolean }
+
+function buildQueryString(params: Record<string, unknown>): string {
+  const pairs: string[] = []
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item === undefined || item === null || item === '') continue
+        pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(item))}`)
+      }
+    } else {
+      pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    }
+  }
+  return pairs.length ? `?${pairs.join('&')}` : ''
+}
 let redirecting = false
 let refreshing: Promise<string> | null = null
 
@@ -37,8 +53,9 @@ export function request<T>(options: RequestOptions): Promise<T> {
     if (!API_BASE_URL) { reject(new Error('未配置后端 API 地址')); return }
     const headers: Record<string,string> = { 'Content-Type':'application/json', ...(options.header || {}) }
     if (!options.skipAuth && session.token) headers.Authorization = `Bearer ${session.token}`
+    const query = options.params ? buildQueryString(options.params) : ''
     uni.request<ApiResult<T>>({
-      url: `${API_BASE_URL}${options.url}`,
+      url: `${API_BASE_URL}${options.url}${query}`,
       method: options.method || 'GET',
       data: options.data as UniApp.RequestOptions['data'],
       header: headers,
