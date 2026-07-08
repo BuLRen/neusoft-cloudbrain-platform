@@ -4,8 +4,19 @@ import { clamp, computeContainFit, computeDistanceMm, type RegionStats } from '@
 
 export type CtViewTool = 'wlww' | 'zoom' | 'pan' | 'measure' | 'roi'
 
+/** AI 病灶标注框（归一化 0~1 坐标，由父组件按当前平面/切片计算好传入） */
+export interface CtLesionOverlayBox {
+  left: number
+  top: number
+  width: number
+  height: number
+  label: string
+  confidence: number
+}
+
 const MONO_FONT = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
 const DRAG_THRESHOLD_PX = 4
+const MIN_LESION_BOX_PX = 18
 
 const props = withDefaults(
   defineProps<{
@@ -28,6 +39,8 @@ const props = withDefaults(
     /** 上一次 ROI 请求的统计结果，用于在框旁显示数值 */
     roiResult?: RegionStats | null
     active?: boolean
+    /** AI 病灶标注框（归一化坐标），为空则不显示 */
+    lesionBoxes?: CtLesionOverlayBox[]
   }>(),
   {
     rowSpacingMm: 0.7,
@@ -39,6 +52,7 @@ const props = withDefaults(
     crosshair: null,
     roiResult: null,
     active: false,
+    lesionBoxes: () => [],
   },
 )
 
@@ -87,7 +101,10 @@ function recomputeFit() {
 let resizeObserver: ResizeObserver | null = null
 onMounted(() => {
   recomputeFit()
-  resizeObserver = new ResizeObserver(() => recomputeFit())
+  resizeObserver = new ResizeObserver(() => {
+    recomputeFit()
+    drawOverlay()
+  })
   if (viewportRef.value) resizeObserver.observe(viewportRef.value)
   void nextTick().then(drawOverlay)
 })
@@ -96,6 +113,7 @@ watch(() => [props.naturalWidth, props.naturalHeight, props.colSpacingMm, props.
   recomputeFit()
   void nextTick().then(drawOverlay)
 })
+watch(() => props.lesionBoxes, () => drawOverlay(), { deep: true })
 
 const stageStyle = computed(() => ({
   left: `${fit.value.offsetX}px`,
@@ -260,8 +278,12 @@ watch([() => props.crosshair, () => props.roiResult, zoom], () => drawOverlay(),
 function drawOverlay() {
   const canvas = overlayCanvas.value
   if (!canvas) return
-  if (canvas.width !== props.naturalWidth) canvas.width = props.naturalWidth
-  if (canvas.height !== props.naturalHeight) canvas.height = props.naturalHeight
+  // 叠加层画布按“实际显示尺寸”设置分辨率（而非体素分辨率），避免冠状/矢状图因
+  // 物理比例非等比缩放（层厚 ≠ 层内间距）导致标注框线宽/字体被拉花变形。
+  const displayWidth = Math.max(1, Math.round(fit.value.width) || Math.round(props.naturalWidth))
+  const displayHeight = Math.max(1, Math.round(fit.value.height) || Math.round(props.naturalHeight))
+  if (canvas.width !== displayWidth) canvas.width = displayWidth
+  if (canvas.height !== displayHeight) canvas.height = displayHeight
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -348,6 +370,54 @@ function drawOverlay() {
     }
     ctx.restore()
   }
+
+  if (props.lesionBoxes?.length) {
+    drawLesionBoxes(ctx, canvas, props.lesionBoxes, invZoom)
+  }
+}
+
+function drawLesionBoxes(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  boxes: CtLesionOverlayBox[],
+  invZoom: number,
+) {
+  boxes.forEach((box, index) => {
+    let left = box.left * canvas.width
+    let top = box.top * canvas.height
+    let width = box.width * canvas.width
+    let height = box.height * canvas.height
+
+    const minPx = MIN_LESION_BOX_PX * invZoom
+    if (width < minPx) {
+      const cx = left + width / 2
+      left = cx - minPx / 2
+      width = minPx
+    }
+    if (height < minPx) {
+      const cy = top + height / 2
+      top = cy - minPx / 2
+      height = minPx
+    }
+
+    ctx.save()
+    ctx.strokeStyle = '#ff4d4f'
+    ctx.fillStyle = '#ff4d4f'
+    ctx.lineWidth = Math.max(1.5 * invZoom, 0.8)
+    ctx.strokeRect(left, top, width, height)
+
+    const percent = `${Math.round(box.confidence * 100)}%`
+    const labelX = clamp(left + width + 6 * invZoom, 0, canvas.width - 4 * invZoom)
+    const labelY = Math.max(14 * invZoom, top - 4 * invZoom + index * 30 * invZoom)
+
+    ctx.font = `600 ${13 * invZoom}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'
+    ctx.shadowBlur = 3 * invZoom
+    ctx.fillText(box.label, labelX, labelY)
+    ctx.font = `${12 * invZoom}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
+    ctx.fillText(percent, labelX, labelY + 15 * invZoom)
+    ctx.restore()
+  })
 }
 
 defineExpose({ clearAnnotations, resetView })

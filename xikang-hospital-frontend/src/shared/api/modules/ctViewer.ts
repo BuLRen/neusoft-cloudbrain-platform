@@ -53,6 +53,7 @@ export interface CtLesionItem {
   plane: string
   centroidXyz: number[]
   diameterMm: number
+  /** [z0, y0, x0, z1, y1, x1]（体素坐标，与后端 numpy D/H/W 轴顺序一致，不是 x/y/z 顺序） */
   bbox: number[]
   confidence: number
   volumeMm3: number

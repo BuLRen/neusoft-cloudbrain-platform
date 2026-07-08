@@ -38,7 +38,6 @@ import {
 } from '@/modules/medtech/ct-viewer/lib/volumeUtils'
 import { computeRegionStats, type RegionStats } from '@/modules/medtech/ct-viewer/lib/imageInteraction'
 import {
-  drawLesionAnnotations,
   getLesionsForAxialSlice,
   getLesionsForCoronalSlice,
   getLesionsForSagittalSlice,
@@ -561,35 +560,36 @@ function renderPlane(
   drawSlice(canvas, gray, slice.width, slice.height, 1)
 }
 
-function drawLesionBoxesOnCanvas(
-  canvas: HTMLCanvasElement | null,
-  plane: 'axial' | 'coronal' | 'sagittal',
-  sliceIndex: number,
-) {
-  if (!canvas || !showLesionBoxAnnotations.value || !maskOverlayVisible.value || !segmentationLesions.value.length)
-    return
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
+/** 是否应显示 AI 病灶标注框（三个平面共用的开关条件） */
+const lesionBoxesEnabled = computed(
+  () => showLesionBoxAnnotations.value && maskOverlayVisible.value && segmentationLesions.value.length > 0,
+)
 
-  let rects
-  if (plane === 'axial') {
-    rects = getLesionsForAxialSlice(segmentationLesions.value, sliceIndex)
-  } else if (plane === 'coronal') {
-    rects = getLesionsForCoronalSlice(segmentationLesions.value, sliceIndex, zCount.value)
-  } else {
-    rects = getLesionsForSagittalSlice(segmentationLesions.value, sliceIndex, zCount.value)
-  }
-  drawLesionAnnotations(ctx, rects)
-}
+/**
+ * 病灶标注框改为在 CtSliceViewPanel 的叠加层（与显示分辨率一致）绘制，而不是直接画在
+ * 体素分辨率的底图画布上——否则冠状/矢状图按物理比例非等比缩放后，标注框线宽/文字会被拉花。
+ */
+const axialLesionBoxes = computed(() =>
+  lesionBoxesEnabled.value
+    ? getLesionsForAxialSlice(segmentationLesions.value, axialSlice.value, xCount.value, yCount.value)
+    : [],
+)
+const coronalLesionBoxes = computed(() =>
+  lesionBoxesEnabled.value
+    ? getLesionsForCoronalSlice(segmentationLesions.value, coronalSlice.value, xCount.value, zCount.value)
+    : [],
+)
+const sagittalLesionBoxes = computed(() =>
+  lesionBoxesEnabled.value
+    ? getLesionsForSagittalSlice(segmentationLesions.value, sagittalSlice.value, yCount.value, zCount.value)
+    : [],
+)
 
 function refresh2DViews() {
   if (!originalVolume.value) return
   renderPlane(axialCanvas.value, extractSliceZyx, axialSlice.value)
-  drawLesionBoxesOnCanvas(axialCanvas.value, 'axial', axialSlice.value)
   renderPlane(coronalCanvas.value, extractCoronalSlice, coronalSlice.value)
-  drawLesionBoxesOnCanvas(coronalCanvas.value, 'coronal', coronalSlice.value)
   renderPlane(sagittalCanvas.value, extractSagittalSlice, sagittalSlice.value)
-  drawLesionBoxesOnCanvas(sagittalCanvas.value, 'sagittal', sagittalSlice.value)
 }
 
 function clampIndex(value: number, count: number) {
@@ -990,6 +990,7 @@ defineExpose({
             :tool="activeTool"
             :crosshair="axialCrosshair"
             :roi-result="roiResults.axial"
+            :lesion-boxes="axialLesionBoxes"
             @wheel-slice="handleAxialWheel"
             @window-delta="handleWindowDelta"
             @crosshair-set="handleAxialCrosshairSet"
@@ -1018,6 +1019,7 @@ defineExpose({
             :tool="activeTool"
             :crosshair="coronalCrosshair"
             :roi-result="roiResults.coronal"
+            :lesion-boxes="coronalLesionBoxes"
             @wheel-slice="handleCoronalWheel"
             @window-delta="handleWindowDelta"
             @crosshair-set="handleCoronalCrosshairSet"
@@ -1043,6 +1045,7 @@ defineExpose({
             :tool="activeTool"
             :crosshair="sagittalCrosshair"
             :roi-result="roiResults.sagittal"
+            :lesion-boxes="sagittalLesionBoxes"
             @wheel-slice="handleSagittalWheel"
             @window-delta="handleWindowDelta"
             @crosshair-set="handleSagittalCrosshairSet"
