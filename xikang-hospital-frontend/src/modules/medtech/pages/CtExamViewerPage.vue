@@ -270,6 +270,11 @@ async function handleRunAiSegmentation() {
     if (segmentationResult.value.lesions?.length) {
       viewerPanelRef.value?.applySegmentationLesions(segmentationResult.value.lesions)
     }
+    // 默认以像素级红色掩码叠加展示病灶（与参考 CT 系统一致），而非矩形标注框，
+    // 避免遮挡病灶本身；病灶列表/3D 预览/点击定位仍使用上面的 lesions 数据。
+    if (segmentationResult.value.maskVolumeId) {
+      viewerPanelRef.value?.loadSegmentationMask?.(segmentationResult.value.maskVolumeId)
+    }
 
     if (report.value) {
       report.value = {
@@ -298,6 +303,9 @@ function syncSegmentationFromReport() {
   segmentationResult.value = saved
   if (saved.lesions?.length) {
     viewerPanelRef.value?.applySegmentationLesions(saved.lesions)
+  }
+  if (saved.maskVolumeId) {
+    viewerPanelRef.value?.loadSegmentationMask?.(saved.maskVolumeId)
   }
 }
 

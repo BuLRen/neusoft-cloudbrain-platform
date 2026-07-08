@@ -167,6 +167,12 @@ def extract_lesions(
     sitk_image: sitk.Image,
     processing_time_ms: int = 0,
     model_version: str | None = None,
+    *,
+    min_voxels: int | None = None,
+    min_volume_mm3: float | None = None,
+    min_confidence: float = 0.0,
+    min_slice_span: int = 1,
+    morph_opening_radius: int = 0,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     从二值掩码中提取独立病灶实例，计算各项指标。
@@ -178,6 +184,18 @@ def extract_lesions(
     hu_arr           : (D, H, W) float32，原始 HU 值
     sitk_image       : 重采样后的 sitk.Image（RAS），提供 spacing 与坐标转换
     processing_time_ms : 推理耗时（毫秒）
+
+    以下均为可选的过滤参数（用于给逐 2D 切片、无 3D 上下文约束的模型如 segnet
+    收紧噪点过滤，见 config.POSTPROCESS_OVERRIDES 的说明）：
+    min_voxels          : 连通域最小体素数，None 时用 config.MIN_LESION_VOXELS
+    min_volume_mm3      : 连通域最小物理体积（mm³），与 min_voxels 取较严格的一个；
+                          比体素数更能跨不同 CT 层厚/像素间距保持一致的过滤强度
+    min_confidence      : 区域内平均预测概率低于此值视为噪声，直接丢弃
+    min_slice_span      : 病灶必须跨越的最少轴位切片数（d_max - d_min），
+                          过滤只在单层出现的伪影（真实结节通常跨多层）
+    morph_opening_radius : 连通域分析前，先对二值掩码做一次形态学开运算
+                          （半径为该值的球形结构元，先腐蚀后膨胀），去除
+                          孤立的单/双体素噪点，仅在 >0 且 skimage 可用时生效
 
     返回
     ----
@@ -192,20 +210,34 @@ def extract_lesions(
         float(sitk_spacing_xyz[1]),   # y → h
         float(sitk_spacing_xyz[0]),   # x → w
     )
+    voxel_vol_mm3 = spacing_dhw[0] * spacing_dhw[1] * spacing_dhw[2]
+
+    effective_min_voxels = config.MIN_LESION_VOXELS if min_voxels is None else min_voxels
+    if min_volume_mm3 is not None and voxel_vol_mm3 > 0:
+        effective_min_voxels = max(effective_min_voxels, int(round(min_volume_mm3 / voxel_vol_mm3)))
+
+    # ---- 形态学开运算去噪（可选） ----
+    # 逐 2D 切片模型没有 3D 平滑约束，血管截面/支气管壁/钙化灶等结构常被误判
+    # 为孤立小前景块；开运算能在连通域分析前先剔除这类细碎噪点。
+    mask_for_labeling = binary_mask
+    if morph_opening_radius > 0 and _SKIMAGE_AVAILABLE:
+        from skimage.morphology import ball, binary_opening
+
+        mask_for_labeling = binary_opening(binary_mask.astype(bool), ball(morph_opening_radius))
 
     # ---- 连通域标注 ----
     if _SKIMAGE_AVAILABLE:
-        labeled = cc_label(binary_mask)
+        labeled = cc_label(mask_for_labeling)
         props = regionprops(labeled)
     else:
-        labeled = _cc_fallback(binary_mask)
+        labeled = _cc_fallback(mask_for_labeling)
         # 无 skimage 时只能做极简处理
         props = []
         if labeled.max() > 0:
             class _FakeRegion:
-                num_pixels = int(binary_mask.sum())
-                centroid = tuple(float(c) for c in np.array(np.where(binary_mask > 0)).mean(axis=1))
-                coords = np.array(np.where(binary_mask > 0)).T
+                num_pixels = int(mask_for_labeling.sum())
+                centroid = tuple(float(c) for c in np.array(np.where(mask_for_labeling > 0)).mean(axis=1))
+                coords = np.array(np.where(mask_for_labeling > 0)).T
                 bbox = (
                     int(coords[:, 0].min()), int(coords[:, 1].min()), int(coords[:, 2].min()),
                     int(coords[:, 0].max() + 1), int(coords[:, 1].max() + 1), int(coords[:, 2].max() + 1),
@@ -215,16 +247,21 @@ def extract_lesions(
     # ---- 过滤噪点 + 计算指标 ----
     lesions = []
     for region in props:
-        if region.num_pixels < config.MIN_LESION_VOXELS:
+        if region.num_pixels < effective_min_voxels:
+            continue
+        d_min, _h_min, _w_min, d_max, _h_max, _w_max = region.bbox
+        if (d_max - d_min) < min_slice_span:
             continue
         try:
             lesion = _compute_lesion_metrics(
                 region, prob_map, hu_arr, sitk_image, spacing_dhw,
                 lesion_id=len(lesions) + 1,
             )
-            lesions.append(lesion)
-        except Exception as e:
-            pass  # 单个病灶计算失败不影响其余结果
+        except Exception:
+            continue  # 单个病灶计算失败不影响其余结果
+        if lesion["confidence"] < min_confidence:
+            continue
+        lesions.append(lesion)
 
     # 按体积降序排列，取最多 MAX_LESIONS 个
     lesions.sort(key=lambda x: x["volumeMm3"], reverse=True)

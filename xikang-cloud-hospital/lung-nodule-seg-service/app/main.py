@@ -392,6 +392,9 @@ async def internal_segment(body: SegmentRequest):
             try:
                 _set_inference_phase("提取病灶与计算指标")
                 total_ms = int(round((time.time() - t_total_start) * 1000))
+                # 逐 2D 切片模型（如 segnet）缺乏 3D 上下文约束，噪点明显更多，
+                # 需按 backend 收紧过滤规则，详见 config.POSTPROCESS_OVERRIDES。
+                overrides = config.POSTPROCESS_OVERRIDES.get(entry["backend"], {})
                 lesions, summary = await asyncio.to_thread(
                     extract_lesions,
                     binary_mask,
@@ -400,6 +403,11 @@ async def internal_segment(body: SegmentRequest):
                     resampled_image,
                     total_ms,
                     entry["version"],
+                    min_voxels=overrides.get("min_voxels"),
+                    min_volume_mm3=overrides.get("min_volume_mm3"),
+                    min_confidence=overrides.get("min_confidence", 0.0),
+                    min_slice_span=overrides.get("min_slice_span", 1),
+                    morph_opening_radius=overrides.get("morph_opening_radius", 0),
                 )
             except Exception as e:
                 lesions = []

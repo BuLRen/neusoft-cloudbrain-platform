@@ -47,7 +47,9 @@ import type { CtLesionItem } from '@/shared/api/modules/ctViewer'
 const METAL_MASK_FILTER_NAME = '金属伪影掩码 Metal Artifact Mask'
 const LESION_DEMO_FILTER_NAME = '病灶分割演示 Lesion Segmentation (Demo)'
 const METAL_OVERLAY_COLOR: [number, number, number] = [255, 80, 40]
-const LESION_OVERLAY_COLOR: [number, number, number] = [80, 220, 120]
+// 与参考 CT 系统一致的病灶掩码高亮色：半透明红色直接叠加在病灶像素上，
+// 不使用矩形框标注，避免遮挡病灶本身及周边解剖结构。
+const LESION_OVERLAY_COLOR: [number, number, number] = [230, 45, 45]
 
 const props = withDefaults(
   defineProps<{
@@ -252,6 +254,10 @@ const showLesionDemo = computed(() => filterName.value === LESION_DEMO_FILTER_NA
 const maskOverlayLabel = computed(() =>
   maskOverlayColor.value === LESION_OVERLAY_COLOR ? '病灶掩码' : '金属掩码',
 )
+/** 当前显示的像素级掩码是否为 AI 病灶分割结果（区别于金属伪影演示掩码） */
+const isLesionMaskActive = computed(
+  () => displayIsMask.value && maskOverlayColor.value === LESION_OVERLAY_COLOR,
+)
 
 function getFilterParams() {
   return {
@@ -305,6 +311,23 @@ async function loadVolumeById(volumeId: string, target: 'original' | 'filtered')
   const volumeData = parseNrrdArrayBuffer(arrayBuffer)
   if (target === 'original') {
     originalVolume.value = volumeData
+    // 从 NRRD 解析结果补全 spacing_xyz / size_xyz，
+    // 避免 loadBoundVolume 路径（仅传入 volumeId，无后端 meta 接口）
+    // 下 spacing_xyz 为 undefined，导致 spacingZ fallback 为 0.7mm，
+    // 冠状/矢状图的物理高度被严重低估、画面被压扁。
+    const [sx, sy, sz] = volumeData.spacing
+    const [dx, dy, dz] = volumeData.dimensions
+    if (originalMeta.value) {
+      if (!originalMeta.value.spacing_xyz?.length) {
+        originalMeta.value = {
+          ...originalMeta.value,
+          spacing_xyz: [sx, sy, sz],
+          size_xyz: originalMeta.value.size_xyz?.length ? originalMeta.value.size_xyz : [dx, dy, dz],
+        }
+      }
+    } else {
+      originalMeta.value = { spacing_xyz: [sx, sy, sz], size_xyz: [dx, dy, dz] }
+    }
   } else {
     filteredVolume.value = volumeData
   }
@@ -444,8 +467,9 @@ async function loadSegmentationMask(maskVolumeId: string) {
   try {
     filteredVolumeId.value = maskVolumeId
     filteredIsMask.value = true
-    showLesionBoxAnnotations.value = false
-    segmentationLesions.value = []
+    // 不清空 segmentationLesions / showLesionBoxAnnotations：
+    // 像素级掩码叠加与病灶列表数据相互独立，掩码用于精确展示病灶轮廓，
+    // 病灶列表数据仍用于右侧面板统计、3D 预览与点击定位。
     maskOverlayColor.value = LESION_OVERLAY_COLOR
     await loadVolumeById(maskVolumeId, 'filtered')
     filteredMeta.value = { ...(filteredMeta.value ?? {}), is_mask: true }
@@ -459,26 +483,27 @@ async function loadSegmentationMask(maskVolumeId: string) {
 
 function applySegmentationLesions(lesions: CtLesionItem[]) {
   segmentationLesions.value = lesions ?? []
-  showLesionBoxAnnotations.value = segmentationLesions.value.length > 0
-  if (showLesionBoxAnnotations.value) {
-    filteredVolumeId.value = ''
-    filteredVolume.value = null
-    filteredMeta.value = null
-    filteredIsMask.value = false
+  // 病灶可视化默认以像素级红色掩码叠加为主（见 loadSegmentationMask），
+  // 与参考 CT 系统的标注风格一致；矩形标注框会遮挡病灶本身，默认不启用。
+  showLesionBoxAnnotations.value = false
+  if (segmentationLesions.value.length) {
     statusText.value = `AI 病灶标注：${segmentationLesions.value.length} 处`
     void nextTick().then(() => refresh2DViews())
   }
 }
 
-function navigateToLesion(lesion: { sliceIndex?: number; centroidXyz?: number[] }) {
+function navigateToLesion(lesion: { sliceIndex?: number; centroidXyz?: number[]; bbox?: number[] }) {
+  // 优先用 bbox 中心体素坐标定位三个平面（bbox: [z0,y0,x0,z1,y1,x1]，与后端 D/H/W 轴一致）
+  if (lesion.bbox && lesion.bbox.length >= 6) {
+    const [z0, y0, x0, z1, y1, x1] = lesion.bbox
+    axialSlice.value = Math.max(0, Math.min(zCount.value - 1, Math.round((z0 + z1) / 2)))
+    coronalSlice.value = Math.max(0, Math.min(yCount.value - 1, Math.round((y0 + y1) / 2)))
+    sagittalSlice.value = Math.max(0, Math.min(xCount.value - 1, Math.round((x0 + x1) / 2)))
+    return
+  }
+  // 降级：只有 sliceIndex（轴状切片 Z 体素索引）时仅跳轴状层面
   if (typeof lesion.sliceIndex === 'number') {
     axialSlice.value = Math.max(0, Math.min(zCount.value - 1, lesion.sliceIndex))
-  }
-  if (lesion.centroidXyz?.length === 3) {
-    const [x, y, z] = lesion.centroidXyz
-    sagittalSlice.value = Math.max(0, Math.min(xCount.value - 1, x))
-    coronalSlice.value = Math.max(0, Math.min(yCount.value - 1, y))
-    axialSlice.value = Math.max(0, Math.min(zCount.value - 1, z))
   }
 }
 
@@ -996,7 +1021,7 @@ defineExpose({
             @crosshair-set="handleAxialCrosshairSet"
             @roi-request="(rect) => handleRoiRequest('axial', rect)"
           >
-            <template v-if="showLesionBoxAnnotations" #header-extra>
+            <template v-if="isLesionMaskActive || showLesionBoxAnnotations" #header-extra>
               <ElTag type="danger" size="small" effect="dark">AI 病灶标注</ElTag>
             </template>
             <canvas ref="axialCanvas" />

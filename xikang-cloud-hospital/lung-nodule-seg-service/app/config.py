@@ -69,6 +69,27 @@ RISK_LEVELS = [
 MODEL_VERSION = "LungNoduleSeg-v1.0"
 
 # ========================
+# 后处理参数按 backend 覆盖
+# ========================
+# segnet 是逐 2D 切片独立推理（无 3D 上下文约束），血管截面、支气管壁、钙化灶
+# 等结构很容易被误判为一个个孤立的小前景区域；若沿用整卷 3D 模型（monai/
+# nnunet）的过滤阈值，单个 CT 常检出 8~10+ 个"病灶"，明显偏多且与该开源
+# demo（通常只有 1~2 个明显病灶）不符。这里对 segnet 单独收紧规则：
+#   - min_volume_mm3    ：按物理体积过滤（不受层厚/像素间距影响），滤掉细碎噪点
+#   - min_slice_span    ：病灶至少跨 2 个轴位切片，滤掉只在单层出现的伪影
+#   - min_confidence    ：区域内平均预测概率过低视为噪声
+#   - morph_opening_radius：连通域分析前先做一次形态学开运算去孤立噪点
+# 详见 postprocess.extract_lesions 的对应参数说明。
+POSTPROCESS_OVERRIDES = {
+    "segnet": {
+        "min_volume_mm3": 300.0,
+        "min_slice_span": 2,
+        "min_confidence": 0.6,
+        "morph_opening_radius": 1,
+    },
+}
+
+# ========================
 # 推理后端选择
 # ========================
 # "monai"  ：本仓库 training/ 自训练的轻量 3D UNet（默认，与 MODEL_PATH 配套）
