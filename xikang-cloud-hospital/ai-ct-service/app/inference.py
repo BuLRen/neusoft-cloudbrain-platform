@@ -85,7 +85,7 @@ def sliding_window_inference(
 
     参数
     ----
-    model : MultiTaskUNet3D（已 eval()、已加载权重）
+    models : MultiTaskUNet3D（已 eval()、已加载权重）
     volume : torch.Tensor, shape=(1, 1, D, H, W)，已预处理
     patch_size : (pD, pH, pW)
     overlap : 0..1，重叠率；步长 = round(patch * (1-overlap))
@@ -281,7 +281,7 @@ def run_inference(model: torch.nn.Module,
 
     参数
     ----
-    model : 已加载权重的 MultiTaskUNet3D
+    models : 已加载权重的 MultiTaskUNet3D
     volume : (1, 1, D, H, W) 预处理后的张量
 
     返回

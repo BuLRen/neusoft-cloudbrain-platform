@@ -57,6 +57,12 @@ export function setupRouterGuard(router: Router) {
       }
     }
 
+    if (authStore.role === 'medtech' && authStore.isAuthenticated) {
+      if (to.path.startsWith('/follow-up') || to.path.startsWith('/medtech/follow-up')) {
+        return '/medtech/check-queue'
+      }
+    }
+
     if (to.meta.requiresAuth && !authStore.isAuthenticated) {
       if (to.path !== loginRoutePath) {
         return { path: loginRoutePath, query: {} }

@@ -45,7 +45,14 @@ public class FollowUpAdminController {
         Integer maxBatches = request != null && request.get("maxBatches") != null
             ? Integer.valueOf(String.valueOf(request.get("maxBatches")))
             : null;
-        return Result.success(backfillService.backfillEnrollment(batchSize, maxBatches));
+        Long departmentId = request != null ? toLong(request.get("departmentId")) : null;
+        Map<String, Object> result = departmentId != null
+            ? backfillService.backfillDepartment(departmentId, batchSize, maxBatches)
+            : backfillService.backfillEnrollment(batchSize, maxBatches);
+        return Result.success(
+            departmentId != null ? "已同步看诊结束患者到随访池" : "回填完成",
+            result
+        );
     }
 
     @GetMapping("/dify/enqueue-status")

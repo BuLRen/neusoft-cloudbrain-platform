@@ -17,7 +17,7 @@ import java.util.Set;
 @Component
 public class FollowUpStaffAuthInterceptor implements HandlerInterceptor {
 
-    private static final Set<String> ALLOWED_ROLES = Set.of("followup", "medtech", "admin");
+    private static final Set<String> ALLOWED_ROLES = Set.of("followup", "admin");
 
     private final AuthUserMapper authUserMapper;
     private final ObjectMapper objectMapper;
@@ -56,6 +56,11 @@ public class FollowUpStaffAuthInterceptor implements HandlerInterceptor {
 
         if ("physician".equals(role) || user.getUserType() != null && user.getUserType() == 2) {
             writeError(response, 403, "门诊医生无权访问随访系统接口");
+            return false;
+        }
+
+        if ("medtech".equals(role) || user.getUserType() != null && user.getUserType() == 4) {
+            writeError(response, 403, "医技人员无权访问随访系统接口");
             return false;
         }
 

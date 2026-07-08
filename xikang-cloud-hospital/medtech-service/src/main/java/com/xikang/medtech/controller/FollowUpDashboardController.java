@@ -35,6 +35,13 @@ public class FollowUpDashboardController {
         return Result.success(followUpDashboardService.listPatients(date, departmentId));
     }
 
+    @GetMapping("/my-monitored-patients")
+    public Result<List<Map<String, Object>>> listMyMonitoredPatients(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        return Result.success(followUpDashboardService.listMyMonitoredPatients(date));
+    }
+
     @GetMapping("/schedule")
     public Result<List<Map<String, Object>>> listSchedules(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,

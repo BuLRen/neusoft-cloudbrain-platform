@@ -34,7 +34,7 @@ from .inference import run_inference
 # 全局状态
 # ========================
 _state: dict = {
-    "model": None,              # Optional[torch.nn.Module]
+    "models": None,              # Optional[torch.nn.Module]
     "model_loaded": False,
     "device": config.DEVICE,
     "load_error": None,         # str | None  权重加载失败的原因（仅供 /health 诊断）
@@ -80,10 +80,10 @@ def _load_model() -> Optional[torch.nn.Module]:
             map_location=config.DEVICE,
             weights_only=True,   # pytorch>=2.0 安全加载，只允许 state_dict
         )
-        # 兼容两种保存格式：纯 state_dict 或 {"model": state_dict, ...}
-        if isinstance(state_dict, dict) and "model" in state_dict \
+        # 兼容两种保存格式：纯 state_dict 或 {"models": state_dict, ...}
+        if isinstance(state_dict, dict) and "models" in state_dict \
                 and not any(k.startswith("inc") for k in state_dict.keys()):
-            sd = state_dict["model"]
+            sd = state_dict["models"]
         elif isinstance(state_dict, dict) and "state_dict" in state_dict \
                 and not any(k.startswith("inc") for k in state_dict.keys()):
             sd = state_dict["state_dict"]
@@ -111,18 +111,18 @@ async def lifespan(app: FastAPI):
     """启动钩子：加载模型；停止钩子：清理。"""
     model = _load_model()
     if model is not None:
-        _state["model"] = model
+        _state["models"] = model
         _state["model_loaded"] = True
         print(f"[ai-ct-service] 模型加载成功: {config.MODEL_PATH}")
     else:
-        _state["model"] = None
+        _state["models"] = None
         _state["model_loaded"] = False
         print(f"[ai-ct-service] 模型未加载（服务仍可启动）: {_state['load_error']}")
 
     yield
 
     # 释放
-    _state["model"] = None
+    _state["models"] = None
     _state["model_loaded"] = False
 
 
@@ -170,7 +170,7 @@ async def analyze(file: UploadFile = File(...)):
       503 / 5003 —— 服务繁忙（已有推理在跑）
     """
     # ---- 模型未加载：明确提示，不让请求继续 ----
-    if not _state["model_loaded"] or _state["model"] is None:
+    if not _state["model_loaded"] or _state["models"] is None:
         return _err(
             http_status=503,
             code=5002,
@@ -195,7 +195,7 @@ async def analyze(file: UploadFile = File(...)):
 
     async with _inference_lock:
         # 拿到锁后再次确认模型状态（防止启动后权重被外部删除的极端情况）
-        if not _state["model_loaded"] or _state["model"] is None:
+        if not _state["model_loaded"] or _state["models"] is None:
             return _err(
                 http_status=503, code=5002,
                 message="模型权重未加载，无法推理",
@@ -222,7 +222,7 @@ async def analyze(file: UploadFile = File(...)):
             # ---- 推理（CPU 慢，放到线程池避免阻塞事件循环）----
             try:
                 result = await asyncio.to_thread(
-                    run_inference, _state["model"], volume
+                    run_inference, _state["models"], volume
                 )
             except Exception as e:  # noqa: BLE001
                 return _err(

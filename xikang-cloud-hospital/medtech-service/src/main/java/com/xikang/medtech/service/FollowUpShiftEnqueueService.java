@@ -78,11 +78,92 @@ public class FollowUpShiftEnqueueService {
         }
 
         Long employeeId = toLong(planned.get("employee_id"));
+        String taskPriority = planned.get("priority") != null
+            ? String.valueOf(planned.get("priority"))
+            : priorityLevel;
+
+        Map<String, Object> persisted = persistContactTask(
+            registerId,
+            departmentId,
+            employeeId,
+            workDate,
+            taskPriority
+        );
+        if (persisted != null) {
+            Map<String, Object> result = new LinkedHashMap<>(planned);
+            result.putAll(persisted);
+            result.put("persisted", true);
+            return result;
+        }
+
+        return savePending(registerId, departmentId, priorityLevel, employeeId, workDate, visitEndedAt, planned);
+    }
+
+    @Transactional
+    public int flushPendingForDepartment(Long departmentId, String month) {
+        if (departmentId == null || month == null || month.isBlank()) {
+            return 0;
+        }
+        YearMonth yearMonth = YearMonth.parse(month);
+        List<Map<String, Object>> pendingRows = pendingScheduleMapper.selectPendingByDepartment(
+            departmentId,
+            yearMonth.atDay(1),
+            yearMonth.atEndOfMonth(),
+            "pending"
+        );
+        int applied = 0;
+        for (Map<String, Object> row : pendingRows) {
+            if (applyPendingRow(row)) {
+                Long pendingId = toLong(row.get("id"));
+                if (pendingId != null) {
+                    pendingScheduleMapper.markApplied(pendingId);
+                }
+                applied++;
+            }
+        }
+        return applied;
+    }
+
+    @Transactional
+    public boolean applyPendingRow(Map<String, Object> pending) {
+        Long registerId = toLong(pending.get("registerId"));
+        Long departmentId = toLong(pending.get("departmentId"));
+        Long employeeId = toLong(pending.get("employeeId"));
+        LocalDate workDate = parseDate(pending.get("workDate"));
+        String priorityLevel = pending.get("priorityLevel") != null
+            ? String.valueOf(pending.get("priorityLevel"))
+            : "normal";
+
+        if (registerId == null || departmentId == null || employeeId == null || workDate == null) {
+            return false;
+        }
+
+        Map<String, Object> existingTask = shiftMapper.selectContactTaskByRegisterAndWorkDate(registerId, workDate);
+        if (existingTask != null && !existingTask.isEmpty()) {
+            return true;
+        }
+
+        Map<String, Object> persisted = persistContactTask(
+            registerId,
+            departmentId,
+            employeeId,
+            workDate,
+            priorityLevel
+        );
+        return persisted != null;
+    }
+
+    private Map<String, Object> persistContactTask(
+        Long registerId,
+        Long departmentId,
+        Long employeeId,
+        LocalDate workDate,
+        String priorityLevel
+    ) {
         String month = YearMonth.from(workDate).format(MONTH);
         Map<String, Object> plan = shiftMapper.selectPlanByDeptMonth(departmentId, month);
-
-        if (plan == null || plan.isEmpty() || !"draft".equals(String.valueOf(plan.get("status")))) {
-            return savePending(registerId, departmentId, priorityLevel, employeeId, workDate, visitEndedAt, planned);
+        if (plan == null || plan.isEmpty() || !isWritablePlanStatus(plan.get("status"))) {
+            return null;
         }
 
         Long planId = toLong(plan.get("id"));
@@ -105,14 +186,18 @@ public class FollowUpShiftEnqueueService {
         Map<String, Object> taskPayload = new HashMap<>();
         taskPayload.put("shiftId", shiftId);
         taskPayload.put("registerId", registerId);
-        taskPayload.put("priorityLevel", planned.get("priority") != null ? planned.get("priority") : priorityLevel);
+        taskPayload.put("priorityLevel", priorityLevel);
         shiftMapper.insertContactTask(taskPayload);
 
-        Map<String, Object> result = new LinkedHashMap<>(planned);
+        Map<String, Object> result = new LinkedHashMap<>();
         result.put("shiftId", shiftId);
         result.put("planId", planId);
-        result.put("persisted", true);
         return result;
+    }
+
+    private boolean isWritablePlanStatus(Object status) {
+        String value = status != null ? String.valueOf(status) : "";
+        return "draft".equals(value) || "published".equals(value);
     }
 
     private Map<String, Object> savePending(
@@ -156,6 +241,20 @@ public class FollowUpShiftEnqueueService {
             return MAPPER.writeValueAsString(value != null ? value : Map.of());
         } catch (Exception ex) {
             return "{}";
+        }
+    }
+
+    private LocalDate parseDate(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDate date) {
+            return date;
+        }
+        try {
+            return LocalDate.parse(String.valueOf(value));
+        } catch (Exception ex) {
+            return null;
         }
     }
 

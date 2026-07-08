@@ -88,6 +88,31 @@ export const followUpShiftAdminApi = {
     })
   },
 
+  randomAssignMonitoring(payload: { departmentId: number }) {
+    return http<{
+      assigned?: number
+      perDoctor?: Record<string, number>
+      departmentId?: number
+    }>({
+      url: `${adminBase}/monitoring/random-assign`,
+      method: 'POST',
+      data: payload,
+    })
+  },
+
+  getMonitoringLoadSummary(departmentId: number) {
+    return http<{
+      departmentId: number
+      autoAssignEnabled: boolean
+      unassignedCount: number
+      doctors: Array<{ employeeId: number; name?: string; patientCount: number }>
+    }>({
+      url: `${adminBase}/monitoring/load-summary`,
+      method: 'GET',
+      params: { departmentId },
+    })
+  },
+
   pendingTransferRequests(departmentId?: number) {
     return http<FollowUpMonitoringTransferRequest[]>({
       url: `${adminBase}/monitoring/transfer-requests/pending`,
@@ -117,6 +142,21 @@ export const followUpShiftAdminApi = {
       url: `${adminBase}/monitoring/transfer-requests/${id}/reject`,
       method: 'POST',
       data: adminNote ? { adminNote } : undefined,
+    })
+  },
+
+  syncDepartmentEnrollment(payload: { departmentId: number; batchSize?: number; maxBatches?: number }) {
+    return http<Record<string, unknown>>({
+      url: `${adminBase}/sync-enrollment`,
+      method: 'POST',
+      data: payload,
+    })
+  },
+
+  getShiftDifyStatus() {
+    return http<Record<string, unknown>>({
+      url: `${adminBase}/dify/shift-status`,
+      method: 'GET',
     })
   },
 }

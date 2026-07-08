@@ -222,6 +222,22 @@ public class DifyAiProperties {
         return apiKeyFollowUpShiftSchedule == null ? "" : apiKeyFollowUpShiftSchedule.trim();
     }
 
+    public String describeFollowUpShiftScheduleDisabledReason() {
+        if (!enabled) {
+            return "Dify 总开关未启用";
+        }
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return "Dify base-url 未配置";
+        }
+        if (!isWorkflowSwitchOn(workflowFollowUpShiftSchedule)) {
+            return "workflow-follow-up-shift-schedule 未开启";
+        }
+        if (resolveFollowUpShiftScheduleApiKey().isBlank()) {
+            return "api-key-follow-up-shift-schedule 未配置";
+        }
+        return "";
+    }
+
     public boolean isFollowUpEnqueueEnabled() {
         return isDifyBaseConfigured()
             && isWorkflowSwitchOn(workflowFollowUpEnqueue)

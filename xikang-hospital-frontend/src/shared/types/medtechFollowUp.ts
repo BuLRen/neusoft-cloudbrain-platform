@@ -160,6 +160,7 @@ export interface FollowUpDashboardPatient {
   daysSinceLastContact?: number
   contactedToday?: boolean
   contactStatus?: 'contacted_today' | 'due' | 'overdue' | 'within_limit'
+  nextContactDate?: string
 }
 
 export interface FollowUpDayScheduleItem {
@@ -521,6 +522,14 @@ export interface FollowUpContactRecordPayload {
   nextAction?: string
 }
 
+export interface FollowUpMonitoredRosterItem {
+  registerId: number
+  realName?: string
+  caseNumber?: string
+  priorityLevel?: FollowUpPriorityLevel
+  nextContactDate?: string
+}
+
 export interface FollowUpStaffShift {
   id: number
   planId?: number
@@ -531,6 +540,7 @@ export interface FollowUpStaffShift {
   shiftType?: 'full' | 'am' | 'pm'
   status?: string
   contactTasks?: FollowUpShiftContactTask[]
+  monitoredPatients?: FollowUpMonitoredRosterItem[]
 }
 
 export interface FollowUpShiftContactTask {
