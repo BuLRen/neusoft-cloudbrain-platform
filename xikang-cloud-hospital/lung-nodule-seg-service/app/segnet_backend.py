@@ -89,19 +89,35 @@ def load_model() -> Tuple[Optional[torch.nn.Module], Optional[str]]:
 
 def _preprocess_slice(slice_hu: np.ndarray, size: Tuple[int, int]) -> torch.Tensor:
     """
-    单张轴位切片预处理：HU / scaling_value（不 clip）→ resize → 灰度转 3 通道。
+    单张轴位切片预处理：坐标系对齐 → HU / scaling_value（不 clip）→ resize → 灰度转 3 通道。
 
-    输入切片在 RAS 空间下的内存排列为 (A-dim, R-dim)（行=前后, 列=左右），
-    直接归一化后喂给模型，mask 输出与 hu_arr 保持完全相同的坐标约定，
-    避免因转置引入的 H/W 轴混淆问题。
+    坐标系对齐（关键）
+    ------------------
+    训练数据使用 nibabel LAS 方向读取，切片 data[:, :, idx] 的内存排列是
+    (L_dim, A_dim)——行方向=Left（左右），列方向=Anterior（前后）。
 
-    返回 (3, H, W) float32 tensor（H, W 为目标 size）。
+    我们用 SimpleITK RAS 方向，GetArrayFromImage 返回 (D, H, W) = (S, A, R)，
+    单张切片 hu_arr[i] 的内存排列是 (A_dim, R_dim)——行=Anterior，列=Right。
+
+    两者差了 90° 旋转 + 镜像（R 与 L 方向相反）：
+      原始训练: 行=L, 列=A
+      我们（RAS）: 行=A, 列=R = 行=A, 列=mirror(L)
+
+    变换 (A, R) → (L, A)：
+      1. .T: (A, R) → (R, A)，行=R，列=A
+      2. np.flipud: 把行反转 R→L，得 (L, A)，行=L，列=A ✓
+
+    对于 512×512 标准 CT（H=W），变换后 shape 从 (H, W) 变为 (W, H)。
+    输出概率图需用逆变换 np.fliplr(.T) 映射回 (A, R) RAS 空间（见 run_segnet_inference）。
+
+    返回 (3, W0, H0) float32 tensor（W0, H0 为对齐后的 (L, A) 维度，即原 (W, H)）。
     """
-    arr = slice_hu.astype(np.float32) / config.SEGNET_SCALING_VALUE
-    tensor = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, H0, W0)
+    # (A, R) → (L, A)：转置后沿行方向翻转，使行=L、列=A，与训练数据内存排列一致
+    arr = np.flipud(slice_hu.T).astype(np.float32) / config.SEGNET_SCALING_VALUE
+    tensor = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, W0, H0)
     tensor = F.interpolate(tensor, size=size, mode="bilinear", align_corners=False)
     tensor = tensor.repeat(1, 3, 1, 1)  # 灰度 -> 3 通道（VGG 兼容输入）
-    return tensor.squeeze(0)  # (3, H, W)
+    return tensor.squeeze(0)  # (3, 224, 224)
 
 
 def _smooth_prob_map_z(prob_map: np.ndarray, sigma: float) -> np.ndarray:
@@ -155,24 +171,35 @@ def run_segnet_inference(model: torch.nn.Module, file_path: str) -> Dict[str, An
 
     prob_map = np.zeros((D, H, W), dtype=np.float32)
 
+    # _preprocess_slice 内部对切片做了 (A,R)→(L,A) 的坐标变换（np.flipud(.T)），
+    # 变换后切片 shape 从 (H, W) 变为 (W, H)。模型输出也在 (L,A) 坐标系下，
+    # 因此 resize 回原始尺寸时应使用 (W, H)，而非 (H, W)。
+    # 之后对每张概率图执行逆变换 np.fliplr(.T)：(L,A)→(A,R)，
+    # 使 prob_map[i] 的坐标约定与 hu_arr[i] 保持一致（均为 RAS 的 (A, R) 排列）。
     t0 = time.time()
     batch_size = max(1, config.SEGNET_BATCH_SIZE)
     with torch.no_grad():
         for start in range(0, D, batch_size):
             end = min(start + batch_size, D)
             batch_slices = [_preprocess_slice(hu_arr[i], size) for i in range(start, end)]
-            batch_tensor = torch.stack(batch_slices, dim=0).to(device)  # (B, 3, h, w)
+            batch_tensor = torch.stack(batch_slices, dim=0).to(device)  # (B, 3, 224, 224)
 
-            logits = model(batch_tensor)  # (B, 2, h, w)
-            probs = torch.softmax(logits, dim=1)[:, 1]  # 前景概率 (B, h, w)
+            logits = model(batch_tensor)  # (B, 2, 224, 224)
+            probs = torch.softmax(logits, dim=1)[:, 1]  # 前景概率 (B, 224, 224)
 
+            # 输出 resize 回 (W, H) 而非 (H, W)：
+            # 模型输入经 np.flipud(.T) 后 shape 为 (W, H)，输出在同一 (L,A) 空间，
+            # 所以 resize 目标应与预处理输入的空间维度匹配，即 (W, H)。
             probs_resized = F.interpolate(
-                probs.unsqueeze(1), size=(H, W), mode="bilinear", align_corners=False
-            ).squeeze(1)
+                probs.unsqueeze(1), size=(W, H), mode="bilinear", align_corners=False
+            ).squeeze(1)  # (B, W, H) 在 (L, A) 坐标系下
 
             probs_np = probs_resized.cpu().numpy()
             for offset, i in enumerate(range(start, end)):
-                prob_map[i] = probs_np[offset]
+                # 逆变换 (L, A) → (A, R)：先转置再左右翻转
+                # np.fliplr(arr.T)[a, r] = arr[W-1-r, a] = prob 在 (L=W-1-r, A=a) 处
+                # 由于 L-index = W-1-R-index，这正好是 RAS 空间的 (A=a, R=r) 体素 ✓
+                prob_map[i] = np.fliplr(probs_np[offset].T)  # → (H, W) in (A, R) RAS
 
     inference_ms = int(round((time.time() - t0) * 1000))
 
