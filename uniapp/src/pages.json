@@ -18,7 +18,8 @@
     {"path":"pages/previsit/index","style":{"navigationStyle":"custom"}},
     {"path":"pages/prescription/index","style":{"navigationStyle":"custom"}},
     {"path":"pages/prescription/guide","style":{"navigationStyle":"custom"}},
-    {"path":"pages/followup/index","style":{"navigationStyle":"custom"}}
+    {"path":"pages/followup/index","style":{"navigationStyle":"custom"}},
+    {"path":"pages/followup/chat","style":{"navigationStyle":"custom"}}
   ],
   "globalStyle":{"navigationBarTextStyle":"black","navigationBarTitleText":"熙康云医院","navigationBarBackgroundColor":"#dfeeff","backgroundColor":"#f5f8fd"}
 }

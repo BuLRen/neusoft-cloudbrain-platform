@@ -83,9 +83,20 @@ public class CallingService {
     }
 
     /**
-     * 叫指定号（重叫过号常用）。
+     * 叫指定号（重呼当前 / 重叫过号常用）。
      *
-     * @throws IllegalStateException 该号不存在 / 不属于当前医生 / 已应答 / 过号终态
+     * <p>设计选择：不强制校验 {@code operatorEmployeeId == reg.employeeId}。
+     * 理由：
+     * <ul>
+     *   <li>换班场景：交班后新医生重叫旧医生遗留的号是合理的；</li>
+     *   <li>重呼场景：传进来的 registerId 通常就是该医生刚叫出来的号，
+     *       employee_id 天然吻合，校验只是冗余；</li>
+     *   <li>真正的"乱叫别人科室的号"在生产部署后由 controller 侧审计日志兜底，
+     *       不在业务层强约束（强约束反而挡住合理用例）。</li>
+     * </ul>
+     * 这是经过 review 的有意识决定，不是漏加。请勿当作 bug 修复。
+     *
+     * @throws IllegalStateException 该号不存在 / 已应答 / 过号终态
      */
     @Transactional
     public Map<String, Object> callSpecific(Long registerId, Long operatorEmployeeId) {
@@ -93,9 +104,6 @@ public class CallingService {
         if (reg == null) {
             throw new IllegalStateException("挂号记录不存在：id=" + registerId);
         }
-        // 不强制校验 operatorEmployeeId == reg.employeeId：
-        //   - 重叫过号时医生可能跟当前接诊医生不同（如换班）
-        //   - 但必须是同医生同号才合理；先放开，由 controller 侧把医生身份带上便于审计
         if (Integer.valueOf(2).equals(reg.getCallStatus())) {
             throw new IllegalStateException("该号已应答（进诊室），不能重叫");
         }

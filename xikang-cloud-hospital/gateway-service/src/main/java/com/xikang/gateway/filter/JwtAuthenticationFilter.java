@@ -21,7 +21,9 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
     private static final String ACCESS_COOKIE_NAME = "access_token";
     // 注意：isWhitelisted 用的是 path.contains(pattern) 子串匹配
-    // 因此每个模式都必须足够"独特"，避免误伤其他接口
+    // 因此每个模式都必须足够"独特"，避免误伤其他接口。
+    // ⚠ 扩展白名单前必须 grep 全仓确认新 pattern 不会出现在任何需要鉴权的接口路径中
+    //    （例如 /check-in 会命中任何含该子串的路径，将来加 /xxx/check-in-history 也会被放行）。
     // - /ws/voice：AI 语音 WebSocket，公共设备
     // - /ws/notification：消息通知 WebSocket —— 鉴权由 notification-service
     //   的 WsAuthHandshakeInterceptor 在握手时从 query 解析 token + role 自行处理，

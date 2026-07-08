@@ -7,7 +7,7 @@ import { currentPatient, session, refreshCurrentPatientBalance, clearSession } f
 import { authApi } from '../../api/auth'
 import { patientApi } from '../../api/patient'
 import { medicalApi, type PrescriptionSummary } from '../../api/medical'
-import { aiApi, type FollowupPlan } from '../../api/ai'
+import { followupApi } from '../../api/followup'
 
 // 处方 / 随访计划实时计数（拉到则用 length，拿不到则 null → 显示「—」）
 const prescriptionCount = ref<number | null>(null)
@@ -19,7 +19,6 @@ const functions = [
   ['病历报告', '/pages/records/index', 'compose', 'blue'],
   ['处方记录', '/pages/prescription/index', 'list', 'green'],
   ['预约挂号', '/pages/registration/index', 'calendar-filled', 'green'],
-  ['AI预问诊', '/pages/previsit/index', 'chat-filled', 'purple'],
   ['随访管理', '/pages/followup/index', 'notification-filled', 'orange'],
   ['就诊人管理', '/pages/patients/index', 'person-filled', 'purple'],
 ] as const
@@ -40,7 +39,7 @@ async function loadProfileStats() {
   }
   const [prescriptions, followups] = await Promise.allSettled([
     medicalApi.prescriptions(patient.patientId),
-    aiApi.followups(patient.patientId),
+    followupApi.listPlans(patient.patientId),
   ])
   prescriptionCount.value = prescriptions.status === 'fulfilled'
     ? Array.isArray(prescriptions.value) ? prescriptions.value.length : 0
