@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
-import { ElAlert, ElButton, ElOption, ElSelect, ElTag, ElTooltip } from 'element-plus'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { ElAlert, ElButton, ElTag, ElTooltip } from 'element-plus'
 import type { CtAiModelOption, CtLesionItem, CtRiskLevel, CtSegmentResult } from '@/shared/api/modules/ctViewer'
 import { fetchCtVolumeNrrd } from '@/shared/api/modules/ctViewer'
 import { parseNrrdArrayBuffer } from '@/modules/medtech/ct-viewer/lib/nrrdToVtkImageData'
@@ -33,17 +33,54 @@ const emit = defineEmits<{
 
 const hasModelChoices = computed(() => (props.availableModels?.length ?? 0) > 0)
 
+const selectedModelLabel = computed(() => {
+  const current = props.availableModels?.find((item) => item.id === props.modelId)
+  return current?.label || current?.id || ''
+})
+
 function handleModelChange(value: string) {
   emit('update:modelId', value)
 }
 
+const modelMenuOpen = ref(false)
+const modelPickerRef = ref<HTMLElement | null>(null)
+
+function toggleModelMenu() {
+  if (props.loading) return
+  modelMenuOpen.value = !modelMenuOpen.value
+}
+
+function selectModel(item: CtAiModelOption) {
+  if (!item.loaded || props.loading) return
+  handleModelChange(item.id)
+  modelMenuOpen.value = false
+}
+
+function handleDocumentClick(event: MouseEvent) {
+  if (!modelMenuOpen.value) return
+  const root = modelPickerRef.value
+  if (root && !root.contains(event.target as Node)) {
+    modelMenuOpen.value = false
+  }
+}
+
+watch(
+  () => props.loading,
+  (loading) => {
+    if (loading) modelMenuOpen.value = false
+  },
+)
+
+onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
+})
+
 const lesions = computed(() => props.result?.lesions ?? [])
 const summary = computed(() => props.result?.summary)
-const isAiResult = computed(() =>
-  props.result?.modelVersion != null ||
-  props.result?.summary?.modelVersion != null ||
-  lesions.value.some((l) => l.source === 'deep_learning'),
-)
 
 const overallRisk = computed<CtRiskLevel | undefined>(
   () =>
@@ -210,67 +247,73 @@ function formatElapsedSeconds(seconds?: number): string {
   <aside class="ai-seg-panel ct-imaging-theme">
     <!-- ========== 顶栏 ========== -->
     <header class="ai-seg-panel__header">
-      <div class="ai-seg-panel__title-row">
-        <span class="ai-seg-panel__title">AI 肺结节分割</span>
-        <ElTag
-          v-if="isAiResult"
-          size="small"
-          type="success"
-          effect="dark"
-          class="ai-seg-panel__badge"
-        >
-          深度学习
-        </ElTag>
-        <ElTag
-          v-else-if="result"
-          size="small"
-          type="warning"
-          effect="dark"
-          class="ai-seg-panel__badge"
-        >
-          规则算法
-        </ElTag>
-      </div>
-      <div v-if="!readonly" class="ai-seg-panel__actions">
-        <ElTooltip
-          v-if="hasModelChoices"
-          content="选择本次分割使用的 AI 模型"
-          placement="bottom"
-        >
-          <ElSelect
-            :model-value="modelId"
-            size="small"
-            class="ai-seg-panel__model-select"
-            placeholder="选择模型"
-            :disabled="loading"
-            @update:model-value="handleModelChange"
+      <h2 class="ai-seg-panel__title">AI CT 影像分析</h2>
+
+      <div v-if="!readonly" class="ai-seg-panel__controls">
+        <div v-if="hasModelChoices" class="ai-seg-panel__field">
+          <label class="ai-seg-panel__field-label">分割模型</label>
+          <div
+            ref="modelPickerRef"
+            class="ai-seg-panel__model-picker"
+            :class="{ 'is-open': modelMenuOpen }"
           >
-            <ElOption
-              v-for="item in availableModels"
-              :key="item.id"
-              :label="item.label || item.id"
-              :value="item.id"
-              :disabled="!item.loaded"
+            <button
+              type="button"
+              class="ai-seg-panel__model-trigger"
+              :disabled="loading"
+              :title="selectedModelLabel"
+              :aria-expanded="modelMenuOpen"
+              @click.stop="toggleModelMenu"
             >
-              <span class="ai-seg-panel__model-option">
-                <span>{{ item.label || item.id }}</span>
-                <span v-if="!item.loaded" class="ai-seg-panel__model-option-hint">未加载</span>
+              <span class="ai-seg-panel__model-trigger-text">
+                {{ selectedModelLabel || '选择模型' }}
               </span>
-            </ElOption>
-          </ElSelect>
-        </ElTooltip>
-        <ElButton
-          size="small"
-          type="primary"
-          :loading="loading"
-          class="ai-seg-panel__run-btn"
-          @click="emit('run-ai-segment')"
-        >
-          {{ loading ? '分析中…' : 'AI 肺结节分割' }}
-        </ElButton>
-        <ElTooltip v-if="result" content="切换掩码叠加显示" placement="bottom">
-          <ElButton size="small" @click="emit('toggle-mask')">掩码</ElButton>
-        </ElTooltip>
+              <svg
+                class="ai-seg-panel__model-trigger-icon"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              >
+                <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </button>
+
+            <ul v-show="modelMenuOpen" class="ai-seg-panel__model-menu" role="listbox">
+              <li
+                v-for="item in availableModels"
+                :key="item.id"
+                role="option"
+                class="ai-seg-panel__model-menu-item"
+                :class="{
+                  'is-selected': item.id === modelId,
+                  'is-disabled': !item.loaded,
+                }"
+                :aria-selected="item.id === modelId"
+                @click.stop="selectModel(item)"
+              >
+                <span class="ai-seg-panel__model-menu-label">{{ item.label || item.id }}</span>
+                <span v-if="!item.loaded" class="ai-seg-panel__model-menu-hint">未加载</span>
+                <span v-else-if="item.id === modelId" class="ai-seg-panel__model-menu-check">✓</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="ai-seg-panel__btn-row">
+          <ElButton
+            size="small"
+            type="primary"
+            :loading="loading"
+            class="ai-seg-panel__run-btn"
+            @click="emit('run-ai-segment')"
+          >
+            {{ loading ? '分析中…' : 'AI 肺结节分割' }}
+          </ElButton>
+          <ElTooltip v-if="result" content="切换掩码叠加显示" placement="bottom">
+            <ElButton size="small" class="ai-seg-panel__mask-btn" @click="emit('toggle-mask')">
+              掩码
+            </ElButton>
+          </ElTooltip>
+        </div>
       </div>
     </header>
 
@@ -470,6 +513,8 @@ function formatElapsedSeconds(seconds?: number): string {
   border-inline-start: 1px solid var(--ct-border);
   font-size: 13px;
   color: var(--ct-text);
+  container-type: inline-size;
+  container-name: ai-seg-panel;
 }
 
 /* ---- 顶栏 ---- */
@@ -479,60 +524,192 @@ function formatElapsedSeconds(seconds?: number): string {
   z-index: 2;
   flex-shrink: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
   padding: 12px 14px;
   border-block-end: 1px solid var(--ct-border);
   background: var(--ct-surface-elevated);
-}
-
-.ai-seg-panel__title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  overflow: visible;
 }
 
 .ai-seg-panel__title {
-  font-size: 13px;
+  margin: 0;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.35;
   color: var(--ct-text);
   letter-spacing: 0.02em;
 }
 
-.ai-seg-panel__badge {
+.ai-seg-panel__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ai-seg-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ai-seg-panel__field-label {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--ct-text-dim);
+}
+
+.ai-seg-panel__model-picker {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.ai-seg-panel__model-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--ct-border-strong);
+  border-radius: 8px;
+  background: var(--ct-bg-soft);
+  color: var(--ct-text);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.ai-seg-panel__model-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ct-accent) 45%, var(--ct-border-strong));
+  background: var(--ct-surface-elevated);
+}
+
+.ai-seg-panel__model-picker.is-open .ai-seg-panel__model-trigger {
+  border-color: var(--ct-accent);
+  background: var(--ct-surface-elevated);
+  box-shadow: 0 0 0 2px var(--ct-accent-soft);
+}
+
+.ai-seg-panel__model-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ai-seg-panel__model-trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-seg-panel__model-trigger-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: var(--ct-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.ai-seg-panel__model-picker.is-open .ai-seg-panel__model-trigger-icon {
+  transform: rotate(180deg);
+  color: var(--ct-accent);
+}
+
+.ai-seg-panel__model-menu {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--ct-border-strong);
+  border-radius: 10px;
+  background: var(--ct-surface-elevated);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.ai-seg-panel__model-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--ct-text);
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.ai-seg-panel__model-menu-item:hover:not(.is-disabled) {
+  background: var(--ct-accent-soft);
+}
+
+.ai-seg-panel__model-menu-item.is-selected {
+  background: color-mix(in srgb, var(--ct-accent) 18%, transparent);
+  color: var(--ct-text);
+}
+
+.ai-seg-panel__model-menu-item.is-disabled {
+  color: var(--ct-text-dim);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.ai-seg-panel__model-menu-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-seg-panel__model-menu-hint {
+  flex-shrink: 0;
   font-size: 10px;
+  color: var(--ct-text-dim);
 }
 
-.ai-seg-panel__actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ai-seg-panel__run-btn {
+.ai-seg-panel__model-menu-check {
+  flex-shrink: 0;
   font-size: 12px;
+  font-weight: 700;
+  color: var(--ct-accent);
 }
 
-.ai-seg-panel__model-select {
-  width: 132px;
-}
-
-.ai-seg-panel__model-select :deep(.el-select__wrapper) {
-  font-size: 12px;
-}
-
-.ai-seg-panel__model-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.ai-seg-panel__btn-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   width: 100%;
 }
 
-.ai-seg-panel__model-option-hint {
-  font-size: 10px;
-  color: var(--ct-text-dim);
+@container ai-seg-panel (min-width: 260px) {
+  .ai-seg-panel__btn-row:has(.ai-seg-panel__mask-btn) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+.ai-seg-panel__run-btn,
+.ai-seg-panel__mask-btn {
+  width: 100%;
+  margin: 0;
+  font-size: 12px;
 }
 
 /* ---- 加载 ---- */

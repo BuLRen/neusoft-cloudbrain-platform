@@ -159,8 +159,17 @@ async function refreshAiSegmentProgress() {
   }
 }
 
+function resetImagingDerivedState() {
+  segmentationResult.value = null
+  segmentationError.value = ''
+  analysisResult.value = null
+  analysisError.value = ''
+  viewerPanelRef.value?.clearSegmentationOverlay()
+}
+
 async function handleImagingUploaded(payload: { volumeId: string; sourceName: string }) {
   if (!id.value) return
+  resetImagingDerivedState()
   await bindImaging(id.value, payload, () => viewerPanelRef.value?.resetVolumeState())
 }
 
@@ -168,9 +177,7 @@ async function handleImagingCleared() {
   if (!id.value) return
   await clearImaging(id.value)
   volumeMeta.value = null
-  analysisResult.value = null
-  segmentationResult.value = null
-  viewerPanelRef.value?.clearSegmentationOverlay()
+  resetImagingDerivedState()
 }
 
 function handleMetaUpdated(meta: CtVolumeMeta | null) {
