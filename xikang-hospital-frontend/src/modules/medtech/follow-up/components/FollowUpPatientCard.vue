@@ -13,8 +13,10 @@ const props = withDefaults(
     compact?: boolean
     /** 展示今日访谈 / 观察状态行 */
     showStatusRow?: boolean
+    /** 展示监视人与联系状态 */
+    showContactInfo?: boolean
   }>(),
-  { observed: false, dimObserved: true, draggable: true, compact: false, showStatusRow: false },
+  { observed: false, dimObserved: true, draggable: true, compact: false, showStatusRow: false, showContactInfo: false },
 )
 
 const emit = defineEmits<{
@@ -26,6 +28,20 @@ function priorityTone(priority?: string) {
   if (priority === 'critical') return 'danger' as const
   if (priority === 'high') return 'warning' as const
   return 'primary' as const
+}
+
+function contactStatusLabel(status?: string) {
+  if (status === 'contacted_today') return '今日已联系'
+  if (status === 'due') return '待联系'
+  if (status === 'overdue') return '已逾期'
+  return '正常'
+}
+
+function contactStatusClass(status?: string) {
+  if (status === 'contacted_today') return 'follow-up-patient-card__chip--observed'
+  if (status === 'overdue') return 'follow-up-patient-card__chip--overdue'
+  if (status === 'due') return 'follow-up-patient-card__chip--pending'
+  return 'follow-up-patient-card__chip--interview'
 }
 
 function onDragStart(event: DragEvent) {
@@ -64,6 +80,33 @@ function onDragStart(event: DragEvent) {
     <span v-if="patient.lastTrackedDate && !showStatusRow" class="follow-up-patient-card__track">
       最近跟踪：{{ patient.lastTrackedDate }}
     </span>
+    <div v-if="showContactInfo" class="follow-up-patient-card__status-row">
+      <span
+        v-if="patient.contactStatus"
+        class="follow-up-patient-card__chip"
+        :class="contactStatusClass(patient.contactStatus)"
+      >
+        {{ contactStatusLabel(patient.contactStatus) }}
+      </span>
+      <span v-if="patient.monitoringEmployeeName && !patient.isMine" class="follow-up-patient-card__track follow-up-patient-card__track--inline">
+        监视：{{ patient.monitoringEmployeeName }}
+      </span>
+      <span v-else-if="!patient.monitoringEmployeeId" class="follow-up-patient-card__track follow-up-patient-card__track--inline">
+        未监视
+      </span>
+      <span
+        v-if="patient.daysUntilDeadline != null"
+        class="follow-up-patient-card__track follow-up-patient-card__track--inline"
+      >
+        {{ patient.daysUntilDeadline >= 0 ? `距期限 ${patient.daysUntilDeadline} 天` : `已超期 ${Math.abs(patient.daysUntilDeadline)} 天` }}
+      </span>
+      <span
+        v-if="patient.nextContactDate"
+        class="follow-up-patient-card__track follow-up-patient-card__track--inline"
+      >
+        下次联系 {{ patient.nextContactDate }}
+      </span>
+    </div>
     <div v-if="showStatusRow" class="follow-up-patient-card__status-row">
       <span v-if="patient.interviewScheduledToday" class="follow-up-patient-card__chip follow-up-patient-card__chip--interview">
         今日访谈
@@ -180,6 +223,11 @@ function onDragStart(event: DragEvent) {
 .follow-up-patient-card__chip--pending {
   background: rgba(245, 159, 0, 0.14);
   color: #b45309;
+}
+
+.follow-up-patient-card__chip--overdue {
+  background: rgba(239, 77, 90, 0.14);
+  color: #c81e2d;
 }
 
 .follow-up-patient-card__track--inline {

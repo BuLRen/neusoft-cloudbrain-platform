@@ -18,6 +18,12 @@
             fp.priority_level AS "priorityLevel",
             (
                 SELECT COUNT(*) FROM follow_up_communication_message m
+                WHERE m.session_id = s.id
+                  AND m.sender_type IN ('patient', 'ai')
+                  AND m.id > COALESCE(s.doctor_last_read_message_id, 0)
+            ) AS "unreadCount",
+            (
+                SELECT COUNT(*) FROM follow_up_communication_message m
                 WHERE m.session_id = s.id AND m.sender_type = 'patient'
             ) AS "patientMessageCount",
             (
@@ -257,5 +263,59 @@
         WHERE r.id = #{registerId}
         LIMIT 1
     </select>
+
+    <select id="countDoctorUnreadTotal" resultType="int">
+        SELECT COUNT(*)
+        FROM follow_up_communication_message m
+        INNER JOIN follow_up_communication_session s ON s.id = m.session_id
+        WHERE m.sender_type IN ('patient', 'ai')
+          AND m.id > COALESCE(s.doctor_last_read_message_id, 0)
+          AND s.register_id NOT BETWEEN 1001 AND 1005
+        <if test="departmentId != null">
+            AND s.department_id = #{departmentId}
+        </if>
+    </select>
+
+    <select id="selectDoctorUnreadByRegister" resultType="map">
+        SELECT
+            s.register_id AS "registerId",
+            COUNT(*) AS "unreadCount"
+        FROM follow_up_communication_message m
+        INNER JOIN follow_up_communication_session s ON s.id = m.session_id
+        WHERE m.sender_type IN ('patient', 'ai')
+          AND m.id > COALESCE(s.doctor_last_read_message_id, 0)
+          AND s.register_id NOT BETWEEN 1001 AND 1005
+        <if test="departmentId != null">
+            AND s.department_id = #{departmentId}
+        </if>
+        GROUP BY s.register_id
+    </select>
+
+    <select id="countPatientUnread" resultType="int">
+        SELECT COUNT(*)
+        FROM follow_up_communication_message m
+        INNER JOIN follow_up_communication_session s ON s.id = m.session_id
+        WHERE s.register_id = #{registerId}
+          AND m.sender_type IN ('doctor', 'system', 'case_summary')
+          AND m.id > COALESCE(s.patient_last_read_message_id, 0)
+    </select>
+
+    <select id="selectLatestMessageId" resultType="long">
+        SELECT MAX(id)
+        FROM follow_up_communication_message
+        WHERE session_id = #{sessionId}
+    </select>
+
+    <update id="markDoctorRead">
+        UPDATE follow_up_communication_session
+        SET doctor_last_read_message_id = #{messageId}
+        WHERE id = #{sessionId}
+    </update>
+
+    <update id="markPatientRead">
+        UPDATE follow_up_communication_session
+        SET patient_last_read_message_id = #{messageId}
+        WHERE register_id = #{registerId}
+    </update>
 
 </mapper>

@@ -38,6 +38,7 @@ import {
 } from '@/shared/utils/beijingDate'
 import LastVisitSnapshotPanel from '@/modules/medtech/follow-up/components/LastVisitSnapshotPanel.vue'
 import HomeGlucoseMonitoringPanel from '@/modules/medtech/follow-up/components/HomeGlucoseMonitoringPanel.vue'
+import ContactRecordHistoryDialog from '@/modules/medtech/follow-up/components/ContactRecordHistoryDialog.vue'
 import { addToTodayInterview, getTodayInterviewScheduled } from '@/modules/medtech/follow-up/services/interviewSchedule'
 import type {
   FollowUpHealthMetric,
@@ -61,7 +62,6 @@ const observedToday = ref(false)
 const confirmingObservation = ref(false)
 const loading = ref(false)
 const scheduling = ref(false)
-const enrolling = ref(false)
 const isGlucoseCohort = ref(false)
 const lastVisitSnapshot = ref<LastVisitSnapshot | null>(null)
 
@@ -70,7 +70,6 @@ const VISIT_PRIORITY_KEYS = ['hba1c', 'fasting_glucose', 'postprandial_glucose',
 const selectedPatient = computed(() =>
   patients.value.find((item) => item.registerId === selectedRegisterId.value),
 )
-const isEnrolled = computed(() => Boolean(selectedPatient.value?.enrolled))
 
 const rangePreset = ref<OutcomeRangePreset>('30d')
 const dateRangeLabel = computed(() => OUTCOME_RANGE_OPTIONS.find((o) => o.value === rangePreset.value)?.label ?? '')
@@ -85,6 +84,7 @@ const metricDialogChartEl = ref<HTMLElement | null>(null)
 let metricDialogChart: echarts.ECharts | null = null
 
 const patientDetailVisible = ref(false)
+const contactHistoryVisible = ref(false)
 const patientDetail = ref<FollowUpPatientDetail | null>(null)
 const patientDetailLoading = ref(false)
 
@@ -451,22 +451,8 @@ async function handleScheduleInterview() {
 }
 
 function patientLabel(item: FollowUpPatientOption) {
-  const status = item.enrolled ? '已在管' : '未纳入'
+  const status = item.enrolled ? '已在管' : '待系统纳入'
   return `${item.realName ?? '未知'}（${item.caseNumber ?? item.registerId}）· ${status}`
-}
-
-async function handleEnrollPatient() {
-  if (!selectedRegisterId.value || isEnrolled.value) return
-  enrolling.value = true
-  try {
-    await medtechFollowUpApi.enrollPatient({ registerId: selectedRegisterId.value })
-    ElMessage.success('已纳入随访管理')
-    await loadPatients()
-  } catch {
-    ElMessage.error('纳入随访失败')
-  } finally {
-    enrolling.value = false
-  }
 }
 
 function reliefLabel(value?: string) {
@@ -551,21 +537,13 @@ void loadPatients().then(() => loadPatientData())
         </div>
         <div class="toolbar__right">
           <ElButton :disabled="!selectedRegisterId" @click="openPatientDetail">查看患者信息</ElButton>
+          <ElButton :disabled="!selectedRegisterId" @click="contactHistoryVisible = true">联系记录</ElButton>
           <ElButton
             :disabled="!selectedRegisterId || observedToday"
             :loading="confirmingObservation"
             @click="handleConfirmObservation"
           >
             {{ observedToday ? '今日已观察' : '确认今日已观察' }}
-          </ElButton>
-          <ElButton
-            :disabled="!selectedRegisterId || isEnrolled"
-            :loading="enrolling"
-            type="success"
-            plain
-            @click="handleEnrollPatient"
-          >
-            {{ isEnrolled ? '已在管' : '纳入随访' }}
           </ElButton>
           <ElButton
             type="primary"
@@ -812,6 +790,11 @@ void loadPatients().then(() => loadPatientData())
         <ElEmpty v-else-if="!patientDetailLoading" description="暂无患者信息" />
       </div>
     </ElDialog>
+
+    <ContactRecordHistoryDialog
+      v-model="contactHistoryVisible"
+      :register-id="selectedRegisterId"
+    />
   </MedtechStepLayout>
 </template>
 

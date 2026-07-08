@@ -37,3 +37,7 @@ management:
 logging:
   level:
     com.xikang.registration: INFO
+
+services:
+  payment-service:
+    url: ${PAYMENT_SERVICE_URL:http://localhost:8096}

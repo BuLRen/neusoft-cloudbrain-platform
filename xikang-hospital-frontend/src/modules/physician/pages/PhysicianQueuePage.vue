@@ -20,6 +20,7 @@ import { useEncounterStore } from '@/app/stores/encounter'
 import ClinicalRecordDrawer from '../components/ClinicalRecordDrawer.vue'
 import EncounterProgressCard from '../components/EncounterProgressCard.vue'
 import MedicalRecordSummaryCard from '../components/MedicalRecordSummaryCard.vue'
+import PhysicianWaitingQueue from '../components/PhysicianWaitingQueue.vue'
 import { physicianRoute, resumePathForVisitState, visitStateLabel, VISIT_STATE } from '../constants/visitState'
 
 const VISIT_STATE_FILTER_OPTIONS = [
@@ -47,6 +48,7 @@ const notebookDrawerVisible = ref(false)
 const medicalRecord = ref<MedicalRecord | null>(null)
 const recordLoading = ref(false)
 let recordLoadSeq = 0
+const waitingQueueRef = ref<InstanceType<typeof PhysicianWaitingQueue> | null>(null)
 
 const selectedRegisterId = computed(() => selectedPatient.value?.registerId)
 
@@ -202,6 +204,7 @@ async function loadPatients() {
       if (refreshed) selectedPatient.value = refreshed
       syncSelectedPatientAfterFilter()
     }
+    await refreshWaitingQueue()
   } finally {
     loading.value = false
   }
@@ -220,6 +223,19 @@ async function enterEncounter() {
 const currentCalling = ref<CallingResult | null>(null)
 const callingBusy = ref(false)
 let callingRefreshTimer: ReturnType<typeof setInterval> | null = null
+let callingEventSource: EventSource | null = null
+
+async function refreshWaitingQueue() {
+  if (authStore.role !== 'physician') return
+  await waitingQueueRef.value?.refresh()
+}
+
+function onQueueSelect(registerId: number) {
+  const patient = allPatients.value.find((p) => p.registerId === registerId)
+  if (patient) {
+    selectedPatient.value = patient
+  }
+}
 
 async function refreshCurrentCalling() {
   try {
@@ -227,6 +243,31 @@ async function refreshCurrentCalling() {
   } catch {
     // 静默失败
   }
+}
+
+// 订阅本医生的 SSE 频道，收到任意叫号事件立即拉一次 currentCalling，
+// 比纯 15s 轮询快很多（多医生场景：别人帮叫/患者应答/超时过号 → 本工作站秒级感知）。
+function connectCallingStream() {
+  disconnectCallingStream()
+  // admin 等无 employeeId 的角色不订阅（也调不了 /call/current 之外的接口）
+  if (authStore.role !== 'physician') return
+  const doctorId = authStore.employeeId
+  if (!doctorId) return
+  // /calling/stream/ 在 gateway 白名单内，无需 JWT
+  const url = `/api/registration/calling/stream/doctor/${doctorId}`
+  callingEventSource = new EventSource(url)
+  const onEvent = () => { void refreshCurrentCalling() }
+  callingEventSource.addEventListener('CALLED', onEvent)
+  callingEventSource.addEventListener('ANSWERED', onEvent)
+  callingEventSource.addEventListener('PASSED', onEvent)
+  callingEventSource.onerror = () => {
+    // EventSource 会自动重连；这里不做事，自动重连后事件会继续到达
+  }
+}
+
+function disconnectCallingStream() {
+  callingEventSource?.close()
+  callingEventSource = null
 }
 
 async function callNext() {
@@ -237,6 +278,7 @@ async function callNext() {
     currentCalling.value = result
     ElMessage.success(`已叫：${result.patientName || ''}（${result.queueNumber ?? '-'}号）`)
     await loadPatients()
+    await refreshWaitingQueue()
   } catch (e: any) {
     ElMessage.error(e?.message || '叫号失败')
   } finally {
@@ -252,6 +294,7 @@ async function callSpecific(registerId: number) {
     currentCalling.value = result
     ElMessage.success(`已叫：${result.patientName || ''}`)
     await loadPatients()
+    await refreshWaitingQueue()
   } catch (e: any) {
     ElMessage.error(e?.message || '叫号失败')
   } finally {
@@ -267,6 +310,7 @@ async function answerCurrent(registerId: number) {
     currentCalling.value = null
     ElMessage.success('已应答，进入接诊')
     await loadPatients()
+    await refreshWaitingQueue()
   } catch (e: any) {
     ElMessage.error(e?.message || '应答失败')
   } finally {
@@ -282,6 +326,7 @@ async function passCurrent(registerId: number) {
     currentCalling.value = null
     ElMessage.info('已标记过号')
     await loadPatients()
+    await refreshWaitingQueue()
   } catch (e: any) {
     ElMessage.error(e?.message || '过号失败')
   } finally {
@@ -321,12 +366,15 @@ watch(
 onMounted(() => {
   void loadPatients()
   void refreshCurrentCalling()
-  // 每 15 秒刷一次当前叫号（兜底，SSE 没接 workstation）
+  // SSE 实时推送：医生本人频道的叫号/应答/过号事件秒级到达
+  connectCallingStream()
+  // 15 秒轮询兜底（SSE 重连间隙/网络抖动时保证最终一致）
   callingRefreshTimer = setInterval(refreshCurrentCalling, 15_000)
 })
 
 onUnmounted(() => {
   if (callingRefreshTimer) clearInterval(callingRefreshTimer)
+  disconnectCallingStream()
 })
 </script>
 
@@ -363,6 +411,12 @@ onUnmounted(() => {
 
     <section class="queue-grid">
       <aside class="queue-sidebar">
+        <PhysicianWaitingQueue
+          v-if="authStore.role === 'physician'"
+          ref="waitingQueueRef"
+          :selected-register-id="selectedRegisterId"
+          @select="onQueueSelect"
+        />
         <GlassCard class="patient-panel">
         <div class="panel-heading">
           <h2>待诊 / 进行中患者</h2>
@@ -596,8 +650,8 @@ onUnmounted(() => {
                 </button>
                 <button
                   class="calling-btn calling-btn--ghost"
-                  :disabled="callingBusy"
-                  @click="callSpecific(selectedRegisterId!)"
+                  :disabled="callingBusy || !currentCalling?.hasCalling || !currentCalling?.registerId"
+                  @click="callSpecific(currentCalling!.registerId!)"
                 >
                   <span class="calling-btn__text">重呼当前</span>
                 </button>

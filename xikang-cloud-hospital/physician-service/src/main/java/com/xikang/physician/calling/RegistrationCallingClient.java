@@ -76,6 +76,17 @@ public class RegistrationCallingClient {
         return get("/api/registration/calling/current?employeeId=" + employeeId);
     }
 
+    /** 医生候诊队列 */
+    public Map<String, Object> doctorWaitingQueue(Long employeeId) {
+        return get("/api/registration/calling/internal/queue/doctor?employeeId=" + employeeId);
+    }
+
+    /** 调整候诊队列 */
+    public Map<String, Object> reorderQueue(Long employeeId, java.util.List<Long> registerIds) {
+        return put("/api/registration/calling/internal/queue/reorder",
+                Map.of("employeeId", employeeId, "registerIds", registerIds));
+    }
+
     // ==================== 内部 ====================
 
     private Map<String, Object> post(String path, Object body) {
@@ -99,6 +110,21 @@ public class RegistrationCallingClient {
             return parseResult(body, url);
         } catch (Exception e) {
             log.error("调 registration-service 失败 GET url={}: {}", url, e.getMessage());
+            return Map.of("code", 500, "message", "调叫号服务失败：" + e.getMessage());
+        }
+    }
+
+    private Map<String, Object> put(String path, Object body) {
+        String url = baseUrl + path;
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            ResponseEntity<String> resp = restTemplate.exchange(
+                    url, org.springframework.http.HttpMethod.PUT,
+                    new HttpEntity<>(body, headers), String.class);
+            return parseResult(resp.getBody(), url);
+        } catch (Exception e) {
+            log.error("调 registration-service 失败 PUT url={}: {}", url, e.getMessage());
             return Map.of("code", 500, "message", "调叫号服务失败：" + e.getMessage());
         }
     }

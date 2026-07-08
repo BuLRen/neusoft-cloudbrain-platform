@@ -1,186 +1,208 @@
 <template>
   <div class="calling-board">
-    <!-- 顶部：标题 + 时间 -->
     <header class="board-header">
-      <div class="title">熙康云医院 · 全院候诊大屏</div>
+      <div class="title-wrap">
+        <div class="title">{{ boardTitle }}</div>
+        <div v-if="mockMode" class="mock-badge">演示数据</div>
+        <div v-if="zoneLabel" class="zone-label">{{ zoneLabel }}</div>
+      </div>
       <div class="clock">{{ now }}</div>
     </header>
 
-    <!-- 顶部滚动播报：最近叫号 -->
-    <section class="recent-bar">
-      <div class="recent-label">★ 最新叫号</div>
-      <div class="recent-track">
-        <transition-group name="recent-slide" tag="div" class="recent-list">
-          <div v-for="item in recentCalls" :key="item.registerId" class="recent-item" :class="{ 'recent-flash': item.registerId === flashRegisterId }">
-            <span class="r-dept">{{ item.departmentName || '—' }}</span>
-            <span class="r-sep">·</span>
-            <span class="r-doctor">{{ item.doctorName || '—' }}</span>
-            <span class="r-sep">·</span>
-            <span class="r-num">{{ item.queueNumber ?? '—' }}号</span>
-            <span class="r-sep">·</span>
-            <span class="r-name">{{ maskName(item.patientName) }}</span>
-          </div>
-        </transition-group>
-        <div v-if="!recentCalls.length" class="recent-empty">暂无叫号</div>
-      </div>
-    </section>
+    <CallingBoardHub
+      v-if="isHubView"
+      :departments="hubDepartments"
+      :flash-dept-id="flashDeptId"
+      @select="goToDepartment"
+    />
 
-    <!-- 科室卡片墙 -->
-    <section class="dept-grid">
-      <div v-for="dept in departments" :key="dept.departmentId"
-           class="dept-card"
-           :class="{ 'is-calling': dept.callingCount > 0, 'flash': dept.departmentId === flashDeptId }">
-        <div class="dept-card__name">{{ dept.departmentName || '—' }}</div>
-        <div v-if="dept.callingCount > 0" class="dept-card__main">
-          <div v-for="c in dept.calling.slice(0, 3)" :key="c.registerId" class="dept-card__call">
-            <div class="dept-card__doctor">{{ c.doctorName || '—' }}</div>
-            <div class="dept-card__num">{{ c.queueNumber ?? '—' }}<span class="unit">号</span></div>
-            <div class="dept-card__patient">{{ maskName(c.patientName) }}</div>
-          </div>
-        </div>
-        <div v-else class="dept-card__idle">
-          暂无叫号
-        </div>
-        <div class="dept-card__meta">
-          候诊 <strong>{{ dept.waitingCount }}</strong> 人
-        </div>
-      </div>
-      <div v-if="!departments.length" class="dept-empty">暂无科室数据</div>
-    </section>
+    <CallingBoardDept
+      v-else
+      :hero-call="heroCall"
+      :hero-flash="heroFlash"
+      :flash-register-id="flashRegisterId"
+      :flash-type="flashType"
+      :recent-calls="recentCalls"
+      :active-rows="activeRows"
+      :table-page="tablePage"
+      @back="goToHub"
+    />
 
-    <!-- 连接状态条 + 语音入口 -->
     <footer class="conn-bar">
       <span :class="['dot', connStatusClass]"></span>
       <span>{{ connStatusText }}</span>
+      <span class="stats">{{ statsText }}</span>
       <span class="hint">提示音：<button @click="enableVoice">{{ voiceReady ? '已开启' : '点击开启' }}</button></span>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { http } from '@/shared/api'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { CallItem, DeptBoardItem } from '@/shared/types/calling'
+import CallingBoardHub from '@/modules/registration/pages/CallingBoardHub.vue'
+import CallingBoardDept from '@/modules/registration/pages/CallingBoardDept.vue'
+import {
+  PAGE_ROTATE_MS,
+  buildSpeakText,
+  fetchDeptBoard,
+  fetchHubBoard,
+  formatTime,
+} from '@/modules/registration/composables/useCallingBoard'
+import {
+  applyMockCallToHub,
+  createMockCallingBoardData,
+  createMockHubData,
+  isCallingBoardMockMode,
+  startCallingBoardHubMockSimulation,
+  startCallingBoardMockSimulation,
+} from '@/modules/registration/mock/callingBoardMock'
 
-interface CallItem {
-  registerId: number
-  patientName?: string
-  queueNumber?: number
-  doctorName?: string
-  departmentName?: string
-  departmentId?: number
-  calledTime?: string
-  callStatus?: number
-  callRound?: number
-}
-interface DeptItem {
-  departmentId: number
-  departmentName: string
-  calling: CallItem[]
-  callingCount: number
-  waitingCount: number
-}
+const route = useRoute()
+const router = useRouter()
 
-// ===== 状态 =====
+const mockMode = computed(() => isCallingBoardMockMode(route.query as Record<string, unknown>))
+const isHubView = computed(() => !route.params.departmentId)
+const departmentId = computed(() => {
+  const raw = route.params.departmentId
+  if (!raw || !String(raw).match(/^\d+$/)) return null
+  return Number(raw)
+})
+
 const now = ref(formatTime(new Date()))
-const departments = ref<DeptItem[]>([])
+const hubDepartments = ref<DeptBoardItem[]>([])
+const activeRows = ref<CallItem[]>([])
 const recentCalls = ref<CallItem[]>([])
+const totalWaiting = ref(0)
+const heroCall = ref<CallItem | null>(null)
 const flashRegisterId = ref<number | null>(null)
+const flashType = ref<'called' | 'answered' | 'passed' | null>(null)
 const flashDeptId = ref<number | null>(null)
+const heroFlash = ref(false)
+const tablePage = ref(0)
+const voiceReady = ref(false)
 
 const connState = ref<'idle' | 'connecting' | 'open' | 'error'>('idle')
-const connStatusText = computed(() => ({
-  idle: '未连接',
-  connecting: '连接中…',
-  open: '已订阅实时推送',
-  error: '连接出错，自动重连中…',
-}[connState.value] || ''))
-const connStatusClass = computed(() => ({
-  idle: 'dot-gray',
-  connecting: 'dot-yellow',
-  open: 'dot-green',
-  error: 'dot-red',
-}[connState.value] || 'dot-gray'))
 
-const voiceReady = ref(false)
+const zoneLabel = computed(() => {
+  const z = route.query.zone
+  if (!z) return ''
+  return Array.isArray(z) ? z[0] : String(z)
+})
+
+const boardTitle = computed(() => {
+  if (!isHubView.value) {
+    const name = activeRows.value[0]?.departmentName
+      ?? hubDepartments.value.find(d => d.departmentId === departmentId.value)?.departmentName
+    if (name) return `熙康云医院 · ${name}候诊大屏`
+    return '熙康云医院 · 科室候诊大屏'
+  }
+  return '熙康云医院 · 全院候诊导航'
+})
+
+const statsText = computed(() => {
+  if (isHubView.value) {
+    const calling = hubDepartments.value.reduce((s, d) => s + d.callingCount, 0)
+    const waiting = hubDepartments.value.reduce((s, d) => s + d.waitingCount, 0)
+    return `全院候诊 ${waiting} 人 · 正在叫号 ${calling} 人`
+  }
+  return `本科候诊 ${totalWaiting.value} 人 · 正在叫号 ${activeRows.value.length} 人`
+})
+
+const connStatusText = computed(() => {
+  if (mockMode.value) return '演示模式 · 模拟实时叫号'
+  return ({
+    idle: '未连接',
+    connecting: '连接中…',
+    open: '已订阅实时推送',
+    error: '连接出错，自动重连中…',
+  }[connState.value] || '')
+})
+
+const connStatusClass = computed(() => {
+  if (mockMode.value) return 'dot-yellow'
+  return ({
+    idle: 'dot-gray',
+    connecting: 'dot-yellow',
+    open: 'dot-green',
+    error: 'dot-red',
+  }[connState.value] || 'dot-gray')
+})
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(activeRows.value.length / 10)),
+)
 
 let es: EventSource | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
+let pageTimer: ReturnType<typeof setInterval> | null = null
+let stopMockSimulation: (() => void) | null = null
 
-// ===== 启动 =====
-onMounted(() => {
-  console.log('[DEBUG CallingBoard] onMounted! 页面已挂载')
-  console.log('[DEBUG CallingBoard] 当前 URL =', window.location.href)
-  console.log('[DEBUG CallingBoard] 当前 localStorage access_token =', localStorage.getItem('access_token'))
-  clockTimer = setInterval(() => { now.value = formatTime(new Date()) }, 1000)
-  refreshBoard()
-  pollTimer = setInterval(refreshBoard, 10_000)
-  connectSSE()
-})
+function applyDeptData(data: ReturnType<typeof createMockCallingBoardData>) {
+  activeRows.value = (data.active || []).filter(r => r.callStatus === 1)
+  recentCalls.value = data.recent || []
+  totalWaiting.value = data.stats?.totalWaiting ?? 0
 
-onUnmounted(() => {
-  es?.close()
-  if (pollTimer) clearInterval(pollTimer)
-  if (clockTimer) clearInterval(clockTimer)
-})
-
-// ===== SSE 订阅 /stream/global =====
-function connectSSE() {
-  connState.value = 'connecting'
-  console.log('[DEBUG CallingBoard] 即将创建 EventSource, URL = /api/registration/calling/stream/global')
-  es = new EventSource('/api/registration/calling/stream/global')
-
-  es.onopen = () => {
-    console.log('[DEBUG CallingBoard] SSE onopen!')
-    connState.value = 'open'
+  if (!heroCall.value && recentCalls.value.length) {
+    heroCall.value = recentCalls.value[0]
+  } else if (heroCall.value) {
+    const stillActive = activeRows.value.some(r => r.registerId === heroCall.value?.registerId)
+    if (!stillActive) {
+      heroCall.value = recentCalls.value[0] ?? activeRows.value[0] ?? null
+    }
   }
-  es.addEventListener('READY', (e: any) => {
-    console.log('[DEBUG CallingBoard] SSE READY 事件', e.data)
-    refreshBoard()
-  })
 
-  es.addEventListener('CALLED', (e: any) => {
-    try {
-      const payload = JSON.parse(e.data)
-      handleEvent('CALLED', payload)
-    } catch {}
-  })
-  es.addEventListener('ANSWERED', (e: any) => {
-    try {
-      const payload = JSON.parse(e.data)
-      handleEvent('ANSWERED', payload)
-    } catch {}
-  })
-  es.addEventListener('PASSED', (e: any) => {
-    try {
-      const payload = JSON.parse(e.data)
-      handleEvent('PASSED', payload)
-    } catch {}
-  })
-
-  es.onerror = (e: any) => {
-    console.warn('[DEBUG CallingBoard] SSE onerror!', e, 'readyState =', es?.readyState)
-    connState.value = 'error' /* EventSource 自动重连 */
+  if (tablePage.value >= totalPages.value) {
+    tablePage.value = 0
   }
 }
 
-function handleEvent(type: string, payload: any) {
-  // 新叫号：闪动对应科室卡片 + 顶部跑马灯置顶 + TTS
-  if (type === 'CALLED') {
-    flashDeptId.value = payload.departmentId ?? null
-    flashRegisterId.value = payload.registerId ?? null
-    setTimeout(() => { flashDeptId.value = null; flashRegisterId.value = null }, 1500)
-    speak(payload)
-  }
-  // 任何事件后都刷一次（让数据更新到最新状态）
-  refreshBoard()
+function triggerDeptHighlight(payload: CallItem) {
+  heroCall.value = payload
+  flashRegisterId.value = payload.registerId ?? null
+  flashType.value = 'called'
+  heroFlash.value = true
+  setTimeout(() => {
+    flashRegisterId.value = null
+    flashType.value = null
+    heroFlash.value = false
+  }, 1500)
+  speak(payload, false)
 }
 
-function speak(payload: any) {
-  if (!voiceReady.value) return
-  if (!('speechSynthesis' in window)) return
-  const text = `请${payload.patientName || ''}到${payload.departmentName || ''}${payload.doctorName || ''}医生处就诊`
-  const u = new SpeechSynthesisUtterance(text)
+// ANSWERED：患者进诊室。叫号"主角"离场，对应行绿闪提示"已应答"。
+// 不做 TTS（避免大厅反复播报"XX 已进诊室"造成噪音）。
+function triggerAnsweredHighlight(payload: CallItem) {
+  flashRegisterId.value = payload.registerId ?? null
+  flashType.value = 'answered'
+  setTimeout(() => {
+    flashRegisterId.value = null
+    flashType.value = null
+  }, 1200)
+}
+
+// PASSED：过号。对应行柔橙闪提示"号已过"，不立即清 heroCall
+// （医生可能马上重叫同一条，避免 hero 区抖动）。
+function triggerPassedHighlight(payload: CallItem) {
+  flashRegisterId.value = payload.registerId ?? null
+  flashType.value = 'passed'
+  setTimeout(() => {
+    flashRegisterId.value = null
+    flashType.value = null
+  }, 1000)
+}
+
+function triggerHubHighlight(payload: CallItem) {
+  flashDeptId.value = payload.departmentId ?? null
+  setTimeout(() => { flashDeptId.value = null }, 1500)
+  speak(payload, true)
+}
+
+function speak(payload: CallItem, includeDept: boolean) {
+  if (!voiceReady.value || !('speechSynthesis' in window)) return
+  const u = new SpeechSynthesisUtterance(buildSpeakText(payload, includeDept))
   u.lang = 'zh-CN'
   window.speechSynthesis.speak(u)
 }
@@ -194,38 +216,161 @@ function enableVoice() {
   }
 }
 
-// ===== HTTP 拉全院叫号板 =====
-async function refreshBoard() {
-  console.log('[DEBUG CallingBoard] refreshBoard 开始')
+function goToDepartment(id: number) {
+  router.push({ path: `/calling-board/${id}`, query: { ...route.query } })
+}
+
+function goToHub() {
+  router.push({ path: '/calling-board', query: { ...route.query } })
+}
+
+async function refreshHub() {
+  if (mockMode.value) return
   try {
-    const data: any = await http({
-      url: '/registration/calling/board/all',
-      method: 'GET',
-      skipAuthHandling: true,
-      skipErrorMessage: true,
-    })
-    console.log('[DEBUG CallingBoard] refreshBoard 成功, departments count =', data?.departments?.length)
-    if (data) {
-      departments.value = data.departments || []
-      recentCalls.value = data.recent || []
-    }
-  } catch (err) {
-    console.warn('[DEBUG CallingBoard] refreshBoard 失败:', err)
-    // 静默失败，SSE 兜底
+    const data = await fetchHubBoard()
+    if (data) hubDepartments.value = data.departments || []
+  } catch { /* silent */ }
+}
+
+async function refreshDept() {
+  if (mockMode.value || departmentId.value == null) return
+  try {
+    const data = await fetchDeptBoard(departmentId.value)
+    if (data) applyDeptData(data)
+  } catch { /* silent */ }
+}
+
+function refreshCurrent() {
+  if (isHubView.value) refreshHub()
+  else refreshDept()
+}
+
+function initMockHub() {
+  const hub = createMockHubData()
+  hubDepartments.value = hub.departments
+  stopMockSimulation = startCallingBoardHubMockSimulation({
+    onCalled: (item) => triggerHubHighlight(item),
+    onHubUpdate: (updated) => { hubDepartments.value = updated.departments },
+    getHub: () => ({ departments: hubDepartments.value, recent: [] }),
+  })
+}
+
+function initMockDept() {
+  if (departmentId.value == null) return
+  const data = createMockCallingBoardData([departmentId.value])
+  applyDeptData(data)
+  heroCall.value = data.recent[0] ?? data.active[0] ?? null
+
+  stopMockSimulation = startCallingBoardMockSimulation(
+    {
+      onCalled: (item) => {
+        if (item.departmentId === departmentId.value) {
+          triggerDeptHighlight(item)
+        }
+      },
+      onRefresh: () => createMockCallingBoardData([departmentId.value!]),
+    },
+    () => activeRows.value,
+    applyDeptData,
+  )
+}
+
+function initMock() {
+  stopMockSimulation?.()
+  if (isHubView.value) initMockHub()
+  else initMockDept()
+}
+
+function connectSSE() {
+  es?.close()
+  connState.value = 'connecting'
+
+  const url = isHubView.value
+    ? '/api/registration/calling/stream/global'
+    : `/api/registration/calling/stream/department/${departmentId.value}`
+
+  es = new EventSource(url)
+  es.onopen = () => { connState.value = 'open' }
+  es.addEventListener('READY', () => { refreshCurrent() })
+  es.addEventListener('CALLED', (e: MessageEvent) => {
+    try { handleEvent('CALLED', JSON.parse(e.data)) } catch { /* ignore */ }
+  })
+  es.addEventListener('ANSWERED', (e: MessageEvent) => {
+    try { handleEvent('ANSWERED', JSON.parse(e.data)) } catch { /* ignore */ }
+  })
+  es.addEventListener('PASSED', (e: MessageEvent) => {
+    try { handleEvent('PASSED', JSON.parse(e.data)) } catch { /* ignore */ }
+  })
+  es.onerror = () => { connState.value = 'error' }
+}
+
+function handleEvent(type: string, payload: CallItem) {
+  // Hub 视图：所有事件都全量刷新科室卡片即可，CALLED 时额外高亮科室
+  if (isHubView.value) {
+    if (type === 'CALLED') triggerHubHighlight(payload)
+    refreshHub()
+    return
   }
+
+  // Dept 视图：本科事件触发局部高亮 + 全量刷新
+  if (payload.departmentId !== departmentId.value) {
+    refreshDept()
+    return
+  }
+
+  if (type === 'CALLED') {
+    triggerDeptHighlight(payload)
+  } else if (type === 'ANSWERED') {
+    triggerAnsweredHighlight(payload)
+  } else if (type === 'PASSED') {
+    triggerPassedHighlight(payload)
+  }
+  refreshDept()
 }
 
-function formatTime(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+function startLive() {
+  refreshCurrent()
+  pollTimer = setInterval(refreshCurrent, 10_000)
+  connectSSE()
 }
 
-function maskName(name?: string) {
-  if (!name) return '—'
-  if (name.length <= 1) return name
-  if (name.length === 2) return name[0] + '*'
-  return name[0] + '*'.repeat(name.length - 2) + name[name.length - 1]
+function stopLive() {
+  es?.close()
+  es = null
+  if (pollTimer) clearInterval(pollTimer)
+  pollTimer = null
+  stopMockSimulation?.()
+  stopMockSimulation = null
 }
+
+onMounted(() => {
+  clockTimer = setInterval(() => { now.value = formatTime(new Date()) }, 1000)
+  pageTimer = setInterval(() => {
+    if (isHubView.value || totalPages.value <= 1) return
+    tablePage.value = (tablePage.value + 1) % totalPages.value
+  }, PAGE_ROTATE_MS)
+
+  if (mockMode.value) initMock()
+  else startLive()
+})
+
+onUnmounted(() => {
+  stopLive()
+  if (clockTimer) clearInterval(clockTimer)
+  if (pageTimer) clearInterval(pageTimer)
+})
+
+watch([isHubView, departmentId, mockMode], () => {
+  tablePage.value = 0
+  heroCall.value = null
+  stopLive()
+
+  if (mockMode.value) {
+    initMock()
+    return
+  }
+  startLive()
+})
 </script>
 
 <style scoped>
@@ -246,153 +391,39 @@ function maskName(name?: string) {
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   padding-bottom: 10px;
 }
+
+.title-wrap { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
 .title { font-size: 26px; font-weight: 700; }
+.zone-label {
+  font-size: 16px;
+  color: #93c5fd;
+  padding: 2px 12px;
+  border: 1px solid rgba(147, 197, 253, 0.4);
+  border-radius: 4px;
+}
+.mock-badge {
+  font-size: 14px;
+  color: #fde68a;
+  padding: 2px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.6);
+  border-radius: 4px;
+  background: rgba(251, 191, 36, 0.15);
+  animation: pulse 2s infinite;
+}
 .clock { font-size: 20px; color: #cbd5e1; font-variant-numeric: tabular-nums; }
 
-/* ===== 顶部滚动播报 ===== */
-.recent-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 12px 0;
-  padding: 12px 20px;
-  background: rgba(251, 191, 36, 0.12);
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  border-radius: 10px;
-}
-.recent-label {
-  font-size: 18px;
-  font-weight: 700;
-  color: #fbbf24;
-  letter-spacing: 4px;
-  flex-shrink: 0;
-}
-.recent-track { flex: 1; overflow: hidden; }
-.recent-list {
-  display: flex;
-  gap: 32px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.recent-item {
-  font-size: 18px;
-  color: #fde68a;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.recent-item.recent-flash {
-  animation: recentFlash 1.5s ease-out;
-  color: #fff;
-  font-weight: 700;
-}
-.recent-item .r-sep { color: rgba(251, 191, 36, 0.5); }
-.recent-item .r-num { color: #fff; font-weight: 700; margin: 0 4px; }
-.recent-empty { font-size: 16px; color: #94a3b8; }
-
-@keyframes recentFlash {
-  0%   { background: rgba(251, 191, 36, 0.4); transform: scale(1.05); }
-  100% { background: transparent; transform: scale(1); }
-}
-
-.recent-slide-enter-active, .recent-slide-leave-active { transition: all 0.4s ease; }
-.recent-slide-enter-from { opacity: 0; transform: translateX(20px); }
-.recent-slide-leave-to { opacity: 0; transform: translateX(-20px); }
-
-/* ===== 科室卡片墙 ===== */
-.dept-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 14px;
-  align-content: start;
-  overflow-y: auto;
-  padding: 4px;
-}
-.dept-card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: all 0.2s ease;
-}
-.dept-card.is-calling {
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.5);
-}
-.dept-card.flash {
-  animation: cardFlash 1.5s ease-out;
-}
-@keyframes cardFlash {
-  0%   { background: rgba(251, 191, 36, 0.5); transform: scale(1.04); }
-  100% { background: rgba(59, 130, 246, 0.12); transform: scale(1); }
-}
-
-.dept-card__name {
-  font-size: 20px;
-  font-weight: 700;
-  color: #93c5fd;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  padding-bottom: 6px;
-}
-.dept-card__main {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.dept-card__call {
-  flex: 1;
-  text-align: center;
-  background: rgba(0, 0, 0, 0.2);
-  padding: 8px 12px;
-  border-radius: 6px;
-  min-width: 80px;
-}
-.dept-card__doctor { font-size: 14px; color: #cbd5e1; margin-bottom: 2px; }
-.dept-card__num {
-  font-size: 40px;
-  font-weight: 900;
-  color: #fbbf24;
-  line-height: 1.1;
-}
-.dept-card__num .unit { font-size: 18px; color: #fbbf24; margin-left: 2px; }
-.dept-card__patient { font-size: 14px; color: #e2e8f0; margin-top: 2px; }
-
-.dept-card__idle {
-  text-align: center;
-  color: #64748b;
-  font-size: 16px;
-  padding: 20px 0;
-}
-.dept-card__meta {
-  font-size: 13px;
-  color: #94a3b8;
-  text-align: right;
-}
-.dept-card__meta strong { color: #cbd5e1; }
-
-.dept-empty {
-  grid-column: 1 / -1;
-  text-align: center;
-  color: #94a3b8;
-  padding: 60px 0;
-  font-size: 22px;
-}
-
-/* ===== 底部连接条 ===== */
 .conn-bar {
   display: flex;
   align-items: center;
   gap: 12px;
   font-size: 13px;
   color: #94a3b8;
-  margin-top: 12px;
+  margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
+.stats { margin-left: 8px; }
+.stats strong { color: #cbd5e1; }
 .dot { width: 8px; height: 8px; border-radius: 50%; }
 .dot-gray { background: #64748b; }
 .dot-yellow { background: #fbbf24; animation: pulse 1s infinite; }

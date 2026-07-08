@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import { registrationApi } from '@/shared/api/modules/registration'
+import { clinicalRecordApi } from '@/shared/api/modules/clinicalRecord'
+import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
+import { useAuthStore } from '@/app/stores/auth'
 import type { DepartmentOption } from '@/shared/types/registration'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const followupUnread = ref(0)
+let unreadTimer: ReturnType<typeof setInterval> | undefined
 
 const medicalServices = [
   { key: 'registration', title: '我的挂号', desc: '查看已预约挂号，或继续发起新的导诊挂号', icon: '📋', path: '/patient/registration' },
@@ -86,7 +92,39 @@ function navigateTo(path: string) {
   router.push(path)
 }
 
-onMounted(loadDepartments)
+async function loadFollowupUnread() {
+  const patientId = authStore.currentPatientId || authStore.currentPatient?.patientId
+  if (!patientId) {
+    followupUnread.value = 0
+    return
+  }
+  try {
+    const visits = await clinicalRecordApi.patientVisits(patientId)
+    const counts = await Promise.all(
+      visits.slice(0, 5).map(async (visit) => {
+        try {
+          const summary = await medtechFollowUpApi.getPatientCommunicationUnreadSummary(visit.registerId, { patientId })
+          return summary.totalUnread ?? 0
+        } catch {
+          return 0
+        }
+      }),
+    )
+    followupUnread.value = counts.reduce((sum, n) => sum + n, 0)
+  } catch {
+    followupUnread.value = 0
+  }
+}
+
+onMounted(() => {
+  void loadDepartments()
+  void loadFollowupUnread()
+  unreadTimer = setInterval(() => void loadFollowupUnread(), 30_000)
+})
+
+onUnmounted(() => {
+  if (unreadTimer) clearInterval(unreadTimer)
+})
 </script>
 
 <template>
@@ -134,7 +172,10 @@ onMounted(loadDepartments)
           @click="navigateTo(service.path)"
         >
           <span class="service-icon">{{ service.icon }}</span>
-          <strong>{{ service.title }}</strong>
+          <strong>
+            {{ service.title }}
+            <span v-if="service.key === 'followup' && followupUnread > 0" class="service-unread">{{ followupUnread }}</span>
+          </strong>
           <span>{{ service.desc }}</span>
         </button>
       </div>
@@ -477,10 +518,27 @@ onMounted(loadDepartments)
 }
 
 .service-item strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--color-text);
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+.service-unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-danger, #e74c3c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .service-item span:last-child {

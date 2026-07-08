@@ -1,4 +1,5 @@
 import { http } from '../request'
+import type { AdminMonitoringAlert } from '@/shared/types/admin'
 import type { TriageAnalysisDetail, TriageAnalysisResult } from '@/shared/types/ai'
 import type {
   ChargePayload,
@@ -24,6 +25,7 @@ import type {
   TriageDeskRecord,
 } from '@/shared/types/registration'
 import type { DrugOption } from '@/shared/types/pharmacy'
+import type { CallingBoardHubResponse, CallingBoardDeptResponse } from '@/shared/types/calling'
 
 function parseJsonField<T>(value: unknown): T | null {
   if (value == null || value === '') {
@@ -262,10 +264,18 @@ export const registrationApi = {
    * 每日趋势（默认近 7 天）
    */
   dailyTrend(days = 7) {
-    return http<DailyTrendPoint[]>({
+    return http<DailyTrendResponse | DailyTrendPoint[]>({
       url: '/registration/stats/daily-trend',
       method: 'GET',
       params: { days },
+    }).then((data) => {
+      if (Array.isArray(data)) {
+        return { trend: data, chargesAvailable: true }
+      }
+      return {
+        trend: data.trend ?? [],
+        chargesAvailable: data.chargesAvailable ?? true,
+      }
     })
   },
 
@@ -275,6 +285,39 @@ export const registrationApi = {
   kpi() {
     return http<KpiSummary>({
       url: '/registration/stats/kpi',
+      method: 'GET',
+    })
+  },
+
+  monitoringAlerts() {
+    return http<AdminMonitoringAlert[]>({
+      url: '/registration/admin/monitoring/alerts',
+      method: 'GET',
+    })
+  },
+
+  dismissMonitoringAlert(alertKey: string, status: 'processing' | 'resolved') {
+    return http<void>({
+      url: `/registration/admin/monitoring/alerts/${encodeURIComponent(alertKey)}/dismiss`,
+      method: 'PUT',
+      data: { status },
+    })
+  },
+
+  /**
+   * 全院叫号板：各科室候诊/叫号人数及明细
+   */
+  callingBoardAll(includeIdle = true) {
+    return http<CallingBoardHubResponse>({
+      url: '/registration/calling/board/all',
+      method: 'GET',
+      params: { includeIdle },
+    })
+  },
+
+  callingBoardDepartment(departmentId: number) {
+    return http<CallingBoardDeptResponse>({
+      url: `/registration/calling/board/${departmentId}`,
       method: 'GET',
     })
   },
@@ -288,6 +331,11 @@ export interface DepartmentWorkloadItem {
   visits: number
   inspections: number
   prescriptions: number
+}
+
+export interface DailyTrendResponse {
+  trend: DailyTrendPoint[]
+  chargesAvailable: boolean
 }
 
 export interface DailyTrendPoint {

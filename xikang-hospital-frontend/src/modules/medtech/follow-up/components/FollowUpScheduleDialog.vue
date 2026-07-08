@@ -40,7 +40,7 @@ const dialogVisible = computed({
 const dateLabel = computed(() => formatYmdWeekday(props.scheduleDate))
 
 const daySchedules = computed(() =>
-  props.schedules.filter((item) => item.scheduleDate === props.scheduleDate),
+  (props.schedules ?? []).filter((item) => item.scheduleDate === props.scheduleDate),
 )
 
 const interviewSchedules = computed(() =>
@@ -61,7 +61,7 @@ const scheduledInterviewRegisterIds = computed(
 )
 
 const availablePatients = computed(() =>
-  props.patients.filter((patient) => !scheduledInterviewRegisterIds.value.has(patient.registerId)),
+  (props.patients ?? []).filter((patient) => !scheduledInterviewRegisterIds.value.has(patient.registerId)),
 )
 
 const canAddInterview = computed(

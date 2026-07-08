@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElEmpty, ElMessage, ElOption, ElSelect } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
@@ -63,6 +63,8 @@ const revisitPlans = computed(() =>
 )
 
 const glucosePanelRef = ref<InstanceType<typeof GlucoseForecastPanel> | null>(null)
+const communicationUnread = ref(0)
+let unreadTimer: ReturnType<typeof setInterval> | undefined
 
 function statusTone(status?: string) {
   if (status === 'completed') return 'success'
@@ -172,6 +174,7 @@ watch(selectedRegisterId, () => {
     activeTab.value = 'lastVisit'
   }
   void loadPortalData()
+  void loadCommunicationUnread()
 })
 
 watch(
@@ -185,9 +188,45 @@ watch(
 )
 
 watch(activeTab, (tab) => {
-  if (tab !== 'communication') {
+  if (tab === 'communication' && selectedRegisterId.value) {
+    void markCommunicationRead()
+  } else if (tab !== 'communication') {
     void loadPortalData()
   }
+})
+
+async function loadCommunicationUnread() {
+  if (!selectedRegisterId.value) {
+    communicationUnread.value = 0
+    return
+  }
+  try {
+    const summary = await medtechFollowUpApi.getPatientCommunicationUnreadSummary(selectedRegisterId.value, {
+      patientId: patientId.value,
+    })
+    communicationUnread.value = summary.totalUnread ?? 0
+  } catch {
+    communicationUnread.value = 0
+  }
+}
+
+async function markCommunicationRead() {
+  if (!selectedRegisterId.value) return
+  try {
+    await medtechFollowUpApi.markPatientCommunicationRead(selectedRegisterId.value, { patientId: patientId.value })
+    communicationUnread.value = 0
+  } catch {
+    // ignore
+  }
+}
+
+onMounted(() => {
+  void loadCommunicationUnread()
+  unreadTimer = setInterval(() => void loadCommunicationUnread(), 30_000)
+})
+
+onUnmounted(() => {
+  if (unreadTimer) clearInterval(unreadTimer)
 })
 </script>
 
@@ -227,6 +266,7 @@ watch(activeTab, (tab) => {
         </button>
         <button :class="['tab-btn', { active: activeTab === 'communication' }]" @click="activeTab = 'communication'">
           医患沟通
+          <span v-if="communicationUnread > 0" class="tab-unread">{{ communicationUnread }}</span>
         </button>
         <button :class="['tab-btn', { active: activeTab === 'plans' }]" @click="activeTab = 'plans'">
           随访计划
@@ -442,6 +482,21 @@ watch(activeTab, (tab) => {
   background: var(--color-primary-soft);
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+.tab-unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-inline-start: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-danger, #e74c3c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .empty-card {

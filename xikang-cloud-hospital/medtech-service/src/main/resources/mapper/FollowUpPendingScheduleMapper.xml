@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpPendingScheduleMapper">
+
+    <insert id="insertPending">
+        INSERT INTO follow_up_pending_schedule (
+            register_id, department_id, priority_level, employee_id,
+            work_date, visit_ended_at, enqueue_payload, status
+        ) VALUES (
+            #{registerId}, #{departmentId}, #{priorityLevel}, #{employeeId},
+            #{workDate}, #{visitEndedAt}, COALESCE(#{enqueuePayloadJson}::jsonb, '{}'::jsonb), 'pending'
+        )
+        ON CONFLICT (register_id, work_date) DO NOTHING
+    </insert>
+
+    <select id="selectByRegisterAndWorkDate" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            department_id AS "departmentId",
+            priority_level AS "priorityLevel",
+            employee_id AS "employeeId",
+            work_date AS "workDate",
+            status AS "status"
+        FROM follow_up_pending_schedule
+        WHERE register_id = #{registerId}
+          AND work_date = #{workDate}
+        LIMIT 1
+    </select>
+
+    <select id="selectPendingByDepartment" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            department_id AS "departmentId",
+            priority_level AS "priorityLevel",
+            employee_id AS "employeeId",
+            work_date AS "workDate",
+            visit_ended_at AS "visitEndedAt",
+            status AS "status"
+        FROM follow_up_pending_schedule
+        WHERE department_id = #{departmentId}
+          AND status = #{status}
+          AND work_date &gt;= #{from}
+          AND work_date &lt;= #{to}
+        ORDER BY work_date ASC, id ASC
+    </select>
+
+    <update id="markApplied">
+        UPDATE follow_up_pending_schedule
+        SET status = 'applied'
+        WHERE id = #{id}
+          AND status = 'pending'
+    </update>
+
+</mapper>

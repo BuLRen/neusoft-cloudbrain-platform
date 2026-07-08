@@ -19,5 +19,9 @@ public interface FollowUpClinicalMapper {
 
     Integer selectRegisterDepartmentId(@Param("registerId") Long registerId);
 
+    Map<String, Object> selectRegisterDepartmentBrief(@Param("registerId") Long registerId);
+
+    Map<String, Object> selectRegisterDepartmentBriefByDepartmentId(@Param("departmentId") Long departmentId);
+
     int upsertLastVisitSnapshot(Map<String, Object> payload);
 }

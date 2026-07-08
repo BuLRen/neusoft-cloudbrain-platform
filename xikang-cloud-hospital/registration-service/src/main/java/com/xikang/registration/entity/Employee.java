@@ -13,6 +13,8 @@ public class Employee {
     private Long registLevelId;
     private String realname;
     private Integer delmark;
+    /** 诊室名称，候诊大屏展示用 */
+    private String clinicRoom;
 
     // 扩展字段（用于联表查询）
     private String deptName;

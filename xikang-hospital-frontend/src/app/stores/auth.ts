@@ -9,6 +9,7 @@ import {
   saveRememberedUsername,
   setTokens,
 } from '@/shared/auth/tokenStorage'
+import { isAccessTokenExpired } from '@/shared/auth/jwtUtils'
 
 export interface PatientInfo {
   patientId: number
@@ -65,7 +66,7 @@ export const useAuthStore = defineStore('auth', () => {
         return
       }
 
-      if (!token.value && canRefreshSession()) {
+      if ((!token.value || isAccessTokenExpired(token.value)) && canRefreshSession()) {
         await refreshAccessToken()
       }
 

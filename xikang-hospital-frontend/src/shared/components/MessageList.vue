@@ -131,10 +131,14 @@ function onFilterChange() {
   load()
 }
 
-function typeTagType(t: NotificationType) {
+function typeTagType(t: NotificationType | string) {
   if (t === 'doctor_change') return 'warning'
   if (t === 'leave_approved' || t === 'adjust_confirmed') return 'success'
   if (t === 'leave_rejected') return 'danger'
+  if (t === 'PAYMENT_SUCCESS') return 'success'
+  if (t === 'REFUND_SUCCESS') return 'warning'
+  if (t === 'EXAM_FEE_CREATED') return 'warning'
+  if (t === 'PRESCRIPTION_CREATED') return 'success'
   return 'info'
 }
 

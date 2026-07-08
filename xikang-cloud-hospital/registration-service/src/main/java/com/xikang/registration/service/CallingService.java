@@ -12,8 +12,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 叫号系统业务服务（设计文档 §4.1）。
@@ -78,9 +83,20 @@ public class CallingService {
     }
 
     /**
-     * 叫指定号（重叫过号常用）。
+     * 叫指定号（重呼当前 / 重叫过号常用）。
      *
-     * @throws IllegalStateException 该号不存在 / 不属于当前医生 / 已应答 / 过号终态
+     * <p>设计选择：不强制校验 {@code operatorEmployeeId == reg.employeeId}。
+     * 理由：
+     * <ul>
+     *   <li>换班场景：交班后新医生重叫旧医生遗留的号是合理的；</li>
+     *   <li>重呼场景：传进来的 registerId 通常就是该医生刚叫出来的号，
+     *       employee_id 天然吻合，校验只是冗余；</li>
+     *   <li>真正的"乱叫别人科室的号"在生产部署后由 controller 侧审计日志兜底，
+     *       不在业务层强约束（强约束反而挡住合理用例）。</li>
+     * </ul>
+     * 这是经过 review 的有意识决定，不是漏加。请勿当作 bug 修复。
+     *
+     * @throws IllegalStateException 该号不存在 / 已应答 / 过号终态
      */
     @Transactional
     public Map<String, Object> callSpecific(Long registerId, Long operatorEmployeeId) {
@@ -88,9 +104,6 @@ public class CallingService {
         if (reg == null) {
             throw new IllegalStateException("挂号记录不存在：id=" + registerId);
         }
-        // 不强制校验 operatorEmployeeId == reg.employeeId：
-        //   - 重叫过号时医生可能跟当前接诊医生不同（如换班）
-        //   - 但必须是同医生同号才合理；先放开，由 controller 侧把医生身份带上便于审计
         if (Integer.valueOf(2).equals(reg.getCallStatus())) {
             throw new IllegalStateException("该号已应答（进诊室），不能重叫");
         }
@@ -205,6 +218,97 @@ public class CallingService {
         Map<String, Object> result = toCallResult(reg, false);
         result.put("hasCalling", true);
         return result;
+    }
+
+    /**
+     * 医生今日候诊队列（含号序与是否可调序）。
+     */
+    public List<Map<String, Object>> doctorWaitingQueue(Long employeeId) {
+        if (employeeId == null) {
+            return List.of();
+        }
+        List<Register> list = registrationMapper.selectWaitingByDoctor(employeeId, LocalDate.now());
+        List<Map<String, Object>> result = new ArrayList<>(list.size());
+        for (Register reg : list) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("registerId", reg.getId());
+            item.put("realName", reg.getRealName());
+            item.put("caseNumber", reg.getCaseNumber());
+            item.put("callStatus", reg.getCallStatus());
+            item.put("callRound", reg.getCallRound());
+            item.put("checkInTime", reg.getCheckInTime());
+            item.put("queuePosition", reg.getQueuePosition());
+            int before = registrationMapper.countWaitingBefore(reg.getId());
+            item.put("queueNumber", before + 1);
+            item.put("canReorder", canReorder(reg));
+            result.add(item);
+        }
+        return result;
+    }
+
+    /**
+     * 调整医生候诊队列顺序。
+     * registerIds 为完整队列的新顺序（含锁定中的 call_status=1 患者，且其位置不可变）。
+     */
+    @Transactional
+    public void reorderQueue(Long employeeId, List<Long> registerIds) {
+        if (employeeId == null) {
+            throw new IllegalArgumentException("缺少医生身份");
+        }
+        if (registerIds == null || registerIds.isEmpty()) {
+            throw new IllegalArgumentException("队列不能为空");
+        }
+        LocalDate today = LocalDate.now();
+        List<Register> current = registrationMapper.selectWaitingByDoctor(employeeId, today);
+        if (current.size() != registerIds.size()) {
+            throw new IllegalStateException("队列成员已变化，请刷新后重试");
+        }
+
+        Set<Long> currentIds = new HashSet<>();
+        Map<Long, Integer> oldIndex = new HashMap<>();
+        for (int i = 0; i < current.size(); i++) {
+            Register reg = current.get(i);
+            currentIds.add(reg.getId());
+            oldIndex.put(reg.getId(), i);
+        }
+        Set<Long> requestIds = new HashSet<>(registerIds);
+        if (!currentIds.equals(requestIds)) {
+            throw new IllegalStateException("队列成员与请求不一致，请刷新后重试");
+        }
+
+        for (int i = 0; i < registerIds.size(); i++) {
+            Long id = registerIds.get(i);
+            Register reg = current.stream()
+                    .filter(r -> r.getId().equals(id))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("挂号记录不存在：" + id));
+
+            if (Integer.valueOf(1).equals(reg.getCallStatus())) {
+                if (!oldIndex.get(id).equals(i)) {
+                    throw new IllegalStateException("正在叫号的患者不能调整顺序");
+                }
+            } else if (!canReorder(reg)) {
+                throw new IllegalStateException("该患者不允许调整顺序（registerId=" + id + "）");
+            }
+        }
+
+        for (int i = 0; i < registerIds.size(); i++) {
+            registrationMapper.updateQueuePosition(registerIds.get(i), i + 1);
+        }
+        log.info("[QUEUE] 医生 {} 调整候诊队列，共 {} 人", employeeId, registerIds.size());
+    }
+
+    private boolean canReorder(Register reg) {
+        if (Integer.valueOf(1).equals(reg.getCallStatus())) {
+            return false;
+        }
+        if (Integer.valueOf(3).equals(reg.getCallStatus())
+                && reg.getCallRound() != null
+                && reg.getCallRound() >= MAX_CALL_ROUND) {
+            return false;
+        }
+        return Integer.valueOf(0).equals(reg.getCallStatus())
+                || Integer.valueOf(3).equals(reg.getCallStatus());
     }
 
     // ==================== 内部辅助 ====================

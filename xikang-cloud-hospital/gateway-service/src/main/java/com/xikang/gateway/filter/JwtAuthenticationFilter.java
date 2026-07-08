@@ -21,15 +21,20 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
     private static final String ACCESS_COOKIE_NAME = "access_token";
     // 注意：isWhitelisted 用的是 path.contains(pattern) 子串匹配
-    // 因此每个模式都必须足够"独特"，避免误伤其他接口
+    // 因此每个模式都必须足够"独特"，避免误伤其他接口。
+    // ⚠ 扩展白名单前必须 grep 全仓确认新 pattern 不会出现在任何需要鉴权的接口路径中
+    //    （例如 /check-in 会命中任何含该子串的路径，将来加 /xxx/check-in-history 也会被放行）。
     // - /ws/voice：AI 语音 WebSocket，公共设备
+    // - /ws/notification：消息通知 WebSocket —— 鉴权由 notification-service
+    //   的 WsAuthHandshakeInterceptor 在握手时从 query 解析 token + role 自行处理，
+    //   不能由 gateway 用 header 取 token（浏览器原生 WebSocket 不支持自定义 header）
     // - /calling/stream/：叫号系统 SSE 订阅端点（大屏/报到机），公共设备
     //   路径形如 /api/registration/calling/stream/department/{id}，子串匹配无冲突
     // - /calling/board/：叫号板查询端点（大屏），公共设备
     //   路径形如 /api/registration/calling/board/{deptId}，子串匹配无冲突
     // - /check-in：报到机扫码报到接口，路径形如 /api/registration/{id}/check-in
     //   含 check-in 子串的本系统路径只有报到接口，无安全风险
-    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/api/auth/captcha,/ws/voice,/api/voice/,/calling/stream/,/calling/board/,/critical-value/stream/,/check-in,/api/medtech/internal/";
+    private static final String AUTH_WHITELIST = "/api/auth/login,/api/auth/register,/api/auth/refresh,/api/auth/logout,/api/auth/me,/api/auth/captcha,/ws/voice,/ws/notification,/api/voice/,/calling/stream/,/calling/board/,/check-in,/api/medtech/internal/,/critical-value/stream/";
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -79,13 +84,16 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
     }
 
     private String extractToken(ServerWebExchange exchange) {
-        // Prefer HttpOnly cookie token (recommended)
+        String bearerToken = extractToken(exchange.getRequest());
         var cookie = exchange.getRequest().getCookies().getFirst(ACCESS_COOKIE_NAME);
         if (cookie != null && cookie.getValue() != null && !cookie.getValue().isBlank()) {
-            return cookie.getValue();
+            String cookieToken = cookie.getValue();
+            if (JwtUtils.validateToken(cookieToken)) {
+                return cookieToken;
+            }
+            // Cookie 中 token 已过期/无效时，回退到 Authorization Bearer（refresh 后 localStorage 可能更新更快）
         }
-        // Fallback to Authorization Bearer token (useful for debugging)
-        return extractToken(exchange.getRequest());
+        return bearerToken;
     }
 
     private Mono<Void> unauthorized(ServerHttpResponse response) {

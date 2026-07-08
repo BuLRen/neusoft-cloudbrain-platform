@@ -91,6 +91,12 @@ blobClient.interceptors.response.use(
       originalRequest.__isRetryRequest = true
       try {
         await refreshSessionOnce()
+        if (originalRequest.headers) {
+          const nextToken = getAccessToken()
+          if (nextToken) {
+            originalRequest.headers.set('Authorization', `Bearer ${nextToken}`)
+          }
+        }
         return blobClient.request(originalRequest)
       } catch {
         authStore.clearSession()

@@ -7,6 +7,7 @@
         <result column="deptment_id" property="deptmentId"/>
         <result column="regist_level_id" property="registLevelId"/>
         <result column="realname" property="realname"/>
+        <result column="clinic_room" property="clinicRoom"/>
         <result column="delmark" property="delmark"/>
         <result column="dept_name" property="deptName"/>
         <result column="regist_name" property="registName"/>
@@ -51,7 +52,7 @@
 
     <!-- 根据ID查询医生 -->
     <select id="selectById" resultMap="BaseResultMap">
-        SELECT e.id, e.deptment_id, e.regist_level_id, e.realname, e.delmark,
+        SELECT e.id, e.deptment_id, e.regist_level_id, e.realname, e.clinic_room, e.delmark,
                d.dept_name, r.regist_name
         FROM employee e
         LEFT JOIN department d ON e.deptment_id = d.id

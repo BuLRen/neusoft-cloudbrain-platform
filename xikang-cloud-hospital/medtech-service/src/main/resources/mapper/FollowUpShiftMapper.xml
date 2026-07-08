@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpShiftMapper">
+
+    <select id="selectPlanByDeptMonth" resultType="map">
+        SELECT
+            id AS "id",
+            department_id AS "departmentId",
+            month AS "month",
+            status AS "status",
+            ai_generated AS "aiGenerated",
+            ai_summary AS "aiSummary",
+            created_by AS "createdBy",
+            created_at AS "createdAt",
+            published_at AS "publishedAt"
+        FROM follow_up_shift_plan
+        WHERE department_id = #{departmentId}
+          AND month = #{month}
+        LIMIT 1
+    </select>
+
+    <select id="selectPlanById" resultType="map">
+        SELECT
+            id AS "id",
+            department_id AS "departmentId",
+            month AS "month",
+            status AS "status",
+            ai_generated AS "aiGenerated",
+            ai_summary AS "aiSummary",
+            created_by AS "createdBy",
+            created_at AS "createdAt",
+            published_at AS "publishedAt"
+        FROM follow_up_shift_plan
+        WHERE id = #{planId}
+        LIMIT 1
+    </select>
+
+    <insert id="insertPlan" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_shift_plan (
+            department_id, month, status, ai_generated, ai_summary, created_by
+        ) VALUES (
+            #{departmentId}, #{month},
+            COALESCE(#{status}, 'draft'),
+            COALESCE(#{aiGenerated}, FALSE),
+            #{aiSummary}, #{createdBy}
+        )
+    </insert>
+
+    <update id="updatePlanStatus">
+        UPDATE follow_up_shift_plan
+        SET status = #{status},
+            published_at = CASE WHEN #{status} = 'published' THEN NOW() ELSE published_at END
+        WHERE id = #{planId}
+    </update>
+
+    <delete id="deleteShiftsByPlanId">
+        DELETE FROM follow_up_staff_shift WHERE plan_id = #{planId}
+    </delete>
+
+    <insert id="insertStaffShift" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_staff_shift (
+            plan_id, employee_id, department_id, work_date, shift_type, status
+        ) VALUES (
+            #{planId}, #{employeeId}, #{departmentId}, #{workDate},
+            COALESCE(#{shiftType}, 'full'),
+            COALESCE(#{status}, 'planned')
+        )
+    </insert>
+
+    <insert id="insertContactTask">
+        INSERT INTO follow_up_shift_contact_task (
+            shift_id, register_id, priority_level, status
+        ) VALUES (
+            #{shiftId}, #{registerId},
+            COALESCE(#{priorityLevel}, 'normal'),
+            COALESCE(#{status}, 'planned')
+        )
+        ON CONFLICT (shift_id, register_id) DO NOTHING
+    </insert>
+
+    <select id="selectStaffShifts" resultType="map">
+        SELECT
+            s.id AS "id",
+            s.plan_id AS "planId",
+            s.employee_id AS "employeeId",
+            e.realname AS "employeeName",
+            s.department_id AS "departmentId",
+            s.work_date AS "workDate",
+            s.shift_type AS "shiftType",
+            s.status AS "status"
+        FROM follow_up_staff_shift s
+        LEFT JOIN employee e ON e.id = s.employee_id
+        <where>
+            <if test="employeeId != null">AND s.employee_id = #{employeeId}</if>
+            <if test="departmentId != null">AND s.department_id = #{departmentId}</if>
+            <if test="from != null">AND s.work_date &gt;= #{from}</if>
+            <if test="to != null">AND s.work_date &lt;= #{to}</if>
+        </where>
+        ORDER BY s.work_date ASC, s.id ASC
+    </select>
+
+    <select id="selectContactTasksByShiftId" resultType="map">
+        SELECT
+            t.id AS "id",
+            t.shift_id AS "shiftId",
+            t.register_id AS "registerId",
+            r.real_name AS "patientName",
+            r.case_number AS "caseNumber",
+            t.priority_level AS "priorityLevel",
+            t.status AS "status",
+            t.completed_at AS "completedAt"
+        FROM follow_up_shift_contact_task t
+        LEFT JOIN register r ON r.id = t.register_id
+        WHERE t.shift_id = #{shiftId}
+        ORDER BY
+            CASE t.priority_level WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END,
+            r.real_name
+    </select>
+
+    <select id="selectContactTasksByShiftIds" resultType="map">
+        SELECT
+            t.id AS "id",
+            t.shift_id AS "shiftId",
+            t.register_id AS "registerId",
+            r.real_name AS "patientName",
+            t.priority_level AS "priorityLevel",
+            t.status AS "status"
+        FROM follow_up_shift_contact_task t
+        LEFT JOIN register r ON r.id = t.register_id
+        WHERE t.shift_id IN
+        <foreach collection="shiftIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="selectShiftByEmployeeAndDate" resultType="map">
+        SELECT id AS "id", employee_id AS "employeeId", work_date AS "workDate", status AS "status"
+        FROM follow_up_staff_shift
+        WHERE employee_id = #{employeeId}
+          AND work_date = #{workDate}
+          AND status != 'cancelled'
+        LIMIT 1
+    </select>
+
+    <select id="selectShiftById" resultType="map">
+        SELECT
+            s.id AS "id",
+            s.plan_id AS "planId",
+            s.employee_id AS "employeeId",
+            s.department_id AS "departmentId",
+            s.work_date AS "workDate",
+            s.shift_type AS "shiftType",
+            s.status AS "status"
+        FROM follow_up_staff_shift s
+        WHERE s.id = #{shiftId}
+        LIMIT 1
+    </select>
+
+    <update id="updateShiftDate">
+        UPDATE follow_up_staff_shift
+        SET work_date = #{workDate}
+        WHERE id = #{shiftId}
+    </update>
+
+    <select id="selectFollowUpStaffByDepartment" resultType="map">
+        SELECT
+            e.id AS "id",
+            e.realname AS "name",
+            e.deptment_id AS "departmentId"
+        FROM employee e
+        INNER JOIN users u ON u.employee_id = e.id AND u.user_type = 7 AND u.status = 1
+        WHERE e.deptment_id = #{departmentId}
+          AND (e.delmark IS NULL OR e.delmark = 0)
+        ORDER BY e.realname
+    </select>
+
+    <select id="selectPatientsForShiftPlanning" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            COALESCE(fe.priority_level, fp.priority_level, 'normal') AS "priority",
+            COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) AS "monitorEmployeeId",
+            COALESCE(fe.interview_interval_days, fp.interview_interval_days, 7) AS "interviewIntervalDays",
+            COALESCE(fe.enrolled_at, fp.enrolled_at) AS "enrolledAt",
+            (
+                SELECT MAX(c.contact_date)
+                FROM follow_up_contact_record c
+                WHERE c.register_id = r.id
+            ) AS "lastContactDate",
+            COALESCE(fe.follow_up_deadline, fp.follow_up_deadline) AS "deadlineDate"
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE (
+            fe.register_id IS NOT NULL
+            OR fp.register_id IS NOT NULL
+        )
+          AND COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id) = #{departmentId}
+          AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) IS NOT NULL
+        ORDER BY
+            CASE COALESCE(fe.priority_level, fp.priority_level, 'normal')
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                ELSE 3
+            END,
+            r.id
+    </select>
+
+    <insert id="insertChangeRequest" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_shift_change_request (
+            employee_id, department_id, original_shift_id,
+            requested_work_date, reason, status
+        ) VALUES (
+            #{employeeId}, #{departmentId}, #{originalShiftId},
+            #{requestedWorkDate}, #{reason}, 'pending'
+        )
+    </insert>
+
+    <select id="selectPendingChangeRequests" resultType="map">
+        SELECT
+            r.id AS "id",
+            r.employee_id AS "employeeId",
+            e.realname AS "employeeName",
+            r.department_id AS "departmentId",
+            r.original_shift_id AS "originalShiftId",
+            s.work_date AS "originalWorkDate",
+            r.requested_work_date AS "requestedWorkDate",
+            r.reason AS "reason",
+            r.status AS "status",
+            r.created_at AS "createdAt"
+        FROM follow_up_shift_change_request r
+        LEFT JOIN employee e ON e.id = r.employee_id
+        LEFT JOIN follow_up_staff_shift s ON s.id = r.original_shift_id
+        WHERE r.status = 'pending'
+        <if test="departmentId != null">
+            AND r.department_id = #{departmentId}
+        </if>
+        ORDER BY r.created_at ASC
+    </select>
+
+    <select id="selectChangeRequestById" resultType="map">
+        SELECT
+            r.id AS "id",
+            r.employee_id AS "employeeId",
+            r.department_id AS "departmentId",
+            r.original_shift_id AS "originalShiftId",
+            r.requested_work_date AS "requestedWorkDate",
+            r.reason AS "reason",
+            r.status AS "status"
+        FROM follow_up_shift_change_request r
+        WHERE r.id = #{id}
+        LIMIT 1
+    </select>
+
+    <update id="updateChangeRequestStatus">
+        UPDATE follow_up_shift_change_request
+        SET status = #{status},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = NOW(),
+            admin_note = #{adminNote}
+        WHERE id = #{id}
+    </update>
+
+    <select id="countPendingChangeRequests" resultType="int">
+        SELECT COUNT(*)
+        FROM follow_up_shift_change_request
+        WHERE status = 'pending'
+        <if test="departmentId != null">
+            AND department_id = #{departmentId}
+        </if>
+    </select>
+
+    <select id="selectShiftInPlanByEmployeeAndDate" resultType="map">
+        SELECT
+            s.id AS "id",
+            s.plan_id AS "planId",
+            s.employee_id AS "employeeId",
+            s.work_date AS "workDate",
+            s.status AS "status"
+        FROM follow_up_staff_shift s
+        WHERE s.plan_id = #{planId}
+          AND s.employee_id = #{employeeId}
+          AND s.work_date = #{workDate}
+          AND s.status != 'cancelled'
+        LIMIT 1
+    </select>
+
+    <select id="selectContactTaskByRegisterAndWorkDate" resultType="map">
+        SELECT
+            t.id AS "id",
+            t.shift_id AS "shiftId",
+            t.register_id AS "registerId",
+            s.work_date AS "workDate"
+        FROM follow_up_shift_contact_task t
+        INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
+        WHERE t.register_id = #{registerId}
+          AND s.work_date = #{workDate}
+        LIMIT 1
+    </select>
+
+    <select id="selectShiftsWithTaskCounts" resultType="map">
+        SELECT
+            s.id AS "shiftId",
+            s.plan_id AS "planId",
+            p.month AS "month",
+            p.status AS "planStatus",
+            s.employee_id AS "employeeId",
+            e.realname AS "employeeName",
+            s.work_date AS "workDate",
+            (
+                SELECT COUNT(*) FROM follow_up_shift_contact_task t
+                WHERE t.shift_id = s.id
+            ) AS "taskCount"
+        FROM follow_up_staff_shift s
+        INNER JOIN follow_up_shift_plan p ON p.id = s.plan_id
+        LEFT JOIN employee e ON e.id = s.employee_id
+        WHERE s.department_id = #{departmentId}
+          AND s.work_date &gt;= #{from}
+          AND s.work_date &lt;= #{to}
+          AND s.status != 'cancelled'
+          AND p.status IN ('draft', 'published')
+        ORDER BY s.work_date ASC, s.id ASC
+    </select>
+
+    <select id="countContactTasksByShiftId" resultType="int">
+        SELECT COUNT(*) FROM follow_up_shift_contact_task WHERE shift_id = #{shiftId}
+    </select>
+
+    <select id="selectContactTasksByPlanId" resultType="map">
+        SELECT
+            t.register_id AS "registerId",
+            t.priority_level AS "priorityLevel",
+            s.employee_id AS "employeeId",
+            s.work_date AS "workDate",
+            s.department_id AS "departmentId"
+        FROM follow_up_shift_contact_task t
+        INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
+        WHERE s.plan_id = #{planId}
+          AND t.status = 'planned'
+    </select>
+
+</mapper>

@@ -15,11 +15,9 @@ function isPublicPath(path: string) {
 export function setupRouterGuard(router: Router) {
   router.beforeEach(async (to) => {
     const authStore = useAuthStore()
-    console.log('[DEBUG guard] 进入守卫: to.path =', to.path, 'sessionChecked =', authStore.sessionChecked, 'hasToken =', Boolean(localStorage.getItem('access_token')))
 
     // 公共页面（候诊大屏 / 报到机）：完全跳过 session 加载与登录跳转
     if (isPublicPath(to.path)) {
-      console.log('[DEBUG guard] 命中公共页面，直接放行: ', to.path)
       return true
     }
 
@@ -30,7 +28,7 @@ export function setupRouterGuard(router: Router) {
     if (to.path === loginRoutePath) {
       if (authStore.isAuthenticated) {
         if (authStore.role === 'patient') return '/patient/overview'
-        if (authStore.role === 'followup') return '/follow-up/outcome'
+        if (authStore.role === 'followup') return '/follow-up/dashboard'
         return defaultRoutePath
       }
       if (to.query.redirect) {
@@ -52,10 +50,16 @@ export function setupRouterGuard(router: Router) {
     if (authStore.role === 'followup' && authStore.isAuthenticated) {
       const blockedPaths = ['/admin', '/physician', '/medtech', '/pharmacy', '/registration']
       if (blockedPaths.some(path => to.path.startsWith(path))) {
-        return '/follow-up/outcome'
+        return '/follow-up/dashboard'
       }
       if (to.path === '/dashboard' || to.path === '/') {
-        return '/follow-up/outcome'
+        return '/follow-up/dashboard'
+      }
+    }
+
+    if (authStore.role === 'medtech' && authStore.isAuthenticated) {
+      if (to.path.startsWith('/follow-up') || to.path.startsWith('/medtech/follow-up')) {
+        return '/medtech/check-queue'
       }
     }
 

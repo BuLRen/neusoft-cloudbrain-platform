@@ -1,0 +1,7 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+const props=withDefaults(defineProps<{type:string;tone?:string;size?:string}>(),{tone:'blue',size:'normal'})
+const iconName=computed(()=>props.type.replace('-filled',''))
+</script>
+<template><view class="service-icon" :class="[tone,size]"><view class="shine"/><image class="glyph" :src="`/static/icons/${iconName}.svg`" mode="aspectFit"/></view></template>
+<style scoped lang="scss">.service-icon{position:relative;width:68rpx;height:68rpx;border-radius:20rpx;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 9rpx 20rpx rgba(42,102,197,.22),inset 0 2rpx 3rpx rgba(255,255,255,.35)}.service-icon.large{width:82rpx;height:82rpx;border-radius:24rpx}.service-icon.blue{background:linear-gradient(145deg,#81cbff 0%,#4b8cf7 55%,#316be9 100%)}.service-icon.green{background:linear-gradient(145deg,#6be2d0 0%,#37c4aa 55%,#19a88f 100%)}.service-icon.orange{background:linear-gradient(145deg,#ffd071 0%,#ffa43e 52%,#ff7926 100%)}.service-icon.purple{background:linear-gradient(145deg,#c4a7ff 0%,#966ff8 52%,#7047e9 100%)}.service-icon.cyan{background:linear-gradient(145deg,#7cdbea,#38b9d1)}.shine{position:absolute;left:8rpx;right:8rpx;top:5rpx;height:24rpx;border-radius:18rpx;background:linear-gradient(180deg,rgba(255,255,255,.25),rgba(255,255,255,0))}.glyph{position:relative;z-index:1;width:42rpx;height:42rpx}.large .glyph{width:49rpx;height:49rpx}</style>

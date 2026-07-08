@@ -4,11 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.payment.entity.ExpenseRecord;
 import com.xikang.payment.feign.AuthPatientFeignClient;
+import com.xikang.payment.feign.NotificationFeignClient;
 import com.xikang.payment.feign.RegistrationFeignClient;
+import com.xikang.payment.feign.dto.PaymentNotificationRequest;
 import com.xikang.payment.mapper.ExpenseRecordMapper;
 import com.xikang.payment.mapper.RegisterInfoMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +46,10 @@ public class PaymentService {
     private final RegisterInfoMapper registerInfoMapper;
     private final AuthPatientFeignClient authPatientFeignClient;
     private final RegistrationFeignClient registrationFeignClient;
+    private final NotificationFeignClient notificationFeignClient;
+
+    @Value("${notification.internal-token:notif-internal-2026}")
+    private String notificationInternalToken;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -223,10 +230,14 @@ public class PaymentService {
 
         String businessType = businessTypeFor(item.getItemCode());
 
+        // businessId 必须用 expense_record 主键（itemId），不能用 registerId。
+        // 否则同一挂号下多条相同 itemCode 的费用（如多张检查单）会命中 auth-service
+        // 的 (patientId, DEDUCT, businessType, businessId) 幂等键，第二笔起只标记
+        // 已付不实际扣款 —— 一键支付只扣第一笔的 bug 根因。
         Map<String, Object> deductBody = new HashMap<>();
         deductBody.put("amount", amount);
         deductBody.put("businessType", businessType);
-        deductBody.put("businessId", item.getRegisterId());
+        deductBody.put("businessId", item.getId());
         deductBody.put("operatorId", operatorId);
         deductBody.put("operatorName", operatorName != null ? operatorName : "系统");
         deductBody.put("remark", "支付 " + item.getItemName());
@@ -255,6 +266,9 @@ public class PaymentService {
         final String itemCode = item.getItemCode();
         final BigDecimal paidAmount = amount;
         final Long opId = operatorId;
+        final Long patientId = item.getPatientId();
+        final String patientName = item.getPatientName();
+        final String itemName = item.getItemName();
         try {
             if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
                 org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
@@ -262,10 +276,18 @@ public class PaymentService {
                         @Override
                         public void afterCommit() {
                             fireOnFeePaidCallback(registerId, itemCode, itemId, paidAmount, opId);
+                            firePaymentNotification(patientId, patientName, "PAYMENT_SUCCESS",
+                                    "支付成功",
+                                    buildPaymentContent(patientName, itemName, itemCode, paidAmount, registerId),
+                                    "register", registerId);
                         }
                     });
             } else {
                 fireOnFeePaidCallback(registerId, itemCode, itemId, paidAmount, opId);
+                firePaymentNotification(patientId, patientName, "PAYMENT_SUCCESS",
+                        "支付成功",
+                        buildPaymentContent(patientName, itemName, itemCode, paidAmount, registerId),
+                        "register", registerId);
             }
         } catch (Exception e) {
             log.error("注册 afterCommit 回调失败，将依赖定时补偿 | itemId={}", itemId, e);
@@ -359,10 +381,11 @@ public class PaymentService {
         }
 
         String businessType = businessTypeFor(item.getItemCode());
+        // 与 payItem 同理：businessId 用 expense_record 主键避免幂等误命中
         Map<String, Object> body = new HashMap<>();
         body.put("amount", amount);
         body.put("businessType", businessType);
-        body.put("businessId", item.getRegisterId());
+        body.put("businessId", item.getId());
         body.put("operatorId", operatorId);
         body.put("operatorName", operatorName != null ? operatorName : "系统");
         body.put("remark", reason != null ? reason : "退款");
@@ -380,6 +403,37 @@ public class PaymentService {
         item.setOperatorName(operatorName != null ? operatorName : "系统");
         item.setRemark((item.getRemark() == null ? "" : item.getRemark() + " | ") + "已退款：" + (reason != null ? reason : ""));
         expenseRecordMapper.update(item);
+
+        // afterCommit 推送退款通知
+        final Long patientId = item.getPatientId();
+        final String patientName = item.getPatientName();
+        final String itemName = item.getItemName();
+        final BigDecimal refundAmount = amount;
+        final String refundReason = reason;
+        final Long registerId = item.getRegisterId();
+        try {
+            if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            firePaymentNotification(patientId, patientName, "REFUND_SUCCESS",
+                                    "退款成功",
+                                    buildRefundContent(patientName, itemName, item.getItemCode(),
+                                            refundAmount, registerId, refundReason),
+                                    "register", registerId);
+                        }
+                    });
+            } else {
+                firePaymentNotification(patientId, patientName, "REFUND_SUCCESS",
+                        "退款成功",
+                        buildRefundContent(patientName, itemName, item.getItemCode(),
+                                refundAmount, registerId, refundReason),
+                        "register", registerId);
+            }
+        } catch (Exception e) {
+            log.error("注册退款 afterCommit 通知失败 | itemId={}", itemId, e);
+        }
 
         log.info("refund 成功 | itemId={}, registerId={}, amount={}", itemId, item.getRegisterId(), amount);
 
@@ -466,7 +520,7 @@ public class PaymentService {
     }
 
     public List<Map<String, Object>> dailyCharges(LocalDate startDate, LocalDate endDate) {
-        return expenseRecordMapper.dailyCharges(startDate.toString(), endDate.toString());
+        return expenseRecordMapper.dailyCharges(startDate, endDate);
     }
 
     // ============================================================
@@ -750,6 +804,77 @@ public class PaymentService {
             log.error("on-fee-paid 回调失败 | registerId={}, itemId={}（registration 后续汇总会兜底）",
                     registerId, itemId, e);
         }
+    }
+
+    /**
+     * 推送支付/退款通知给患者（通过 notification-service 写库 + WebSocket 实时推送）。
+     * <p>调用失败仅记日志，绝不影响支付/退款主流程。
+     */
+    private void firePaymentNotification(Long patientId, String patientName, String type,
+                                         String title, String content, String bizType, Long bizId) {
+        try {
+            PaymentNotificationRequest req = new PaymentNotificationRequest();
+            req.setReceiverId(patientId);
+            req.setReceiverRole("patient");
+            req.setType(type);
+            req.setTitle(title);
+            req.setContent(content);
+            req.setBizType(bizType);
+            req.setBizId(bizId);
+            notificationFeignClient.send(req, notificationInternalToken);
+            log.info("支付/退款通知已发送 | patientId={}, type={}, bizId={}", patientId, type, bizId);
+        } catch (Exception e) {
+            log.error("支付/退款通知发送失败 | patientId={}, type={}, bizId={}（不影响主流程）",
+                    patientId, type, bizId, e);
+        }
+    }
+
+    /**
+     * 构造支付成功通知正文（与 schedule-service 医生变更通知同款风格：完整可读句子）。
+     * 形如：尊敬的张三，您的「普通号挂号费」已支付成功，金额 15.00 元，订单号 1024。请按时就诊。
+     */
+    private String buildPaymentContent(String patientName, String itemName, String itemCode,
+                                       BigDecimal amount, Long registerId) {
+        String greeting = (patientName == null || patientName.isBlank())
+                ? "您好" : "尊敬的 " + patientName;
+        String item = (itemName == null || itemName.isBlank()) ? "费用项" : itemName;
+        String tip = paymentTipByItemCode(itemCode);
+        String base = String.format("%s，您的「%s」已支付成功，金额 %s 元，订单号 %d。",
+                greeting, item, amount == null ? "0.00" : amount.toPlainString(), registerId);
+        return tip == null ? base : base + tip;
+    }
+
+    /**
+     * 构造退款成功通知正文。
+     * 形如：尊敬的张三，您的「普通号挂号费」已退款 15.00 元，订单号 1024，款项已退回至账户余额。退款原因：患者取消。
+     */
+    private String buildRefundContent(String patientName, String itemName, String itemCode,
+                                      BigDecimal amount, Long registerId, String reason) {
+        String greeting = (patientName == null || patientName.isBlank())
+                ? "您好" : "尊敬的 " + patientName;
+        String item = (itemName == null || itemName.isBlank()) ? "费用项" : itemName;
+        String base = String.format("%s，您的「%s」已退款 %s 元，订单号 %d，款项已退回至您的账户余额。",
+                greeting, item, amount == null ? "0.00" : amount.toPlainString(), registerId);
+        String tail = "";
+        if (reason != null && !reason.isBlank()) {
+            tail = "退款原因：" + reason + "。";
+        }
+        return tail.isEmpty() ? base : base + tail;
+    }
+
+    /**
+     * 按 itemCode 给支付成功通知补一句业务提示语。
+     */
+    private String paymentTipByItemCode(String itemCode) {
+        if (itemCode == null) return null;
+        return switch (itemCode) {
+            case "REGISTRATION_FEE" -> "请按时就诊，就诊时请先到分诊台报到。";
+            case "MEDICATION_FEE" -> "请凭电子凭证到药房取药。";
+            case "CHECK_FEE", "EXAMINATION_FEE" -> "请按预约时间前往相应检查科室。";
+            case "INSPECTION_FEE" -> "请前往检验科完成检验。";
+            case "DISPOSAL_FEE" -> "请按医嘱前往相应科室完成处置。";
+            default -> null;
+        };
     }
 
     private ExpenseRecord buildFromRequest(Map<String, Object> body, String itemCode, int status) {

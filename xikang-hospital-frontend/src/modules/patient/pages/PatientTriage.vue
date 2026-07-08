@@ -6,6 +6,7 @@ import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { aiApi } from '@/shared/api/modules/ai'
 import { useAuthStore } from '@/app/stores/auth'
+import { submitTriageDeskRecord } from '@/shared/utils/triageDesk'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -80,6 +81,12 @@ async function runTriage() {
       ElMessage.info('请描述您的症状，以获得分诊建议')
     } else {
       ElMessage.success('AI 导诊结果已生成')
+      void submitTriageDeskRecord({
+        symptoms: triageSymptoms.value,
+        aiTriageResult: result,
+        patientId: authStore.currentPatientId || authStore.currentPatient?.patientId,
+        patient: authStore.currentPatient,
+      })
     }
   } catch (err: any) {
     // 网络/超时/服务端异常：弹窗提示用户，不要静默 fallback 误导
