@@ -342,3 +342,13 @@ xikang-cloud-hospital/docker/init-db/run_migrate_037_038.py
 xikang-cloud-hospital/docker/init-db/run_follow_up_production_migrations.py
 xikang-cloud-hospital/docker/init-db/run_follow_up_production_migrations.py
 xikang-cloud-hospital/docker/init-db/run_follow_up_production_migrations.py
+xikang-cloud-hospital/ct-dicom-viewer/backend-python/ct_viewer/__pycache__/__init__.cpython-311.pyc
+xikang-cloud-hospital/ct-dicom-viewer/backend-python/ct_viewer/__pycache__/dicom_io.cpython-311.pyc
+xikang-cloud-hospital/ct-dicom-viewer/backend-python/ct_viewer/__pycache__/filters.cpython-311.pyc
+xikang-cloud-hospital/ct-dicom-viewer/backend-python/ct_viewer/__pycache__/volume_store.cpython-311.pyc
+xikang-cloud-hospital/ct-viewer-algo/app/__pycache__/__init__.cpython-311.pyc
+xikang-cloud-hospital/ct-viewer-algo/app/__pycache__/config.cpython-311.pyc
+xikang-cloud-hospital/ct-viewer-algo/app/__pycache__/main.cpython-311.pyc
+xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/__init__.cpython-311.pyc
+xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/dicom_io.cpython-311.pyc
+xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/filters.cpython-311.pyc

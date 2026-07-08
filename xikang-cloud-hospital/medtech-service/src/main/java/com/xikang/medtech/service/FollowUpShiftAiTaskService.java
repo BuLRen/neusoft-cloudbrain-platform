@@ -25,13 +25,16 @@ public class FollowUpShiftAiTaskService {
 
     private final FollowUpShiftDifyService difyService;
     private final FollowUpShiftScheduleService scheduleService;
+    private final FollowUpEnrollmentBackfillService enrollmentBackfillService;
 
     public FollowUpShiftAiTaskService(
         FollowUpShiftDifyService difyService,
-        FollowUpShiftScheduleService scheduleService
+        FollowUpShiftScheduleService scheduleService,
+        FollowUpEnrollmentBackfillService enrollmentBackfillService
     ) {
         this.difyService = difyService;
         this.scheduleService = scheduleService;
+        this.enrollmentBackfillService = enrollmentBackfillService;
     }
 
     public Map<String, Object> submit(Long departmentId, String departmentName, String month) {
@@ -50,6 +53,14 @@ public class FollowUpShiftAiTaskService {
 
         executor.submit(() -> {
             try {
+                record.percent = 20;
+                record.message = "同步看诊结束患者到随访池";
+                Map<String, Object> backfill = enrollmentBackfillService.backfillDepartmentForPlanning(departmentId);
+                int synced = toInt(backfill.get("enrolled"));
+                if (synced > 0) {
+                    log.info("AI 排班前自动同步随访患者 dept={} synced={}", departmentId, synced);
+                }
+
                 record.percent = 40;
                 record.message = "调用 Dify 工作流 WF-FollowUp-Shift-01";
                 Map<String, Object> generated = difyService.generateShifts(departmentId, departmentName, month);
@@ -60,11 +71,30 @@ public class FollowUpShiftAiTaskService {
                     departmentId, month, generated, true
                 );
                 saved.put("source", source);
+                if (generated.get("patientCount") != null) {
+                    saved.put("patientCount", generated.get("patientCount"));
+                }
                 record.status = STATUS_SUCCESS;
                 record.percent = 100;
-                record.message = "dify".equals(source)
-                    ? "Dify 工作流排班生成完成"
-                    : "规则排班生成完成（Dify 未启用或调用失败）";
+                int patientCount = toInt(saved.get("patientCount"));
+                int taskCount = toInt(saved.get("taskCount"));
+                if (FollowUpShiftDifyService.SOURCE_DIFY.equals(source)) {
+                    record.message = String.format(
+                        "Dify 工作流排班完成，患者池 %d 人，联系任务 %d 个",
+                        patientCount,
+                        taskCount
+                    );
+                } else {
+                    String note = generated.get("scheduleNote") != null
+                        ? String.valueOf(generated.get("scheduleNote"))
+                        : "Dify 未启用或调用失败";
+                    record.message = String.format(
+                        "规则排班完成（%s），患者池 %d 人，联系任务 %d 个",
+                        note,
+                        patientCount,
+                        taskCount
+                    );
+                }
                 record.result = saved;
             } catch (Exception ex) {
                 log.warn("Follow-up shift AI task failed: {}", ex.getMessage());
@@ -79,6 +109,20 @@ public class FollowUpShiftAiTaskService {
     public Map<String, Object> getActive(Long departmentId, String month) {
         TaskRecord record = tasks.get(departmentId + ":" + month);
         return record != null ? record.toView() : Map.of("status", "idle");
+    }
+
+    private static int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
     }
 
     private static class TaskRecord {

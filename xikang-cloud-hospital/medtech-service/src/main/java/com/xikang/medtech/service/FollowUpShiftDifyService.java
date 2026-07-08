@@ -10,12 +10,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +41,7 @@ public class FollowUpShiftDifyService {
         List<Map<String, Object>> patients = shiftMapper.selectPatientsForShiftPlanning(departmentId);
 
         Map<String, Object> inputs = buildWorkflowInputs(departmentId, departmentName, month, staff, patients);
+        String scheduleNote = difyAiProperties.describeFollowUpShiftScheduleDisabledReason();
 
         if (difyAiProperties.isFollowUpShiftScheduleEnabled()) {
             try {
@@ -60,7 +59,9 @@ public class FollowUpShiftDifyService {
                 );
                 Map<String, Object> parsed = parseDifyOutput(result.getOutputs());
                 validateShiftPayload(parsed);
+                normalizeAndFill(staff, patients, parsed);
                 parsed.put("source", SOURCE_DIFY);
+                attachPlanningMeta(parsed, patients.size(), "");
                 log.info(
                     "Dify 随访排班成功 dept={} month={} shifts={} runId={}",
                     departmentId,
@@ -71,14 +72,69 @@ public class FollowUpShiftDifyService {
                 return parsed;
             } catch (Exception ex) {
                 log.warn("Dify shift schedule failed, fallback to rule-based: {}", ex.getMessage());
+                scheduleNote = scheduleNote.isBlank()
+                    ? "Dify 调用失败: " + ex.getMessage()
+                    : scheduleNote + "；调用失败: " + ex.getMessage();
             }
         } else {
-            log.info("Dify 随访排班未启用，使用规则排班 dept={} month={}", departmentId, month);
+            log.info(
+                "Dify 随访排班未启用（{}），使用规则排班 dept={} month={} patients={}",
+                scheduleNote.isBlank() ? "未知原因" : scheduleNote,
+                departmentId,
+                month,
+                patients.size()
+            );
         }
 
-        Map<String, Object> fallback = buildRuleBasedShifts(month, staff, patients);
+        Map<String, Object> rules = defaultRules();
+        Map<String, Object> fallback = FollowUpIntervalScheduleEngine.buildShifts(month, staff, patients, rules);
+        FollowUpShiftPlanSupport.normalizeShiftsOnly(fallback, staff, patients);
         fallback.put("source", SOURCE_RULE_BASED);
+        attachPlanningMeta(fallback, patients.size(), scheduleNote);
         return fallback;
+    }
+
+    private void attachPlanningMeta(Map<String, Object> payload, int patientCount, String scheduleNote) {
+        payload.put("patientCount", patientCount);
+        if (scheduleNote != null && !scheduleNote.isBlank()) {
+            payload.put("scheduleNote", scheduleNote);
+        }
+    }
+
+    private void normalizeAndFill(
+        List<Map<String, Object>> staff,
+        List<Map<String, Object>> patients,
+        Map<String, Object> payload
+    ) {
+        FollowUpShiftPlanSupport.normalizeAndFillContactTasks(payload, staff, patients);
+        if (patients.isEmpty()) {
+            log.warn("随访排班患者池为空 dept month 将只生成空班次，请先在随访工作台纳入患者并分配监视医生");
+        } else {
+            log.info(
+                "随访排班归一化完成 shifts={} patients={} totalTasks={}",
+                countShifts(payload),
+                patients.size(),
+                countTasks(payload)
+            );
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private int countTasks(Map<String, Object> payload) {
+        Object shifts = payload.get("shifts");
+        if (!(shifts instanceof List<?> list)) {
+            return 0;
+        }
+        int total = 0;
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> shift) {
+                Object tasks = ((Map<String, Object>) shift).get("contact_tasks");
+                if (tasks instanceof List<?> taskList) {
+                    total += taskList.size();
+                }
+            }
+        }
+        return total;
     }
 
     private Map<String, Object> buildWorkflowInputs(
@@ -88,21 +144,49 @@ public class FollowUpShiftDifyService {
         List<Map<String, Object>> staff,
         List<Map<String, Object>> patients
     ) {
+        Map<String, Object> rules = defaultRules();
+        YearMonth yearMonth = YearMonth.parse(month, MONTH);
+        List<String> workDates = FollowUpContactScheduleHelper.schedulableDatesInMonth(yearMonth).stream()
+            .map(LocalDate::toString)
+            .toList();
+        List<Map<String, Object>> staffList = staff.stream().map(this::toStaffPayload).toList();
+        List<Map<String, Object>> scoredPatients = patients.stream()
+            .map(patient -> FollowUpContactScheduleHelper.toScoredPatientPayload(patient, month, rules))
+            .toList();
+
+        Map<String, Object> planningContext = new LinkedHashMap<>();
+        planningContext.put("department_id", departmentId);
+        planningContext.put("department_name", departmentName != null ? departmentName : "");
+        planningContext.put("month", month);
+        planningContext.put("staff_count", staff.size());
+        planningContext.put("patient_count", patients.size());
+
         Map<String, Object> inputs = new LinkedHashMap<>();
         inputs.put("department_id", String.valueOf(departmentId));
         inputs.put("department_name", departmentName != null ? departmentName : "");
         inputs.put("month", month);
-        inputs.put("staff_json", toJson(staff.stream().map(this::toStaffPayload).toList()));
+        inputs.put("staff_json", toJson(staffList));
         inputs.put("patients_json", toJson(patients));
-        inputs.put("rules_json", toJson(Map.of(
-            "workdays_per_week", 5,
-            "min_contact_interval_days", 1,
-            "deadline_days", 180,
-            "max_patients_per_day", 8,
-            "max_shift_imbalance", 2
-        )));
+        inputs.put("rules_json", toJson(rules));
         inputs.put("holidays_json", "[]");
+        inputs.put("planning_context_json", toJson(planningContext));
+        inputs.put("work_dates_json", toJson(workDates));
+        inputs.put("schedulable_dates_json", toJson(workDates));
+        inputs.put("staff_list_json", toJson(staffList));
+        inputs.put("patients_list_json", toJson(patients));
+        inputs.put("rules_obj_json", toJson(rules));
+        inputs.put("scored_patients_json", toJson(scoredPatients));
         return inputs;
+    }
+
+    private Map<String, Object> defaultRules() {
+        Map<String, Object> rules = new LinkedHashMap<>();
+        rules.put("workdays_per_week", 5);
+        rules.put("min_contact_interval_days", 1);
+        rules.put("deadline_days", 180);
+        rules.put("max_patients_per_day", 8);
+        rules.put("max_shift_imbalance", 2);
+        return rules;
     }
 
     private Map<String, Object> toStaffPayload(Map<String, Object> staff) {
@@ -170,48 +254,6 @@ public class FollowUpShiftDifyService {
     private int countShifts(Map<String, Object> payload) {
         Object shifts = payload.get("shifts");
         return shifts instanceof List<?> list ? list.size() : 0;
-    }
-
-    private Map<String, Object> buildRuleBasedShifts(
-        String month,
-        List<Map<String, Object>> staff,
-        List<Map<String, Object>> patients
-    ) {
-        YearMonth yearMonth = YearMonth.parse(month, MONTH);
-        List<Map<String, Object>> shifts = new ArrayList<>();
-        int staffIndex = 0;
-        int patientIndex = 0;
-
-        for (LocalDate date = yearMonth.atDay(1); !date.isAfter(yearMonth.atEndOfMonth()); date = date.plusDays(1)) {
-            DayOfWeek dow = date.getDayOfWeek();
-            if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) {
-                continue;
-            }
-            Map<String, Object> member = staff.get(staffIndex % staff.size());
-            staffIndex++;
-
-            List<Map<String, Object>> tasks = new ArrayList<>();
-            for (int i = 0; i < 5 && !patients.isEmpty(); i++) {
-                Map<String, Object> patient = patients.get(patientIndex % patients.size());
-                patientIndex++;
-                tasks.add(Map.of(
-                    "register_id", patient.get("registerId"),
-                    "priority", patient.getOrDefault("priority", "normal")
-                ));
-            }
-
-            Map<String, Object> shift = new LinkedHashMap<>();
-            shift.put("employee_id", member.get("id"));
-            shift.put("work_date", date.toString());
-            shift.put("shift_type", "full");
-            shift.put("contact_tasks", tasks);
-            shifts.add(shift);
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("shifts", shifts);
-        result.put("summary", month + " 规则排班共 " + shifts.size() + " 个班次");
-        return result;
     }
 
     private String toJson(Object value) {

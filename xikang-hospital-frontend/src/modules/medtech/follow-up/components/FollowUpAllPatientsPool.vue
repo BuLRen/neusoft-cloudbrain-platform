@@ -13,7 +13,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: [patient: FollowUpDashboardPatient]
   scheduleToday: [patient: FollowUpDashboardPatient]
-  enroll: [patient: FollowUpDashboardPatient]
   transfer: [patient: FollowUpDashboardPatient]
 }>()
 
@@ -119,15 +118,7 @@ const statusSummary = computed(() => ({
           >
             申请调换
           </ElButton>
-          <ElButton
-            v-if="!patient.enrolled"
-            size="small"
-            type="success"
-            plain
-            @click.stop="emit('enroll', patient)"
-          >
-            纳入随访
-          </ElButton>
+          <ElTag v-else-if="!patient.enrolled" type="info" effect="plain">待系统纳入</ElTag>
           <ElButton
             v-if="!patient.interviewScheduledToday"
             size="small"

@@ -3,6 +3,7 @@ package com.xikang.medtech.service;
 import com.xikang.common.exception.BusinessException;
 import com.xikang.medtech.config.FollowUpProperties;
 import com.xikang.medtech.context.MedtechAuthContext;
+import com.xikang.medtech.dto.FollowUpPriorityResult;
 import com.xikang.medtech.mapper.FollowUpDashboardMapper;
 import com.xikang.medtech.mapper.FollowUpOutcomeMapper;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -28,6 +30,8 @@ public class FollowUpDashboardService {
     private final FollowUpProperties followUpProperties;
     private final FollowUpEnrollmentSyncService followUpEnrollmentSyncService;
     private final FollowUpHistoryService historyService;
+    private final FollowUpShiftEnqueueService shiftEnqueueService;
+    private final FollowUpPriorityScorer priorityScorer;
 
     public Map<String, Object> getContext(LocalDate targetDate, Long departmentIdOverride) {
         LocalDate date = targetDate != null ? targetDate : LocalDate.now();
@@ -76,6 +80,25 @@ public class FollowUpDashboardService {
         return enriched;
     }
 
+    public List<Map<String, Object>> listMyMonitoredPatients(LocalDate targetDate) {
+        LocalDate date = targetDate != null ? targetDate : LocalDate.now();
+        Long employeeId = MedtechAuthContext.employeeIdOrNull();
+        if (employeeId == null) {
+            throw new BusinessException(403, "当前账号未绑定员工");
+        }
+        List<Map<String, Object>> patients = followUpDashboardMapper.selectMyMonitoredDashboardPatients(
+            employeeId,
+            date
+        );
+        List<Map<String, Object>> enriched = new ArrayList<>();
+        for (Map<String, Object> patient : patients) {
+            Map<String, Object> row = enrichPatient(patient, date, employeeId);
+            row.put("isMine", true);
+            enriched.add(row);
+        }
+        return enriched;
+    }
+
     public Map<String, Object> claimMonitoring(Long registerId) {
         if (registerId == null) {
             throw new BusinessException("registerId 不能为空");
@@ -102,6 +125,9 @@ public class FollowUpDashboardService {
 
     @Transactional
     public Map<String, Object> enrollPatient(Map<String, Object> request) {
+        if (!MedtechAuthContext.isAdminAllAccess()) {
+            throw new BusinessException(403, "仅管理员可手动纳入随访；看诊结束患者由系统自动纳入");
+        }
         Long registerId = toLong(request.get("registerId"));
         if (registerId == null) {
             throw new BusinessException("registerId 不能为空");
@@ -139,6 +165,17 @@ public class FollowUpDashboardService {
         result.put("realName", profile.get("realName"));
         result.put("caseNumber", profile.get("caseNumber"));
         result.put("enrolled", true);
+
+        FollowUpPriorityResult priority = priorityScorer.score(registerId);
+        Long preferMonitor = toLong(result.get("monitoringEmployeeId"));
+        shiftEnqueueService.enqueueAsync(
+            registerId,
+            LocalDateTime.now(),
+            departmentId,
+            priority.getPriorityLevel(),
+            preferMonitor
+        );
+        result.put("enqueueSubmitted", true);
         return result;
     }
 

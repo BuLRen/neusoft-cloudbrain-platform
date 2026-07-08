@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   ElBadge,
+  ElAlert,
   ElButton,
   ElDialog,
   ElEmpty,
@@ -9,6 +10,7 @@ import {
   ElFormItem,
   ElInput,
   ElMessage,
+  ElMessageBox,
   ElOption,
   ElProgress,
   ElSelect,
@@ -18,6 +20,8 @@ import {
 } from 'element-plus'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
+import AdminFollowUpShiftCalendar from '@/modules/admin/components/AdminFollowUpShiftCalendar.vue'
+import AdminFollowUpShiftDayDialog from '@/modules/admin/components/AdminFollowUpShiftDayDialog.vue'
 import { followUpShiftAdminApi } from '@/shared/api/modules/followUpShiftAdmin'
 import { adminFollowUpApi } from '@/shared/api/modules/adminFollowUp'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
@@ -53,15 +57,22 @@ const shifts = ref<FollowUpStaffShift[]>([])
 const plan = ref<Record<string, unknown> | null>(null)
 const pendingRequests = ref<FollowUpShiftChangeRequest[]>([])
 const pendingTransfers = ref<FollowUpMonitoringTransferRequest[]>([])
-const unassignedPatients = ref<FollowUpDashboardPatient[]>([])
+const departmentPatients = ref<FollowUpDashboardPatient[]>([])
 const followUpNurses = ref<FollowUpAdminRecord[]>([])
 const assignSelections = ref<Record<number, number | undefined>>({})
 const assigningId = ref<number | null>(null)
+const randomAssigning = ref(false)
+const syncingEnrollment = ref(false)
+const monitoringLoad = ref<{
+  autoAssignEnabled?: boolean
+  unassignedCount?: number
+  doctors?: Array<{ employeeId: number; name?: string; patientCount: number }>
+} | null>(null)
 const aiTask = ref<{
   status: string
   message?: string
   percent?: number
-  result?: { source?: string; shiftCount?: number; taskCount?: number }
+  result?: { source?: string; shiftCount?: number; taskCount?: number; patientCount?: number; scheduleNote?: string }
 } | null>(null)
 
 const filter = reactive({
@@ -79,8 +90,31 @@ const transferReviewTarget = ref<FollowUpMonitoringTransferRequest | null>(null)
 const transferReviewNote = ref('')
 const transferReviewApprove = ref(true)
 
+const calendarYear = ref(new Date().getFullYear())
+const calendarMonth = ref(new Date().getMonth() + 1)
+const shiftDayDialogVisible = ref(false)
+const shiftDayDialogDate = ref('')
+const shiftDayDialogShifts = ref<FollowUpStaffShift[]>([])
+
+function syncCalendarFromFilterMonth() {
+  const [y, m] = filter.month.split('-').map(Number)
+  if (y && m) {
+    calendarYear.value = y
+    calendarMonth.value = m
+  }
+}
+
+function openShiftDay(date: string, dayShifts: FollowUpStaffShift[]) {
+  shiftDayDialogDate.value = date
+  shiftDayDialogShifts.value = dayShifts
+  shiftDayDialogVisible.value = true
+}
+
 const pendingCount = computed(() => pendingRequests.value.length)
 const pendingTransferCount = computed(() => pendingTransfers.value.length)
+const enrolledPatients = computed(() => departmentPatients.value.filter((p) => Boolean(p.enrolled)))
+const unassignedPatients = computed(() => enrolledPatients.value.filter((p) => !p.monitoringEmployeeId))
+const eligibleUnenrolledCount = computed(() => departmentPatients.value.filter((p) => !p.enrolled).length)
 
 async function loadDepartments() {
   departments.value = await registrationApi.departments('临床科室')
@@ -95,7 +129,7 @@ async function loadData() {
   try {
     const { from, to } = monthRange(filter.month)
     const dept = departments.value.find((d) => d.id === filter.departmentId)
-    const [planRes, shiftRes, pendingRes, transferRes, taskRes, patientsRes, nursesPage] = await Promise.all([
+    const [planRes, shiftRes, pendingRes, transferRes, taskRes, patientsRes, nursesPage, loadSummaryRes] = await Promise.all([
       followUpShiftAdminApi.getPlan(filter.departmentId, filter.month),
       followUpShiftAdminApi.listShifts(filter.departmentId, from, to),
       followUpShiftAdminApi.pendingChangeRequests(filter.departmentId),
@@ -106,6 +140,7 @@ async function loadData() {
         departmentId: filter.departmentId,
       }),
       adminFollowUpApi.list({ departmentId: filter.departmentId, includeDisabled: false, size: 100 }),
+      followUpShiftAdminApi.getMonitoringLoadSummary(filter.departmentId),
     ])
     plan.value = planRes
     shifts.value = shiftRes
@@ -113,7 +148,8 @@ async function loadData() {
     pendingTransfers.value = transferRes
     aiTask.value = taskRes
     followUpNurses.value = nursesPage.records
-    unassignedPatients.value = patientsRes.filter((p) => p.enrolled && !p.monitoringEmployeeId)
+    departmentPatients.value = patientsRes
+    monitoringLoad.value = loadSummaryRes
   } finally {
     loading.value = false
   }
@@ -217,6 +253,30 @@ async function submitTransferReview() {
   await loadData()
 }
 
+async function syncDepartmentEnrollment() {
+  if (!filter.departmentId) return
+  syncingEnrollment.value = true
+  try {
+    const result = await medtechFollowUpApi.backfillEnrollment({
+      departmentId: filter.departmentId,
+      batchSize: 200,
+      maxBatches: 10,
+    })
+    const enrolled = Number(result.enrolled ?? 0)
+    const remaining = Number(result.remainingEligible ?? 0)
+    ElMessage.success(
+      enrolled > 0
+        ? `已同步 ${enrolled} 名看诊结束患者到随访池${remaining > 0 ? `，尚有 ${remaining} 人待同步` : ''}`
+        : remaining > 0
+          ? `暂无新患者可同步，尚有 ${remaining} 人待处理`
+          : '本科室看诊结束患者均已纳入随访池',
+    )
+    await loadData()
+  } finally {
+    syncingEnrollment.value = false
+  }
+}
+
 async function assignPatient(patient: FollowUpDashboardPatient) {
   const employeeId = assignSelections.value[patient.registerId]
   if (!employeeId || !filter.departmentId) {
@@ -237,6 +297,46 @@ async function assignPatient(patient: FollowUpDashboardPatient) {
   }
 }
 
+async function randomAssignMonitoring() {
+  if (!filter.departmentId) return
+  if (!followUpNurses.value.length) {
+    ElMessage.warning('当前科室暂无随访医生')
+    return
+  }
+  if (!unassignedPatients.value.length) {
+    ElMessage.info('暂无待分配患者')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `将把 ${unassignedPatients.value.length} 名待分配患者随机分配给 ${followUpNurses.value.length} 名随访医生。完成后，新纳入患者将自动分配给监视患者最少的医生。`,
+      '随机分布监视医生',
+      { type: 'warning', confirmButtonText: '开始分配', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+
+  randomAssigning.value = true
+  try {
+    const result = await followUpShiftAdminApi.randomAssignMonitoring({
+      departmentId: filter.departmentId,
+    })
+    const assigned = Number(result.assigned ?? 0)
+    ElMessage.success(assigned > 0 ? `已随机分配 ${assigned} 名患者` : '暂无待分配患者')
+    await loadData()
+  } finally {
+    randomAssigning.value = false
+  }
+}
+
+watch(
+  () => filter.month,
+  () => {
+    syncCalendarFromFilterMonth()
+  },
+)
+
 watch(
   () => [filter.departmentId, filter.month],
   () => {
@@ -244,7 +344,18 @@ watch(
   },
 )
 
+watch(
+  () => [calendarYear.value, calendarMonth.value],
+  () => {
+    const nextMonth = formatMonth(new Date(calendarYear.value, calendarMonth.value - 1, 1))
+    if (nextMonth !== filter.month) {
+      filter.month = nextMonth
+    }
+  },
+)
+
 onMounted(async () => {
+  syncCalendarFromFilterMonth()
   await loadDepartments()
   await loadData()
 })
@@ -274,6 +385,7 @@ onMounted(async () => {
         </ElSelect>
         <ElInput v-model="filter.month" placeholder="yyyy-MM" style="width: 120px" />
         <ElButton type="primary" :loading="generating" @click="startAiGenerate">AI 生成排班</ElButton>
+        <ElButton :loading="syncingEnrollment" @click="syncDepartmentEnrollment">同步看诊结束患者</ElButton>
         <ElButton :disabled="!plan?.id" @click="publishPlan">发布排班</ElButton>
         <ElButton @click="loadData">刷新</ElButton>
       </div>
@@ -293,27 +405,78 @@ onMounted(async () => {
       </p>
 
       <h4>排班明细</h4>
-      <ElTable v-loading="loading" :data="shifts" stripe>
-        <ElTableColumn prop="workDate" label="日期" width="120" />
-        <ElTableColumn prop="employeeName" label="随访医生" min-width="120" />
-        <ElTableColumn prop="shiftType" label="班次" width="80" />
-        <ElTableColumn label="联系任务" min-width="100">
-          <template #default="{ row }">{{ row.contactTasks?.length ?? 0 }} 人</template>
-        </ElTableColumn>
-        <ElTableColumn prop="status" label="状态" width="100" />
-      </ElTable>
+      <AdminFollowUpShiftCalendar
+        v-loading="loading"
+        :year="calendarYear"
+        :month="calendarMonth"
+        :shifts="shifts"
+        :loading="loading"
+        @update:year="calendarYear = $event"
+        @update:month="calendarMonth = $event"
+        @open-day="openShiftDay"
+      />
       <ElEmpty v-if="!loading && !shifts.length" description="暂无排班，请点击 AI 生成" />
     </GlassCard>
 
     <GlassCard class="panel">
       <h3>患者监视分配</h3>
-      <p class="plan-meta">已纳入随访但尚未指定监视医生的患者，请分配负责随访医生。</p>
-      <ElTable :data="unassignedPatients" stripe>
+      <div class="monitoring-toolbar">
+        <ElButton
+          type="primary"
+          plain
+          :loading="randomAssigning"
+          :disabled="!unassignedPatients.length || !followUpNurses.length"
+          @click="randomAssignMonitoring"
+        >
+          随机分布
+        </ElButton>
+        <span v-if="monitoringLoad?.autoAssignEnabled" class="plan-meta">
+          自动补位已开启：新纳入患者将分配给监视患者最少的医生
+        </span>
+      </div>
+      <div v-if="monitoringLoad?.doctors?.length" class="monitoring-load-tags">
+        <ElTag
+          v-for="doctor in monitoringLoad.doctors"
+          :key="doctor.employeeId"
+          effect="plain"
+          type="info"
+        >
+          {{ doctor.name ?? `员工 #${doctor.employeeId}` }}：{{ doctor.patientCount }} 人
+        </ElTag>
+      </div>
+      <ElAlert
+        v-if="unassignedPatients.length"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="monitoring-alert"
+        :title="`尚有 ${unassignedPatients.length} 名患者未分配监视医生`"
+        description="请先点击「随机分布」完成首批分配；之后新纳入的患者将自动分配给监视患者最少的医生。分配后，对应随访医生才能在「我的监视患者」中看到并负责日常联系。"
+      />
+      <p class="plan-meta">
+        科室随访可见患者共 {{ departmentPatients.length }} 人（已纳入 {{ enrolledPatients.length }} 人，待分配监视
+        {{ unassignedPatients.length }} 人<template v-if="eligibleUnenrolledCount">，历史看诊结束未同步 {{ eligibleUnenrolledCount }} 人</template>）。
+        看诊结束后系统会自动纳入随访；历史数据请点击「同步看诊结束患者」。排班使用已纳入且已分配监视医生的患者。
+      </p>
+      <ElTable :data="departmentPatients" stripe>
         <ElTableColumn prop="realName" label="患者" min-width="100" />
         <ElTableColumn prop="caseNumber" label="病历号" width="120" />
+        <ElTableColumn label="随访状态" width="100">
+          <template #default="{ row }">
+            <ElTag :type="row.enrolled ? 'success' : 'info'" effect="plain">
+              {{ row.enrolled ? '已纳入' : '待同步' }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="监视医生" min-width="120">
+          <template #default="{ row }">
+            {{ row.monitoringEmployeeName ?? (row.monitoringEmployeeId ? `员工 #${row.monitoringEmployeeId}` : '未分配') }}
+          </template>
+        </ElTableColumn>
         <ElTableColumn label="分配医生" min-width="180">
           <template #default="{ row }">
             <ElSelect
+              v-if="row.enrolled && !row.monitoringEmployeeId"
               v-model="assignSelections[row.registerId]"
               placeholder="选择随访医生"
               style="width: 160px"
@@ -325,11 +488,13 @@ onMounted(async () => {
                 :value="nurse.id"
               />
             </ElSelect>
+            <span v-else class="plan-meta">已分配</span>
           </template>
         </ElTableColumn>
         <ElTableColumn label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <ElButton
+              v-if="row.enrolled && !row.monitoringEmployeeId"
               link
               type="primary"
               :loading="assigningId === row.registerId"
@@ -340,7 +505,7 @@ onMounted(async () => {
           </template>
         </ElTableColumn>
       </ElTable>
-      <ElEmpty v-if="!unassignedPatients.length" description="暂无待分配患者" />
+      <ElEmpty v-if="!enrolledPatients.length" description="暂无已纳入随访患者，请先在随访工作台纳入" />
     </GlassCard>
 
     <GlassCard class="panel">
@@ -376,6 +541,12 @@ onMounted(async () => {
       </ElTable>
       <ElEmpty v-if="!pendingRequests.length" description="暂无待审批调班" />
     </GlassCard>
+
+    <AdminFollowUpShiftDayDialog
+      v-model="shiftDayDialogVisible"
+      :date="shiftDayDialogDate"
+      :shifts="shiftDayDialogShifts"
+    />
 
     <ElDialog
       v-model="transferReviewVisible"
@@ -442,5 +613,24 @@ onMounted(async () => {
 .panel h3,
 .panel h4 {
   margin: 0 0 var(--space-3);
+}
+
+.monitoring-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-3);
+}
+
+.monitoring-load-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-end: var(--space-3);
+}
+
+.monitoring-alert {
+  margin-block-end: var(--space-3);
 }
 </style>

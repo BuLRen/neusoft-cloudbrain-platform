@@ -100,6 +100,12 @@ function onDragStart(event: DragEvent) {
       >
         {{ patient.daysUntilDeadline >= 0 ? `距期限 ${patient.daysUntilDeadline} 天` : `已超期 ${Math.abs(patient.daysUntilDeadline)} 天` }}
       </span>
+      <span
+        v-if="patient.nextContactDate"
+        class="follow-up-patient-card__track follow-up-patient-card__track--inline"
+      >
+        下次联系 {{ patient.nextContactDate }}
+      </span>
     </div>
     <div v-if="showStatusRow" class="follow-up-patient-card__status-row">
       <span v-if="patient.interviewScheduledToday" class="follow-up-patient-card__chip follow-up-patient-card__chip--interview">

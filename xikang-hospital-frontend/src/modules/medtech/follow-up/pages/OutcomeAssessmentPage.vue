@@ -62,7 +62,6 @@ const observedToday = ref(false)
 const confirmingObservation = ref(false)
 const loading = ref(false)
 const scheduling = ref(false)
-const enrolling = ref(false)
 const isGlucoseCohort = ref(false)
 const lastVisitSnapshot = ref<LastVisitSnapshot | null>(null)
 
@@ -71,7 +70,6 @@ const VISIT_PRIORITY_KEYS = ['hba1c', 'fasting_glucose', 'postprandial_glucose',
 const selectedPatient = computed(() =>
   patients.value.find((item) => item.registerId === selectedRegisterId.value),
 )
-const isEnrolled = computed(() => Boolean(selectedPatient.value?.enrolled))
 
 const rangePreset = ref<OutcomeRangePreset>('30d')
 const dateRangeLabel = computed(() => OUTCOME_RANGE_OPTIONS.find((o) => o.value === rangePreset.value)?.label ?? '')
@@ -453,22 +451,8 @@ async function handleScheduleInterview() {
 }
 
 function patientLabel(item: FollowUpPatientOption) {
-  const status = item.enrolled ? '已在管' : '未纳入'
+  const status = item.enrolled ? '已在管' : '待系统纳入'
   return `${item.realName ?? '未知'}（${item.caseNumber ?? item.registerId}）· ${status}`
-}
-
-async function handleEnrollPatient() {
-  if (!selectedRegisterId.value || isEnrolled.value) return
-  enrolling.value = true
-  try {
-    await medtechFollowUpApi.enrollPatient({ registerId: selectedRegisterId.value })
-    ElMessage.success('已纳入随访管理')
-    await loadPatients()
-  } catch {
-    ElMessage.error('纳入随访失败')
-  } finally {
-    enrolling.value = false
-  }
 }
 
 function reliefLabel(value?: string) {
@@ -560,15 +544,6 @@ void loadPatients().then(() => loadPatientData())
             @click="handleConfirmObservation"
           >
             {{ observedToday ? '今日已观察' : '确认今日已观察' }}
-          </ElButton>
-          <ElButton
-            :disabled="!selectedRegisterId || isEnrolled"
-            :loading="enrolling"
-            type="success"
-            plain
-            @click="handleEnrollPatient"
-          >
-            {{ isEnrolled ? '已在管' : '纳入随访' }}
           </ElButton>
           <ElButton
             type="primary"

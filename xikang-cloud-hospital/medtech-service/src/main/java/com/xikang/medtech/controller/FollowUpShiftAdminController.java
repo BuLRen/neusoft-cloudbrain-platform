@@ -2,7 +2,9 @@ package com.xikang.medtech.controller;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.result.Result;
+import com.xikang.medtech.ai.DifyAiProperties;
 import com.xikang.medtech.context.MedtechAuthContext;
+import com.xikang.medtech.service.FollowUpEnrollmentBackfillService;
 import com.xikang.medtech.service.FollowUpMonitoringService;
 import com.xikang.medtech.service.FollowUpShiftAiTaskService;
 import com.xikang.medtech.service.FollowUpShiftChangeService;
@@ -24,6 +26,8 @@ public class FollowUpShiftAdminController {
     private final FollowUpShiftChangeService changeService;
     private final FollowUpShiftAiTaskService aiTaskService;
     private final FollowUpMonitoringService monitoringService;
+    private final FollowUpEnrollmentBackfillService enrollmentBackfillService;
+    private final DifyAiProperties difyAiProperties;
 
     private void requireAdmin() {
         if (!MedtechAuthContext.isAdminAllAccess()) {
@@ -48,6 +52,39 @@ public class FollowUpShiftAdminController {
     ) {
         requireAdmin();
         return Result.success(scheduleService.listDepartmentShifts(departmentId, from, to));
+    }
+
+    @PostMapping("/sync-enrollment")
+    public Result<Map<String, Object>> syncDepartmentEnrollment(@RequestBody Map<String, Object> request) {
+        requireAdmin();
+        Long departmentId = request.get("departmentId") != null
+            ? Long.valueOf(String.valueOf(request.get("departmentId")))
+            : null;
+        if (departmentId == null) {
+            throw new BusinessException("departmentId 不能为空");
+        }
+        Integer batchSize = request.get("batchSize") != null
+            ? Integer.valueOf(String.valueOf(request.get("batchSize")))
+            : null;
+        Integer maxBatches = request.get("maxBatches") != null
+            ? Integer.valueOf(String.valueOf(request.get("maxBatches")))
+            : null;
+        Map<String, Object> result = enrollmentBackfillService.backfillDepartment(departmentId, batchSize, maxBatches);
+        return Result.success("已同步看诊结束患者到随访池", result);
+    }
+
+    @GetMapping("/dify/shift-status")
+    public Result<Map<String, Object>> shiftDifyStatus() {
+        requireAdmin();
+        Map<String, Object> status = new java.util.LinkedHashMap<>();
+        status.put("difyEnabled", difyAiProperties.isEnabled());
+        status.put("difyBaseUrl", difyAiProperties.getBaseUrl());
+        status.put("shiftWorkflowEnabled", difyAiProperties.isFollowUpShiftScheduleEnabled());
+        status.put("shiftApiKeyConfigured", !difyAiProperties.resolveFollowUpShiftScheduleApiKey().isBlank());
+        if (!difyAiProperties.isFollowUpShiftScheduleEnabled()) {
+            status.put("disabledReason", difyAiProperties.describeFollowUpShiftScheduleDisabledReason());
+        }
+        return Result.success(status);
     }
 
     @PostMapping("/ai-generate")
@@ -117,6 +154,26 @@ public class FollowUpShiftAdminController {
         Long employeeId = request.get("employeeId") != null ? Long.valueOf(String.valueOf(request.get("employeeId"))) : null;
         Long departmentId = request.get("departmentId") != null ? Long.valueOf(String.valueOf(request.get("departmentId"))) : null;
         return Result.success("已分配监视医生", monitoringService.assignMonitoring(registerId, employeeId, departmentId));
+    }
+
+    @PostMapping("/monitoring/random-assign")
+    public Result<Map<String, Object>> randomAssignMonitoring(@RequestBody Map<String, Object> request) {
+        requireAdmin();
+        Long departmentId = request.get("departmentId") != null
+            ? Long.valueOf(String.valueOf(request.get("departmentId")))
+            : null;
+        Map<String, Object> result = monitoringService.randomAssignDepartment(departmentId);
+        int assigned = result.get("assigned") instanceof Number number ? number.intValue() : 0;
+        return Result.success(
+            assigned > 0 ? "已随机分配 " + assigned + " 名患者" : "暂无待分配患者",
+            result
+        );
+    }
+
+    @GetMapping("/monitoring/load-summary")
+    public Result<Map<String, Object>> monitoringLoadSummary(@RequestParam Long departmentId) {
+        requireAdmin();
+        return Result.success(monitoringService.getMonitoringLoadSummary(departmentId));
     }
 
     @GetMapping("/monitoring/transfer-requests/pending")

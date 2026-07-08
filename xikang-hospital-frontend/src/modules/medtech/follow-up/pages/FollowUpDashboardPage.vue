@@ -19,6 +19,7 @@ import type {
   FollowUpDashboardContext,
   FollowUpDashboardPatient,
   FollowUpDayScheduleItem,
+  FollowUpMonitoredRosterItem,
   FollowUpStaffShift,
 } from '@/shared/types/medtechFollowUp'
 
@@ -26,6 +27,7 @@ const router = useRouter()
 const loading = ref(false)
 const context = ref<FollowUpDashboardContext | null>(null)
 const patients = ref<FollowUpDashboardPatient[]>([])
+const myMonitoredPatients = ref<FollowUpDashboardPatient[]>([])
 const schedules = ref<FollowUpDayScheduleItem[]>([])
 const myShifts = ref<FollowUpStaffShift[]>([])
 const communicationUnread = ref(0)
@@ -44,6 +46,7 @@ const schedulingRegisterId = ref<number | null>(null)
 const shiftDayDialogVisible = ref(false)
 const shiftDayDialogDate = ref(todayYmd)
 const shiftDayDialogTasks = ref<FollowUpStaffShift['contactTasks']>([])
+const shiftDayDialogMonitoredPatients = ref<FollowUpMonitoredRosterItem[]>([])
 
 const shiftChangeVisible = ref(false)
 const shiftChangeTarget = ref<FollowUpStaffShift | null>(null)
@@ -53,7 +56,7 @@ const transferTarget = ref<FollowUpDashboardPatient | null>(null)
 
 const enrolledPatients = computed(() => patients.value.filter((p) => p.enrolled))
 
-const myPatients = computed(() => patients.value.filter((p) => p.isMine))
+const myPatients = computed(() => myMonitoredPatients.value)
 
 const unassignedEnrolled = computed(() =>
   enrolledPatients.value.filter((p) => !p.monitoringEmployeeId),
@@ -87,10 +90,12 @@ async function loadSchedules() {
 async function loadDashboard() {
   loading.value = true
   try {
-    const [contextRes, patientsRes] = await Promise.all([
+    const [contextRes, patientsRes, myMonitoredRes] = await Promise.all([
       medtechFollowUpApi.getDashboardContext({ date: todayYmd }),
       medtechFollowUpApi.listDashboardPatients({ date: todayYmd }),
+      medtechFollowUpApi.listMyMonitoredPatients({ date: todayYmd }),
     ])
+    myMonitoredPatients.value = myMonitoredRes
     context.value = {
       ...contextRes,
       stats: {
@@ -98,14 +103,14 @@ async function loadDashboard() {
         enrolledPatients:
           contextRes.stats?.enrolledPatients ??
           patientsRes.filter((p) => p.enrolled).length,
-        myMonitoringCount: patientsRes.filter((p) => p.isMine).length,
-        todayContactDue: patientsRes.filter(
-          (p) => p.isMine && p.contactStatus !== 'contacted_today',
+        myMonitoringCount: myMonitoredRes.length,
+        todayContactDue: myMonitoredRes.filter(
+          (p) => p.contactStatus !== 'contacted_today',
         ).length,
-        todayContacted: patientsRes.filter(
-          (p) => p.isMine && p.contactStatus === 'contacted_today',
+        todayContacted: myMonitoredRes.filter(
+          (p) => p.contactStatus === 'contacted_today',
         ).length,
-        contactOverdue: patientsRes.filter((p) => p.isMine && p.contactStatus === 'overdue').length,
+        contactOverdue: myMonitoredRes.filter((p) => p.contactStatus === 'overdue').length,
       },
     }
     patients.value = patientsRes
@@ -133,6 +138,7 @@ function openShiftDay(date: string) {
   const shift = myShifts.value.find((s) => s.workDate === date)
   shiftDayDialogDate.value = date
   shiftDayDialogTasks.value = shift?.contactTasks ?? []
+  shiftDayDialogMonitoredPatients.value = shift?.monitoredPatients ?? myShifts.value[0]?.monitoredPatients ?? []
   shiftDayDialogVisible.value = true
 }
 
@@ -155,16 +161,6 @@ async function scheduleTodayInterview(patient: FollowUpDashboardPatient) {
     // unified error
   } finally {
     schedulingRegisterId.value = null
-  }
-}
-
-async function enrollPatient(patient: FollowUpDashboardPatient) {
-  try {
-    await medtechFollowUpApi.enrollPatient({ registerId: patient.registerId })
-    ElMessage.success(`已将 ${patient.realName ?? '患者'} 纳入随访`)
-    await loadDashboard()
-  } catch {
-    ElMessage.error('纳入随访失败')
   }
 }
 
@@ -310,7 +306,6 @@ onActivated(() => {
             :scheduling-id="schedulingRegisterId"
             @open="openOutcome"
             @schedule-today="scheduleTodayInterview"
-            @enroll="enrollPatient"
             @transfer="openTransferRequest"
           />
         </GlassCard>
@@ -332,7 +327,12 @@ onActivated(() => {
               @click="openShiftDay(shift.workDate)"
             >
               <strong>{{ shift.workDate }}</strong>
-              <span>{{ shift.contactTasks?.length ?? 0 }} 位待联系</span>
+              <span>
+                {{ shift.contactTasks?.length ?? 0 }} 位排班联系
+                <template v-if="shift.monitoredPatients?.length">
+                  · {{ shift.monitoredPatients.length }} 位监视
+                </template>
+              </span>
             </button>
           </div>
           <ElEmpty v-else description="本月暂无工作排班，请联系管理员生成" />
@@ -369,6 +369,7 @@ onActivated(() => {
       v-model="shiftDayDialogVisible"
       :date="shiftDayDialogDate"
       :tasks="shiftDayDialogTasks"
+      :monitored-patients="shiftDayDialogMonitoredPatients"
       @open-patient="openOutcome"
     />
 

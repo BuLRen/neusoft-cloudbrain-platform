@@ -1,13 +1,21 @@
 package com.xikang.medtech.service;
 
 import com.xikang.common.exception.BusinessException;
+import com.xikang.medtech.config.FollowUpProperties;
 import com.xikang.medtech.context.MedtechAuthContext;
 import com.xikang.medtech.mapper.FollowUpDashboardMapper;
 import com.xikang.medtech.mapper.FollowUpMonitoringMapper;
+import com.xikang.medtech.mapper.FollowUpShiftMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,9 +25,21 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class FollowUpMonitoringService {
 
+    private record EnqueueAfterCommitTask(
+        Long registerId,
+        Long departmentId,
+        String priorityLevel,
+        Long employeeId
+    ) {}
+
     private final FollowUpMonitoringMapper monitoringMapper;
     private final FollowUpDashboardMapper dashboardMapper;
+    private final FollowUpShiftMapper shiftMapper;
     private final FollowUpHistoryService historyService;
+    private final FollowUpShiftEnqueueService shiftEnqueueService;
+    private final FollowUpEnrollmentBackfillService enrollmentBackfillService;
+    private final FollowUpEnrollmentSyncService enrollmentSyncService;
+    private final FollowUpProperties followUpProperties;
 
     @Transactional
     public Map<String, Object> assignMonitoring(Long registerId, Long employeeId, Long departmentIdOverride) {
@@ -35,23 +55,277 @@ public class FollowUpMonitoringService {
             throw new BusinessException("患者不存在");
         }
 
-        Map<String, Object> enrollment = dashboardMapper.selectEnrollmentByRegisterId(registerId);
-        if (enrollment == null || enrollment.isEmpty()) {
-            throw new BusinessException("患者尚未纳入随访，请先完成纳入");
+        if (!dashboardMapper.isEnrolledInFollowUpPool(registerId)) {
+            if (!dashboardMapper.isEligiblePatient(registerId)) {
+                throw new BusinessException("患者尚未纳入随访，且不符合自动纳入条件");
+            }
+            enrollmentBackfillService.processRegister(registerId);
         }
 
-        int updated = monitoringMapper.assignMonitoring(registerId, employeeId);
-        monitoringMapper.assignMonitoringProfile(registerId, employeeId);
-        if (updated == 0) {
+        Map<String, Object> result = assignMonitoringInternal(registerId, employeeId);
+        result.put("assigned", true);
+        return result;
+    }
+
+    @Transactional
+    public Map<String, Object> assignMonitoringInternal(Long registerId, Long employeeId) {
+        return assignMonitoringInternal(registerId, employeeId, null);
+    }
+
+    private Map<String, Object> assignMonitoringInternal(
+        Long registerId,
+        Long employeeId,
+        List<EnqueueAfterCommitTask> batchEnqueueTasks
+    ) {
+        if (registerId == null || employeeId == null) {
+            throw new BusinessException("registerId 与 employeeId 不能为空");
+        }
+
+        Map<String, Object> enrollment = dashboardMapper.selectEnrollmentByRegisterId(registerId);
+        if (enrollment == null || enrollment.isEmpty()) {
+            throw new BusinessException("患者尚未纳入随访");
+        }
+
+        int updatedEnrollment = monitoringMapper.assignMonitoring(registerId, employeeId);
+        int updatedProfile = monitoringMapper.assignMonitoringProfile(registerId, employeeId);
+        if (updatedEnrollment == 0 && updatedProfile == 0) {
             throw new BusinessException("分配失败，患者可能未在管");
         }
 
+        if (updatedEnrollment == 0) {
+            syncMonitoringEnrollment(registerId, employeeId, enrollment);
+        }
+
         historyService.recordMonitoringAssigned(registerId, employeeId);
+        enrollment.put("monitoringEmployeeId", employeeId);
+        if (batchEnqueueTasks != null) {
+            appendEnqueueTask(batchEnqueueTasks, registerId, employeeId, enrollment);
+        } else {
+            scheduleEnqueueAfterCommit(registerId, employeeId, enrollment);
+        }
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("registerId", registerId);
         result.put("monitoringEmployeeId", employeeId);
-        result.put("assigned", true);
         return result;
+    }
+
+    private void appendEnqueueTask(
+        List<EnqueueAfterCommitTask> batchEnqueueTasks,
+        Long registerId,
+        Long employeeId,
+        Map<String, Object> enrollment
+    ) {
+        EnqueueAfterCommitTask task = buildEnqueueTask(registerId, employeeId, enrollment);
+        if (task != null) {
+            batchEnqueueTasks.add(task);
+        }
+    }
+
+    private void scheduleEnqueueAfterCommit(Long registerId, Long employeeId, Map<String, Object> enrollment) {
+        EnqueueAfterCommitTask task = buildEnqueueTask(registerId, employeeId, enrollment);
+        if (task == null) {
+            return;
+        }
+        scheduleBatchEnqueueAfterCommit(List.of(task));
+    }
+
+    private EnqueueAfterCommitTask buildEnqueueTask(
+        Long registerId,
+        Long employeeId,
+        Map<String, Object> enrollment
+    ) {
+        if (enrollment == null || enrollment.isEmpty()) {
+            return null;
+        }
+        Long departmentId = toLong(enrollment.get("departmentId"));
+        if (departmentId == null) {
+            return null;
+        }
+        String priorityLevel = enrollment.get("priorityLevel") != null
+            ? String.valueOf(enrollment.get("priorityLevel"))
+            : "normal";
+        return new EnqueueAfterCommitTask(registerId, departmentId, priorityLevel, employeeId);
+    }
+
+    private void scheduleBatchEnqueueAfterCommit(List<EnqueueAfterCommitTask> tasks) {
+        if (tasks == null || tasks.isEmpty()) {
+            return;
+        }
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            fireEnqueueTasks(tasks);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                fireEnqueueTasks(tasks);
+            }
+        });
+    }
+
+    private void fireEnqueueTasks(List<EnqueueAfterCommitTask> tasks) {
+        for (EnqueueAfterCommitTask task : tasks) {
+            shiftEnqueueService.enqueueAsync(
+                task.registerId(),
+                LocalDateTime.now(),
+                task.departmentId(),
+                task.priorityLevel(),
+                task.employeeId()
+            );
+        }
+    }
+
+    @Transactional
+    public Map<String, Object> randomAssignDepartment(Long departmentId) {
+        if (!MedtechAuthContext.isAdminAllAccess()) {
+            throw new BusinessException(403, "仅管理员可执行随机分布");
+        }
+        if (departmentId == null) {
+            throw new BusinessException("departmentId 不能为空");
+        }
+
+        List<Map<String, Object>> staff = shiftMapper.selectFollowUpStaffByDepartment(departmentId);
+        if (staff.isEmpty()) {
+            throw new BusinessException("当前科室暂无随访医生，无法随机分布");
+        }
+
+        List<Long> nurseIds = staff.stream()
+            .map(row -> toLong(row.get("id")))
+            .filter(id -> id != null)
+            .sorted()
+            .toList();
+        if (nurseIds.isEmpty()) {
+            throw new BusinessException("当前科室暂无随访医生，无法随机分布");
+        }
+
+        List<Long> unassigned = new ArrayList<>(dashboardMapper.selectUnassignedEnrolledRegisterIds(departmentId));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("departmentId", departmentId);
+        if (unassigned.isEmpty()) {
+            result.put("assigned", 0);
+            result.put("perDoctor", Map.of());
+            return result;
+        }
+
+        Collections.shuffle(unassigned);
+        Map<Long, Integer> perDoctor = new LinkedHashMap<>();
+        for (Long nurseId : nurseIds) {
+            perDoctor.put(nurseId, 0);
+        }
+
+        List<EnqueueAfterCommitTask> enqueueTasks = new ArrayList<>();
+        int assigned = 0;
+        for (int i = 0; i < unassigned.size(); i++) {
+            Long registerId = unassigned.get(i);
+            Long nurseId = nurseIds.get(i % nurseIds.size());
+            assignMonitoringInternal(registerId, nurseId, enqueueTasks);
+            perDoctor.merge(nurseId, 1, Integer::sum);
+            assigned++;
+        }
+        scheduleBatchEnqueueAfterCommit(enqueueTasks);
+
+        result.put("assigned", assigned);
+        result.put("perDoctor", perDoctor);
+        return result;
+    }
+
+    @Transactional
+    public Map<String, Object> autoAssignIfEligible(Long registerId, Long departmentId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registerId", registerId);
+
+        if (registerId == null || departmentId == null) {
+            result.put("assigned", false);
+            result.put("reason", "missing_params");
+            return result;
+        }
+
+        Map<String, Object> existing = dashboardMapper.selectMonitoringByRegisterId(registerId);
+        if (existing != null && toLong(existing.get("monitoringEmployeeId")) != null) {
+            result.put("assigned", false);
+            result.put("reason", "already_assigned");
+            return result;
+        }
+
+        if (dashboardMapper.countAssignedMonitoringByDepartment(departmentId) == 0) {
+            result.put("assigned", false);
+            result.put("reason", "awaiting_initial_random");
+            return result;
+        }
+
+        Long employeeId = pickLeastLoadedEmployee(departmentId);
+        if (employeeId == null) {
+            result.put("assigned", false);
+            result.put("reason", "no_followup_staff");
+            return result;
+        }
+
+        Map<String, Object> assigned = assignMonitoringInternal(registerId, employeeId, null);
+        result.put("assigned", true);
+        result.put("monitoringEmployeeId", assigned.get("monitoringEmployeeId"));
+        return result;
+    }
+
+    public Map<String, Object> getMonitoringLoadSummary(Long departmentId) {
+        if (!MedtechAuthContext.isAdminAllAccess()) {
+            throw new BusinessException(403, "仅管理员可查看监视负载");
+        }
+        if (departmentId == null) {
+            throw new BusinessException("departmentId 不能为空");
+        }
+
+        List<Map<String, Object>> staff = shiftMapper.selectFollowUpStaffByDepartment(departmentId);
+        Map<Long, Integer> loadByEmployee = new HashMap<>();
+        for (Map<String, Object> row : dashboardMapper.selectMonitoringLoadByDepartment(departmentId)) {
+            Long employeeId = toLong(row.get("employeeId"));
+            if (employeeId != null) {
+                loadByEmployee.put(employeeId, toInt(row.get("patientCount")));
+            }
+        }
+
+        List<Map<String, Object>> doctors = new ArrayList<>();
+        for (Map<String, Object> member : staff) {
+            Long employeeId = toLong(member.get("id"));
+            if (employeeId == null) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("employeeId", employeeId);
+            item.put("name", member.get("name"));
+            item.put("patientCount", loadByEmployee.getOrDefault(employeeId, 0));
+            doctors.add(item);
+        }
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("departmentId", departmentId);
+        summary.put("autoAssignEnabled", dashboardMapper.countAssignedMonitoringByDepartment(departmentId) > 0);
+        summary.put("unassignedCount", dashboardMapper.selectUnassignedEnrolledRegisterIds(departmentId).size());
+        summary.put("doctors", doctors);
+        return summary;
+    }
+
+    private Long pickLeastLoadedEmployee(Long departmentId) {
+        List<Map<String, Object>> staff = shiftMapper.selectFollowUpStaffByDepartment(departmentId);
+        if (staff.isEmpty()) {
+            return null;
+        }
+
+        Map<Long, Integer> loadByEmployee = new HashMap<>();
+        for (Map<String, Object> row : dashboardMapper.selectMonitoringLoadByDepartment(departmentId)) {
+            Long employeeId = toLong(row.get("employeeId"));
+            if (employeeId != null) {
+                loadByEmployee.put(employeeId, toInt(row.get("patientCount")));
+            }
+        }
+
+        return staff.stream()
+            .map(row -> toLong(row.get("id")))
+            .filter(id -> id != null)
+            .min(Comparator
+                .comparingInt((Long id) -> loadByEmployee.getOrDefault(id, 0))
+                .thenComparingLong(id -> id))
+            .orElse(null);
     }
 
     @Transactional
@@ -134,9 +408,7 @@ public class FollowUpMonitoringService {
         if (approve) {
             Long toEmployeeId = toLong(request.get("toEmployeeId"));
             if (toEmployeeId != null) {
-                monitoringMapper.assignMonitoring(registerId, toEmployeeId);
-                monitoringMapper.assignMonitoringProfile(registerId, toEmployeeId);
-                historyService.recordMonitoringAssigned(registerId, toEmployeeId);
+                assignMonitoringInternal(registerId, toEmployeeId);
             }
             historyService.recordMonitoringTransferApproved(registerId, reviewerId, adminNote);
         } else {
@@ -144,6 +416,22 @@ public class FollowUpMonitoringService {
         }
 
         return monitoringMapper.selectTransferRequestById(requestId);
+    }
+
+    private void syncMonitoringEnrollment(Long registerId, Long employeeId, Map<String, Object> enrollment) {
+        if (!followUpProperties.preferEnrollmentTable() || enrollment == null || enrollment.isEmpty()) {
+            return;
+        }
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("registerId", registerId);
+        payload.put("departmentId", enrollment.get("departmentId"));
+        payload.put("priorityLevel", enrollment.get("priorityLevel"));
+        payload.put("interviewIntervalDays", enrollment.get("interviewIntervalDays"));
+        payload.put("observationIntervalDays", enrollment.get("observationIntervalDays"));
+        payload.put("monitoringEmployeeId", employeeId);
+        payload.put("monitoredAt", LocalDateTime.now());
+        payload.put("enrolledBy", MedtechAuthContext.employeeIdOrNull());
+        enrollmentSyncService.trySyncEnrollment(payload);
     }
 
     private static Long toLong(Object value) {
@@ -157,6 +445,20 @@ public class FollowUpMonitoringService {
             return Long.valueOf(String.valueOf(value));
         } catch (NumberFormatException ex) {
             return null;
+        }
+    }
+
+    private static int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return 0;
         }
     }
 }
