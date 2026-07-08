@@ -178,9 +178,13 @@ def run_segnet_inference(model: torch.nn.Module, file_path: str) -> Dict[str, An
       sitk_image    : LPS 方向、原始 spacing 的 sitk.Image（与 CT NRRD 方向一致）
       inference_ms  : 推理耗时（毫秒）
     """
-    image = sitk.ReadImage(file_path)
-    image = _to_lps(image)
-    hu_arr = sitk.GetArrayFromImage(image).astype(np.float32, copy=False)  # (D, H, W)
+    # 保留原始图像（不做方向转换），用于最终将掩码重采样回与 CT NRRD 完全一致的物理空间。
+    # ct-viewer-algo 以原始方向写入 CT NRRD（不做任何重定向），若此处仅把 mask 以
+    # LPS 元信息写入，两者 origin/direction 可能存在几个体素的偏差 → 前端叠加时位置偏移。
+    original_image = sitk.ReadImage(file_path)
+    # 推理在 LPS 方向进行，确保轴位切片在 axis-0 且预处理坐标变换正确。
+    image = _to_lps(original_image)
+    hu_arr = sitk.GetArrayFromImage(image).astype(np.float32, copy=False)  # (D, H, W) in LPS
 
     device = torch.device(config.SEGNET_DEVICE)
     D, H, W = hu_arr.shape
@@ -229,10 +233,40 @@ def run_segnet_inference(model: torch.nn.Module, file_path: str) -> Dict[str, An
     # 用平滑后的概率重算二值掩码，阈值略低于 0.5 以保留平滑后的传播区域
     binary_mask = (smoothed_prob > config.SEGNET_PROB_THRESHOLD).astype(np.uint8)
 
+    # ---- 将掩码重采样回原始 CT 物理空间 ----------------------------------------
+    # ct-viewer-algo 以原始方向（不做 DICOMOrient）写入 CT NRRD；
+    # 若 original_image 与 image(LPS) 的 origin/direction 存在差异（非纯 LPS CT），
+    # mask 与 CT 以相同体素索引对齐时会出现位置偏移（表现为"略偏下"）。
+    # 用 SimpleITK 将 LPS 空间的 mask/prob_map 重采样到 original_image 物理网格，
+    # 使两者体素索引严格对应同一解剖位置。
+    # 对于已是 LPS 的 CT，DICOMOrient 是恒等变换，重采样结果与输入完全一致（zero-cost）。
+    def _resample_to_original(
+        arr: np.ndarray,
+        lps_img: "sitk.Image",
+        ref_img: "sitk.Image",
+        interpolator,
+    ) -> np.ndarray:
+        src = sitk.GetImageFromArray(arr)
+        src.CopyInformation(lps_img)
+        rs = sitk.ResampleImageFilter()
+        rs.SetReferenceImage(ref_img)
+        rs.SetInterpolator(interpolator)
+        rs.SetDefaultPixelValue(0)
+        return sitk.GetArrayFromImage(rs.Execute(src))
+
+    binary_mask = _resample_to_original(
+        binary_mask, image, original_image, sitk.sitkNearestNeighbor
+    ).astype(np.uint8)
+    smoothed_prob = _resample_to_original(
+        smoothed_prob, image, original_image, sitk.sitkLinear
+    ).astype(np.float32)
+    # HU 值直接从原始图像读取，避免重采样误差
+    hu_arr_orig = sitk.GetArrayFromImage(original_image).astype(np.float32, copy=False)
+
     return {
         "binary_mask": binary_mask,
         "prob_map": smoothed_prob,   # 返回平滑后的概率，供后处理的置信度过滤使用
-        "hu_arr": hu_arr,
-        "sitk_image": image,
+        "hu_arr": hu_arr_orig,       # 使用原始空间 HU，与 binary_mask 坐标系一致
+        "sitk_image": original_image,  # 原始物理空间，与 CT NRRD 严格对齐
         "inference_ms": inference_ms,
     }
