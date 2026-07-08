@@ -7,9 +7,8 @@ https://github.com/Ola-Vish/lung-tumor-segmentation）。与 app/inference.py
 （MONAI 3D 滑窗）、app/nnunet_backend.py（nnU-Net 整卷）不同，本后端按原仓库
 约定逐轴位切片做 2D 推理：
 
-  1. 读取 NRRD/NIfTI，重定向到 LPS 方向（轴位切片 = sitk 数组第 0 维），
-     并对每张切片做转置使行/列方向与原仓库训练预处理（nibabel LAS: 行=L, 列=A）
-     尽量对齐，减少因坐标系差异导致的推理偏差。
+  1. 读取 NRRD/NIfTI，重定向到 RAS 方向（轴位切片 = sitk 数组第 0 维，
+     坐标约定与 ct-viewer-service 和 frontend 保持一致）
   2. 每张切片：原始 HU 值 / SEGNET_SCALING_VALUE（不做 clip，与原仓库训练
      预处理完全一致）→ resize 到 224x224 → 灰度复制为 3 通道（VGG 兼容输入）
   3. 按批喂入 SegNet，收集逐切片前景概率图（prob_map）
@@ -17,7 +16,7 @@ https://github.com/Ola-Vish/lung-tumor-segmentation）。与 app/inference.py
      SegNet 是 2D 模型，每张切片独立预测，没有 3D 上下文约束，相邻切片间概率
      常常忽高忽低，导致 3D 掩码只有 1~2 层厚、在冠状/矢状图中呈扁平薄片状。
      Z 轴平滑将概率连续地传播到相邻切片，使 3D 病灶形态更自然。
-  5. 用平滑后的概率图（>SEGNET_PROB_THRESHOLD）重算 binary_mask，
+  5. 用平滑后的概率图（> SEGNET_PROB_THRESHOLD）重算 binary_mask，
      沿 z 轴堆叠为完整体数据
 
 使用方式：
@@ -44,17 +43,15 @@ from .segnet_checkpoint_utils import load_segnet_state_dict
 from .segnet_model import build_segnet_model
 
 
-def _to_lps(image: sitk.Image) -> sitk.Image:
+def _to_ras(image: sitk.Image) -> sitk.Image:
     """
-    重定向到 LPS 方向。
-
-    原仓库用 nibabel 读 NIfTI 并要求 LAS 方向，其中：
-      - 切片内行方向 = L（左右），列方向 = A（前后）
-    SimpleITK 的 GetArrayFromImage 在 LPS 下返回 arr[z, y, x]，
-    slice[i] 的 shape 为 (A-dim, L-dim)，即行=A、列=L，与训练时 (L, A) 转置。
-    因此在 _preprocess_slice 中再做一次 .T，使得喂入模型的切片方向与训练尽量一致。
+    重定向到 RAS 方向，与 ct-viewer-service 存储格式和 frontend 坐标约定保持一致：
+      - D 轴（第 0 维）= Superior-Inferior（轴位切片索引）
+      - H 轴（第 1 维）= Anterior-Posterior（冠状切片索引）
+      - W 轴（第 2 维）= Right-Left（矢状切片索引）
+    bbox / centroidXyz 均在此坐标系下计算，frontend navigateToLesion 依赖此约定。
     """
-    return sitk.DICOMOrient(image, "LPS")
+    return sitk.DICOMOrient(image, "RAS")
 
 
 def load_model() -> Tuple[Optional[torch.nn.Module], Optional[str]]:
@@ -92,18 +89,15 @@ def load_model() -> Tuple[Optional[torch.nn.Module], Optional[str]]:
 
 def _preprocess_slice(slice_hu: np.ndarray, size: Tuple[int, int]) -> torch.Tensor:
     """
-    单张轴位切片预处理：转置对齐训练方向 → HU / scaling_value（不 clip）
-    → resize → 灰度转 3 通道。
+    单张轴位切片预处理：HU / scaling_value（不 clip）→ resize → 灰度转 3 通道。
 
-    原仓库用 nibabel LAS 读取，切片内存排列为 (L, A)（行=左右, 列=前后）。
-    我们用 SimpleITK LPS，GetArrayFromImage 返回 (z, y, x)，
-    slice[i] 的 shape 为 (A-dim, L-dim)。做一次转置（.T）即可得到 (L-dim, A-dim)，
-    与训练时的切片方向一致，减少因坐标系差异导致的推理偏差。
+    输入切片在 RAS 空间下的内存排列为 (A-dim, R-dim)（行=前后, 列=左右），
+    直接归一化后喂给模型，mask 输出与 hu_arr 保持完全相同的坐标约定，
+    避免因转置引入的 H/W 轴混淆问题。
 
     返回 (3, H, W) float32 tensor（H, W 为目标 size）。
     """
-    # 转置：(A, L) → (L, A)，与训练预处理的 nibabel LAS 切片方向对齐
-    arr = slice_hu.T.astype(np.float32) / config.SEGNET_SCALING_VALUE
+    arr = slice_hu.astype(np.float32) / config.SEGNET_SCALING_VALUE
     tensor = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, H0, W0)
     tensor = F.interpolate(tensor, size=size, mode="bilinear", align_corners=False)
     tensor = tensor.repeat(1, 3, 1, 1)  # 灰度 -> 3 通道（VGG 兼容输入）
@@ -148,11 +142,11 @@ def run_segnet_inference(model: torch.nn.Module, file_path: str) -> Dict[str, An
       binary_mask   : (D, H, W) uint8，0=背景 / 1=肿瘤（原始输入分辨率）
       prob_map      : (D, H, W) float32，前景概率（Z 轴平滑后）
       hu_arr        : (D, H, W) float32，原始 HU 值（未归一化，供密度计算）
-      sitk_image    : LPS 方向、原始 spacing 的 sitk.Image
+      sitk_image    : RAS 方向、原始 spacing 的 sitk.Image
       inference_ms  : 推理耗时（毫秒）
     """
     image = sitk.ReadImage(file_path)
-    image = _to_lps(image)
+    image = _to_ras(image)
     hu_arr = sitk.GetArrayFromImage(image).astype(np.float32, copy=False)  # (D, H, W)
 
     device = torch.device(config.SEGNET_DEVICE)
