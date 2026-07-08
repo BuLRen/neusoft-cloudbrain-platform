@@ -43,15 +43,34 @@ from .segnet_checkpoint_utils import load_segnet_state_dict
 from .segnet_model import build_segnet_model
 
 
-def _to_ras(image: sitk.Image) -> sitk.Image:
+def _to_lps(image: sitk.Image) -> sitk.Image:
     """
-    重定向到 RAS 方向，与 ct-viewer-service 存储格式和 frontend 坐标约定保持一致：
-      - D 轴（第 0 维）= Superior-Inferior（轴位切片索引）
-      - H 轴（第 1 维）= Anterior-Posterior（冠状切片索引）
-      - W 轴（第 2 维）= Right-Left（矢状切片索引）
+    重定向到 LPS 方向，与 ct-viewer-algo 存储 NRRD 的方向保持一致。
+
+    ct-viewer-algo 的 write_image_to_nrrd 直接调用 sitk.WriteImage，
+    不做任何方向转换，因此 CT NRRD 以 DICOM 原始方向存储。
+    临床 CT 的 DICOM 标准方向是 LPS（Left-Posterior-Superior）：
+      - x 轴（NRRD 第 1 维，最快变化）= Left 方向；x=0 对应病人右侧
+      - y 轴（NRRD 第 2 维）= Posterior 方向
+      - z 轴（NRRD 第 3 维，最慢变化）= Superior 方向（轴位切片索引）
+
+    frontend 用 extractSliceZyx/extractCoronalSlice/extractSagittalSlice 读取
+    NRRD 时，约定 x=0 在屏幕左侧。对于 LPS，x=0 = 病人右侧，与放射学惯例
+    （"R 在屏幕左"）一致。
+
+    如果 mask NRRD 用 RAS 方向（x=Right），则 x=0 对应病人左侧，显示时
+    左右轴被镜像——这就是之前标注位置总是左右翻转的根本原因。
+
+    本函数确保 mask NRRD 与 CT NRRD 使用相同的 LPS 方向，避免镜像问题。
+
+    GetArrayFromImage(LPS_image) 返回 arr[z, y, x] = arr[S, P, L]，
+    轴位切片 arr[i] shape = (P_dim, L_dim) = (H, W)：
+      - D 轴 (axis 0) = S = 轴位切片索引
+      - H 轴 (axis 1) = P = 冠状切片索引（P 方向，Y 维度）
+      - W 轴 (axis 2) = L = 矢状切片索引（L 方向，X 维度）
     bbox / centroidXyz 均在此坐标系下计算，frontend navigateToLesion 依赖此约定。
     """
-    return sitk.DICOMOrient(image, "RAS")
+    return sitk.DICOMOrient(image, "LPS")
 
 
 def load_model() -> Tuple[Optional[torch.nn.Module], Optional[str]]:
@@ -94,27 +113,25 @@ def _preprocess_slice(slice_hu: np.ndarray, size: Tuple[int, int]) -> torch.Tens
     坐标系对齐（关键）
     ------------------
     训练数据使用 nibabel LAS 方向读取，切片 data[:, :, idx] 的内存排列是
-    (L_dim, A_dim)——行方向=Left（左右），列方向=Anterior（前后）。
+    (L_dim, A_dim)——行=Left（左右），列=Anterior（前后）。
 
-    我们用 SimpleITK RAS 方向，GetArrayFromImage 返回 (D, H, W) = (S, A, R)，
-    单张切片 hu_arr[i] 的内存排列是 (A_dim, R_dim)——行=Anterior，列=Right。
+    我们用 SimpleITK LPS 方向，GetArrayFromImage 返回 (D, H, W) = (S, P, L)，
+    单张切片 hu_arr[i] 的内存排列是 (P_dim, L_dim)——行=Posterior，列=Left。
 
-    两者差了 90° 旋转 + 镜像（R 与 L 方向相反）：
-      原始训练: 行=L, 列=A
-      我们（RAS）: 行=A, 列=R = 行=A, 列=mirror(L)
+    变换 (P, L) → (L, A)：
+      1. .T        : (P, L) → (L, P)，行=L，列=P
+      2. np.fliplr : 把列反转 P→A（A 与 P 互为镜像），得 (L, A)，行=L，列=A ✓
 
-    变换 (A, R) → (L, A)：
-      1. .T: (A, R) → (R, A)，行=R，列=A
-      2. np.flipud: 把行反转 R→L，得 (L, A)，行=L，列=A ✓
+    变换后 shape 从 (H=P_dim, W=L_dim) 变为 (W=L_dim, H=P_dim)。
 
-    对于 512×512 标准 CT（H=W），变换后 shape 从 (H, W) 变为 (W, H)。
-    输出概率图需用逆变换 np.fliplr(.T) 映射回 (A, R) RAS 空间（见 run_segnet_inference）。
+    输出概率图需用逆变换 np.fliplr(probs).T 映射回 (P, L) LPS 空间
+    （见 run_segnet_inference 推理循环）。
 
-    返回 (3, W0, H0) float32 tensor（W0, H0 为对齐后的 (L, A) 维度，即原 (W, H)）。
+    返回 (3, W, H) float32 tensor（W=L_dim, H=P_dim，即对齐后的 (L, A) 维度）。
     """
-    # (A, R) → (L, A)：转置后沿行方向翻转，使行=L、列=A，与训练数据内存排列一致
-    arr = np.flipud(slice_hu.T).astype(np.float32) / config.SEGNET_SCALING_VALUE
-    tensor = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, W0, H0)
+    # (P, L) → (L, A)：转置后沿列方向翻转，使行=L、列=A，与训练数据内存排列一致
+    arr = np.fliplr(slice_hu.T).astype(np.float32) / config.SEGNET_SCALING_VALUE
+    tensor = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, W, H)
     tensor = F.interpolate(tensor, size=size, mode="bilinear", align_corners=False)
     tensor = tensor.repeat(1, 3, 1, 1)  # 灰度 -> 3 通道（VGG 兼容输入）
     return tensor.squeeze(0)  # (3, 224, 224)
@@ -158,11 +175,11 @@ def run_segnet_inference(model: torch.nn.Module, file_path: str) -> Dict[str, An
       binary_mask   : (D, H, W) uint8，0=背景 / 1=肿瘤（原始输入分辨率）
       prob_map      : (D, H, W) float32，前景概率（Z 轴平滑后）
       hu_arr        : (D, H, W) float32，原始 HU 值（未归一化，供密度计算）
-      sitk_image    : RAS 方向、原始 spacing 的 sitk.Image
+      sitk_image    : LPS 方向、原始 spacing 的 sitk.Image（与 CT NRRD 方向一致）
       inference_ms  : 推理耗时（毫秒）
     """
     image = sitk.ReadImage(file_path)
-    image = _to_ras(image)
+    image = _to_lps(image)
     hu_arr = sitk.GetArrayFromImage(image).astype(np.float32, copy=False)  # (D, H, W)
 
     device = torch.device(config.SEGNET_DEVICE)
@@ -171,11 +188,11 @@ def run_segnet_inference(model: torch.nn.Module, file_path: str) -> Dict[str, An
 
     prob_map = np.zeros((D, H, W), dtype=np.float32)
 
-    # _preprocess_slice 内部对切片做了 (A,R)→(L,A) 的坐标变换（np.flipud(.T)），
-    # 变换后切片 shape 从 (H, W) 变为 (W, H)。模型输出也在 (L,A) 坐标系下，
-    # 因此 resize 回原始尺寸时应使用 (W, H)，而非 (H, W)。
-    # 之后对每张概率图执行逆变换 np.fliplr(.T)：(L,A)→(A,R)，
-    # 使 prob_map[i] 的坐标约定与 hu_arr[i] 保持一致（均为 RAS 的 (A, R) 排列）。
+    # _preprocess_slice 内部对切片做了 (P,L)→(L,A) 的坐标变换（np.fliplr(.T)），
+    # 变换后切片 shape 从 (H=P_dim, W=L_dim) 变为 (W=L_dim, H=P_dim)。
+    # 模型输出也在 (L,A) 坐标系下，因此 resize 回原始尺寸时应使用 (W, H)，而非 (H, W)。
+    # 之后对每张概率图执行逆变换 np.fliplr(probs).T：(L,A)→(P,L)，
+    # 使 prob_map[i] 的坐标约定与 hu_arr[i] 保持一致（均为 LPS 的 (P, L) 排列）。
     t0 = time.time()
     batch_size = max(1, config.SEGNET_BATCH_SIZE)
     with torch.no_grad():
@@ -188,7 +205,7 @@ def run_segnet_inference(model: torch.nn.Module, file_path: str) -> Dict[str, An
             probs = torch.softmax(logits, dim=1)[:, 1]  # 前景概率 (B, 224, 224)
 
             # 输出 resize 回 (W, H) 而非 (H, W)：
-            # 模型输入经 np.flipud(.T) 后 shape 为 (W, H)，输出在同一 (L,A) 空间，
+            # 模型输入经 np.fliplr(.T) 后 shape 为 (W=L_dim, H=P_dim)，输出在同一 (L,A) 空间，
             # 所以 resize 目标应与预处理输入的空间维度匹配，即 (W, H)。
             probs_resized = F.interpolate(
                 probs.unsqueeze(1), size=(W, H), mode="bilinear", align_corners=False
@@ -196,10 +213,11 @@ def run_segnet_inference(model: torch.nn.Module, file_path: str) -> Dict[str, An
 
             probs_np = probs_resized.cpu().numpy()
             for offset, i in enumerate(range(start, end)):
-                # 逆变换 (L, A) → (A, R)：先转置再左右翻转
-                # np.fliplr(arr.T)[a, r] = arr[W-1-r, a] = prob 在 (L=W-1-r, A=a) 处
-                # 由于 L-index = W-1-R-index，这正好是 RAS 空间的 (A=a, R=r) 体素 ✓
-                prob_map[i] = np.fliplr(probs_np[offset].T)  # → (H, W) in (A, R) RAS
+                # 逆变换 (L, A) → (P, L)：先左右翻转再转置
+                # np.fliplr(probs)[l, H-1-a] = probs[l, a]
+                # .T[H-1-a, l] = probs[l, a] → result[p, l] = probs[l, A-1-p]
+                # 其中 p = H-1-a（P-index = H-1-A-index，P 与 A 互为镜像）✓
+                prob_map[i] = np.fliplr(probs_np[offset]).T  # → (H, W) in (P, L) LPS
 
     inference_ms = int(round((time.time() - t0) * 1000))
 
