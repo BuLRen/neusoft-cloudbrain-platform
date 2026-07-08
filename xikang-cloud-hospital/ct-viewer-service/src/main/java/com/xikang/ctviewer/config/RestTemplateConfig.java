@@ -2,6 +2,7 @@ package com.xikang.ctviewer.config;
 
 import com.xikang.ctviewer.config.CtViewerProperties.AiCt;
 import com.xikang.ctviewer.config.CtViewerProperties.Algo;
+import com.xikang.ctviewer.config.CtViewerProperties.LungNodule;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,6 +28,15 @@ public class RestTemplateConfig {
         return builder
             .setConnectTimeout(Duration.ofMillis(aiCt.getConnectTimeoutMs()))
             .setReadTimeout(Duration.ofMillis(aiCt.getReadTimeoutMs()))
+            .build();
+    }
+
+    @Bean
+    public RestTemplate lungNoduleSegRestTemplate(RestTemplateBuilder builder, CtViewerProperties properties) {
+        LungNodule lungNodule = properties.getLungNodule();
+        return builder
+            .setConnectTimeout(Duration.ofMillis(lungNodule.getConnectTimeoutMs()))
+            .setReadTimeout(Duration.ofMillis(lungNodule.getReadTimeoutMs()))
             .build();
     }
 }

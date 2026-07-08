@@ -32,8 +32,17 @@ public class CtInferenceService {
 
         Map<String, Object> qcResult = parseImagingAnalysis(input.get("imagingAnalysisResult"));
         String qualityNotice = buildQualityNotice(qcResult);
+        Map<String, Object> segmentationResult = parseImagingAnalysis(input.get("imagingSegmentationResult"));
+        String segmentationNotice = buildSegmentationNotice(segmentationResult);
 
         boolean hasAbnormality = random.nextDouble() > 0.25;
+        if (segmentationResult != null) {
+            Object countObj = extractSummaryField(segmentationResult, "lesionCount");
+            int lesionCount = countObj instanceof Number number ? number.intValue() : 0;
+            if (lesionCount > 0) {
+                hasAbnormality = true;
+            }
+        }
         String riskLevel = hasAbnormality ? "attention" : "normal";
         String location = "chest".equals(bodyPart) ? "右肺下叶" : "左侧基底节区";
         String techName = "chest".equals(bodyPart) ? "胸部CT" : "头颅CT";
@@ -47,7 +56,10 @@ public class CtInferenceService {
         result.put("riskLevel", riskLevel);
 
         List<Map<String, Object>> findings = new ArrayList<>();
-        if (hasAbnormality) {
+        if (segmentationResult != null) {
+            findings.addAll(buildFindingsFromSegmentation(segmentationResult));
+        }
+        if (hasAbnormality && findings.isEmpty()) {
             Map<String, Object> finding = new LinkedHashMap<>();
             finding.put("findingType", "chest".equals(bodyPart) ? "ground_glass_opacity" : "low_density_lesion");
             finding.put("anatomicalLocation", location);
@@ -60,24 +72,25 @@ public class CtInferenceService {
         result.put("findings", findings);
 
         String baseFindings = hasAbnormality
-            ? location + "见异常密度影，边界欠清。"
+            ? buildAbnormalFindingsText(bodyPart, location, findings, segmentationNotice)
             : "chest".equals(bodyPart)
                 ? "胸廓对称，双肺野清晰，心影大小形态未见明显异常，纵隔居中，未见明显肿大淋巴结。"
                 : "颅骨结构完整，脑实质密度均匀，脑室系统未见明显扩张，中线结构居中。";
 
         String impression = hasAbnormality
-            ? ("chest".equals(bodyPart) ? "考虑感染性病变可能，建议结合临床与实验室检查。" : "见低密度灶，建议随访或进一步检查。")
+            ? buildAbnormalImpression(bodyPart, findings, segmentationNotice)
             : "未见明显异常。";
 
         String conclusion = hasAbnormality
-            ? ("chest".equals(bodyPart)
-                ? "胸部 CT 平扫见右肺下叶异常密度影，建议结合临床进一步评估。"
-                : "头颅 CT 平扫见低密度灶，建议随访或 MRI 进一步检查。")
+            ? buildAbnormalConclusion(bodyPart, findings, segmentationNotice)
             : ("chest".equals(bodyPart)
                 ? "胸部 CT 平扫未见明显异常，建议结合临床。"
                 : "头颅 CT 平扫未见明显异常，建议结合临床。");
 
         String findingsText = appendQualityNotice(baseFindings, qualityNotice);
+        if (segmentationNotice != null && !segmentationNotice.isBlank()) {
+            findingsText = findingsText + "\n\n【AI 病灶标注】" + segmentationNotice;
+        }
         result.put("resultText", findingsText);
         result.put("aiImpression", impression);
         result.put("aiConclusion", conclusion);
@@ -89,8 +102,117 @@ public class CtInferenceService {
         if (qualityNotice != null) {
             baseLimitation = baseLimitation + " " + qualityNotice;
         }
+        if (segmentationNotice != null) {
+            baseLimitation = baseLimitation + " AI 病灶标注仅用于教学演示。";
+        }
         result.put("limitations", baseLimitation);
         return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> buildFindingsFromSegmentation(Map<String, Object> segmentationResult) {
+        List<Map<String, Object>> findings = new ArrayList<>();
+        Object lesionsObj = segmentationResult.get("lesions");
+        if (!(lesionsObj instanceof List<?> lesionList)) {
+            return findings;
+        }
+        for (Object item : lesionList) {
+            if (!(item instanceof Map<?, ?> lesionMap)) {
+                continue;
+            }
+            Map<String, Object> finding = new LinkedHashMap<>();
+            finding.put("findingType", "nodule_like");
+            finding.put("anatomicalLocation", lesionMap.get("label"));
+            Object diameter = lesionMap.get("diameterMm");
+            finding.put("size", diameter != null ? "约" + diameter + "mm" : "约8mm");
+            finding.put("severity", "moderate");
+            finding.put("confidence", lesionMap.get("confidence"));
+            Object sliceIndex = lesionMap.get("sliceIndex");
+            if (sliceIndex != null) {
+                finding.put("sliceIndex", sliceIndex);
+            }
+            findings.add(finding);
+        }
+        return findings;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String buildSegmentationNotice(Map<String, Object> segmentationResult) {
+        if (segmentationResult == null || segmentationResult.isEmpty()) {
+            return null;
+        }
+        Object summaryObj = segmentationResult.get("summary");
+        Map<String, Object> summary = summaryObj instanceof Map<?, ?> map
+            ? (Map<String, Object>) map
+            : segmentationResult;
+        int lesionCount = 0;
+        Object countObj = summary.get("lesionCount");
+        if (countObj instanceof Number number) {
+            lesionCount = number.intValue();
+        }
+        if (lesionCount <= 0) {
+            return "AI 未检出明显疑似病灶（演示用途）。";
+        }
+        Object maxDiameter = summary.get("maxDiameterMm");
+        String diameterText = maxDiameter != null ? String.valueOf(maxDiameter) : "-";
+        return "AI 检出 " + lesionCount + " 处疑似病灶，最大径约 " + diameterText
+            + " mm（仅用于教学演示，非临床诊断依据）。";
+    }
+
+    private static Object extractSummaryField(Map<String, Object> segmentationResult, String key) {
+        Object summary = segmentationResult.get("summary");
+        if (summary instanceof Map<?, ?> summaryMap) {
+            return summaryMap.get(key);
+        }
+        return segmentationResult.get(key);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String buildAbnormalFindingsText(
+        String bodyPart,
+        String location,
+        List<Map<String, Object>> findings,
+        String segmentationNotice
+    ) {
+        if (!findings.isEmpty()) {
+            Map<String, Object> first = findings.get(0);
+            String label = String.valueOf(first.getOrDefault("anatomicalLocation", "疑似病灶"));
+            String size = String.valueOf(first.getOrDefault("size", "约8mm"));
+            Object sliceIndex = first.get("sliceIndex");
+            String sliceText = sliceIndex != null ? "（轴位第 " + sliceIndex + " 层）" : "";
+            return label + sliceText + "见异常密度影，大小" + size + "，边界欠清。";
+        }
+        return location + "见异常密度影，边界欠清。";
+    }
+
+    private static String buildAbnormalImpression(
+        String bodyPart,
+        List<Map<String, Object>> findings,
+        String segmentationNotice
+    ) {
+        if (!findings.isEmpty()) {
+            return "chest".equals(bodyPart)
+                ? "考虑结节样病变可能，建议结合临床与随访。"
+                : "见异常密度灶，建议随访或进一步检查。";
+        }
+        return "chest".equals(bodyPart)
+            ? "考虑感染性病变可能，建议结合临床与实验室检查。"
+            : "见低密度灶，建议随访或进一步检查。";
+    }
+
+    private static String buildAbnormalConclusion(
+        String bodyPart,
+        List<Map<String, Object>> findings,
+        String segmentationNotice
+    ) {
+        if (!findings.isEmpty()) {
+            return "chest".equals(bodyPart)
+                ? "胸部 CT 平扫见疑似结节样病灶，建议结合临床进一步评估（演示用途）。"
+                : "头颅 CT 平扫见异常密度灶，建议随访或 MRI 进一步检查（演示用途）。";
+        }
+        return "chest".equals(bodyPart)
+            ? "胸部 CT 平扫见异常密度影，建议结合临床进一步评估。"
+            : "头颅 CT 平扫见低密度灶，建议随访或 MRI 进一步检查。";
     }
 
     @SuppressWarnings("unchecked")

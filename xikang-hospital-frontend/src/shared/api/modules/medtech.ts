@@ -1,7 +1,9 @@
 import { http } from '../request'
-import type { CtAnalyzeResult } from './ctViewer'
+import type { CtAnalyzeResult, CtSegmentResult } from './ctViewer'
 import type { MedicalTechnologyCatalogItem } from '@/shared/types/medtech'
 import type { SimulatedCheckStructuredOutput } from '@/shared/types/simulatedCheckResult'
+
+const CT_AI_SEGMENT_TIMEOUT_MS = 30 * 60 * 1000
 
 export type MedtechTechType = 'check' | 'inspection' | 'disposal'
 
@@ -29,6 +31,10 @@ export interface MedtechApplication {
   hasImagingAnalysis?: boolean
   imagingAnalyzedAt?: string
   imagingAnalysisResult?: CtAnalyzeResult
+  hasImagingSegmentation?: boolean
+  imagingSegmentedAt?: string
+  imagingSegmentationResult?: CtSegmentResult
+  imagingSegmentationMaskVolumeId?: string
 }
 
 export interface CheckApplication extends MedtechApplication {
@@ -92,9 +98,13 @@ export interface CheckImagingInfo {
   uploadedAt?: string
   sourceName?: string
   analyzedAt?: string
+  segmentedAt?: string
   hasImaging?: boolean
   hasImagingAnalysis?: boolean
+  hasImagingSegmentation?: boolean
+  maskVolumeId?: string
   analysisResult?: CtAnalyzeResult
+  segmentationResult?: CtSegmentResult
 }
 
 export interface MedtechProfile {
@@ -214,6 +224,21 @@ export const medtechApi = {
       url: `/medtech/check/${id}/imaging/analyze`,
       method: 'POST',
       timeout: CT_IMAGING_ANALYZE_TIMEOUT_MS,
+    })
+  },
+  segmentCheckImaging(id: number) {
+    return http<CheckImagingInfo>({
+      url: `/medtech/check/${id}/imaging/segment`,
+      method: 'POST',
+      timeout: CT_IMAGING_ANALYZE_TIMEOUT_MS,
+    })
+  },
+  aiSegmentCheckImaging(id: number, modelId?: string) {
+    return http<CheckImagingInfo>({
+      url: `/medtech/check/${id}/imaging/segment/ai`,
+      method: 'POST',
+      params: modelId ? { modelId } : undefined,
+      timeout: CT_AI_SEGMENT_TIMEOUT_MS,
     })
   },
   startInspection(id: number, operatorInfo?: Record<string, unknown>) {

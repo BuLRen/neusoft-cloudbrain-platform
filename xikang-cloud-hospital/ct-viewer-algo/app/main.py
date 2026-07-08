@@ -15,7 +15,14 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ct_viewer import image_meta, read_dicom_series, read_volume_file, run_filter, write_image_to_nrrd
+from ct_viewer import (
+    image_meta,
+    read_dicom_series,
+    read_volume_file,
+    run_filter,
+    run_rule_based_segmentation,
+    write_image_to_nrrd,
+)
 
 from . import config
 
@@ -52,6 +59,13 @@ class ExportRequest(BaseModel):
     src_nrrd_path: str
     out_path: str
     format: str = "nrrd"
+
+
+class SegmentRequest(BaseModel):
+    src_nrrd_path: str
+    out_nrrd_path: str
+    source_name: str = ""
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 app = FastAPI(title="ct-viewer-algo", version="1.0.0")
@@ -112,6 +126,40 @@ def internal_filter(body: FilterRequest):
             is_mask=is_mask,
         )
         return _ok({"is_mask": is_mask, "meta": meta, "message": f"滤波完成：{label}"})
+    except Exception as exc:
+        return _err(500, 500, f"{exc}\n{traceback.format_exc()}")
+
+
+@app.post("/internal/segment")
+def internal_segment(body: SegmentRequest):
+    try:
+        if not os.path.isfile(body.src_nrrd_path):
+            return _err(400, 400, f"源 NRRD 不存在：{body.src_nrrd_path}")
+
+        image = read_volume_file(body.src_nrrd_path)
+        mask, lesions, summary = run_rule_based_segmentation(
+            image,
+            body.source_name,
+            body.params or {},
+        )
+        write_image_to_nrrd(mask, body.out_nrrd_path)
+
+        source_name = body.source_name or os.path.basename(body.src_nrrd_path)
+        meta = image_meta(
+            mask,
+            source_name=f"{source_name} | AI Lesion Segmentation",
+            is_mask=True,
+        )
+        message = f"分割完成：检出 {summary.get('lesionCount', 0)} 处疑似病灶"
+        return _ok(
+            {
+                "is_mask": True,
+                "meta": meta,
+                "lesions": lesions,
+                "summary": summary,
+                "message": message,
+            }
+        )
     except Exception as exc:
         return _err(500, 500, f"{exc}\n{traceback.format_exc()}")
 

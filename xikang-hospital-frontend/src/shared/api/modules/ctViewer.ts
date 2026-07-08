@@ -44,10 +44,82 @@ export interface CtAnalyzeResult {
   inference_ms: number
 }
 
+export type CtRiskLevel = '低风险' | '中风险' | '高风险'
+
+export interface CtLesionItem {
+  id: number
+  label: string
+  sliceIndex: number
+  plane: string
+  centroidXyz: number[]
+  diameterMm: number
+  /** [z0, y0, x0, z1, y1, x1]（体素坐标，与后端 numpy D/H/W 轴顺序一致，不是 x/y/z 顺序） */
+  bbox: number[]
+  confidence: number
+  volumeMm3: number
+  volumeCm3?: number
+  meanDensityHU?: number
+  riskLevel?: CtRiskLevel
+  source?: string
+}
+
+export interface CtSegmentSummary {
+  lesionCount: number
+  maxDiameterMm: number
+  totalVolumeMm3?: number
+  totalVolumeCm3?: number
+  overallRiskLevel?: CtRiskLevel
+  modelVersion?: string
+  processingTimeMs?: number
+  method?: string
+  note?: string
+}
+
+export interface CtSegmentResult {
+  maskVolumeId: string
+  isMask: boolean
+  message: string
+  meta?: CtVolumeMeta
+  lesions: CtLesionItem[]
+  summary: CtSegmentSummary
+  /** AI 分割附加字段（规则分割时为空）*/
+  modelVersion?: string
+  processingTimeMs?: number
+  overallRiskLevel?: CtRiskLevel
+}
+
+export interface CtAiModelOption {
+  id: string
+  label?: string
+  description?: string
+  version?: string
+  backend?: string
+  device?: string
+  loaded: boolean
+  error?: string | null
+}
+
 export interface CtHealthResult {
   ok?: boolean
   algoReady?: boolean
   aiCtReady?: boolean
+  lungNoduleReady?: boolean
+  lungNoduleStatus?: {
+    model_loaded?: boolean
+    backend?: string
+    device?: string
+    model_version?: string
+    /** 服务端默认模型 id（未指定 modelId 时使用） */
+    default_model_id?: string
+    /** 服务启动时尝试加载的全部模型列表，供前端渲染选择下拉框 */
+    available_models?: CtAiModelOption[]
+    inference_running?: boolean
+    inference_phase?: string | null
+    inference_elapsed_seconds?: number
+    inference_source?: string | null
+    inference_model_id?: string | null
+    error?: string
+  }
 }
 
 interface JavaLoadResponse {
@@ -60,6 +132,18 @@ interface JavaFilterResponse {
   isMask: boolean
   message: string
   meta: CtVolumeMeta
+}
+
+interface JavaSegmentResponse {
+  maskVolumeId: string
+  isMask: boolean
+  message: string
+  meta?: CtVolumeMeta
+  lesions?: CtLesionItem[]
+  summary?: CtSegmentSummary
+  modelVersion?: string
+  processingTimeMs?: number
+  overallRiskLevel?: CtRiskLevel
 }
 
 function mapLoadResult(data: JavaLoadResponse): CtLoadResult {
@@ -75,6 +159,20 @@ function mapFilterResult(data: JavaFilterResponse): CtFilterResult {
     is_mask: data.isMask,
     message: data.message,
     meta: data.meta,
+  }
+}
+
+function mapSegmentResult(data: JavaSegmentResponse): CtSegmentResult {
+  return {
+    maskVolumeId: data.maskVolumeId,
+    isMask: data.isMask,
+    message: data.message,
+    meta: data.meta,
+    lesions: data.lesions ?? [],
+    summary: data.summary ?? { lesionCount: 0, maxDiameterMm: 0 },
+    modelVersion: data.modelVersion,
+    processingTimeMs: data.processingTimeMs,
+    overallRiskLevel: data.overallRiskLevel,
   }
 }
 
@@ -142,6 +240,25 @@ export async function analyzeCtVolume(volumeId: string): Promise<CtAnalyzeResult
     method: 'POST',
     timeout: UPLOAD_TIMEOUT_MS,
   })
+}
+
+export async function segmentCtVolume(volumeId: string): Promise<CtSegmentResult> {
+  const data = await http<JavaSegmentResponse>({
+    url: `/ct-viewer/volume/${volumeId}/segment`,
+    method: 'POST',
+    timeout: UPLOAD_TIMEOUT_MS,
+  })
+  return mapSegmentResult(data)
+}
+
+export async function aiSegmentCtVolume(volumeId: string, modelId?: string): Promise<CtSegmentResult> {
+  const data = await http<JavaSegmentResponse>({
+    url: `/ct-viewer/volume/${volumeId}/segment/ai`,
+    method: 'POST',
+    data: modelId ? { modelId } : undefined,
+    timeout: UPLOAD_TIMEOUT_MS,
+  })
+  return mapSegmentResult(data)
 }
 
 export async function downloadCtVolume(volumeId: string, format: string) {

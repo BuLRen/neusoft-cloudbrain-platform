@@ -20,6 +20,9 @@
         <result column="imaging_source_name" property="imagingSourceName"/>
         <result column="imaging_analysis_result" property="imagingAnalysisResult"/>
         <result column="imaging_analyzed_at" property="imagingAnalyzedAt"/>
+        <result column="imaging_segmentation_result" property="imagingSegmentationResult"/>
+        <result column="imaging_segmented_at" property="imagingSegmentedAt"/>
+        <result column="imaging_segmentation_mask_volume_id" property="imagingSegmentationMaskVolumeId"/>
         <result column="case_number" property="caseNumber"/>
         <result column="patient_name" property="patientName"/>
         <result column="tech_name" property="techName"/>
@@ -46,6 +49,9 @@
             cr.imaging_source_name,
             cr.imaging_analysis_result,
             cr.imaging_analyzed_at,
+            cr.imaging_segmentation_result,
+            cr.imaging_segmented_at,
+            cr.imaging_segmentation_mask_volume_id,
             r.case_number,
             r.real_name AS patient_name,
             mt.tech_name,
@@ -125,7 +131,10 @@
             imaging_uploaded_at = #{imagingUploadedAt},
             imaging_source_name = #{imagingSourceName},
             imaging_analysis_result = NULL,
-            imaging_analyzed_at = NULL
+            imaging_analyzed_at = NULL,
+            imaging_segmentation_result = NULL,
+            imaging_segmented_at = NULL,
+            imaging_segmentation_mask_volume_id = NULL
         WHERE id = #{id}
     </update>
 
@@ -133,6 +142,14 @@
         UPDATE check_request
         SET imaging_analysis_result = #{imagingAnalysisResult},
             imaging_analyzed_at = #{imagingAnalyzedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateImagingSegmentation">
+        UPDATE check_request
+        SET imaging_segmentation_result = #{imagingSegmentationResult},
+            imaging_segmented_at = #{imagingSegmentedAt},
+            imaging_segmentation_mask_volume_id = #{imagingSegmentationMaskVolumeId}
         WHERE id = #{id}
     </update>
 
@@ -146,7 +163,10 @@
             imaging_uploaded_at = NULL,
             imaging_source_name = NULL,
             imaging_analysis_result = NULL,
-            imaging_analyzed_at = NULL
+            imaging_analyzed_at = NULL,
+            imaging_segmentation_result = NULL,
+            imaging_segmented_at = NULL,
+            imaging_segmentation_mask_volume_id = NULL
         WHERE id = #{id}
     </update>
 

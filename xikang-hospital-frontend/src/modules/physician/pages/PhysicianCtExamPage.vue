@@ -6,6 +6,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import CtViewerPanel from '@/modules/medtech/ct-viewer/components/CtViewerPanel.vue'
 import CtFilmSheetView from '@/modules/medtech/ct-viewer/components/CtFilmSheetView.vue'
 import CtDiagnosisReportPanel from '@/modules/medtech/components/CtDiagnosisReportPanel.vue'
+import CtAiSegmentationPanel from '@/modules/medtech/ct-viewer/components/CtAiSegmentationPanel.vue'
 import CtFilmPrintSheet from '@/shared/components/CtFilmPrintSheet.vue'
 import CtDiagnosisReportPrintSheet from '@/shared/components/CtDiagnosisReportPrintSheet.vue'
 import { useEncounterStore } from '@/app/stores/encounter'
@@ -22,6 +23,7 @@ const router = useRouter()
 const encounterStore = useEncounterStore()
 
 const activeImagingTab = ref<'film' | 'viewer'>('film')
+const segmentPanelVisible = ref(false)
 const filmPrintRef = ref<InstanceType<typeof CtFilmPrintSheet> | null>(null)
 const diagnosisPrintRef = ref<InstanceType<typeof CtDiagnosisReportPrintSheet> | null>(null)
 
@@ -55,6 +57,8 @@ const patientInfo = computed(() => ({
   age: encounterStore.patientSummary?.age,
   caseNumber: encounterStore.patientSummary?.caseNumber,
 }))
+
+const segmentationResult = computed(() => checkResult.value?.imagingSegmentationResult ?? null)
 
 const technicalSubline = computed(() => {
   const meta = volumeMeta.value
@@ -132,6 +136,14 @@ onMounted(() => {
           </div>
           <div class="physician-ct-page__export">
             <ElButton
+              v-if="segmentationResult"
+              size="small"
+              :type="segmentPanelVisible ? 'primary' : 'default'"
+              @click="segmentPanelVisible = !segmentPanelVisible"
+            >
+              AI 分割结果
+            </ElButton>
+            <ElButton
               size="small"
               :loading="exportingFilm"
               :disabled="!canViewImaging"
@@ -198,6 +210,16 @@ onMounted(() => {
             </ElTabPane>
           </ElTabs>
         </section>
+
+        <div
+          v-if="segmentPanelVisible"
+          class="physician-ct-page__seg-panel"
+        >
+          <CtAiSegmentationPanel
+            :result="segmentationResult"
+            :readonly="true"
+          />
+        </div>
 
         <aside class="physician-ct-page__report">
           <CtDiagnosisReportPanel
@@ -370,11 +392,24 @@ onMounted(() => {
 }
 
 .physician-ct-page__body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  display: flex;
   gap: 10px;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+
+.physician-ct-page__imaging {
+  flex: 1;
+  min-width: 0;
+}
+
+.physician-ct-page__seg-panel {
+  flex-shrink: 0;
+  width: 300px;
+  min-height: 0;
+  border: 1px solid var(--ct-border, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
   overflow: hidden;
 }
 
@@ -386,6 +421,11 @@ onMounted(() => {
   border-radius: 10px;
   background: var(--ct-surface, #151b24);
   overflow: hidden;
+  flex-shrink: 0;
+}
+
+.physician-ct-page__report {
+  width: 340px;
 }
 
 .physician-ct-page__tabs {
@@ -424,12 +464,23 @@ onMounted(() => {
 
 @media (max-width: 1100px) {
   .physician-ct-page__body {
-    grid-template-columns: 1fr;
+    flex-direction: column;
     overflow: auto;
+  }
+
+  .physician-ct-page__imaging,
+  .physician-ct-page__seg-panel,
+  .physician-ct-page__report {
+    width: 100% !important;
+    flex-shrink: 0;
   }
 
   .physician-ct-page__imaging {
     min-height: 60vh;
+  }
+
+  .physician-ct-page__seg-panel {
+    min-height: 280px;
   }
 
   .physician-ct-page__report {

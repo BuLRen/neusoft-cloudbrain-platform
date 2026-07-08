@@ -60,5 +60,9 @@ ct-viewer:
     base-url: ${AI_CT_SERVICE_URL:http://127.0.0.1:8105}
     connect-timeout-ms: 30000
     read-timeout-ms: 180000
+  lung-nodule:
+    base-url: ${LUNG_NODULE_SEG_SERVICE_URL:http://127.0.0.1:8222}
+    connect-timeout-ms: 30000
+    read-timeout-ms: ${LUNG_NODULE_SEG_READ_TIMEOUT_MS:1800000}
   internal:
     token: ${INTERNAL_SERVICE_TOKEN:${INTERNAL_AI_TOKEN:}}

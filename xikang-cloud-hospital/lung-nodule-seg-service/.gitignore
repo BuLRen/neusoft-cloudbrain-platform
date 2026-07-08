@@ -1,0 +1,31 @@
+# 模型权重（不入库，部署时手动放置）
+models/*.pth
+models/*.pt
+models/*.ckpt
+models/*.onnx
+models/*.bin
+
+# nnU-Net 权重目录（体积大，通过 scripts/download_nnunet_weights.py 生成）
+models/nnunet_results/
+
+# 训练数据集（本地路径，不入库）
+data/
+datasets/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# 评估输出
+eval_outputs/
+
+# 临时文件
+*.tmp
+*.temp
+
+# 虚拟环境
+venv/
+.venv/
+env/

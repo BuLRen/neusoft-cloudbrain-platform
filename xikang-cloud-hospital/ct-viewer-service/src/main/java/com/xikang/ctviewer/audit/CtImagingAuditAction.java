@@ -8,6 +8,8 @@ public final class CtImagingAuditAction {
     public static final String VIEW_META = "VIEW_META";
     public static final String FILTER = "FILTER";
     public static final String ANALYZE = "ANALYZE";
+    public static final String SEGMENT = "SEGMENT";
+    public static final String AI_SEGMENT = "AI_SEGMENT";
     public static final String EXPORT = "EXPORT";
     public static final String BIND = "BIND";
     public static final String UNBIND = "UNBIND";

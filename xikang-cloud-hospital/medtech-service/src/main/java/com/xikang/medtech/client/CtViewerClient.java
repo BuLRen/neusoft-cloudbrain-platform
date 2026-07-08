@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
@@ -102,6 +103,77 @@ public class CtViewerClient {
         } catch (RestClientException e) {
             log.warn("调 ct-viewer-service 分析失败 | volumeId={}", volumeId, e);
             throw new BusinessException(500, "CT 影像分析服务暂时不可用", e);
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public Map<String, Object> segmentVolume(String volumeId) {
+        if (!StringUtils.hasText(volumeId)) {
+            throw new BusinessException(400, "volumeId 不能为空");
+        }
+        if (!StringUtils.hasText(internalToken)) {
+            throw new BusinessException(500, "未配置 ct-viewer internal token，无法执行 CT 病灶分割");
+        }
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(AgentContextHeaders.INTERNAL_TOKEN, internalToken);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(Map.of(), headers);
+            Map<String, Object> response = restTemplate.exchange(
+                ctViewerBaseUrl + "/api/ct-viewer/internal/volume/{volumeId}/segment",
+                HttpMethod.POST,
+                entity,
+                Map.class,
+                Map.of("volumeId", volumeId.trim())
+            ).getBody();
+            return extractData(response, "CT 病灶分割失败");
+        } catch (RestClientException e) {
+            log.warn("调 ct-viewer-service 分割失败 | volumeId={}", volumeId, e);
+            throw new BusinessException(500, "CT 病灶分割服务暂时不可用", e);
+        }
+    }
+
+    public Map<String, Object> aiSegmentVolume(String volumeId) {
+        return aiSegmentVolume(volumeId, null);
+    }
+
+    /**
+     * @param modelId 可选，指定使用的 AI 分割模型（monai / segnet / nnunet），为空时使用服务端默认模型
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public Map<String, Object> aiSegmentVolume(String volumeId, String modelId) {
+        if (!StringUtils.hasText(volumeId)) {
+            throw new BusinessException(400, "volumeId 不能为空");
+        }
+        if (!StringUtils.hasText(internalToken)) {
+            throw new BusinessException(500, "未配置 ct-viewer internal token，无法执行 AI 肺结节分割");
+        }
+        try {
+            long startedAt = System.currentTimeMillis();
+            log.info("调 ct-viewer-service AI 分割开始 | volumeId={} modelId={}", volumeId, modelId);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(AgentContextHeaders.INTERNAL_TOKEN, internalToken);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            Map<String, Object> requestBody = StringUtils.hasText(modelId)
+                ? Map.of("modelId", modelId.trim())
+                : Map.of();
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+            Map<String, Object> response = restTemplate.exchange(
+                ctViewerBaseUrl + "/api/ct-viewer/internal/volume/{volumeId}/segment/ai",
+                HttpMethod.POST,
+                entity,
+                Map.class,
+                Map.of("volumeId", volumeId.trim())
+            ).getBody();
+            log.info(
+                "调 ct-viewer-service AI 分割完成 | volumeId={} elapsedMs={}",
+                volumeId,
+                System.currentTimeMillis() - startedAt
+            );
+            return extractData(response, "AI 肺结节分割失败");
+        } catch (RestClientException e) {
+            log.warn("调 ct-viewer-service AI 分割失败 | volumeId={}", volumeId, e);
+            throw new BusinessException(500, "AI 肺结节分割服务暂时不可用", e);
         }
     }
 

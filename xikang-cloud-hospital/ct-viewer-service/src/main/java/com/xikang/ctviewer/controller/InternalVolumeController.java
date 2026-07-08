@@ -1,6 +1,8 @@
 package com.xikang.ctviewer.controller;
 
 import com.xikang.common.result.Result;
+import com.xikang.ctviewer.dto.AiSegmentRequestDto;
+import com.xikang.ctviewer.dto.SegmentResponseDto;
 import com.xikang.ctviewer.dto.VolumeBindRequestDto;
 import com.xikang.ctviewer.service.CtViewerService;
 import lombok.RequiredArgsConstructor;
@@ -57,5 +59,19 @@ public class InternalVolumeController {
     @PostMapping("/{volumeId}/analyze")
     public Result<Map<String, Object>> analyzeVolume(@PathVariable String volumeId) {
         return Result.success(ctViewerService.analyzeVolumeInternal(volumeId));
+    }
+
+    @PostMapping("/{volumeId}/segment")
+    public Result<SegmentResponseDto> segmentVolume(@PathVariable String volumeId) {
+        return Result.success(ctViewerService.segmentVolumeInternal(volumeId, null));
+    }
+
+    @PostMapping("/{volumeId}/segment/ai")
+    public Result<SegmentResponseDto> aiSegmentVolume(
+        @PathVariable String volumeId,
+        @RequestBody(required = false) AiSegmentRequestDto request
+    ) {
+        String modelId = request != null ? request.getModelId() : null;
+        return Result.success(ctViewerService.aiSegmentVolumeInternal(volumeId, modelId));
     }
 }

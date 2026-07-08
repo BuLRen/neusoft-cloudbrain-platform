@@ -55,6 +55,13 @@ public interface CheckRequestMapper {
         @Param("imagingAnalyzedAt") java.time.LocalDateTime imagingAnalyzedAt
     );
 
+    int updateImagingSegmentation(
+        @Param("id") Long id,
+        @Param("imagingSegmentationResult") String imagingSegmentationResult,
+        @Param("imagingSegmentedAt") java.time.LocalDateTime imagingSegmentedAt,
+        @Param("imagingSegmentationMaskVolumeId") String imagingSegmentationMaskVolumeId
+    );
+
     int clearImaging(@Param("id") Long id);
 
     int updateSimulationDraft(@Param("id") Long id, @Param("checkResult") String checkResult);

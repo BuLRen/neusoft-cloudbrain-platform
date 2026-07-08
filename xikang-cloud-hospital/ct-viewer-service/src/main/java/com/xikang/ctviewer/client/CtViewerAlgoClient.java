@@ -51,6 +51,20 @@ public class CtViewerAlgoClient {
         return postInternal("/internal/filter", body);
     }
 
+    public Map<String, Object> segment(
+        String srcNrrdPath,
+        String outNrrdPath,
+        String sourceName,
+        Map<String, Object> params
+    ) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("src_nrrd_path", srcNrrdPath);
+        body.put("out_nrrd_path", outNrrdPath);
+        body.put("source_name", sourceName);
+        body.put("params", params == null ? Map.of() : params);
+        return postInternal("/internal/segment", body);
+    }
+
     public String export(String srcNrrdPath, String outPath, String format) {
         Map<String, Object> body = new HashMap<>();
         body.put("src_nrrd_path", srcNrrdPath);

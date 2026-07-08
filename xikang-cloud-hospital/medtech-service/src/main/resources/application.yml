@@ -45,6 +45,9 @@ services:
   ct-viewer-service:
     url: ${CT_VIEWER_SERVICE_URL:http://localhost:8099}
     internal-token: ${INTERNAL_SERVICE_TOKEN:${INTERNAL_AI_TOKEN:}}
+    connect-timeout-ms: ${CT_VIEWER_CONNECT_TIMEOUT_MS:30000}
+    # AI 肺结节 nnU-Net CPU 推理可能超过 10 分钟，需与 ct-viewer lung-nodule read-timeout 对齐
+    read-timeout-ms: ${CT_VIEWER_READ_TIMEOUT_MS:1800000}
 
 # =============================================================================
 # 业务配置：Dify AI 工作流（模拟检查/检验）
@@ -100,10 +103,10 @@ follow-up:
   data-source: ${FOLLOW_UP_DATA_SOURCE:production}
 
 # =============================================================================
-# 血糖 LSTM 预测微服务（Python FastAPI :8096）
+# 血糖 LSTM 预测微服务（Python FastAPI :8107）
 # =============================================================================
 glucose-prediction:
-  base-url: ${GLUCOSE_PREDICTION_BASE_URL:http://127.0.0.1:8096}
+  base-url: ${GLUCOSE_PREDICTION_BASE_URL:http://127.0.0.1:8107}
   connect-timeout-ms: 5000
   read-timeout-ms: 15000
 
