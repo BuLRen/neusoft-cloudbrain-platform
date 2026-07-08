@@ -97,6 +97,8 @@ const originalMeta = ref<CtVolumeMeta | null>(null)
 const filteredMeta = ref<CtVolumeMeta | null>(null)
 const filteredIsMask = ref(false)
 const maskOverlayColor = ref<[number, number, number]>(METAL_OVERLAY_COLOR)
+/** 'lesion' = AI 病灶掩码（红色半透明），'metal' = 金属伪影掩码，用于标签显示 */
+const maskOverlayType = ref<'lesion' | 'metal'>('metal')
 const segmentationLesions = ref<CtLesionItem[]>([])
 const showLesionBoxAnnotations = ref(false)
 
@@ -252,11 +254,11 @@ const showConductance = computed(() => filterName.value === '各向异性扩散 
 const showMetal = computed(() => filterName.value === METAL_MASK_FILTER_NAME)
 const showLesionDemo = computed(() => filterName.value === LESION_DEMO_FILTER_NAME)
 const maskOverlayLabel = computed(() =>
-  maskOverlayColor.value === LESION_OVERLAY_COLOR ? '病灶掩码' : '金属掩码',
+  maskOverlayType.value === 'lesion' ? '病灶掩码' : '金属掩码',
 )
 /** 当前显示的像素级掩码是否为 AI 病灶分割结果（区别于金属伪影演示掩码） */
 const isLesionMaskActive = computed(
-  () => displayIsMask.value && maskOverlayColor.value === LESION_OVERLAY_COLOR,
+  () => displayIsMask.value && maskOverlayType.value === 'lesion',
 )
 
 function getFilterParams() {
@@ -450,6 +452,7 @@ async function applyFilter() {
     maskOverlayColor.value = filterName.value === LESION_DEMO_FILTER_NAME
       ? LESION_OVERLAY_COLOR
       : METAL_OVERLAY_COLOR
+    maskOverlayType.value = filterName.value === LESION_DEMO_FILTER_NAME ? 'lesion' : 'metal'
     filteredMeta.value = result.meta
     await loadVolumeById(filteredVolumeId.value, 'filtered')
     applyDefaultWindow(result.meta)
@@ -471,6 +474,7 @@ async function loadSegmentationMask(maskVolumeId: string) {
     // 像素级掩码叠加与病灶列表数据相互独立，掩码用于精确展示病灶轮廓，
     // 病灶列表数据仍用于右侧面板统计、3D 预览与点击定位。
     maskOverlayColor.value = LESION_OVERLAY_COLOR
+    maskOverlayType.value = 'lesion'
     await loadVolumeById(maskVolumeId, 'filtered')
     filteredMeta.value = { ...(filteredMeta.value ?? {}), is_mask: true }
     statusText.value = '已加载 AI 病灶分割掩码'
@@ -513,6 +517,7 @@ function clearSegmentationOverlay() {
   filteredMeta.value = null
   filteredIsMask.value = false
   maskOverlayColor.value = METAL_OVERLAY_COLOR
+  maskOverlayType.value = 'metal'
   segmentationLesions.value = []
   showLesionBoxAnnotations.value = false
 }

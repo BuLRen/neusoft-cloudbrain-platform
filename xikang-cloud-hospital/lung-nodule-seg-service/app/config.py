@@ -186,6 +186,20 @@ SEGNET_MODEL_VERSION = os.environ.get(
 )
 SEGNET_DEVICE = os.environ.get("LUNG_NODULE_SEG_SEGNET_DEVICE", DEVICE)
 
+# Z 轴平滑参数（仅影响 SegNet 逐切片 2D 推理的后处理）
+# SegNet 是 2D 模型，每张切片独立推理无 3D 上下文约束，相邻切片预测概率可能
+# 忽高忽低，导致 3D 掩码仅 1~2 层厚，在冠状/矢状图中呈扁平薄片状。
+# 对 prob_map 在 Z 轴做 Gaussian 平滑（sigma 单位为切片数）可以将检测到的
+# 高概率区域连续传播到邻近切片，使病灶 3D 形态更立体、更接近真实肿瘤形状。
+#
+# SEGNET_Z_SMOOTH_SIGMA : Gaussian 标准差（切片数），建议 1.0~2.5。
+#   值越大：病灶在 Z 方向越"厚"，适合大肿瘤；但若过大，极薄层面噪点也会被放大。
+#   设为 0 关闭平滑。
+# SEGNET_PROB_THRESHOLD : 平滑后的二值化阈值，应低于原始 0.5，因为平滑会稀释
+#   单层面的峰值概率。建议 0.30~0.40。
+SEGNET_Z_SMOOTH_SIGMA = float(os.environ.get("SEGNET_Z_SMOOTH_SIGMA", "1.5"))
+SEGNET_PROB_THRESHOLD = float(os.environ.get("SEGNET_PROB_THRESHOLD", "0.35"))
+
 # ========================
 # 多模型注册表
 # ========================
