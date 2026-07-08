@@ -126,6 +126,17 @@ async function loadLesionPreview() {
 }
 
 watch(
+  () => props.result?.maskVolumeId ?? null,
+  (maskVolumeId) => {
+    if (!maskVolumeId) {
+      maskVolumeCache = null
+      previewVolume.value = null
+      previewError.value = ''
+    }
+  },
+)
+
+watch(
   () => [props.result?.maskVolumeId, selectedLesion.value?.id],
   () => void loadLesionPreview(),
   { immediate: true },
@@ -406,6 +417,8 @@ function formatElapsedSeconds(seconds?: number): string {
               :volume-data="previewVolume"
               :is-mask="true"
               :mask-color="LESION_PREVIEW_COLOR"
+              :mask-data-max="1"
+              :mask-opacity="0.85"
             />
           </div>
           <div class="ai-seg-panel__preview-metrics">

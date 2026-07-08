@@ -212,18 +212,18 @@ if DEFAULT_MODEL_ID == "nnunet":
 
 MODEL_REGISTRY_META = {
     "monai": {
-        "label": "MONAI 3D UNet（自训练，默认）",
+        "label": "MONAI 3D UNet（超轻量，精度低）",
         "description": "本仓库 training/ 自训练的轻量 3D UNet，整卷滑窗推理。",
     },
     "segnet": {
-        "label": "SegNet 2D（VGG16 编码器，轻量演示模型）",
+        "label": "SegNet 2D（VGG16 编码器）",
         "description": (
             "移植自 Ola-Vish/lung-tumor-segmentation（MIT License），逐轴位切片 "
             "2D 推理，模型体积小、CPU 推理快，适合设备资源有限时的演示场景。"
         ),
     },
     "nnunet": {
-        "label": "nnU-Net v2（体积较大，默认不启用）",
+        "label": "nnU-Net v2（算力要求高，请在算力机上运行）",
         "description": "官方 nnU-Net v2 框架权重，精度更高但网络更大、CPU 推理慢，需要额外安装依赖。",
     },
 }

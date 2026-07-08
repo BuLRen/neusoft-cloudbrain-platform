@@ -261,6 +261,16 @@ const isLesionMaskActive = computed(
   () => displayIsMask.value && maskOverlayType.value === 'lesion',
 )
 
+/** 三维体渲染：CT 底图 + 半透明掩码叠加（与 2D 病灶可视化一致） */
+const volume3dMaskOverlay = computed(() =>
+  displayIsMask.value && filteredVolume.value ? filteredVolume.value : null,
+)
+
+const normalizedMaskColor = computed((): [number, number, number] => {
+  const [r, g, b] = maskOverlayColor.value
+  return [r / 255, g / 255, b / 255]
+})
+
 function getFilterParams() {
   return {
     spatial_sigma: spatialSigma.value,
@@ -280,12 +290,9 @@ function getFilterParams() {
 
 function resetVolumeState() {
   sourceVolumeId.value = ''
-  filteredVolumeId.value = ''
   originalVolume.value = null
-  filteredVolume.value = null
   originalMeta.value = null
-  filteredMeta.value = null
-  filteredIsMask.value = false
+  clearSegmentationOverlay()
 }
 
 async function checkBackend() {
@@ -350,14 +357,14 @@ function applyDefaultWindow(meta: CtVolumeMeta) {
 
 async function loadBoundVolume(volumeId: string, sourceName?: string) {
   if (!volumeId) return
+  const isNewVolume = volumeId !== sourceVolumeId.value
   isLoading.value = true
   try {
+    if (isNewVolume) {
+      clearSegmentationOverlay()
+    }
     sourceVolumeId.value = volumeId
-    filteredVolumeId.value = ''
-    filteredVolume.value = null
-    filteredMeta.value = null
-    filteredIsMask.value = false
-    originalMeta.value = { source_name: sourceName }
+    originalMeta.value = sourceName ? { source_name: sourceName } : null
     await loadVolumeById(volumeId, 'original')
     resetSlicePositions()
     statusText.value = sourceName ? `已加载：${sourceName}` : `已加载 volume ${volumeId}`
@@ -382,12 +389,9 @@ async function handleNrrdUpload(event: Event) {
   isLoading.value = true
   try {
     const result = await uploadCtNrrdFile(file)
+    clearSegmentationOverlay()
     sourceVolumeId.value = result.volume_id
-    filteredVolumeId.value = ''
     originalMeta.value = result.meta
-    filteredMeta.value = null
-    filteredVolume.value = null
-    filteredIsMask.value = false
     await loadVolumeById(sourceVolumeId.value, 'original')
     applyDefaultWindow(result.meta)
     resetSlicePositions()
@@ -410,12 +414,9 @@ async function handleDicomFolderUpload(event: Event) {
   try {
     const result = await uploadCtDicomFiles(files)
     const sourceName = `DICOM (${result.meta.series_id || 'series'}, ${result.meta.file_count || files.length} files)`
+    clearSegmentationOverlay()
     sourceVolumeId.value = result.volume_id
-    filteredVolumeId.value = ''
     originalMeta.value = result.meta
-    filteredMeta.value = null
-    filteredVolume.value = null
-    filteredIsMask.value = false
     await loadVolumeById(sourceVolumeId.value, 'original')
     applyDefaultWindow(result.meta)
     resetSlicePositions()
@@ -520,6 +521,9 @@ function clearSegmentationOverlay() {
   maskOverlayType.value = 'metal'
   segmentationLesions.value = []
   showLesionBoxAnnotations.value = false
+  if (!sourceVolumeId.value) {
+    statusText.value = '已清除当前影像，请重新上传。'
+  }
 }
 
 function resetSlicePositions() {
@@ -1103,12 +1107,16 @@ defineExpose({
               </div>
 
               <VtkVolumeViewer
-                :volume-data="activeVolume"
+                :volume-data="originalVolume"
                 :window-center="windowCenter"
                 :window-width="windowWidth"
-                :is-mask="displayIsMask"
-                :data-min="activeMeta?.min ?? 0"
-                :data-max="activeMeta?.max ?? 1"
+                :data-min="originalMeta?.min ?? 0"
+                :data-max="originalMeta?.max ?? 4096"
+                :mask-volume-data="volume3dMaskOverlay"
+                :mask-overlay-enabled="displayIsMask"
+                :mask-color="normalizedMaskColor"
+                :mask-data-max="filteredMeta?.max ?? 1"
+                :mask-opacity="0.72"
               />
             </div>
           </div>
