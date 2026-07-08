@@ -138,6 +138,14 @@ export const medtechFollowUpApi = {
     })
   },
 
+  listMyMonitoredPatients(params?: { date?: string }) {
+    return http<FollowUpDashboardPatient[]>({
+      url: `${dashboardBase}/my-monitored-patients`,
+      method: 'GET',
+      params,
+    })
+  },
+
   listDaySchedules(params: { from: string; to: string; departmentId?: number }) {
     return http<FollowUpDayScheduleItem[]>({
       url: `${dashboardBase}/schedule`,
@@ -580,7 +588,7 @@ export const medtechFollowUpApi = {
     })
   },
 
-  backfillEnrollment(payload?: { batchSize?: number; maxBatches?: number }) {
+  backfillEnrollment(payload?: { departmentId?: number; batchSize?: number; maxBatches?: number }) {
     return http<Record<string, unknown>>({
       url: '/medtech/follow-up/admin/backfill/enrollment',
       method: 'POST',

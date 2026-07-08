@@ -149,7 +149,24 @@
                 WHERE s.register_id = r.id
                   AND s.item_type IN ('interview', 'observation')
                   AND s.status IN ('planned', 'completed')
-            ) AS "lastTrackedDate"
+            ) AS "lastTrackedDate",
+            (
+                SELECT MIN(upcoming.work_date)
+                FROM (
+                    SELECT s.work_date
+                    FROM follow_up_shift_contact_task t
+                    INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
+                    WHERE t.register_id = r.id
+                      AND t.status = 'planned'
+                      AND s.work_date &gt;= CURRENT_DATE
+                    UNION ALL
+                    SELECT p.work_date
+                    FROM follow_up_pending_schedule p
+                    WHERE p.register_id = r.id
+                      AND p.status = 'pending'
+                      AND p.work_date &gt;= CURRENT_DATE
+                ) upcoming(work_date)
+            ) AS "nextContactDate"
         FROM register r
         LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
         LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
@@ -484,7 +501,8 @@
             COALESCE(fe.interview_interval_days, fp.interview_interval_days, 7) AS "interviewIntervalDays",
             COALESCE(fe.observation_interval_days, fp.observation_interval_days, 1) AS "observationIntervalDays",
             COALESCE(fe.enrolled_at, fp.enrolled_at) AS "enrolledAt",
-            (fe.status = 'active') AS "enrolled"
+            (fe.status = 'active') AS "enrolled",
+            COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) AS "monitoringEmployeeId"
         FROM register r
         LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
         LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
@@ -492,15 +510,46 @@
         LIMIT 1
     </select>
 
+    <sql id="notEnrolledInFollowUpPoolCondition">
+        NOT EXISTS (
+            SELECT 1 FROM follow_up_enrollment fe
+            WHERE fe.register_id = r.id AND fe.status = 'active'
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM follow_up_patient_profile fp
+            WHERE fp.register_id = r.id
+        )
+    </sql>
+
+    <select id="isEnrolledInFollowUpPool" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM follow_up_enrollment fe
+            WHERE fe.register_id = #{registerId} AND fe.status = 'active'
+        )
+        OR EXISTS (
+            SELECT 1 FROM follow_up_patient_profile fp
+            WHERE fp.register_id = #{registerId}
+        )
+    </select>
+
     <select id="selectEligibleRegisterIdsNotEnrolled" resultType="long">
         SELECT r.id
         FROM register r
         WHERE
         <include refid="eligibleRegisterCondition"/>
-          AND NOT EXISTS (
-              SELECT 1 FROM follow_up_enrollment fe
-              WHERE fe.register_id = r.id AND fe.status = 'active'
-          )
+          AND <include refid="notEnrolledInFollowUpPoolCondition"/>
+        ORDER BY r.id ASC
+        LIMIT #{limit}
+        OFFSET #{offset}
+    </select>
+
+    <select id="selectEligibleRegisterIdsNotEnrolledByDepartment" resultType="long">
+        SELECT r.id
+        FROM register r
+        WHERE
+        <include refid="eligibleRegisterCondition"/>
+          AND r.deptment_id = #{departmentId}
+          AND <include refid="notEnrolledInFollowUpPoolCondition"/>
         ORDER BY r.id ASC
         LIMIT #{limit}
         OFFSET #{offset}
@@ -511,10 +560,173 @@
         FROM register r
         WHERE
         <include refid="eligibleRegisterCondition"/>
-          AND NOT EXISTS (
-              SELECT 1 FROM follow_up_enrollment fe
-              WHERE fe.register_id = r.id AND fe.status = 'active'
-          )
+          AND <include refid="notEnrolledInFollowUpPoolCondition"/>
+    </select>
+
+    <select id="countEligibleRegisterIdsNotEnrolledByDepartment" resultType="int">
+        SELECT COUNT(*)
+        FROM register r
+        WHERE
+        <include refid="eligibleRegisterCondition"/>
+          AND r.deptment_id = #{departmentId}
+          AND <include refid="notEnrolledInFollowUpPoolCondition"/>
+    </select>
+
+    <select id="selectMonitoredPatientsByEmployee" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.real_name AS "realName",
+            r.case_number AS "caseNumber",
+            COALESCE(fe.priority_level, fp.priority_level, 'normal') AS "priorityLevel",
+            (
+                SELECT MIN(upcoming.work_date)
+                FROM (
+                    SELECT s.work_date
+                    FROM follow_up_shift_contact_task t
+                    INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
+                    WHERE t.register_id = r.id
+                      AND t.status = 'planned'
+                      AND s.work_date &gt;= CURRENT_DATE
+                    UNION ALL
+                    SELECT p.work_date
+                    FROM follow_up_pending_schedule p
+                    WHERE p.register_id = r.id
+                      AND p.status = 'pending'
+                      AND p.work_date &gt;= CURRENT_DATE
+                ) upcoming(work_date)
+            ) AS "nextContactDate"
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE (
+            fe.register_id IS NOT NULL
+            OR fp.register_id IS NOT NULL
+        )
+          AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) = #{employeeId}
+        ORDER BY "nextContactDate" NULLS LAST, r.real_name ASC
+    </select>
+
+    <select id="selectMyMonitoredDashboardPatients" resultType="map">
+        SELECT
+            r.id AS "registerId",
+            r.case_number AS "caseNumber",
+            r.real_name AS "realName",
+            r.gender AS "gender",
+            r.age AS "age",
+            r.deptment_id AS "departmentId",
+            COALESCE(fe.priority_level, fp.priority_level, 'normal') AS "priorityLevel",
+            COALESCE(fe.interview_interval_days, fp.interview_interval_days, 7) AS "interviewIntervalDays",
+            COALESCE(fe.observation_interval_days, fp.observation_interval_days, 1) AS "observationIntervalDays",
+            true AS "enrolled",
+            COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) AS "monitoringEmployeeId",
+            (
+                SELECT e.realname FROM employee e
+                WHERE e.id = COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id)
+                LIMIT 1
+            ) AS "monitoringEmployeeName",
+            COALESCE(fe.monitored_at, fp.monitored_at) AS "monitoredAt",
+            COALESCE(fe.follow_up_deadline, fp.follow_up_deadline) AS "followUpDeadline",
+            (
+                SELECT MAX(c.contact_date)
+                FROM follow_up_contact_record c
+                WHERE c.register_id = r.id
+            ) AS "lastContactDate",
+            (
+                SELECT MAX(s.schedule_date)
+                FROM follow_up_day_schedule s
+                WHERE s.register_id = r.id
+                  AND s.item_type = 'interview'
+                  AND s.status = 'completed'
+            ) AS "lastInterviewDate",
+            EXISTS (
+                SELECT 1 FROM follow_up_daily_observation o
+                WHERE o.register_id = r.id
+                  AND o.observation_date = #{targetDate}
+            ) AS "observedToday",
+            EXISTS (
+                SELECT 1 FROM follow_up_day_schedule s
+                WHERE s.register_id = r.id
+                  AND s.schedule_date = #{targetDate}
+                  AND s.item_type = 'interview'
+                  AND s.status = 'planned'
+            ) AS "interviewScheduledToday",
+            EXISTS (
+                SELECT 1 FROM follow_up_contact_record c
+                WHERE c.register_id = r.id
+                  AND c.contact_date = #{targetDate}
+            ) AS "contactedToday",
+            (
+                SELECT MIN(upcoming.work_date)
+                FROM (
+                    SELECT s.work_date
+                    FROM follow_up_shift_contact_task t
+                    INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
+                    WHERE t.register_id = r.id
+                      AND t.status = 'planned'
+                      AND s.work_date &gt;= CURRENT_DATE
+                    UNION ALL
+                    SELECT p.work_date
+                    FROM follow_up_pending_schedule p
+                    WHERE p.register_id = r.id
+                      AND p.status = 'pending'
+                      AND p.work_date &gt;= CURRENT_DATE
+                ) upcoming(work_date)
+            ) AS "nextContactDate"
+        FROM register r
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        WHERE
+        <include refid="eligibleRegisterCondition"/>
+          AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) = #{employeeId}
+        ORDER BY
+            CASE COALESCE(fe.priority_level, fp.priority_level, 'normal')
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                ELSE 3
+            END,
+            r.real_name
+    </select>
+
+    <sql id="enrolledDepartmentScope">
+        COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id) = #{departmentId}
+    </sql>
+
+    <select id="selectUnassignedEnrolledRegisterIds" resultType="long">
+        SELECT r.id
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE
+        <include refid="enrolledPatientCondition"/>
+          AND <include refid="enrolledDepartmentScope"/>
+          AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) IS NULL
+        ORDER BY r.id ASC
+    </select>
+
+    <select id="countAssignedMonitoringByDepartment" resultType="int">
+        SELECT COUNT(*)
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE
+        <include refid="enrolledPatientCondition"/>
+          AND <include refid="enrolledDepartmentScope"/>
+          AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) IS NOT NULL
+    </select>
+
+    <select id="selectMonitoringLoadByDepartment" resultType="map">
+        SELECT
+            COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) AS "employeeId",
+            COUNT(*) AS "patientCount"
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE
+        <include refid="enrolledPatientCondition"/>
+          AND <include refid="enrolledDepartmentScope"/>
+          AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) IS NOT NULL
+        GROUP BY COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id)
+        ORDER BY "employeeId"
     </select>
 
 </mapper>

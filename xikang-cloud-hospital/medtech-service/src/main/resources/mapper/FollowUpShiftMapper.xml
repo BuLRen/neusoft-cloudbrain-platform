@@ -176,18 +176,33 @@
 
     <select id="selectPatientsForShiftPlanning" resultType="map">
         SELECT
-            fe.register_id AS "registerId",
-            COALESCE(fe.priority_level, 'normal') AS "priority",
-            fe.monitoring_employee_id AS "monitorEmployeeId",
+            r.id AS "registerId",
+            COALESCE(fe.priority_level, fp.priority_level, 'normal') AS "priority",
+            COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) AS "monitorEmployeeId",
+            COALESCE(fe.interview_interval_days, fp.interview_interval_days, 7) AS "interviewIntervalDays",
+            COALESCE(fe.enrolled_at, fp.enrolled_at) AS "enrolledAt",
             (
-                SELECT MAX(c.contact_date) FROM follow_up_contact_record c
-                WHERE c.register_id = fe.register_id
+                SELECT MAX(c.contact_date)
+                FROM follow_up_contact_record c
+                WHERE c.register_id = r.id
             ) AS "lastContactDate",
-            fe.follow_up_deadline AS "deadlineDate"
-        FROM follow_up_enrollment fe
-        WHERE fe.managing_department_id = #{departmentId}
-          AND fe.status = 'active'
-        ORDER BY fe.priority_level, fe.register_id
+            COALESCE(fe.follow_up_deadline, fp.follow_up_deadline) AS "deadlineDate"
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE (
+            fe.register_id IS NOT NULL
+            OR fp.register_id IS NOT NULL
+        )
+          AND COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id) = #{departmentId}
+          AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) IS NOT NULL
+        ORDER BY
+            CASE COALESCE(fe.priority_level, fp.priority_level, 'normal')
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                ELSE 3
+            END,
+            r.id
     </select>
 
     <insert id="insertChangeRequest" useGeneratedKeys="true" keyProperty="id">
@@ -308,6 +323,19 @@
 
     <select id="countContactTasksByShiftId" resultType="int">
         SELECT COUNT(*) FROM follow_up_shift_contact_task WHERE shift_id = #{shiftId}
+    </select>
+
+    <select id="selectContactTasksByPlanId" resultType="map">
+        SELECT
+            t.register_id AS "registerId",
+            t.priority_level AS "priorityLevel",
+            s.employee_id AS "employeeId",
+            s.work_date AS "workDate",
+            s.department_id AS "departmentId"
+        FROM follow_up_shift_contact_task t
+        INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
+        WHERE s.plan_id = #{planId}
+          AND t.status = 'planned'
     </select>
 
 </mapper>

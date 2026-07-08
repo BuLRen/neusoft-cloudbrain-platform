@@ -24,6 +24,7 @@ public class FollowUpAutoEnrollService {
     private final FollowUpClinicalSnapshotService clinicalSnapshotService;
     private final FollowUpShiftEnqueueService shiftEnqueueService;
     private final FollowUpProperties followUpProperties;
+    private final FollowUpMonitoringService monitoringService;
 
     @Transactional
     public Map<String, Object> handleVisitEnded(
@@ -49,8 +50,7 @@ public class FollowUpAutoEnrollService {
         }
 
         Map<String, Object> enrollment = dashboardMapper.selectEnrollmentByRegisterId(registerId);
-        boolean alreadyEnrolled = enrollment != null
-            && Boolean.TRUE.equals(enrollment.get("enrolled"));
+        boolean alreadyEnrolled = dashboardMapper.isEnrolledInFollowUpPool(registerId);
 
         FollowUpPriorityResult priority = priorityScorer.score(registerId);
         if (!alreadyEnrolled) {
@@ -71,6 +71,12 @@ public class FollowUpAutoEnrollService {
             result.put("alreadyEnrolled", true);
         }
 
+        Map<String, Object> autoAssign = monitoringService.autoAssignIfEligible(registerId, managingDepartmentId);
+        if (Boolean.TRUE.equals(autoAssign.get("assigned"))) {
+            result.put("monitoringAutoAssigned", true);
+            result.put("monitoringEmployeeId", autoAssign.get("monitoringEmployeeId"));
+        }
+
         try {
             clinicalSnapshotService.syncFromClinical(registerId);
             result.put("snapshotSynced", true);
@@ -80,15 +86,31 @@ public class FollowUpAutoEnrollService {
         }
 
         LocalDateTime endedAt = visitEndedAt != null ? visitEndedAt : LocalDateTime.now();
+        Map<String, Object> enrollmentAfter = dashboardMapper.selectEnrollmentByRegisterId(registerId);
+        Long preferMonitor = toLong(enrollmentAfter != null ? enrollmentAfter.get("monitoringEmployeeId") : null);
         shiftEnqueueService.enqueueAsync(
             registerId,
             endedAt,
             managingDepartmentId,
             priority.getPriorityLevel(),
-            null
+            preferMonitor
         );
         result.put("enqueueSubmitted", true);
         result.put("priorityLevel", priority.getPriorityLevel());
         return result;
+    }
+
+    private static Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.valueOf(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 }

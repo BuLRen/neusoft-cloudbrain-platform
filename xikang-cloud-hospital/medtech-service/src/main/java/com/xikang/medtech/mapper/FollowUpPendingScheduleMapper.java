@@ -3,6 +3,8 @@ package com.xikang.medtech.mapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 
 @Mapper
@@ -12,6 +14,15 @@ public interface FollowUpPendingScheduleMapper {
 
     Map<String, Object> selectByRegisterAndWorkDate(
         @Param("registerId") Long registerId,
-        @Param("workDate") java.time.LocalDate workDate
+        @Param("workDate") LocalDate workDate
     );
+
+    List<Map<String, Object>> selectPendingByDepartment(
+        @Param("departmentId") Long departmentId,
+        @Param("from") LocalDate from,
+        @Param("to") LocalDate to,
+        @Param("status") String status
+    );
+
+    int markApplied(@Param("id") Long id);
 }

@@ -110,6 +110,12 @@ public final class EnvLoader {
             return cwdEnv;
         }
 
+        // 1b) 单仓根目录启动（cwd=neusoft-cloudbrain-platform）时 .env 在 xikang-cloud-hospital 子目录
+        Path nestedHospitalEnv = userDir.resolve("xikang-cloud-hospital").resolve(".env");
+        if (Files.exists(nestedHospitalEnv)) {
+            return nestedHospitalEnv;
+        }
+
         // 2) 从 user.dir 向上找 Maven 根 pom
         Path rootDir = findProjectRootUpward(userDir);
         if (rootDir != null) {

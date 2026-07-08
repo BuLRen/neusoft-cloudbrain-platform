@@ -74,7 +74,17 @@ public interface FollowUpDashboardMapper {
         @Param("offset") int offset
     );
 
+    List<Long> selectEligibleRegisterIdsNotEnrolledByDepartment(
+        @Param("departmentId") Long departmentId,
+        @Param("limit") int limit,
+        @Param("offset") int offset
+    );
+
     int countEligibleRegisterIdsNotEnrolled();
+
+    int countEligibleRegisterIdsNotEnrolledByDepartment(@Param("departmentId") Long departmentId);
+
+    boolean isEnrolledInFollowUpPool(@Param("registerId") Long registerId);
 
     int claimMonitoring(@Param("registerId") Long registerId, @Param("employeeId") Long employeeId);
 
@@ -93,4 +103,17 @@ public interface FollowUpDashboardMapper {
     );
 
     Map<String, Object> selectMonitoringByRegisterId(@Param("registerId") Long registerId);
+
+    List<Map<String, Object>> selectMonitoredPatientsByEmployee(@Param("employeeId") Long employeeId);
+
+    List<Map<String, Object>> selectMyMonitoredDashboardPatients(
+        @Param("employeeId") Long employeeId,
+        @Param("targetDate") LocalDate targetDate
+    );
+
+    List<Long> selectUnassignedEnrolledRegisterIds(@Param("departmentId") Long departmentId);
+
+    int countAssignedMonitoringByDepartment(@Param("departmentId") Long departmentId);
+
+    List<Map<String, Object>> selectMonitoringLoadByDepartment(@Param("departmentId") Long departmentId);
 }

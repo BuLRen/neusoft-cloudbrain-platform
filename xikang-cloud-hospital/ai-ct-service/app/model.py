@@ -12,7 +12,7 @@
   - 分类头从 bottleneck 取特征 → GAP → MLP → 5 维
 
 注意（实现红线）：
-  本文件从 CQ500-data-clean/train/model.py 一字不改地拷贝而来。
+  本文件从 CQ500-data-clean/train/models.py 一字不改地拷贝而来。
   任何"优化重构"都禁止——改了 state_dict 的 key 会对不上，权重加载失败。
 """
 

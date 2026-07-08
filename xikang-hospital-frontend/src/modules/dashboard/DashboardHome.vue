@@ -13,6 +13,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.role === 'admin')
 const isPhysician = computed(() => authStore.role === 'physician')
+const isMedtech = computed(() => authStore.role === 'medtech')
 const isFollowup = computed(() => authStore.role === 'followup')
 const modules = [
   { title: '诊疗流程', owner: '人员A', path: '/physician/queue', description: '医生接诊、病历、申请、确诊、开方。' },

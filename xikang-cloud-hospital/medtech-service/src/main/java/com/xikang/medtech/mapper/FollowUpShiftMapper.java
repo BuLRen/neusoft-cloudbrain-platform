@@ -85,4 +85,6 @@ public interface FollowUpShiftMapper {
     );
 
     int countContactTasksByShiftId(@Param("shiftId") Long shiftId);
+
+    List<Map<String, Object>> selectContactTasksByPlanId(@Param("planId") Long planId);
 }

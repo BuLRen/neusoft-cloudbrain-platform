@@ -190,7 +190,7 @@ public class FollowUpEnqueueDifyService {
         String priorityLevel,
         Long preferMonitorEmployeeId
     ) {
-        LocalDate earliest = addBusinessDays(visitEndedDate, 14);
+        LocalDate earliest = FollowUpContactScheduleHelper.firstContactAfterVisit(visitEndedDate);
         List<Map<String, Object>> staff = shiftMapper.selectFollowUpStaffByDepartment(departmentId);
         Long employeeId = preferMonitorEmployeeId;
         if (employeeId == null && !staff.isEmpty()) {
@@ -207,18 +207,6 @@ public class FollowUpEnqueueDifyService {
         row.put("priority", priorityLevel != null ? priorityLevel : "normal");
         row.put("summary", "看诊后第14个工作日首次联系（规则降级）");
         return row;
-    }
-
-    static LocalDate addBusinessDays(LocalDate start, int businessDays) {
-        LocalDate date = start;
-        int added = 0;
-        while (added < businessDays) {
-            date = date.plusDays(1);
-            if (date.getDayOfWeek().getValue() <= 5) {
-                added++;
-            }
-        }
-        return date;
     }
 
     private String toJson(Object value) {
