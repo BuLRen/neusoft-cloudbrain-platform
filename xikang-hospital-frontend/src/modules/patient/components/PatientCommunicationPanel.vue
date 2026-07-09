@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { ElButton, ElEmpty, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
+import { computed, ref, watch } from 'vue'
+import { ElButton, ElEmpty, ElInput, ElMessage } from 'element-plus'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import CommunicationThread from '@/modules/medtech/follow-up/components/CommunicationThread.vue'
-import { clinicalRecordApi, type ClinicalVisitSummary } from '@/shared/api/modules/clinicalRecord'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
-import { useAuthStore } from '@/app/stores/auth'
 import { formatBeijingDateTime } from '@/shared/utils/beijingDate'
 import { stripMarkdown } from '@/shared/utils/plainText'
 import type {
@@ -14,25 +12,18 @@ import type {
   FollowUpCommunicationSession,
 } from '@/shared/types/medtechFollowUp'
 
-const authStore = useAuthStore()
+const props = defineProps<{
+  registerId?: number
+  patientId?: number
+  visitLabel?: string
+}>()
 
 const loading = ref(false)
 const sending = ref(false)
-const visits = ref<ClinicalVisitSummary[]>([])
-const registerId = ref<number | undefined>()
 const session = ref<FollowUpCommunicationSession | null>(null)
 const messages = ref<FollowUpCommunicationMessage[]>([])
 const sharedSummary = ref<FollowUpCaseSummary | null>(null)
 const draft = ref('')
-
-const patientId = computed(() => authStore.currentPatientId || authStore.currentPatient?.patientId)
-
-const visitOptions = computed(() =>
-  visits.value.map((item) => ({
-    value: item.registerId,
-    label: `${item.departmentName ?? '科室'} · ${item.visitDate?.slice(0, 10) ?? item.registerId}`,
-  })),
-)
 
 const plainSharedSummary = computed(() => {
   const s = sharedSummary.value
@@ -40,35 +31,25 @@ const plainSharedSummary = computed(() => {
   return stripMarkdown(s.content ?? s.doctorContent ?? s.aiDraftContent ?? '')
 })
 
-async function loadVisits() {
-  if (!patientId.value) return
-  loading.value = true
-  try {
-    visits.value = await clinicalRecordApi.patientVisits(patientId.value)
-    if (!registerId.value && visits.value.length) {
-      registerId.value = visits.value[0]!.registerId
-    }
-  } catch {
-    ElMessage.error('加载就诊记录失败')
-  } finally {
-    loading.value = false
-  }
-}
-
 async function loadCommunication() {
-  if (!registerId.value) return
+  if (!props.registerId) {
+    session.value = null
+    messages.value = []
+    sharedSummary.value = null
+    return
+  }
   loading.value = true
   try {
-    const sessionRes = await medtechFollowUpApi.getPatientCommunicationSession(registerId.value, {
-      patientId: patientId.value,
+    const sessionRes = await medtechFollowUpApi.getPatientCommunicationSession(props.registerId, {
+      patientId: props.patientId,
     })
     session.value = sessionRes
     const [summaryRes, messagesRes] = await Promise.all([
       medtechFollowUpApi
-        .getPatientSharedCaseSummary(registerId.value, { patientId: patientId.value })
+        .getPatientSharedCaseSummary(props.registerId, { patientId: props.patientId })
         .catch(() => null),
-      medtechFollowUpApi.listPatientCommunicationMessages(registerId.value, {
-        patientId: patientId.value,
+      medtechFollowUpApi.listPatientCommunicationMessages(props.registerId, {
+        patientId: props.patientId,
         limit: 200,
       }),
     ])
@@ -85,13 +66,13 @@ async function loadCommunication() {
 
 async function sendMessage() {
   const text = draft.value.trim()
-  if (!text || !session.value) return
+  if (!text || !session.value || !props.registerId) return
   sending.value = true
   try {
     await medtechFollowUpApi.sendPatientMessage(session.value.id, text, true)
     draft.value = ''
-    const page = await medtechFollowUpApi.listPatientCommunicationMessages(registerId.value!, {
-      patientId: patientId.value,
+    const page = await medtechFollowUpApi.listPatientCommunicationMessages(props.registerId, {
+      patientId: props.patientId,
       limit: 200,
     })
     messages.value = page.items ?? []
@@ -102,16 +83,13 @@ async function sendMessage() {
   }
 }
 
-watch(registerId, () => {
-  void loadCommunication()
-})
-
-onMounted(async () => {
-  await loadVisits()
-  if (registerId.value) {
-    await loadCommunication()
-  }
-})
+watch(
+  () => [props.registerId, props.patientId] as const,
+  () => {
+    void loadCommunication()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -120,48 +98,39 @@ onMounted(async () => {
       <div>
         <h3>医患沟通</h3>
         <p>查看医生发布的病例总结，并就随访与用药问题与医生或 AI 助手交流。请勿通过此处申请复诊，复诊请使用「我的挂号」自行预约。</p>
+        <p v-if="visitLabel" class="patient-comm__visit">当前就诊：{{ visitLabel }}</p>
       </div>
-      <ElSelect
-        v-if="visitOptions.length > 1"
-        v-model="registerId"
-        placeholder="选择就诊"
-        class="patient-comm__visit-select"
-      >
-        <ElOption
-          v-for="item in visitOptions"
-          :key="item.value"
-          :label="item.label"
-          :value="item.value"
-        />
-      </ElSelect>
     </div>
 
-    <section v-if="sharedSummary" class="patient-comm__summary">
-      <h4>医生发布的病例总结</h4>
-      <pre>{{ plainSharedSummary }}</pre>
-      <p v-if="sharedSummary.approvedAt" class="patient-comm__summary-meta">
-        发布时间：{{ formatBeijingDateTime(sharedSummary.approvedAt) }}
-      </p>
-    </section>
-    <p v-else class="patient-comm__placeholder">医生审核发布病例总结后，您可在此查看。</p>
+    <template v-if="registerId">
+      <section v-if="sharedSummary" class="patient-comm__summary">
+        <h4>医生发布的病例总结</h4>
+        <pre>{{ plainSharedSummary }}</pre>
+        <p v-if="sharedSummary.approvedAt" class="patient-comm__summary-meta">
+          发布时间：{{ formatBeijingDateTime(sharedSummary.approvedAt) }}
+        </p>
+      </section>
+      <p v-else class="patient-comm__placeholder">医生审核发布病例总结后，您可在此查看。</p>
 
-    <template v-if="session">
-      <CommunicationThread :messages="messages" />
-      <div class="patient-comm__composer">
-        <ElInput
-          v-model="draft"
-          type="textarea"
-          :rows="3"
-          placeholder="描述症状、用药疑问等随访相关问题..."
-          @keydown.ctrl.enter="sendMessage"
-        />
-        <ElButton type="primary" :loading="sending" :disabled="!draft.trim()" @click="sendMessage">
-          发送
-        </ElButton>
-      </div>
-      <p class="patient-comm__hint">AI 助手仅回答随访、用药与康复相关问题；医生在线时将优先由医生回复。</p>
+      <template v-if="session">
+        <CommunicationThread :messages="messages" viewer-role="patient" />
+        <div class="patient-comm__composer">
+          <ElInput
+            v-model="draft"
+            type="textarea"
+            :rows="3"
+            placeholder="描述症状、用药疑问等随访相关问题..."
+            @keydown.ctrl.enter="sendMessage"
+          />
+          <ElButton type="primary" :loading="sending" :disabled="!draft.trim()" @click="sendMessage">
+            发送
+          </ElButton>
+        </div>
+        <p class="patient-comm__hint">AI 助手仅回答随访、用药与康复相关问题；医生在线时将优先由医生回复。</p>
+      </template>
+      <ElEmpty v-else-if="!loading" description="暂无沟通会话，请联系随访医生" />
     </template>
-    <ElEmpty v-else-if="!loading && !registerId" description="暂无可用就诊记录" />
+    <ElEmpty v-else description="请先在上方选择就诊记录" />
   </GlassCard>
 </template>
 
@@ -171,10 +140,6 @@ onMounted(async () => {
 }
 
 .patient-comm__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
   margin-block-end: var(--space-4);
 }
 
@@ -186,10 +151,14 @@ onMounted(async () => {
   margin: 0;
   color: var(--color-text-muted);
   font-size: 13px;
+  line-height: 1.6;
 }
 
-.patient-comm__visit-select {
-  min-width: 220px;
+.patient-comm__visit {
+  margin-top: var(--space-2) !important;
+  font-size: 13px;
+  color: var(--color-text);
+  font-weight: 500;
 }
 
 .patient-comm__summary {

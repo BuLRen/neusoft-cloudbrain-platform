@@ -29,6 +29,8 @@ import type {
   InterviewScheduleItem,
   InterviewSchedulePayload,
   InterviewScheduleStatus,
+  FollowUpVisitReport,
+  FollowUpVisitReportSavePayload,
   LastVisitSnapshot,
   PatientFollowUpFeedbackPayload,
   PatientFollowUpPlanItem,
@@ -82,6 +84,28 @@ export const medtechFollowUpApi = {
     return http<LastVisitSnapshot>({
       url: `${outcomeBase}/last-visit/${registerId}`,
       method: 'GET',
+    })
+  },
+
+  getLatestVisitReport(registerId: number) {
+    return http<FollowUpVisitReport>({
+      url: `${outcomeBase}/visit-report/${registerId}/latest`,
+      method: 'GET',
+    })
+  },
+
+  saveVisitReport(payload: FollowUpVisitReportSavePayload) {
+    return http<FollowUpVisitReport>({
+      url: `${outcomeBase}/visit-report`,
+      method: 'POST',
+      data: payload,
+    })
+  },
+
+  finalizeVisitReport(reportId: number) {
+    return http<FollowUpVisitReport>({
+      url: `${outcomeBase}/visit-report/${reportId}/finalize`,
+      method: 'POST',
     })
   },
 
@@ -299,7 +323,7 @@ export const medtechFollowUpApi = {
 
   sendDoctorCard(
     sessionId: number,
-    messageType: 'drug_card' | 'diagnosis_card',
+    messageType: 'drug_card' | 'diagnosis_card' | 'registration_card',
     cardPayload: Record<string, unknown>,
   ) {
     return http<FollowUpCommunicationMessage>({

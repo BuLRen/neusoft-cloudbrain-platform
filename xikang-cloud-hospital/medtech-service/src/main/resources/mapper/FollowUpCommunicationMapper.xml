@@ -2,6 +2,83 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.xikang.medtech.mapper.FollowUpCommunicationMapper">
 
+    <sql id="eligibleVisitStateCondition">
+        r.visit_state IN (3, 5, 6)
+        AND r.id NOT BETWEEN 1001 AND 1005
+    </sql>
+
+    <sql id="poolVisibleVisitStateCondition">
+        (
+            r.visit_state IN (3, 5, 6)
+            OR (
+                r.visit_state = 2
+                AND (
+                    EXISTS (
+                        SELECT 1 FROM follow_up_enrollment fe_pool
+                        WHERE fe_pool.register_id = r.id AND fe_pool.status = 'active'
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM follow_up_patient_profile fp_pool
+                        WHERE fp_pool.register_id = r.id
+                    )
+                )
+            )
+        )
+        AND r.id NOT BETWEEN 1001 AND 1005
+    </sql>
+
+    <sql id="eligibleRegisterCondition">
+        <include refid="eligibleVisitStateCondition"/>
+        AND (
+            EXISTS (SELECT 1 FROM follow_up_history_event he WHERE he.register_id = r.id)
+            OR EXISTS (
+                SELECT 1 FROM medical_record mr
+                INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+                WHERE mr.register_id = r.id
+            )
+            OR EXISTS (SELECT 1 FROM medical_record mr WHERE mr.register_id = r.id)
+            OR EXISTS (SELECT 1 FROM patient_health_observation pho WHERE pho.register_id = r.id)
+            OR EXISTS (
+                SELECT 1 FROM inspection_request ir
+                WHERE ir.register_id = r.id
+                  AND ir.inspection_result IS NOT NULL
+                  AND TRIM(ir.inspection_result) &lt;&gt; ''
+            )
+            OR EXISTS (
+                SELECT 1 FROM check_request cr
+                WHERE cr.register_id = r.id
+                  AND cr.check_result IS NOT NULL
+                  AND TRIM(cr.check_result) &lt;&gt; ''
+            )
+        )
+    </sql>
+
+    <sql id="poolVisibleRegisterCondition">
+        <include refid="poolVisibleVisitStateCondition"/>
+        AND (
+            EXISTS (SELECT 1 FROM follow_up_history_event he WHERE he.register_id = r.id)
+            OR EXISTS (
+                SELECT 1 FROM medical_record mr
+                INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+                WHERE mr.register_id = r.id
+            )
+            OR EXISTS (SELECT 1 FROM medical_record mr WHERE mr.register_id = r.id)
+            OR EXISTS (SELECT 1 FROM patient_health_observation pho WHERE pho.register_id = r.id)
+            OR EXISTS (
+                SELECT 1 FROM inspection_request ir
+                WHERE ir.register_id = r.id
+                  AND ir.inspection_result IS NOT NULL
+                  AND TRIM(ir.inspection_result) &lt;&gt; ''
+            )
+            OR EXISTS (
+                SELECT 1 FROM check_request cr
+                WHERE cr.register_id = r.id
+                  AND cr.check_result IS NOT NULL
+                  AND TRIM(cr.check_result) &lt;&gt; ''
+            )
+        )
+    </sql>
+
     <select id="selectSessions" resultType="map">
         SELECT
             s.id AS "id",
@@ -41,10 +118,11 @@
         FROM follow_up_communication_session s
         INNER JOIN register r ON r.id = s.register_id
         LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
         <where>
-            s.register_id NOT BETWEEN 1001 AND 1005
+            <include refid="poolVisibleRegisterCondition"/>
             <if test="departmentId != null">
-                AND s.department_id = #{departmentId}
+                AND COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id, s.department_id) = #{departmentId}
             </if>
         </where>
         ORDER BY s.creation_time DESC, s.id DESC
@@ -91,6 +169,12 @@
             #{registerId}, #{departmentId}, COALESCE(#{status}, 'active'), COALESCE(#{aiEscalationEnabled}, 1)
         )
     </insert>
+
+    <update id="updateSessionDepartment">
+        UPDATE follow_up_communication_session
+        SET department_id = #{departmentId}
+        WHERE id = #{id}
+    </update>
 
     <update id="updateSessionDoctorActive">
         UPDATE follow_up_communication_session

@@ -105,7 +105,7 @@ async function handleLogin() {
     } else if (authStore.role === 'patient') {
       router.push('/patient/overview')
     } else if (authStore.role === 'followup') {
-      router.push('/follow-up/outcome')
+      router.push('/dashboard')
     } else {
       router.push('/dashboard')
     }

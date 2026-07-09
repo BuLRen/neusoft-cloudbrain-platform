@@ -48,6 +48,12 @@ const selectedVisit = computed(() =>
   visits.value.find((item) => item.registerId === selectedRegisterId.value),
 )
 
+const selectedVisitLabel = computed(() => {
+  const visit = selectedVisit.value
+  if (!visit) return ''
+  return `${visit.departmentName ?? '科室'} · ${visit.visitDate?.slice(0, 10) ?? visit.registerId}`
+})
+
 const isEndocrineVisit = computed(() => isEndocrineDepartment(selectedVisit.value?.departmentId))
 
 const pageSubtitle = computed(() =>
@@ -344,9 +350,12 @@ onUnmounted(() => {
       </GlassCard>
     </template>
 
-    <GlassCard v-if="activeTab === 'communication'" class="communication-card">
-      <PatientCommunicationPanel />
-    </GlassCard>
+    <PatientCommunicationPanel
+      v-if="activeTab === 'communication'"
+      :register-id="selectedRegisterId"
+      :patient-id="patientId"
+      :visit-label="selectedVisitLabel"
+    />
 
     <GlassCard v-if="activeTab === 'plans'" class="plans-card" v-loading="loading">
       <div class="section-header">
@@ -506,8 +515,7 @@ onUnmounted(() => {
 .plans-card,
 .medications-card,
 .glucose-card,
-.revisit-card,
-.communication-card {
+.revisit-card {
   padding: var(--space-5);
 }
 

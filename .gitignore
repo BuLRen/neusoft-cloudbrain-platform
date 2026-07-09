@@ -588,3 +588,6 @@ xikang-cloud-hospital/ct-viewer-algo/app/__pycache__/main.cpython-311.pyc
 xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/__init__.cpython-311.pyc
 xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/dicom_io.cpython-311.pyc
 xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/filters.cpython-311.pyc
+xikang-cloud-hospital/docker/init-db/migrate_039_follow_up_pool_align_and_report.sql
+xikang-cloud-hospital/docker/init-db/migrate_040_communication_message_type_varchar.sql
+xikang-cloud-hospital/medtech-service/src/main/resources/db/migrate_039_follow_up_pool_align_and_report.sql

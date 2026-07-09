@@ -44,6 +44,31 @@ function contactStatusClass(status?: string) {
   return 'follow-up-patient-card__chip--interview'
 }
 
+function nextFollowUpLabel(patient: FollowUpDashboardPatient) {
+  const date = patient.nextFollowUpDate ?? patient.nextContactDate
+  if (!date) return '待排班'
+  const days = patient.daysUntilNextFollowUp ?? patient.daysUntilNextContact
+  if (days === 0) return `今日随访 · ${date}`
+  if (days != null && days < 0) return `已过期 ${Math.abs(days)} 天 · ${date}`
+  if (days != null && days <= 7) return `${days} 天后 · ${date}`
+  return `下次随访 ${date}`
+}
+
+function nextFollowUpClass(patient: FollowUpDashboardPatient) {
+  const days = patient.daysUntilNextFollowUp ?? patient.daysUntilNextContact
+  if (days == null) return 'follow-up-patient-card__followup--muted'
+  if (days < 0) return 'follow-up-patient-card__followup--overdue'
+  if (days === 0) return 'follow-up-patient-card__followup--today'
+  if (days <= 7) return 'follow-up-patient-card__followup--soon'
+  return 'follow-up-patient-card__followup--normal'
+}
+
+function nextFollowUpTypeLabel(type?: string) {
+  if (type === 'contact') return '排班联系'
+  if (type === 'interview') return '计划访谈'
+  return '待排班'
+}
+
 function onDragStart(event: DragEvent) {
   if (!props.draggable) return
   event.dataTransfer?.setData('application/x-followup-register-id', String(props.patient.registerId))
@@ -77,7 +102,15 @@ function onDragStart(event: DragEvent) {
     <span class="follow-up-patient-card__meta">
       {{ patient.caseNumber ?? patient.registerId }} · {{ patient.gender ?? '—' }} · {{ patient.age ?? '—' }}岁
     </span>
-    <span v-if="patient.lastTrackedDate && !showStatusRow" class="follow-up-patient-card__track">
+    <div
+      v-if="showContactInfo"
+      class="follow-up-patient-card__followup"
+      :class="nextFollowUpClass(patient)"
+    >
+      <span class="follow-up-patient-card__followup-type">{{ nextFollowUpTypeLabel(patient.nextFollowUpType) }}</span>
+      <strong>{{ nextFollowUpLabel(patient) }}</strong>
+    </div>
+    <span v-if="patient.lastTrackedDate && !showStatusRow && !showContactInfo" class="follow-up-patient-card__track">
       最近跟踪：{{ patient.lastTrackedDate }}
     </span>
     <div v-if="showContactInfo" class="follow-up-patient-card__status-row">
@@ -99,12 +132,6 @@ function onDragStart(event: DragEvent) {
         class="follow-up-patient-card__track follow-up-patient-card__track--inline"
       >
         {{ patient.daysUntilDeadline >= 0 ? `距期限 ${patient.daysUntilDeadline} 天` : `已超期 ${Math.abs(patient.daysUntilDeadline)} 天` }}
-      </span>
-      <span
-        v-if="patient.nextContactDate"
-        class="follow-up-patient-card__track follow-up-patient-card__track--inline"
-      >
-        下次联系 {{ patient.nextContactDate }}
       </span>
     </div>
     <div v-if="showStatusRow" class="follow-up-patient-card__status-row">
@@ -188,6 +215,52 @@ function onDragStart(event: DragEvent) {
   display: block;
   color: var(--color-text-muted);
   font-size: 12px;
+}
+
+.follow-up-patient-card__followup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-block-start: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.follow-up-patient-card__followup strong {
+  font-size: 13px;
+}
+
+.follow-up-patient-card__followup-type {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
+
+.follow-up-patient-card__followup--today {
+  background: rgba(245, 159, 0, 0.12);
+  color: #b45309;
+}
+
+.follow-up-patient-card__followup--soon {
+  background: rgba(31, 140, 255, 0.1);
+  color: var(--color-primary-strong);
+}
+
+.follow-up-patient-card__followup--overdue {
+  background: rgba(239, 77, 90, 0.12);
+  color: #c81e2d;
+}
+
+.follow-up-patient-card__followup--normal {
+  background: var(--color-bg-soft);
+  color: var(--color-text-muted);
+}
+
+.follow-up-patient-card__followup--muted {
+  background: var(--color-bg-soft);
+  color: var(--color-text-soft);
 }
 
 .follow-up-patient-card__track {

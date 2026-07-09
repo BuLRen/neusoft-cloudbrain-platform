@@ -47,7 +47,7 @@ public class FollowUpCommunicationController {
         @RequestBody Map<String, Object> request
     ) {
         String messageType = request.get("messageType") != null ? String.valueOf(request.get("messageType")) : "text";
-        if ("drug_card".equals(messageType) || "diagnosis_card".equals(messageType)) {
+        if ("drug_card".equals(messageType) || "diagnosis_card".equals(messageType) || "registration_card".equals(messageType)) {
             @SuppressWarnings("unchecked")
             Map<String, Object> cardPayload = request.get("cardPayload") instanceof Map<?, ?> map
                 ? (Map<String, Object>) map

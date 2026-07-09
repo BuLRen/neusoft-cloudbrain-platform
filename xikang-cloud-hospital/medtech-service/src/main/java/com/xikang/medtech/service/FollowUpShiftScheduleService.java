@@ -31,14 +31,13 @@ public class FollowUpShiftScheduleService {
     public List<Map<String, Object>> listMyShifts(LocalDate from, LocalDate to) {
         Long employeeId = requireEmployeeId();
         List<Map<String, Object>> shifts = shiftMapper.selectStaffShifts(employeeId, null, from, to);
-        List<Map<String, Object>> monitoredPatients = dashboardMapper.selectMonitoredPatientsByEmployee(employeeId);
-        enrichShiftsWithTasks(shifts, monitoredPatients);
+        enrichShiftsWithTasks(shifts);
         return shifts;
     }
 
     public List<Map<String, Object>> listDepartmentShifts(Long departmentId, LocalDate from, LocalDate to) {
         List<Map<String, Object>> shifts = shiftMapper.selectStaffShifts(null, departmentId, from, to);
-        enrichShiftsWithTasks(shifts, List.of());
+        enrichShiftsWithTasks(shifts);
         return shifts;
     }
 
@@ -69,6 +68,7 @@ public class FollowUpShiftScheduleService {
             planId = toLong(planPayload.get("id"));
         }
 
+        List<Map<String, Object>> planningPatients = shiftMapper.selectPatientsForShiftPlanning(departmentId);
         List<Map<String, Object>> shifts = (List<Map<String, Object>>) generated.get("shifts");
         if (shifts == null) {
             shifts = List.of();
@@ -76,7 +76,7 @@ public class FollowUpShiftScheduleService {
         int shiftCount = 0;
         int taskCount = 0;
         for (Map<String, Object> rawShift : shifts) {
-            Map<String, Object> shift = FollowUpShiftPlanSupport.normalizeShift(rawShift);
+            Map<String, Object> shift = FollowUpShiftPlanSupport.normalizeShift(rawShift, planningPatients);
             Map<String, Object> shiftPayload = new HashMap<>();
             shiftPayload.put("planId", planId);
             shiftPayload.put("employeeId", toLong(shift.get("employee_id")));
@@ -101,7 +101,7 @@ public class FollowUpShiftScheduleService {
             }
         }
 
-        int restoredCount = restorePreservedTasks(planId, departmentId, preservedTasks, shifts);
+        int restoredCount = restorePreservedTasks(planId, departmentId, preservedTasks, shifts, planningPatients);
         int flushedPending = shiftEnqueueService.flushPendingForDepartment(departmentId, month);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -139,17 +139,22 @@ public class FollowUpShiftScheduleService {
         Long planId,
         Long departmentId,
         List<Map<String, Object>> preservedTasks,
-        List<Map<String, Object>> aiShifts
+        List<Map<String, Object>> aiShifts,
+        List<Map<String, Object>> planningPatients
     ) {
         if (preservedTasks == null || preservedTasks.isEmpty()) {
             return 0;
         }
+        FollowUpShiftPlanSupport.PatientPool pool = FollowUpShiftPlanSupport.PatientPool.from(planningPatients);
         Set<String> aiTaskKeys = buildAiTaskKeys(aiShifts);
         int restored = 0;
         for (Map<String, Object> task : preservedTasks) {
             Long registerId = toLong(task.get("registerId"));
             LocalDate workDate = parseWorkDate(task.get("workDate"));
             if (registerId == null || workDate == null) {
+                continue;
+            }
+            if (!pool.contains(registerId)) {
                 continue;
             }
             String key = registerId + "|" + workDate;
@@ -159,6 +164,10 @@ public class FollowUpShiftScheduleService {
 
             Long employeeId = toLong(task.get("employeeId"));
             if (employeeId == null) {
+                continue;
+            }
+            Long monitorEmployeeId = pool.monitorEmployeeId(registerId);
+            if (monitorEmployeeId != null && !monitorEmployeeId.equals(employeeId)) {
                 continue;
             }
 
@@ -210,14 +219,11 @@ public class FollowUpShiftScheduleService {
         return keys;
     }
 
-    private void enrichShiftsWithTasks(List<Map<String, Object>> shifts, List<Map<String, Object>> monitoredPatients) {
+    private void enrichShiftsWithTasks(List<Map<String, Object>> shifts) {
         for (Map<String, Object> shift : shifts) {
             Long shiftId = toLong(shift.get("id"));
             if (shiftId != null) {
                 shift.put("contactTasks", shiftMapper.selectContactTasksByShiftId(shiftId));
-            }
-            if (!monitoredPatients.isEmpty()) {
-                shift.put("monitoredPatients", monitoredPatients);
             }
         }
     }

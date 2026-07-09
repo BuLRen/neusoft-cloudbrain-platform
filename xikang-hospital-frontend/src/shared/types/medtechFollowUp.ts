@@ -161,6 +161,15 @@ export interface FollowUpDashboardPatient {
   contactedToday?: boolean
   contactStatus?: 'contacted_today' | 'due' | 'overdue' | 'within_limit'
   nextContactDate?: string
+  nextPlannedInterviewDate?: string
+  nextFollowUpDate?: string
+  nextFollowUpType?: 'contact' | 'interview' | 'follow_up'
+  scheduledFollowUpToday?: boolean
+  suggestedInterviewDate?: string
+  daysUntilSuggestedInterview?: number
+  daysUntilNextContact?: number
+  daysUntilNextInterview?: number
+  daysUntilNextFollowUp?: number
 }
 
 export interface FollowUpDayScheduleItem {
@@ -185,7 +194,12 @@ export interface FollowUpDashboardStats {
   myMonitoringCount?: number
   todayContactDue?: number
   todayContacted?: number
+  contactDue?: number
   contactOverdue?: number
+  contactCompletionRate?: number
+  nextFollowUpToday?: number
+  nextFollowUpThisWeek?: number
+  noNextFollowUp?: number
 }
 
 export interface FollowUpDashboardContext {
@@ -276,7 +290,7 @@ export interface PatientFollowUpFeedbackPayload {
 }
 
 export type CommunicationSenderType = 'doctor' | 'patient' | 'ai' | 'system'
-export type CommunicationMessageType = 'text' | 'case_summary' | 'notice' | 'drug_card' | 'diagnosis_card'
+export type CommunicationMessageType = 'text' | 'case_summary' | 'notice' | 'drug_card' | 'diagnosis_card' | 'registration_card'
 export type CaseSummaryStatus = 'draft' | 'approved' | 'shared' | 'revoked'
 
 export interface FollowUpCommunicationSession {
@@ -417,7 +431,47 @@ export interface CommunicationDiagnosisCardPayload {
   source?: string
 }
 
-export type CommunicationCardPayload = CommunicationDrugCardPayload | CommunicationDiagnosisCardPayload
+export interface CommunicationRegistrationCardPayload {
+  action?: 'open_registration'
+  linkPath?: string
+  departmentId?: number
+  departmentName?: string
+  physicianId?: number
+  physicianName?: string
+  sourceRegisterId?: number
+  reminderText?: string
+}
+
+export type CommunicationCardPayload =
+  | CommunicationDrugCardPayload
+  | CommunicationDiagnosisCardPayload
+  | CommunicationRegistrationCardPayload
+
+export type FollowUpVisitReportRecoveryStatus = 'improved' | 'stable' | 'worsened' | 'unknown'
+
+export interface FollowUpVisitReport {
+  exists?: boolean
+  id?: number
+  registerId?: number
+  sourceMedicalRecordId?: number
+  reportDate?: string
+  status?: 'draft' | 'finalized'
+  lastVisitSnapshot?: LastVisitSnapshot
+  observationText?: string
+  conclusionText?: string
+  recoveryStatus?: FollowUpVisitReportRecoveryStatus
+  generatedBy?: number
+  finalizedAt?: string
+  creationTime?: string
+}
+
+export interface FollowUpVisitReportSavePayload {
+  id?: number
+  registerId: number
+  observationText?: string
+  conclusionText?: string
+  recoveryStatus?: FollowUpVisitReportRecoveryStatus
+}
 
 export type FollowUpHistoryEventType =
   | 'patient_feedback'
@@ -430,6 +484,7 @@ export type FollowUpHistoryEventType =
   | 'diagnosis_card'
   | 'case_summary'
   | 'revisit_reminder'
+  | 'follow_up_report'
   | 'forecast_alert'
 
 export interface FollowUpHistoryEvent {
