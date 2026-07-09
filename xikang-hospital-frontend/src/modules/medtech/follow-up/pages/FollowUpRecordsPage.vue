@@ -28,6 +28,7 @@ const EVENT_LABELS: Record<FollowUpHistoryEventType, string> = {
   diagnosis_card: '病况卡片',
   case_summary: '病例总结',
   revisit_reminder: '复诊提醒',
+  follow_up_report: '随访报告',
   forecast_alert: '血糖预警',
 }
 

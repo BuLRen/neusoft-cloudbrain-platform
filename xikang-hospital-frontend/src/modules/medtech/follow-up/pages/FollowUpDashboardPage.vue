@@ -56,7 +56,29 @@ const transferTarget = ref<FollowUpDashboardPatient | null>(null)
 
 const enrolledPatients = computed(() => patients.value.filter((p) => p.enrolled))
 
-const myPatients = computed(() => myMonitoredPatients.value)
+function compareNextFollowUp(a: FollowUpDashboardPatient, b: FollowUpDashboardPatient) {
+  const aDays = a.daysUntilNextFollowUp ?? a.daysUntilNextContact ?? Number.MAX_SAFE_INTEGER
+  const bDays = b.daysUntilNextFollowUp ?? b.daysUntilNextContact ?? Number.MAX_SAFE_INTEGER
+  if (aDays !== bDays) return aDays - bDays
+  const priorityOrder = { critical: 1, high: 2, normal: 3 } as const
+  const ap = priorityOrder[a.priorityLevel ?? 'normal'] ?? 3
+  const bp = priorityOrder[b.priorityLevel ?? 'normal'] ?? 3
+  if (ap !== bp) return ap - bp
+  return String(a.realName ?? '').localeCompare(String(b.realName ?? ''), 'zh-CN')
+}
+
+const myPatients = computed(() => [...myMonitoredPatients.value].sort(compareNextFollowUp))
+
+const upcomingFollowUps = computed(() =>
+  myPatients.value.filter((p) => {
+    const days = p.daysUntilNextFollowUp ?? p.daysUntilNextContact
+    return days != null && days > 0 && days <= 7 && (p.nextContactDate || p.nextPlannedInterviewDate)
+  }),
+)
+
+const scheduledFollowUpToday = computed(() =>
+  myPatients.value.filter((p) => p.scheduledFollowUpToday || p.nextContactDate === todayYmd || p.nextPlannedInterviewDate === todayYmd),
+)
 
 const unassignedEnrolled = computed(() =>
   enrolledPatients.value.filter((p) => !p.monitoringEmployeeId),
@@ -68,7 +90,23 @@ const contactDueToday = computed(() =>
   ),
 )
 
-const todayShift = computed(() => myShifts.value.find((s) => s.workDate === todayYmd))
+const todayShift = computed(() =>
+  myShifts.value.find((s) => s.workDate === todayYmd && (s.contactTasks?.length ?? 0) > 0),
+)
+
+const shiftDatesWithTasks = computed(() =>
+  myShifts.value
+    .filter((s) => (s.contactTasks?.length ?? 0) > 0)
+    .map((s) => s.workDate),
+)
+
+const shiftsWithTasks = computed(() =>
+  myShifts.value.filter((s) => (s.contactTasks?.length ?? 0) > 0),
+)
+
+const todayShiftContactTasks = computed(
+  () => myShifts.value.find((s) => s.workDate === todayYmd)?.contactTasks ?? [],
+)
 
 const contactStats = computed(() => ({
   myMonitoring: myPatients.value.length,
@@ -103,14 +141,6 @@ async function loadDashboard() {
         enrolledPatients:
           contextRes.stats?.enrolledPatients ??
           patientsRes.filter((p) => p.enrolled).length,
-        myMonitoringCount: myMonitoredRes.length,
-        todayContactDue: myMonitoredRes.filter(
-          (p) => p.contactStatus !== 'contacted_today',
-        ).length,
-        todayContacted: myMonitoredRes.filter(
-          (p) => p.contactStatus === 'contacted_today',
-        ).length,
-        contactOverdue: myMonitoredRes.filter((p) => p.contactStatus === 'overdue').length,
       },
     }
     patients.value = patientsRes
@@ -138,7 +168,7 @@ function openShiftDay(date: string) {
   const shift = myShifts.value.find((s) => s.workDate === date)
   shiftDayDialogDate.value = date
   shiftDayDialogTasks.value = shift?.contactTasks ?? []
-  shiftDayDialogMonitoredPatients.value = shift?.monitoredPatients ?? myShifts.value[0]?.monitoredPatients ?? []
+  shiftDayDialogMonitoredPatients.value = []
   shiftDayDialogVisible.value = true
 }
 
@@ -249,7 +279,7 @@ onActivated(() => {
           <div class="follow-up-dashboard__panel-head">
             <div>
               <h3>我的监视患者</h3>
-              <p>您负责日常联系与随访的患者，点击卡片进入疗效评估。</p>
+              <p>按下次随访时间排序；卡片展示排班联系、计划访谈或周期随访安排。</p>
             </div>
             <ElTag effect="plain">共 {{ myPatients.length }} 人</ElTag>
           </div>
@@ -274,10 +304,53 @@ onActivated(() => {
           />
         </GlassCard>
 
+        <GlassCard v-if="upcomingFollowUps.length" class="follow-up-dashboard__panel">
+          <div class="follow-up-dashboard__panel-head">
+            <div>
+              <h3>7 日内随访安排</h3>
+              <p>近期需联系或访谈的患者，便于提前安排工作。</p>
+            </div>
+            <ElTag type="warning" effect="plain">{{ upcomingFollowUps.length }} 人</ElTag>
+          </div>
+          <div class="follow-up-dashboard__cards">
+            <FollowUpPatientCard
+              v-for="patient in upcomingFollowUps"
+              :key="`upcoming-${patient.registerId}`"
+              :patient="patient"
+              show-contact-info
+              :draggable="false"
+              @click="openOutcome"
+            />
+          </div>
+        </GlassCard>
+
+        <GlassCard v-if="todayShiftContactTasks.length || scheduledFollowUpToday.length" class="follow-up-dashboard__panel">
+          <div class="follow-up-dashboard__panel-head">
+            <div>
+              <h3>今日排班随访</h3>
+              <p>管理员排班中安排在今日的联系任务与计划访谈（与下方「随访期内待联系」不同）。</p>
+            </div>
+            <ElTag type="warning" effect="plain">
+              {{ todayShiftContactTasks.length || scheduledFollowUpToday.length }} 人
+            </ElTag>
+          </div>
+          <div v-if="scheduledFollowUpToday.length" class="follow-up-dashboard__cards">
+            <FollowUpPatientCard
+              v-for="patient in scheduledFollowUpToday"
+              :key="`scheduled-${patient.registerId}`"
+              :patient="patient"
+              show-contact-info
+              :draggable="false"
+              @click="openOutcome"
+            />
+          </div>
+          <ElEmpty v-else description="今日排班无联系任务" />
+        </GlassCard>
+
         <GlassCard class="follow-up-dashboard__panel">
           <div class="follow-up-dashboard__panel-head">
             <div>
-              <h3>今日需联系</h3>
+              <h3>随访期内待联系</h3>
               <p>6 个月随访期内尚未完成今日联系的患者（已联系 {{ contactStats.contacted }} / 待联系 {{ contactStats.due + contactStats.overdue }}）。</p>
             </div>
           </div>
@@ -287,6 +360,7 @@ onActivated(() => {
               :key="`contact-${patient.registerId}`"
               :patient="patient"
               show-contact-info
+              show-status-row
               :draggable="false"
               @click="openOutcome"
             />
@@ -317,9 +391,9 @@ onActivated(() => {
               <p>管理员发布的月度排班；点击日期查看当日需联系患者。</p>
             </div>
           </div>
-          <div v-if="myShifts.length" class="follow-up-dashboard__shift-list">
+          <div v-if="shiftsWithTasks.length" class="follow-up-dashboard__shift-list">
             <button
-              v-for="shift in myShifts"
+              v-for="shift in shiftsWithTasks"
               :key="shift.id"
               type="button"
               class="follow-up-dashboard__shift-chip"
@@ -327,15 +401,10 @@ onActivated(() => {
               @click="openShiftDay(shift.workDate)"
             >
               <strong>{{ shift.workDate }}</strong>
-              <span>
-                {{ shift.contactTasks?.length ?? 0 }} 位排班联系
-                <template v-if="shift.monitoredPatients?.length">
-                  · {{ shift.monitoredPatients.length }} 位监视
-                </template>
-              </span>
+              <span>{{ shift.contactTasks?.length ?? 0 }} 位排班联系</span>
             </button>
           </div>
-          <ElEmpty v-else description="本月暂无工作排班，请联系管理员生成" />
+          <ElEmpty v-else description="本月暂无排班联系任务，请联系管理员生成" />
         </GlassCard>
 
         <FollowUpMonthCalendar
@@ -343,7 +412,7 @@ onActivated(() => {
           v-model:month="calendarMonth"
           :today-ymd="todayYmd"
           :schedules="schedules"
-          :shift-dates="myShifts.map((s) => s.workDate)"
+          :shift-dates="shiftDatesWithTasks"
           @open-day="openScheduleDialog"
           @open-shift-day="openShiftDay"
         />
