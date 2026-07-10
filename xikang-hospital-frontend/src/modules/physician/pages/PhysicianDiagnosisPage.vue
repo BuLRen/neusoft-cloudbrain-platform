@@ -752,7 +752,7 @@ onMounted(() => {
   width: 100%;
 }
 
-.diagnosis-form__select-wrap.is-confirmed :deep(.el-select__wrapper) {
+.diagnosis-form__select-wrap.is-confirmed :deep(.el-input__wrapper) {
   padding-inline-end: 36px;
   box-shadow: inset 0 0 0 1px rgba(32, 180, 134, 0.35);
 }

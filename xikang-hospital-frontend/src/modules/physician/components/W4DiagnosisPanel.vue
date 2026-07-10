@@ -64,11 +64,18 @@ function treatmentItems(item: W4Suggestion): string[] {
             <ElIcon class="w4-panel__help" aria-label="说明"><QuestionFilled /></ElIcon>
           </ElTooltip>
         </div>
-        <p class="w4-panel__subtitle">以下为历史 AI 推荐，供医生采纳或鉴别</p>
+        <p class="w4-panel__subtitle">
+          {{ hasContent ? '以下为历史 AI 推荐，供医生采纳或鉴别' : '运行 W4 后将在此展示诊断建议' }}
+        </p>
       </div>
     </div>
 
-    <ElEmpty v-if="!hasContent" description="暂无 W4 输出，可运行 W4 获取疾病诊断建议。" />
+    <ElEmpty
+      v-if="!hasContent"
+      class="w4-panel__empty"
+      :image-size="64"
+      description="暂无 W4 输出，可运行 W4 获取疾病诊断建议。"
+    />
 
     <template v-else>
       <ElAlert
@@ -224,7 +231,11 @@ function treatmentItems(item: W4Suggestion): string[] {
 }
 
 .w4-panel__head {
-  margin-block-end: var(--space-4);
+  margin-block-end: var(--space-3);
+}
+
+.w4-panel:has(.w4-panel__empty) .w4-panel__head {
+  margin-block-end: var(--space-2);
 }
 
 .w4-panel__title-row {
@@ -247,6 +258,18 @@ function treatmentItems(item: W4Suggestion): string[] {
 .w4-panel__subtitle {
   margin: var(--space-1) 0 0;
   color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.w4-panel__empty {
+  padding: var(--space-3) 0 var(--space-4);
+}
+
+.w4-panel__empty :deep(.el-empty__description) {
+  margin-block-start: var(--space-2);
+}
+
+.w4-panel__empty :deep(.el-empty__description p) {
   font-size: 13px;
 }
 
