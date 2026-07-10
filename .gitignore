@@ -609,3 +609,4 @@ segment-model/
 *.onnx
 *.h5
 *.pkl
+xikang-hospital-frontend/nifti-reader-js-0.8.0.tgz
