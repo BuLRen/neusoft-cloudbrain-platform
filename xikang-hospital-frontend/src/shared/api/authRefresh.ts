@@ -6,9 +6,10 @@ import {
   getRefreshToken,
   setAccessToken,
 } from '@/shared/auth/tokenStorage'
+import { getAxiosBaseURL } from '@/config/api'
 
 const refreshClient = axios.create({
-  baseURL: '/api',
+  baseURL: getAxiosBaseURL(),
   timeout: 15000,
   withCredentials: true,
 })

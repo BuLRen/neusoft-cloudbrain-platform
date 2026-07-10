@@ -140,6 +140,29 @@ function parseIsNormalValue(raw: unknown): boolean {
   return false
 }
 
+function pickStringField(row: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key]
+    if (value != null && String(value).trim() !== '') {
+      return String(value).trim()
+    }
+  }
+  return ''
+}
+
+function normalizeResultItemRow(row: Record<string, unknown>): SimulatedResultItem {
+  const rawValue = row.value ?? row.result
+  return {
+    itemCode: pickStringField(row, ['itemCode', 'item_code', 'code']),
+    itemName: pickStringField(row, ['itemName', 'name', 'item']),
+    value: (rawValue === null || rawValue === undefined ? '' : rawValue) as string | number,
+    unit: pickStringField(row, ['unit']),
+    referenceRange: pickStringField(row, ['referenceRange', 'reference', 'refRange', 'reference_range']),
+    status: pickStringField(row, ['status']) || 'normal',
+    meaning: pickStringField(row, ['meaning', 'interpretation', 'clinicalMeaning', 'note']),
+  }
+}
+
 function looksLikeStructuredOutput(data: Record<string, unknown>): boolean {
   if (Array.isArray(data.resultItems) && data.resultItems.length > 0) return true
   if (typeof data.checkName === 'string' && data.checkName.trim()) return true
@@ -184,18 +207,7 @@ export function normalizeStructuredOutput(raw: unknown): SimulatedCheckStructure
   const resultItems: SimulatedResultItem[] = Array.isArray(data.resultItems)
     ? data.resultItems
         .filter((item) => item && typeof item === 'object')
-        .map((item) => {
-          const row = item as Record<string, unknown>
-          return {
-            itemCode: String(row.itemCode ?? ''),
-            itemName: String(row.itemName ?? ''),
-            value: (row.value === null || row.value === undefined ? '' : row.value) as string | number,
-            unit: String(row.unit ?? ''),
-            referenceRange: String(row.referenceRange ?? ''),
-            status: String(row.status ?? 'normal'),
-            meaning: String(row.meaning ?? ''),
-          }
-        })
+        .map((item) => normalizeResultItemRow(item as Record<string, unknown>))
     : []
 
   const checkName = String(data.checkName ?? '')

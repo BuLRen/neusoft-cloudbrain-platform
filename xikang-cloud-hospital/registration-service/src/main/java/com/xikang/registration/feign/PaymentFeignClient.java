@@ -22,7 +22,7 @@ import java.util.Map;
  *   - ExpenseRecordService / StatsMapper 改 Feign 透传
  *   - ChargeService.charge 收费员集中收费申请 write-token
  */
-@FeignClient(name = "payment-service", url = "${services.payment-service.url:http://localhost:8096}")
+@FeignClient(name = "payment-service", url = "${services.payment-service.url}")
 public interface PaymentFeignClient {
 
     // ============== createItem ==============

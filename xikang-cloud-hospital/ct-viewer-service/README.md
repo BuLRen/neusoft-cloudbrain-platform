@@ -7,7 +7,7 @@
 | `ct-viewer-algo` | 8106 | Python 内网图像算法 worker |
 | `ct-viewer-service` | 8099 | Java 对外 API（存储 + 编排 + 鉴权 + 审计） |
 | `gateway-service` | 8080 | 网关 `/api/ct-viewer/**` |
-| Redis | 6379 | volume 元数据 TTL |
+| Redis | 6379 | volume 元数据 TTL（可与 ct-viewer 分机，配置 `REDIS_HOST` 为远程地址） |
 | PostgreSQL | 5432/3307 | 用户鉴权查询 + CT 影像审计日志 |
 
 ## 1. 启动 Python 算法 worker
@@ -47,9 +47,14 @@ mvn -pl ct-viewer-service -am spring-boot:run
 
 ## 环境变量（根目录 `.env`）
 
-- `CT_VIEWER_ALGO_URL=http://127.0.0.1:8106`
+- `CT_VIEWER_ALGO_URL=http://127.0.0.1:8106`（与 Python 同机）
+- `AI_CT_SERVICE_URL=http://127.0.0.1:8105`
+- `LUNG_NODULE_SEG_SERVICE_URL=http://127.0.0.1:8222`
 - `CT_VIEWER_WORK_DIR=./data/ct-viewer`
 - `CT_VIEWER_VOLUME_TTL=7200`（秒）
+- `REDIS_HOST=<远程 Redis 主机>`（Redis 可与 AI 服务器分机）
+- `NACOS_DISCOVERY_ENABLED=true`（注册到 Nacos，供 gateway `lb://ct-viewer-service`）
+- `NACOS_DISCOVERY_IP=<gateway 可达的 AI 服务器 IP>`（跨机部署时在 AI 服务器 `.env` 设置，对应 `application.yml` 的 `discovery.ip`）
 - `SPRING_PROFILES_ACTIVE=local`（或 `remote`）
 - `INTERNAL_SERVICE_TOKEN=<与 medtech-service 共用的内部令牌>`
 - `JWT_SECRET=<与 auth/gateway 一致>`

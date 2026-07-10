@@ -4,9 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/ensure-api-local.mjs",
+    "prebuild": "node scripts/ensure-api-local.mjs",
     "dev": "vite",
     "type-check": "vue-tsc -b",
-    "build": "vue-tsc -b && vite build",
+    "build": "vite build",
+    "build:check": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "generate:personnel-samples": "node scripts/generate-personnel-samples.mjs"
   },
@@ -20,6 +23,7 @@
     "element-plus": "^2.14.0",
     "html2pdf.js": "^0.14.0",
     "marked": "^18.0.5",
+    "nifti-reader-js": "^0.8.0",
     "nrrd-js": "^0.2.1",
     "pako": "^2.1.0",
     "pinia": "^3.0.4",

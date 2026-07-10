@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# 本地 API 地址配置（从 api.local.example.ts 复制）
+src/config/api.local.ts
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

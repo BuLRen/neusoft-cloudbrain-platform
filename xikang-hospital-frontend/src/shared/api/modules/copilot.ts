@@ -8,6 +8,7 @@ import type {
   CopilotSession,
 } from '@/shared/types/copilot'
 import { getAccessToken } from '@/shared/auth/tokenStorage'
+import { apiUrl } from '@/config/api'
 
 async function callCopilotSSE(
   url: string,
@@ -17,7 +18,7 @@ async function callCopilotSSE(
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   const token = getAccessToken()
-  const response = await fetch(`/api${url}`, {
+  const response = await fetch(apiUrl(url), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -89,14 +90,14 @@ async function parseJsonResponse<T>(res: Response): Promise<T> {
 
 export const copilotApi = {
   listSessions(registerId: number) {
-    return fetch(`/api/physician/ai/copilot/sessions?registerId=${registerId}`, {
+    return fetch(apiUrl(`/physician/ai/copilot/sessions?registerId=${registerId}`), {
       headers: authHeaders(),
       credentials: 'include',
     }).then((res) => parseJsonResponse<CopilotSession[]>(res))
   },
 
   createSession(registerId: number, title?: string) {
-    return fetch('/api/physician/ai/copilot/sessions', {
+    return fetch(apiUrl('/physician/ai/copilot/sessions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ registerId, title }),
@@ -105,7 +106,7 @@ export const copilotApi = {
   },
 
   deleteSession(registerId: number, sessionId: number) {
-    return fetch(`/api/physician/ai/copilot/sessions/${sessionId}?registerId=${registerId}`, {
+    return fetch(apiUrl(`/physician/ai/copilot/sessions/${sessionId}?registerId=${registerId}`), {
       method: 'DELETE',
       headers: authHeaders(),
       credentials: 'include',
@@ -118,7 +119,7 @@ export const copilotApi = {
   },
 
   renameSession(registerId: number, sessionId: number, title: string) {
-    return fetch(`/api/physician/ai/copilot/sessions/${sessionId}/title`, {
+    return fetch(apiUrl(`/physician/ai/copilot/sessions/${sessionId}/title`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ registerId, title }),
@@ -133,21 +134,21 @@ export const copilotApi = {
 
   history(registerId: number, sessionId: number) {
     return fetch(
-      `/api/physician/ai/copilot/history?registerId=${registerId}&sessionId=${sessionId}`,
+      apiUrl(`/physician/ai/copilot/history?registerId=${registerId}&sessionId=${sessionId}`),
       { headers: authHeaders(), credentials: 'include' },
     ).then((res) => parseJsonResponse<CopilotMessage[]>(res))
   },
 
   confirmCompletions(registerId: number, sessionId: number) {
     return fetch(
-      `/api/physician/ai/copilot/confirm-completions?registerId=${registerId}&sessionId=${sessionId}`,
+      apiUrl(`/physician/ai/copilot/confirm-completions?registerId=${registerId}&sessionId=${sessionId}`),
       { headers: authHeaders(), credentials: 'include' },
     ).then((res) => parseJsonResponse<CopilotConfirmCompletion[]>(res))
   },
 
   clearHistory(registerId: number, sessionId: number) {
     return fetch(
-      `/api/physician/ai/copilot/history?registerId=${registerId}&sessionId=${sessionId}`,
+      apiUrl(`/physician/ai/copilot/history?registerId=${registerId}&sessionId=${sessionId}`),
       { method: 'DELETE', headers: authHeaders(), credentials: 'include' },
     ).then(async (res) => {
       if (!res.ok) {
@@ -175,7 +176,7 @@ export const copilotApi = {
   },
 
   async runAction(registerId: number, actionType: string): Promise<CopilotRunActionResponse> {
-    const response = await fetch('/api/physician/ai/copilot/run-action', {
+    const response = await fetch(apiUrl('/physician/ai/copilot/run-action'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ registerId, actionType }),
@@ -190,7 +191,7 @@ export const copilotApi = {
     actionType: string,
     payload: Record<string, unknown>,
   ): Promise<CopilotPrepareActionResponse> {
-    const response = await fetch('/api/physician/ai/copilot/prepare-action', {
+    const response = await fetch(apiUrl('/physician/ai/copilot/prepare-action'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ registerId, sessionId, actionType, payload }),
@@ -205,7 +206,7 @@ export const copilotApi = {
     confirmationToken: string,
     payloadOverride?: Record<string, unknown>,
   ): Promise<CopilotConfirmActionResponse> {
-    const response = await fetch('/api/physician/ai/copilot/confirm-action', {
+    const response = await fetch(apiUrl('/physician/ai/copilot/confirm-action'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ registerId, sessionId, confirmationToken, payloadOverride }),

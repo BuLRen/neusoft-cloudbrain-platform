@@ -13,14 +13,6 @@ import java.time.Duration;
 public class MedtechPaymentConfig {
 
     @Bean
-    public RestTemplate paymentRestTemplate(RestTemplateBuilder builder) {
-        return builder
-                .setConnectTimeout(Duration.ofSeconds(2))
-                .setReadTimeout(Duration.ofSeconds(3))
-                .build();
-    }
-
-    @Bean
     public RestTemplate ctViewerRestTemplate(RestTemplateBuilder builder, CtViewerClientProperties properties) {
         return builder
                 .setConnectTimeout(Duration.ofMillis(properties.getConnectTimeoutMs()))

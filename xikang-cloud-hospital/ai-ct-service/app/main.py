@@ -62,6 +62,19 @@ def _err(http_status: int, code: int, message: str) -> JSONResponse:
 # ========================
 # 模型加载
 # ========================
+def _extract_state_dict(raw: object) -> object:
+    """兼容纯 state_dict 与训练 checkpoint（model / models / state_dict 包装）。"""
+    if not isinstance(raw, dict):
+        return raw
+    if any(str(k).startswith("inc") for k in raw.keys()):
+        return raw
+    for key in ("model", "models", "state_dict"):
+        inner = raw.get(key)
+        if isinstance(inner, dict):
+            return inner
+    return raw
+
+
 def _load_model() -> Optional[torch.nn.Module]:
     """
     从 MODEL_PATH 加载权重。失败返回 None 并把异常信息记到 _state["load_error"]。
@@ -78,17 +91,9 @@ def _load_model() -> Optional[torch.nn.Module]:
         state_dict = torch.load(
             config.MODEL_PATH,
             map_location=config.DEVICE,
-            weights_only=True,   # pytorch>=2.0 安全加载，只允许 state_dict
+            weights_only=False,
         )
-        # 兼容两种保存格式：纯 state_dict 或 {"models": state_dict, ...}
-        if isinstance(state_dict, dict) and "models" in state_dict \
-                and not any(k.startswith("inc") for k in state_dict.keys()):
-            sd = state_dict["models"]
-        elif isinstance(state_dict, dict) and "state_dict" in state_dict \
-                and not any(k.startswith("inc") for k in state_dict.keys()):
-            sd = state_dict["state_dict"]
-        else:
-            sd = state_dict
+        sd = _extract_state_dict(state_dict)
 
         # 去掉可能存在的 'module.' 前缀（DataParallel 保存格式）
         clean_sd = {}
@@ -147,6 +152,7 @@ async def health():
         "status": "up",
         "model_loaded": _state["model_loaded"],
         "device": _state["device"],
+        "load_error": _state["load_error"],
     }
 
 

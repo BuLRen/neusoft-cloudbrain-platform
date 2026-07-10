@@ -1,5 +1,6 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/app/stores/auth'
+import { apiUrl } from '@/config/api'
 import { criticalValueApi, type CriticalValueAlert } from '@/shared/api/modules/criticalValue'
 
 function parseItems(raw: CriticalValueAlert['criticalItems']): CriticalValueAlert['criticalItems'] {
@@ -125,7 +126,7 @@ export function useCriticalValueStream(enabled: () => boolean) {
     const doctorId = authStore.employeeId
     if (!doctorId || !enabled()) return
     es?.close()
-    es = new EventSource(`/api/medtech/critical-value/stream/doctor/${doctorId}`)
+    es = new EventSource(apiUrl(`/medtech/critical-value/stream/doctor/${doctorId}`))
     es.addEventListener('CRITICAL_NEW', (e) => handleSsePayload((e as MessageEvent).data))
     es.addEventListener('CRITICAL_ESCALATED', (e) => handleSsePayload((e as MessageEvent).data))
     es.addEventListener('CRITICAL_CLOSED', (e) => handleSsePayload((e as MessageEvent).data))

@@ -4,6 +4,7 @@ import { ElDatePicker, ElMessage, ElMessageBox, ElPagination, ElOption, ElRadio,
 import { useRoute, useRouter } from 'vue-router'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import CheckInQRCode from '@/shared/components/CheckInQRCode.vue'
+import { apiUrl } from '@/config/api'
 import { aiApi } from '@/shared/api/modules/ai'
 import { registrationApi, scheduleApi, type DoctorInfo } from '@/shared/api/modules/registration'
 import type { RegistrationRecord } from '@/shared/types/registration'
@@ -171,12 +172,9 @@ async function sendForRecognition(pcmData: Int16Array) {
     // 转换为字节数组
     const byteArray = new Uint8Array(pcmData.buffer)
 
-    // 获取 API 地址（走网关8080，有CORS配置）
-    const apiUrl = import.meta.env.DEV
-      ? 'http://localhost:8080/api/voice/recognize'
-      : '/api/voice/recognize'
+    const apiRequestUrl = apiUrl('/voice/recognize')
 
-    const response = await fetch(apiUrl, {
+    const response = await fetch(apiRequestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',

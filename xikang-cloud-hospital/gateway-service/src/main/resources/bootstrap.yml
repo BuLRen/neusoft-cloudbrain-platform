@@ -4,8 +4,7 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: localhost:8848
-        # 本地开发：服务注册在 Nacos 默认(public)命名空间，勿与业务服务 namespace 不一致
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
       config:
-        server-addr: localhost:8848
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         file-extension: yaml

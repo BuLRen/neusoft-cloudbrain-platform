@@ -1,160 +1,109 @@
 package com.xikang.physician.calling;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xikang.common.result.Result;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
 import java.util.Map;
 
 /**
- * registration-service 叫号内部接口的 HTTP 客户端。
+ * registration-service 叫号内部接口的门面客户端。
  *
- * physician-service 不直接读写 register 表的叫号字段，而是通过 HTTP 调 registration-service 的：
- *   POST /api/registration/calling/internal/call-next
- *   POST /api/registration/calling/internal/call/{registerId}
- *   POST /api/registration/calling/internal/answer/{registerId}
- *   POST /api/registration/calling/internal/pass/{registerId}
- *   GET  /api/registration/calling/current?employeeId=...
- *
+ * <p>physician-service 不直接读写 register 表的叫号字段，而是通过 Feign 调 registration-service 的 internal 接口。
  * 设计文档 §5.4：physician-service 通过 Feign 调 registration-service。
- * 本项目 physician-service 当前没启用 Feign，统一用 RestTemplate 风格（与 DifyWorkflowClient 一致）。
  *
- * URL 配置：calling.service.url，默认 http://localhost:8091（直连 registration-service）
- *   - 单机开发：默认值即可
- *   - 多实例/上 Nacos 后：改用 lb 协议（需先在 physician-service 启用 Feign）
+ * <p>URL 配置：calling.service.url / REGISTRATION_SERVICE_URL
+ * <ul>
+ *   <li>本地开发：默认 http://localhost:8091（直连 registration-service）</li>
+ *   <li>远程 Nacos：REGISTRATION_SERVICE_URL 留空 + NACOS_DISCOVERY_ENABLED=true</li>
+ * </ul>
  */
 @Slf4j
 @Component
 public class RegistrationCallingClient {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private final RegistrationCallingFeignClient feignClient;
 
-    private final RestTemplate restTemplate;
-    private final String baseUrl;
-
-    public RegistrationCallingClient(
-            @Value("${calling.service.url:http://localhost:8091}") String baseUrl) {
-        this.baseUrl = baseUrl.replaceAll("/$", "");
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(5_000);
-        factory.setReadTimeout(10_000);
-        this.restTemplate = new RestTemplate(factory);
+    public RegistrationCallingClient(RegistrationCallingFeignClient feignClient) {
+        this.feignClient = feignClient;
     }
 
     /** 叫下一个 */
     public Map<String, Object> callNext(Long employeeId) {
-        return post("/api/registration/calling/internal/call-next",
-                Map.of("employeeId", employeeId));
+        return invoke("POST /internal/call-next",
+                () -> feignClient.callNext(Map.of("employeeId", employeeId)));
     }
 
     /** 叫指定号 */
     public Map<String, Object> callSpecific(Long registerId, Long operatorEmployeeId) {
-        return post("/api/registration/calling/internal/call/" + registerId,
-                operatorEmployeeId == null ? Map.of() : Map.of("employeeId", operatorEmployeeId));
+        Map<String, Object> body = operatorEmployeeId == null
+                ? Map.of()
+                : Map.of("employeeId", operatorEmployeeId);
+        return invoke("POST /internal/call/" + registerId,
+                () -> feignClient.callSpecific(registerId, body));
     }
 
     /** 患者应答 */
     public Map<String, Object> answer(Long registerId) {
-        return post("/api/registration/calling/internal/answer/" + registerId, Map.of());
+        return invoke("POST /internal/answer/" + registerId,
+                () -> feignClient.answer(registerId));
     }
 
     /** 标记过号 */
     public Map<String, Object> pass(Long registerId) {
-        return post("/api/registration/calling/internal/pass/" + registerId, Map.of());
+        return invoke("POST /internal/pass/" + registerId,
+                () -> feignClient.pass(registerId));
     }
 
     /** 查当前叫号 */
     public Map<String, Object> currentCalling(Long employeeId) {
-        return get("/api/registration/calling/current?employeeId=" + employeeId);
+        return invoke("GET /current?employeeId=" + employeeId,
+                () -> feignClient.current(employeeId));
     }
 
     /** 医生候诊队列 */
     public Map<String, Object> doctorWaitingQueue(Long employeeId) {
-        return get("/api/registration/calling/internal/queue/doctor?employeeId=" + employeeId);
+        return invoke("GET /internal/queue/doctor?employeeId=" + employeeId,
+                () -> feignClient.doctorWaitingQueue(employeeId));
     }
 
     /** 调整候诊队列 */
-    public Map<String, Object> reorderQueue(Long employeeId, java.util.List<Long> registerIds) {
-        return put("/api/registration/calling/internal/queue/reorder",
-                Map.of("employeeId", employeeId, "registerIds", registerIds));
+    public Map<String, Object> reorderQueue(Long employeeId, List<Long> registerIds) {
+        return invoke("PUT /internal/queue/reorder",
+                () -> feignClient.reorderQueue(Map.of("employeeId", employeeId, "registerIds", registerIds)));
     }
 
-    // ==================== 内部 ====================
-
-    private Map<String, Object> post(String path, Object body) {
-        String url = baseUrl + path;
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+    private Map<String, Object> invoke(String action, FeignCall call) {
         try {
-            ResponseEntity<String> resp = restTemplate.postForEntity(
-                    url, new HttpEntity<>(body, headers), String.class);
-            return parseResult(resp.getBody(), url);
+            return fromResult(call.execute());
         } catch (Exception e) {
-            log.error("调 registration-service 失败 POST url={}: {}", url, e.getMessage());
+            log.error("调 registration-service 失败 {}: {}", action, e.getMessage());
             return Map.of("code", 500, "message", "调叫号服务失败：" + e.getMessage());
         }
     }
 
-    private Map<String, Object> get(String path) {
-        String url = baseUrl + path;
-        try {
-            String body = restTemplate.getForObject(url, String.class);
-            return parseResult(body, url);
-        } catch (Exception e) {
-            log.error("调 registration-service 失败 GET url={}: {}", url, e.getMessage());
-            return Map.of("code", 500, "message", "调叫号服务失败：" + e.getMessage());
-        }
-    }
-
-    private Map<String, Object> put(String path, Object body) {
-        String url = baseUrl + path;
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        try {
-            ResponseEntity<String> resp = restTemplate.exchange(
-                    url, org.springframework.http.HttpMethod.PUT,
-                    new HttpEntity<>(body, headers), String.class);
-            return parseResult(resp.getBody(), url);
-        } catch (Exception e) {
-            log.error("调 registration-service 失败 PUT url={}: {}", url, e.getMessage());
-            return Map.of("code", 500, "message", "调叫号服务失败：" + e.getMessage());
-        }
-    }
-
-    /**
-     * 解析 registration-service 的统一 Result 格式：{code, message, data}
-     * 失败时返回 Map.of("code", code, "message", msg)
-     * 成功时返回 Map.of("code", 200, "data", data)
-     */
     @SuppressWarnings("unchecked")
-    private Map<String, Object> parseResult(String body, String url) {
-        if (body == null || body.isBlank()) {
+    private Map<String, Object> fromResult(Result<?> result) {
+        if (result == null) {
             return Map.of("code", 500, "message", "registration-service 返回空响应");
         }
-        try {
-            JsonNode root = MAPPER.readTree(body);
-            int code = root.path("code").asInt(500);
-            String message = root.path("message").asText("");
-            JsonNode data = root.path("data");
-            if (code == 200) {
-                if (data.isObject()) {
-                    return MAPPER.convertValue(data, Map.class);
-                }
-                return Map.of("code", 200, "data", MAPPER.convertValue(data, Object.class));
+        if (result.getCode() == Result.SUCCESS_CODE) {
+            Object data = result.getData();
+            if (data instanceof Map<?, ?> map) {
+                return (Map<String, Object>) map;
             }
-            // 业务失败：把 message 透传给前端
-            return Map.of("code", code, "message", message);
-        } catch (Exception e) {
-            log.error("解析 registration-service 响应失败 url={}, body={}: {}", url, body, e.getMessage());
-            return Map.of("code", 500, "message", "解析叫号服务响应失败");
+            if (data == null) {
+                return Map.of("code", 200);
+            }
+            return Map.of("code", 200, "data", data);
         }
+        String message = result.getMessage() != null ? result.getMessage() : "";
+        return Map.of("code", result.getCode(), "message", message);
+    }
+
+    @FunctionalInterface
+    private interface FeignCall {
+        Result<?> execute();
     }
 }

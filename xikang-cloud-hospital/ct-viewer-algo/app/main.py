@@ -68,6 +68,13 @@ class SegmentRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class MetaRequest(BaseModel):
+    nrrd_path: str
+    source_name: str = ""
+    series_id: str = ""
+    file_count: int = 0
+
+
 app = FastAPI(title="ct-viewer-algo", version="1.0.0")
 
 
@@ -102,6 +109,26 @@ def internal_convert(body: ConvertRequest):
             is_mask=False,
             series_id=series_id_val,
             file_count=file_count_val,
+        )
+        return _ok({"meta": meta})
+    except Exception as exc:
+        return _err(500, 500, f"{exc}\n{traceback.format_exc()}")
+
+
+@app.post("/internal/meta")
+def internal_meta(body: MetaRequest):
+    """仅读取已有 NRRD/NIfTI 并返回元信息，避免重复写盘（上传快速路径）。"""
+    try:
+        if not os.path.isfile(body.nrrd_path):
+            return _err(400, 400, f"体数据文件不存在：{body.nrrd_path}")
+        image = read_volume_file(body.nrrd_path)
+        source_name = body.source_name or os.path.basename(body.nrrd_path)
+        meta = image_meta(
+            image,
+            source_name=source_name,
+            is_mask=False,
+            series_id=body.series_id,
+            file_count=body.file_count,
         )
         return _ok({"meta": meta})
     except Exception as exc:
