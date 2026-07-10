@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElButton, ElCard, ElEmpty, ElTable, ElTableColumn, ElTag } from 'element-plus'
+import { apiUrl } from '@/config/api'
 import {
   criticalValueApi,
   type CriticalItemHit,
@@ -103,7 +104,7 @@ function upsertAlert(incoming: CriticalValueAlert & { alertId?: number }) {
 
 function connectStream() {
   es?.close()
-  es = new EventSource('/api/medtech/critical-value/stream/board')
+  es = new EventSource(apiUrl('/medtech/critical-value/stream/board'))
   es.addEventListener('CRITICAL_NEW', (e) => {
     try {
       upsertAlert(JSON.parse((e as MessageEvent).data))

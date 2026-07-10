@@ -14,6 +14,7 @@ import {
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
+import { apiUrl } from '@/config/api'
 import { physicianApi, callingApi, type MedicalRecord, type PhysicianPatient, type CallingResult } from '@/shared/api/modules/physician'
 import { useAuthStore } from '@/app/stores/auth'
 import { useEncounterStore } from '@/app/stores/encounter'
@@ -254,7 +255,7 @@ function connectCallingStream() {
   const doctorId = authStore.employeeId
   if (!doctorId) return
   // /calling/stream/ 在 gateway 白名单内，无需 JWT
-  const url = `/api/registration/calling/stream/doctor/${doctorId}`
+  const url = apiUrl(`/registration/calling/stream/doctor/${doctorId}`)
   callingEventSource = new EventSource(url)
   const onEvent = () => { void refreshCurrentCalling() }
   callingEventSource.addEventListener('CALLED', onEvent)

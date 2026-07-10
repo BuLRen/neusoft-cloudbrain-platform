@@ -24,9 +24,11 @@ spring:
   cloud:
     nacos:
       discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         enabled: ${NACOS_DISCOVERY_ENABLED:false}
         register-enabled: ${NACOS_DISCOVERY_ENABLED:false}
       config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         enabled: false
     service-registry:
       auto-registration:

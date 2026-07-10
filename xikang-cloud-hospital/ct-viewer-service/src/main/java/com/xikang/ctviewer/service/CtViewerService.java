@@ -22,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,12 +69,18 @@ public class CtViewerService {
             storageService.saveUploadedFile(file, srcFile);
 
             Path outNrrd = storageService.nrrdPath(volumeId);
-            Map<String, Object> algoData = algoClient.convert(
-                "nrrd",
-                storageService.absolutePath(srcFile),
-                storageService.absolutePath(outNrrd),
-                originalName
-            );
+            Map<String, Object> algoData;
+            if (originalName.toLowerCase().endsWith(".nrrd")) {
+                Files.copy(srcFile, outNrrd, StandardCopyOption.REPLACE_EXISTING);
+                algoData = algoClient.meta(storageService.absolutePath(outNrrd), originalName);
+            } else {
+                algoData = algoClient.convert(
+                    "nrrd",
+                    storageService.absolutePath(srcFile),
+                    storageService.absolutePath(outNrrd),
+                    originalName
+                );
+            }
             LoadResponseDto response = persistVolume(volumeId, outNrrd, algoData);
             auditService.logSuccess(CtImagingAuditAction.UPLOAD_NRRD, volumeId, null, null, null);
             return response;

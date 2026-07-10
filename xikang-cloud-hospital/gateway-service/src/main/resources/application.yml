@@ -11,6 +11,12 @@ spring:
   main:
     web-application-type: reactive
   cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        file-extension: yaml
     gateway:
       httpclient:
         connect-timeout: 10000       # 连接建立超时 10s
@@ -55,8 +61,12 @@ spring:
         - id: payment-service
           uri: lb://payment-service
           predicates:
-            # 仅暴露患者端 API；/api/payment/internal/** 供服务间 Feign 直连，不经网关
             - Path=/api/payment/orders/**
+        - id: payment-service-internal
+          uri: lb://payment-service
+          predicates:
+            # 服务间出账/校验：业务服务经 gateway → Nacos → payment-service（与患者端同路径模式）
+            - Path=/api/payment/internal/**
         - id: schedule-service
           uri: lb://schedule-service
           predicates:

@@ -2,9 +2,11 @@
 # 熙康云医院 - 共享数据库配置（classpath 默认，可被 config/database.yml 覆盖）
 # =============================================================================
 # 连接参数与 local/remote 切换均在 xikang-cloud-hospital/.env：
-#   SPRING_PROFILES_ACTIVE=remote | local
+#   SPRING_PROFILES_ACTIVE=remote | local | prod
 #   DB_* / DB_LOCAL_*
 # 各服务 config.import 须先加载 .env
+#
+# 服务器长期运行：Hikari keepalive-time + JDBC tcpKeepAlive，避免空闲被 NAT/防火墙断连
 # =============================================================================
 
 ---
@@ -14,29 +16,32 @@ spring:
       on-profile: local
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${DB_LOCAL_HOST:localhost}:${DB_LOCAL_PORT:3307}/${DB_LOCAL_NAME:xikang_hospital}
+    url: jdbc:postgresql://${DB_LOCAL_HOST:localhost}:${DB_LOCAL_PORT:3307}/${DB_LOCAL_NAME:xikang_hospital}?tcpKeepAlive=true
     username: ${DB_LOCAL_USERNAME:postgres}
     password: ${DB_LOCAL_PASSWORD:postgres123}
     hikari:
       maximum-pool-size: 5
       minimum-idle: 2
       connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      keepalive-time: 60000
 
 ---
 spring:
   config:
     activate:
-      on-profile: remote
+      on-profile: "remote | prod"
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:xikang_hospital}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:xikang_hospital}?tcpKeepAlive=true
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:${DB_REMOTE_PASSWORD:changeme}}
     hikari:
-      maximum-pool-size: 3          # 远程开发可再降到 2
-      minimum-idle: 1               # 不要维持大量空闲连接
-      connection-timeout: 10000     # 10s 拿不到连接就失败，便于发现问题
-      idle-timeout: 300000          # 5 分钟空闲就回收
-      max-lifetime: 1800000         # 30 分钟强制换新连接（应小于 PG 侧 timeout）
-      keepalive-time: 30000         # 远程连接保活，防 NAT/防火墙断连
-      leak-detection-threshold: 60000  # 开发环境：60s 未归还连接打 WARN 日志
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 0
+      max-lifetime: 1740000
+      keepalive-time: 60000
+      leak-detection-threshold: 60000

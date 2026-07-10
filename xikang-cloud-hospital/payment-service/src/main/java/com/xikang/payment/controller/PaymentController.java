@@ -15,7 +15,7 @@ import java.util.Map;
  * Payment Controller（v3.2 §4.1 + §4.2）
  *
  * 患者端 API：/api/payment/orders/**
- * 内部 API：/api/payment/internal/**（service-to-service，gateway 不放行；Feign 通过 Nacos 直连）
+ * 内部 API：/api/payment/internal/**（服务间经 Nacos 直连 payment-service，不经 gateway）
  */
 @Slf4j
 @RestController
@@ -82,6 +82,13 @@ public class PaymentController {
             @RequestParam(required = false) Integer status) {
         // 简化：复用 queryRecords
         return Result.success(paymentService.queryRecords(null, registerId, status, null, null));
+    }
+
+    @GetMapping("/internal/items/batch")
+    public Result<List<Map<String, Object>>> getItemsBatch(
+            @RequestParam("registerIds") List<Long> registerIds,
+            @RequestParam(value = "itemCodes", required = false) List<String> itemCodes) {
+        return Result.success(paymentService.queryRecordsByRegisterIds(registerIds, itemCodes));
     }
 
     @GetMapping("/internal/items/by-register")

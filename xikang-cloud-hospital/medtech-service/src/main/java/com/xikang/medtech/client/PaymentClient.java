@@ -2,12 +2,10 @@ package com.xikang.medtech.client;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.result.Result;
+import feign.FeignException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
 import java.util.List;
@@ -15,21 +13,14 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * medtech-service 调 payment-service（执行前校验、列表缴费状态）。
+ * medtech-service 调 payment-service 内部 API（Feign 直连，地址见 PAYMENT_SERVICE_URL）。
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class PaymentClient {
 
-    private final RestTemplate restTemplate;
-    private final String paymentBaseUrl;
-
-    public PaymentClient(
-            @Qualifier("paymentRestTemplate") RestTemplate restTemplate,
-            @Value("${services.payment-service.url:http://localhost:8096}") String paymentBaseUrl) {
-        this.restTemplate = restTemplate;
-        this.paymentBaseUrl = paymentBaseUrl;
-    }
+    private final PaymentFeignClient paymentFeignClient;
 
     public void assertItemPaid(Long registerId, String itemCode, Long sourceId, String feeLabel) {
         Map<String, Object> status = checkPaidByItem(registerId, itemCode, sourceId);
@@ -42,20 +33,24 @@ public class PaymentClient {
         throw new BusinessException(4001, "患者尚未支付" + feeLabel + "，无法执行");
     }
 
-    public Map<String, Map<String, Object>> loadExpenseIndex(List<Long> registerIds) {
+    public Map<String, Map<String, Object>> loadExpenseIndex(List<Long> registerIds, String itemCode) {
         if (registerIds == null || registerIds.isEmpty()) {
             return Map.of();
         }
+        List<Long> ids = registerIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<String> itemCodes = itemCode != null && !itemCode.isBlank() ? List.of(itemCode.trim()) : null;
         Map<String, Map<String, Object>> index = new HashMap<>();
-        for (Long registerId : registerIds.stream().filter(Objects::nonNull).distinct().toList()) {
-            for (Map<String, Object> item : listItemsByRegister(registerId)) {
-                String itemCode = item.get("itemCode") != null ? item.get("itemCode").toString() : "";
-                Object sourceId = item.get("sourceId");
-                if (sourceId == null) {
-                    continue;
-                }
-                index.put(expenseKey(registerId, itemCode, sourceId), item);
+        for (Map<String, Object> item : listItemsBatch(ids, itemCodes)) {
+            Object registerId = item.get("registerId");
+            Object sourceId = item.get("sourceId");
+            if (registerId == null || sourceId == null) {
+                continue;
             }
+            String code = item.get("itemCode") != null ? item.get("itemCode").toString() : "";
+            index.put(expenseKey(toLong(registerId), code, sourceId), item);
         }
         return index;
     }
@@ -80,19 +75,20 @@ public class PaymentClient {
     }
 
     private Map<String, Object> checkPaidByItem(Long registerId, String itemCode, Long sourceId) {
-        return getForMap(
-                "/api/payment/internal/check-paid/item?registerId={registerId}&itemCode={itemCode}&sourceId={sourceId}",
-                Map.of("registerId", registerId, "itemCode", itemCode, "sourceId", sourceId),
-                "查询缴费状态失败");
+        try {
+            return extractData(
+                    paymentFeignClient.checkPaidByItem(registerId, itemCode, sourceId),
+                    "查询缴费状态失败");
+        } catch (FeignException e) {
+            log.warn("调 payment-service 失败 | op=checkPaid item registerId={}", registerId, e);
+            throw new BusinessException(500, "支付服务暂时不可用", e);
+        }
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private List<Map<String, Object>> listItemsByRegister(Long registerId) {
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> listItemsBatch(List<Long> registerIds, List<String> itemCodes) {
         try {
-            Map<String, Object> response = restTemplate.getForObject(
-                    paymentBaseUrl + "/api/payment/internal/items?registerId={registerId}",
-                    Map.class,
-                    Map.of("registerId", registerId));
+            Map<String, Object> response = paymentFeignClient.listItemsBatch(registerIds, itemCodes);
             Object data = response != null ? response.get("data") : null;
             if (!(data instanceof List<?> list)) {
                 return List.of();
@@ -101,21 +97,9 @@ public class PaymentClient {
                     .filter(Map.class::isInstance)
                     .map(row -> (Map<String, Object>) row)
                     .toList();
-        } catch (RestClientException e) {
-            log.warn("查询费用明细失败 | registerId={}", registerId, e);
+        } catch (FeignException e) {
+            log.warn("批量查询费用明细失败 | registerCount={}", registerIds.size(), e);
             return List.of();
-        }
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private Map<String, Object> getForMap(String pathTemplate, Map<String, ?> uriVars, String failMessage) {
-        try {
-            Map<String, Object> response = restTemplate.getForObject(
-                    paymentBaseUrl + pathTemplate, Map.class, uriVars);
-            return extractData(response, failMessage);
-        } catch (RestClientException e) {
-            log.warn("调 payment-service 失败 | path={}", pathTemplate, e);
-            throw new BusinessException(500, "支付服务暂时不可用", e);
         }
     }
 
@@ -136,6 +120,16 @@ public class PaymentClient {
             return result;
         }
         return new HashMap<>();
+    }
+
+    private static long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value != null) {
+            return Long.parseLong(value.toString());
+        }
+        return 0L;
     }
 
     private static String payStatusText(int status) {

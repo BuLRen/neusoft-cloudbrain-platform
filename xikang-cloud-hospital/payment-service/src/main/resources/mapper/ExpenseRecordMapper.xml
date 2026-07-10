@@ -137,6 +137,22 @@
         ORDER BY create_time DESC
     </select>
 
+    <select id="selectByRegisterIds" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM expense_record
+        WHERE register_id IN
+        <foreach collection="registerIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        <if test="itemCodes != null and itemCodes.size() &gt; 0">
+            AND item_code IN
+            <foreach collection="itemCodes" item="code" open="(" separator="," close=")">
+                #{code}
+            </foreach>
+        </if>
+        ORDER BY register_id ASC, create_time DESC
+    </select>
+
     <select id="selectForAdminOrderList" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM expense_record

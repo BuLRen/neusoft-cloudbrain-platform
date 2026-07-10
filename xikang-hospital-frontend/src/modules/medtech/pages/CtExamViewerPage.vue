@@ -433,14 +433,7 @@ onBeforeUnmount(() => {
           >
             {{ reportPanelVisible ? '收起报告' : '诊断报告' }}
           </ElButton>
-          <ElButton
-            class="ct-exam-btn-secondary"
-            :loading="aiSegmenting"
-            :disabled="!canInfer"
-            @click="handleRunAiSegmentation"
-          >
-            AI 肺结节分割
-          </ElButton>
+
           <ElButton
             class="ct-exam-btn-primary"
             type="primary"

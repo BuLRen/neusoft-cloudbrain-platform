@@ -43,6 +43,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { CallItem, DeptBoardItem } from '@/shared/types/calling'
 import CallingBoardHub from '@/modules/registration/pages/CallingBoardHub.vue'
 import CallingBoardDept from '@/modules/registration/pages/CallingBoardDept.vue'
+import { apiUrl } from '@/config/api'
 import {
   PAGE_ROTATE_MS,
   buildSpeakText,
@@ -286,8 +287,8 @@ function connectSSE() {
   connState.value = 'connecting'
 
   const url = isHubView.value
-    ? '/api/registration/calling/stream/global'
-    : `/api/registration/calling/stream/department/${departmentId.value}`
+    ? apiUrl('/registration/calling/stream/global')
+    : apiUrl(`/registration/calling/stream/department/${departmentId.value}`)
 
   es = new EventSource(url)
   es.onopen = () => { connState.value = 'open' }

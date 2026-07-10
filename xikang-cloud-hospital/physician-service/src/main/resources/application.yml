@@ -21,9 +21,11 @@ spring:
   cloud:
     nacos:
       discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         enabled: ${NACOS_DISCOVERY_ENABLED:false}
         register-enabled: ${NACOS_DISCOVERY_ENABLED:false}
       config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         enabled: false
     service-registry:
       auto-registration:
@@ -48,9 +50,16 @@ logging:
   level:
     com.xikang.physician: DEBUG
 
+# 叫号服务：physician-service → registration-service internal 接口
+# 本地默认直连 8091；远程 Nacos 部署时设 REGISTRATION_SERVICE_URL=（留空）且 NACOS_DISCOVERY_ENABLED=true
+calling:
+  service:
+    url: ${REGISTRATION_SERVICE_URL:http://localhost:8091}
+
 services:
+  # 服务间直连 payment 内部 API；默认同机 8096。分机部署时在 .env 设 PAYMENT_SERVICE_URL=http://<payment可达IP>:8096
   payment-service:
-    url: ${PAYMENT_SERVICE_URL:http://localhost:8096}
+    url: ${PAYMENT_SERVICE_URL:http://127.0.0.1:8096}
   medtech-service:
     url: ${MEDTECH_SERVICE_URL:http://localhost:8093}
   ct-viewer-service:
@@ -60,6 +69,13 @@ services:
   notification-service:
     url: ${NOTIFICATION_SERVICE_URL:http://localhost:8105}
     internal-token: ${NOTIF_INTERNAL_TOKEN:notif-internal-2026}
+
+feign:
+  client:
+    config:
+      default:
+        connect-timeout: 5000
+        read-timeout: 10000
 
 xikang:
   internal:
