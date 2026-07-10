@@ -49,7 +49,7 @@ services:
 # 通知服务集成（支付成功 / 退款 通知患者）
 notification:
   service:
-    url: ${NOTIFICATION_SERVICE_URL:http://localhost:8105}
+    url: ${NOTIFICATION_SERVICE_URL:http://localhost:8200}
   internal-token: ${NOTIF_INTERNAL_TOKEN:notif-internal-2026}
 
 # Feign 客户端超时（v3.2 §5.4 风险声明：每次 ≤3s，覆盖 createRegistration 在事务内的 Feign 调用）

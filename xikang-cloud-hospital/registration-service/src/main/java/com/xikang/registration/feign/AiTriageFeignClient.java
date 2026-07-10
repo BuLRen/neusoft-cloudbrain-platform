@@ -15,9 +15,9 @@ import java.util.Map;
  * <p><b>设计要点</b>：用 sessionId（前端从导诊页透传过来）作为精确匹配键，
  * 替代旧的"按 patientId 猜最近一条"回填——后者曾把多次导诊/挂号交叉的记录错绑。
  *
- * <p>采用 url 直连模式（与 AuthPatientFeignClient 风格一致），无需 LoadBalancer。
+ * <p>走 Nacos 服务发现，由 spring-cloud-starter-loadbalancer 选择实例。
  */
-@FeignClient(name = "ai-triage-service", url = "${triage.service.url:http://localhost:8101}")
+@FeignClient(name = "ai-triage-service")
 public interface AiTriageFeignClient {
 
     /**

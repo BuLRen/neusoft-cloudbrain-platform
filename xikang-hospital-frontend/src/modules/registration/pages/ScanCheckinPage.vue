@@ -233,13 +233,18 @@ const isNight = computed(() => {
             <path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z" />
           </svg>
         </span>
+        <span class="datetime__weather">晴 26°C</span>
       </div>
     </header>
 
     <!-- 主标题 -->
     <section class="hero-title">
-      <h1>自助报到机</h1>
-      <p>请将二维码对准扫描口</p>
+      <span class="hero-title__line"></span>
+      <div>
+        <h1>自助报到机</h1>
+        <p>请将二维码对准扫描口</p>
+      </div>
+      <span class="hero-title__line"></span>
     </section>
 
     <!-- 三栏主体 -->
@@ -338,6 +343,26 @@ const isNight = computed(() => {
               <span>设备正常，请扫描…</span>
             </div>
           </div>
+        </div>
+
+        <div class="scan-result-panel">
+          <div class="scan-result-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="34" height="34" aria-hidden="true">
+              <path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm10-2h2v2h-2v-2zm2 2h2v2h-2v-2zm-4 2h2v4h-2v-4zm4 2h4v2h-4v-2z" />
+            </svg>
+          </div>
+          <div class="scan-result-copy">
+            <h3>扫描解析结果</h3>
+            <p v-if="status === 'idle'">扫描后将在此显示原始内容与解析字段</p>
+            <p v-else-if="status === 'calling'">正在核对就诊信息并提交报到，请稍候…</p>
+            <p v-else-if="status === 'success' && successResult">
+              已识别 {{ successResult.patientName || '患者' }} · {{ successResult.departmentName || '门诊科室' }} · 第 {{ successResult.queueNumber || '—' }} 号
+            </p>
+            <p v-else>{{ errorMessage || '解析失败，请重新扫描' }}</p>
+          </div>
+          <svg class="scan-result-arrow" viewBox="0 0 24 24" fill="currentColor" width="26" height="26" aria-hidden="true">
+            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+          </svg>
         </div>
       </section>
 
@@ -1552,6 +1577,571 @@ const isNight = computed(() => {
   text-align: center;
   color: #9ca3af;
   margin: 0;
+}
+
+/* ===== 熙康自助报到机：按大屏参考图重绘 ===== */
+.checkin-page {
+  width: 100vw;
+  height: 100vh;
+  min-height: 720px;
+  padding: 40px 46px 118px;
+  background:
+    radial-gradient(circle at 45% 4%, rgba(255, 255, 255, 0.96) 0, rgba(255, 255, 255, 0) 340px),
+    radial-gradient(circle at 0 4%, rgba(255, 255, 255, 0.9) 0, rgba(255, 255, 255, 0) 520px),
+    linear-gradient(112deg, #edf6ff 0%, #f8fbff 44%, #ddecff 100%);
+  color: #071b55;
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --checkin-side-panel-height: auto;
+  --checkin-side-deco-height: 150px;
+  --checkin-relief-max-height: 148px;
+}
+
+.checkin-page::before {
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.65) 0, rgba(255,255,255,0) 26%),
+    radial-gradient(circle at 92% 28%, rgba(99, 172, 255, .26) 0, rgba(99, 172, 255, 0) 360px);
+}
+
+.checkin-page::after {
+  content: '';
+  position: absolute;
+  right: -48px;
+  top: 110px;
+  width: 460px;
+  height: 620px;
+  border-radius: 360px 0 0 0;
+  border-left: 16px solid rgba(255, 255, 255, .78);
+  background:
+    repeating-linear-gradient(90deg, rgba(50, 116, 194, .18) 0, rgba(50, 116, 194, .18) 4px, transparent 4px, transparent 44px),
+    linear-gradient(180deg, rgba(102, 172, 255, .28), rgba(255, 255, 255, .16));
+  pointer-events: none;
+}
+
+.top-bar {
+  height: 72px;
+  margin: 0;
+  z-index: 2;
+}
+
+.hospital-brand {
+  gap: 18px;
+}
+
+.hospital-logo {
+  width: 64px;
+  height: 64px;
+  filter: drop-shadow(0 10px 20px rgba(39, 95, 230, .22));
+}
+
+.hospital-logo svg rect:first-child {
+  fill: #2f6fff;
+}
+
+.hospital-name {
+  color: #102967;
+  font-size: 28px;
+  font-weight: 950;
+  letter-spacing: .5px;
+  line-height: 1.05;
+}
+
+.hospital-slogan {
+  margin-top: 8px;
+  color: #6c7893;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: .3px;
+}
+
+.datetime {
+  gap: 14px;
+  color: #2a3d65;
+}
+
+.datetime__clock {
+  color: #071b55;
+  font-size: 48px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+.datetime__date,
+.datetime__weather {
+  color: #2f446b;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.datetime__moon {
+  color: #9eb1ca;
+}
+
+.hero-title {
+  height: 154px;
+  margin: 0;
+  padding-top: 30px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 46px;
+}
+
+.hero-title__line {
+  width: 88px;
+  height: 6px;
+  margin-top: 58px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, transparent, #2b68ff 48%, transparent);
+  opacity: .55;
+}
+
+.hero-title h1 {
+  font-size: 72px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: 7px;
+  background: linear-gradient(180deg, #2d55ff 0%, #2332ca 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: 0 10px 28px rgba(46, 76, 214, .14);
+}
+
+.hero-title p {
+  margin-top: 12px;
+  color: #132858;
+  font-size: 25px;
+  font-weight: 760;
+}
+
+.main-layout {
+  height: calc(100vh - 384px);
+  min-height: 520px;
+  max-width: none;
+  grid-template-columns: 408px minmax(620px, 1fr) 408px;
+  gap: 30px;
+  align-items: stretch;
+  z-index: 2;
+}
+
+.center-core {
+  gap: 28px;
+}
+
+.side-panel {
+  height: 100%;
+  padding: 31px 22px 20px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, .82);
+  background: rgba(255, 255, 255, .72);
+  box-shadow: 0 22px 58px rgba(57, 107, 185, .14);
+}
+
+.panel-title {
+  display: block;
+  margin-bottom: 25px;
+  color: #0a2159;
+  font-size: 25px;
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.panel-title__bar {
+  display: block;
+  width: 55px;
+  height: 6px;
+  margin: 14px 0 0;
+  border-radius: 999px;
+  background: #326fff;
+}
+
+.method-list {
+  gap: 22px;
+}
+
+.method-item {
+  min-height: 116px;
+  padding: 20px;
+  border: 0;
+  border-radius: 22px;
+  background: rgba(245, 249, 255, .86);
+  box-shadow: none;
+}
+
+.method-item:nth-child(1) {
+  background: linear-gradient(100deg, rgba(232,240,255,.98), rgba(245,248,255,.86));
+}
+
+.method-item:nth-child(2) {
+  background: linear-gradient(100deg, rgba(234,252,242,.98), rgba(246,255,250,.86));
+}
+
+.method-item:nth-child(3) {
+  background: linear-gradient(100deg, rgba(255,247,232,.98), rgba(255,251,244,.88));
+}
+
+.method-icon {
+  width: 86px;
+  height: 86px;
+  border-radius: 20px;
+  color: #fff !important;
+  box-shadow: 0 16px 30px rgba(51, 103, 230, .22);
+}
+
+.method-item:nth-child(1) .method-icon {
+  background: linear-gradient(145deg, #4ba0ff, #4225f0) !important;
+}
+
+.method-item:nth-child(2) .method-icon {
+  background: linear-gradient(145deg, #3fdb89, #18b85e) !important;
+}
+
+.method-item:nth-child(3) .method-icon {
+  background: linear-gradient(145deg, #ffc44b, #ff930f) !important;
+}
+
+.method-title {
+  color: #0b245c;
+  font-size: 26px;
+  font-weight: 950;
+}
+
+.method-desc {
+  margin-top: 7px;
+  color: #42536d;
+  font-size: 17px;
+  font-weight: 620;
+}
+
+.method-arrow {
+  width: 28px;
+  height: 28px;
+  color: #1f3158;
+}
+
+.side-panel__deco {
+  height: var(--checkin-side-deco-height);
+  padding-top: 0;
+}
+
+.relief-img {
+  opacity: .48;
+  filter: saturate(1.12);
+}
+
+.scan-hero {
+  flex: 1;
+  min-height: 0;
+  padding: 70px 55px 0;
+  gap: 26px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, .35);
+  background:
+    radial-gradient(circle at 50% 32%, rgba(139, 232, 255, .72) 0, rgba(139, 232, 255, 0) 170px),
+    radial-gradient(circle at 86% 28%, rgba(255, 255, 255, .18) 0, rgba(255, 255, 255, 0) 250px),
+    linear-gradient(150deg, #5aa4ff 0%, #2864ff 48%, #2027c9 100%);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.18), 0 26px 54px rgba(41,78,200,.24);
+}
+
+.scan-hero__botanical {
+  background:
+    radial-gradient(circle, rgba(255,255,255,.24) 1px, transparent 2px) 0 0 / 28px 28px,
+    repeating-linear-gradient(170deg, rgba(137,224,255,.24) 0, rgba(137,224,255,.24) 2px, transparent 2px, transparent 16px);
+  opacity: .42;
+}
+
+.scan-hero__botanical svg {
+  opacity: .18;
+}
+
+.scan-frame {
+  width: 240px;
+  height: 178px;
+}
+
+.scan-frame__corner {
+  width: 44px;
+  height: 44px;
+  border-color: rgba(255, 255, 255, .92);
+  border-width: 7px !important;
+  opacity: 1;
+}
+
+.scan-frame__line {
+  left: -28px;
+  right: -28px;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, #9affff, #fff, #9affff, transparent);
+  box-shadow: 0 0 28px #8dffff;
+}
+
+.scan-frame__glow {
+  border-color: rgba(255, 255, 255, .16);
+}
+
+.scan-pill {
+  max-width: 720px;
+  min-height: 120px;
+  padding: 24px 40px;
+  border-radius: 30px;
+  flex-direction: row;
+  justify-content: center;
+  gap: 34px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 20px 50px rgba(5,31,110,.18);
+}
+
+.scan-pill::before {
+  content: '▦   ▤   ▰';
+  color: #377cff;
+  font-size: 32px;
+  font-weight: 950;
+  letter-spacing: 12px;
+  white-space: nowrap;
+}
+
+.scan-input {
+  width: 390px;
+  text-align: left;
+  color: #1c3bca;
+  font-size: 32px;
+  font-weight: 950;
+  caret-color: #1c3bca;
+}
+
+.scan-input::placeholder {
+  color: #1d42cb;
+  font-size: 32px;
+  font-weight: 950;
+  opacity: 1;
+}
+
+.scan-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  color: #405070;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.scan-hero__footer {
+  margin-top: auto;
+  padding: 22px 30px 30px;
+  border-radius: 0;
+  background: transparent;
+  border-top: 0;
+}
+
+.scan-tip {
+  color: rgba(255,255,255,.86);
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.device-status,
+.scan-again-hint {
+  color: #fff;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.scan-result-panel {
+  min-height: 136px;
+  padding: 26px 34px;
+  display: flex;
+  align-items: center;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, .82);
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 22px 58px rgba(57, 107, 185, .14);
+  overflow: hidden;
+  position: relative;
+}
+
+.scan-result-panel::after {
+  content: '';
+  position: absolute;
+  right: 20px;
+  bottom: -12px;
+  width: 190px;
+  height: 100px;
+  background:
+    linear-gradient(90deg, rgba(129, 176, 255, .18) 0 18%, transparent 18% 28%, rgba(129, 176, 255, .16) 28% 48%, transparent 48% 58%, rgba(129, 176, 255, .14) 58% 78%, transparent 78%),
+    linear-gradient(180deg, transparent 0, rgba(108, 158, 230, .14) 100%);
+  opacity: .55;
+  clip-path: polygon(0 100%, 0 64%, 16% 64%, 16% 40%, 34% 40%, 34% 52%, 48% 52%, 48% 18%, 66% 18%, 66% 0, 84% 0, 84% 100%);
+}
+
+.scan-result-icon {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(145deg, #63afff, #2b55ff);
+  box-shadow: 0 12px 26px rgba(47,99,230,.18);
+  flex: none;
+}
+
+.scan-result-copy {
+  flex: 1;
+  min-width: 0;
+  margin-left: 28px;
+}
+
+.scan-result-copy h3 {
+  margin: 0;
+  color: #0a2159;
+  font-size: 28px;
+  font-weight: 950;
+}
+
+.scan-result-copy p {
+  margin: 9px 0 0;
+  color: #42536d;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.scan-result-arrow {
+  color: #6f83a2;
+  flex: none;
+}
+
+.flow-list {
+  margin-top: 45px;
+}
+
+.flow-item {
+  gap: 24px;
+  min-height: 128px;
+}
+
+.flow-icon {
+  width: 76px;
+  height: 76px;
+  box-shadow: 0 14px 28px rgba(76,96,158,.2);
+}
+
+.flow-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.flow-line {
+  width: 4px;
+  min-height: 42px;
+  background: repeating-linear-gradient(180deg, #8ca7e7 0, #8ca7e7 14px, transparent 14px, transparent 28px);
+}
+
+.flow-title {
+  color: #0a2159;
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.flow-desc {
+  margin-top: 8px;
+  color: #5d6d88;
+  font-size: 17px;
+  font-weight: 620;
+}
+
+.page-footer {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 104px;
+  margin: 0;
+  padding: 18px 260px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  background: linear-gradient(100deg, #2041d2, #315df0 52%, #1737b8);
+  box-shadow: 0 -12px 35px rgba(36,76,210,.18);
+}
+
+.tip-bar {
+  max-width: none;
+  flex: 0 1 700px;
+  padding: 0;
+  color: #dce8ff;
+  background: transparent;
+  box-shadow: none;
+  font-size: 19px;
+  font-weight: 750;
+}
+
+.tip-icon {
+  color: #fff;
+  width: 54px;
+  height: 54px;
+  padding: 15px;
+  box-sizing: border-box;
+  border-radius: 16px;
+  background: rgba(255,255,255,.14);
+}
+
+.history-btn {
+  min-width: 330px;
+  height: 70px;
+  padding: 0 24px;
+  border-radius: 22px;
+  color: #dce8ff;
+  background: rgba(255,255,255,.1);
+  box-shadow: none;
+}
+
+.history-btn__icon {
+  color: #fff;
+  background: rgba(255,255,255,.14);
+}
+
+.history-btn__title {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.history-btn__desc {
+  color: #c5d5ff;
+  font-size: 16px;
+}
+
+.history-btn__arrow {
+  color: #fff;
+}
+
+@media (max-width: 1280px) {
+  .checkin-page {
+    min-height: 680px;
+    padding: 24px 28px 104px;
+  }
+
+  .main-layout {
+    grid-template-columns: 310px minmax(480px, 1fr) 310px;
+    gap: 20px;
+  }
+
+  .hero-title h1 {
+    font-size: 56px;
+  }
+
+  .method-title,
+  .panel-title {
+    font-size: 20px;
+  }
+
+  .flow-title {
+    font-size: 18px;
+  }
 }
 
 /* 响应式 */

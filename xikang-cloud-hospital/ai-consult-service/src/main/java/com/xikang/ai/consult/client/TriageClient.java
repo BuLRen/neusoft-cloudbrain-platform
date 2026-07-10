@@ -17,15 +17,12 @@ import org.springframework.web.bind.annotation.PathVariable;
  * 而不是 registerId/patientId。后者曾导致"猜最近一条"回填错绑，
  * 把患者历史导诊污染进本次预问诊。sessionId 是 1:1 精确绑定，物理上不会错配。
  *
- * <p>采用 url 直连模式（与 registration-service 的 FeignClient 风格一致），
- * 无需引入 spring-cloud-starter-loadbalancer。url 通过配置项 {@code triage.service.url}
- * 注入，默认 {@code http://localhost:8101}（对应 ai-triage-service 的端口）。
+ * <p>走 Nacos 服务发现，由 spring-cloud-starter-loadbalancer 选择实例。
  *
  * <p>对应后端契约：{@code AiTriageController#getTriageSummaryBySessionId}
  * ({@code GET /api/ai/triage/summary/session/{sessionId}})。
  */
-@FeignClient(name = "ai-triage-service", path = "/api/ai/triage",
-        url = "${triage.service.url:http://localhost:8101}")
+@FeignClient(name = "ai-triage-service", path = "/api/ai/triage")
 public interface TriageClient {
 
     /**

@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * 患者账户 Feign 客户端
  */
-@FeignClient(name = "auth-service", url = "${auth.service.url:http://localhost:8081}")
+@FeignClient(name = "auth-service")
 public interface AuthPatientFeignClient {
 
     @GetMapping("/api/patient/search")

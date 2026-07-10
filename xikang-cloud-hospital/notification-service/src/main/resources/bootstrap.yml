@@ -8,8 +8,3 @@ spring:
       config:
         server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         file-extension: yaml
-
-  config:
-    import:
-      - optional:file:../.env
-      - optional:file:./.env

@@ -25,7 +25,7 @@ public class NotificationClient {
 
     public NotificationClient(
             @Qualifier("notificationRestTemplate") RestTemplate restTemplate,
-            @Value("${services.notification-service.url:http://localhost:8105}") String baseUrl,
+            @Value("${services.notification-service.url:http://localhost:8200}") String baseUrl,
             @Value("${services.notification-service.internal-token:notif-internal-2026}") String internalToken) {
         this.restTemplate = restTemplate;
         this.baseUrl = baseUrl;
