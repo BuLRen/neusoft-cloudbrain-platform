@@ -10,7 +10,7 @@ import java.util.Map;
  * 医生工作站排班 Feign 客户端
  * 供 physician-service 调用 schedule-service
  */
-@FeignClient(name = "schedule-service", contextId = "physician-schedule-client", url = "${schedule.service.url:http://localhost:8095}")
+@FeignClient(name = "schedule-service", contextId = "physician-schedule-client")
 public interface PhysicianScheduleFeignClient {
 
     /**

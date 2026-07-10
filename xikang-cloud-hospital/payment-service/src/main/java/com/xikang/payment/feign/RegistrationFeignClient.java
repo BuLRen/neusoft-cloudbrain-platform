@@ -12,7 +12,7 @@ import java.util.Map;
  *
  * 回调路径 /api/registration/internal/{registerId}/on-fee-paid 由本次改造新增（registration-service §5.2）。
  */
-@FeignClient(name = "registration-service", url = "${services.registration-service.url:http://localhost:8091}")
+@FeignClient(name = "registration-service")
 public interface RegistrationFeignClient {
 
     /**

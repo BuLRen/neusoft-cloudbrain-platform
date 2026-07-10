@@ -4,7 +4,10 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: localhost:8848
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        # 跨机器部署时，必须注册「其他机器能访问到的 IP」（公网 IP）
+        # 不设这个属性，nacos 默认注册内网 IP，跨 VPC 的服务调不到
+        ip: ${NACOS_DISCOVERY_IP:}
       config:
-        server-addr: localhost:8848
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         file-extension: yaml

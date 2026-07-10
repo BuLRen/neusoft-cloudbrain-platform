@@ -9,7 +9,7 @@ import java.util.Map;
  * 排班服务 Feign 客户端
  *供 registration-service 调用 schedule-service
  */
-@FeignClient(name = "schedule-service", url = "${schedule.service.url:http://localhost:8095}")
+@FeignClient(name = "schedule-service")
 public interface ScheduleFeignClient {
 
     /**

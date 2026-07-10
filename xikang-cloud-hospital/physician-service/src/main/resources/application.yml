@@ -58,7 +58,7 @@ services:
     internal-token: ${INTERNAL_SERVICE_TOKEN:${INTERNAL_AI_TOKEN:}}
   # 通知服务：开单后给患者发"待缴费"通知
   notification-service:
-    url: ${NOTIFICATION_SERVICE_URL:http://localhost:8105}
+    url: ${NOTIFICATION_SERVICE_URL:http://localhost:8200}
     internal-token: ${NOTIF_INTERNAL_TOKEN:notif-internal-2026}
 
 xikang:

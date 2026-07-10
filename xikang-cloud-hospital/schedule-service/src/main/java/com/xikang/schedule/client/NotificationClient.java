@@ -13,7 +13,7 @@ import java.util.List;
  * 通知服务 Feign 客户端
  * <p>schedule-service 调用 notification-service 写入消息。
  */
-@FeignClient(name = "notification-service", url = "${notification.service.url:}")
+@FeignClient(name = "notification-service")
 public interface NotificationClient {
 
     /**

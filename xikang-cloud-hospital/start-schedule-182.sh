@@ -1,0 +1,78 @@
+#!/bin/bash
+# =============================================================================
+# schedule-service 启动脚本（部署到 182.92.193.45）
+# 用法：
+#   1. 把 schedule-service-1.0.0.jar、.env、本脚本放在同一目录
+#      （.env 用仓库根目录的 .env.server 重命名而来，确保里面有 NACOS_SERVER_ADDR）
+#   2. chmod +x start-schedule-182.sh
+#   3. ./start-schedule-182.sh start | stop | status | logs
+# =============================================================================
+set -e
+
+APP_NAME="schedule-service"
+JAR_FILE="schedule-service-1.0.0.jar"
+PID_FILE="${APP_NAME}.pid"
+LOG_FILE="${APP_NAME}.log"
+
+# ---------- 关键：把 .env 加载到当前 shell 进程环境 ----------
+# bootstrap.yml / application.yml 里的 ${NACOS_SERVER_ADDR} / ${DB_*} / ${DIFY_*}
+# 都是从这里来的；不 source 的话服务发现连不上 nacos，Feign 调用必然超时
+if [ -f "./.env" ]; then
+    set -a
+    source ./.env
+    set +a
+    echo "[INFO] .env loaded, NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR}"
+else
+    echo "[ERROR] .env not found in $(pwd)"
+    exit 1
+fi
+
+# ---------- 命令处理 ----------
+case "$1" in
+    start)
+        if [ -f "${PID_FILE}" ]; then
+            OLD_PID=$(cat ${PID_FILE})
+            if kill -0 ${OLD_PID} 2>/dev/null; then
+                echo "[ERROR] ${APP_NAME} already running, pid=${OLD_PID}"
+                exit 1
+            fi
+        fi
+        nohup java -jar ${JAR_FILE} \
+            --spring.profiles.active=remote \
+            > ${LOG_FILE} 2>&1 &
+        echo $! > ${PID_FILE}
+        echo "[OK] ${APP_NAME} started, pid=$(cat ${PID_FILE}), log=${LOG_FILE}"
+        sleep 3
+        tail -n 20 ${LOG_FILE}
+        ;;
+    stop)
+        if [ -f "${PID_FILE}" ]; then
+            PID=$(cat ${PID_FILE})
+            kill ${PID} 2>/dev/null || true
+            sleep 2
+            kill -9 ${PID} 2>/dev/null || true
+            rm -f ${PID_FILE}
+            echo "[OK] ${APP_NAME} stopped"
+        else
+            echo "[WARN] no pid file, nothing to stop"
+        fi
+        ;;
+    status)
+        if [ -f "${PID_FILE}" ]; then
+            PID=$(cat ${PID_FILE})
+            if kill -0 ${PID} 2>/dev/null; then
+                echo "[OK] running, pid=${PID}"
+                exit 0
+            fi
+        fi
+        echo "[FAIL] not running"
+        exit 1
+        ;;
+    logs)
+        tail -f ${LOG_FILE}
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status|logs}"
+        exit 1
+        ;;
+esac
