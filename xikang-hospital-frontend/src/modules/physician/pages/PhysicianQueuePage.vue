@@ -309,6 +309,22 @@ async function callSpecific(registerId: number) {
   }
 }
 
+async function answerCurrent(registerId: number) {
+  if (callingBusy.value) return
+  callingBusy.value = true
+  try {
+    await callingApi.answer(registerId)
+    currentCalling.value = null
+    ElMessage.success('已确认，停止叫号广播')
+    await loadPatients()
+    await refreshWaitingQueue()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '确认失败')
+  } finally {
+    callingBusy.value = false
+  }
+}
+
 function openNotebookDrawer() {
   if (!selectedRegisterId.value) return
   notebookDrawerVisible.value = true
@@ -395,6 +411,7 @@ onUnmounted(() => {
           @select="onQueueSelect"
           @call-next="callNext"
           @recall-current="callSpecific"
+          @answer="answerCurrent"
         />
         <GlassCard class="patient-panel">
         <div class="panel-heading">
