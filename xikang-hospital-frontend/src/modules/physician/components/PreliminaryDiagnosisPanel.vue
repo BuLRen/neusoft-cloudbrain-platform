@@ -44,12 +44,11 @@ const displaySummary = computed(() => {
   return ''
 })
 
-const showResults = computed(
+const showAiResults = computed(
   () =>
     Boolean(props.hasAiResult) &&
     (sortedDiseases.value.length > 0 ||
       displaySummary.value ||
-      doctorDiagnosis.value.trim() ||
       aiReasoningText.value.trim()),
 )
 
@@ -164,143 +163,145 @@ watch(
 </script>
 
 <template>
-  <div v-if="showResults" class="prelim-panel">
+  <div class="prelim-panel">
     <div class="prelim-panel__scroll">
-      <div v-if="displaySummary" class="prelim-panel__summary-card">
-        <p class="prelim-panel__summary-title">AI 诊断建议摘要</p>
-        <p class="prelim-panel__summary-text">{{ displaySummary }}</p>
-      </div>
-
-      <section v-if="aiMeta.redFlags?.length" class="prelim-panel__attention">
-        <div class="prelim-panel__attention-head">
-          <ElIcon class="prelim-panel__attention-icon" :size="18"><Warning /></ElIcon>
-          <span class="prelim-panel__attention-title">需关注症状</span>
+      <template v-if="showAiResults">
+        <div v-if="displaySummary" class="prelim-panel__summary-card">
+          <p class="prelim-panel__summary-title">AI 诊断建议摘要</p>
+          <p class="prelim-panel__summary-text">{{ displaySummary }}</p>
         </div>
-        <ul class="prelim-panel__attention-list">
-          <li v-for="(flag, idx) in aiMeta.redFlags" :key="`flag-${idx}`">
-            {{ flag }}
-          </li>
-        </ul>
-      </section>
 
-      <section v-if="sortedDiseases.length" class="prelim-panel__section">
-        <h3 class="prelim-panel__heading">AI 建议诊断</h3>
-        <ul class="prelim-panel__disease-list">
-          <li
-            v-for="(item, index) in sortedDiseases"
-            :key="`${item.diseaseName}-${index}`"
-            class="prelim-panel__disease-card"
-            role="button"
-            tabindex="0"
-            @click="appendDiagnosis(item.diseaseName)"
-            @keydown.enter="appendDiagnosis(item.diseaseName)"
-          >
-            <div class="prelim-panel__disease-card-head">
-              <span class="prelim-panel__disease-rank">
-                {{ parseRank(item.rank) === Number.MAX_SAFE_INTEGER ? index + 1 : parseRank(item.rank) }}
-              </span>
-              <div class="prelim-panel__disease-main">
-                <div class="prelim-panel__disease-top">
-                  <span class="prelim-panel__disease-name">{{ item.diseaseName }}</span>
-                  <span class="prelim-panel__disease-pct">
-                    {{ parseConfidencePercent(item.confidenceLevel, index, sortedDiseases.length) }}%
-                  </span>
-                </div>
-                <div class="prelim-panel__progress" aria-hidden="true">
-                  <div
-                    class="prelim-panel__progress-fill"
-                    :style="{
-                      width: `${parseConfidencePercent(item.confidenceLevel, index, sortedDiseases.length)}%`,
-                    }"
-                  />
-                </div>
-                <template v-if="diseaseRationale(item)">
-                  <p
-                    class="prelim-panel__disease-rationale"
-                    :class="{
-                      'is-collapsed':
-                        shouldCollapseRationale(diseaseRationale(item)) && !isRationaleExpanded(index),
-                    }"
-                  >
-                    <span class="prelim-panel__basis-label">依据：</span>{{ diseaseRationale(item) }}
-                  </p>
-                  <button
-                    v-if="shouldCollapseRationale(diseaseRationale(item))"
-                    type="button"
-                    class="prelim-panel__expand-btn"
-                    @click.stop="toggleRationale(index)"
-                  >
-                    {{ isRationaleExpanded(index) ? '收起' : '展开' }}
-                  </button>
-                </template>
-              </div>
-              <ElTag
-                v-if="isPrimaryDisease(item, index)"
-                size="small"
-                type="primary"
-                effect="plain"
-                class="prelim-panel__primary-tag"
-              >
-                首要
-              </ElTag>
-            </div>
-          </li>
-        </ul>
-      </section>
-
-      <section class="prelim-panel__next-steps">
-        <h3 class="prelim-panel__next-steps-title">建议下一步</h3>
-        <ul class="prelim-panel__next-steps-list">
-          <li v-for="(step, idx) in nextSteps" :key="`step-${idx}`">
-            <ElIcon class="prelim-panel__next-steps-icon" :size="16"><CircleCheck /></ElIcon>
-            <span>{{ step }}</span>
-          </li>
-        </ul>
-      </section>
-
-      <ElCollapse class="prelim-panel__collapse">
-        <ElCollapseItem
-          v-if="aiMeta.excludedDiagnoses?.length"
-          title="已排除的诊断"
-          name="excluded"
-        >
-          <ul class="prelim-panel__excluded-list">
-            <li v-for="(item, idx) in aiMeta.excludedDiagnoses" :key="idx">
-              <strong>{{ item.diseaseName }}</strong>
-              <span v-if="item.reason"> — {{ item.reason }}</span>
+        <section v-if="aiMeta.redFlags?.length" class="prelim-panel__attention">
+          <div class="prelim-panel__attention-head">
+            <ElIcon class="prelim-panel__attention-icon" :size="18"><Warning /></ElIcon>
+            <span class="prelim-panel__attention-title">需关注症状</span>
+          </div>
+          <ul class="prelim-panel__attention-list">
+            <li v-for="(flag, idx) in aiMeta.redFlags" :key="`flag-${idx}`">
+              {{ flag }}
             </li>
           </ul>
-        </ElCollapseItem>
+        </section>
 
-        <ElCollapseItem
-          v-if="aiMeta.diagnosisBasis?.trim()"
-          title="知识库召回内容"
-          name="reasoning"
-        >
-          <MarkdownContent :source="aiMeta.diagnosisBasis ?? ''" />
-        </ElCollapseItem>
+        <section v-if="sortedDiseases.length" class="prelim-panel__section">
+          <h3 class="prelim-panel__heading">AI 建议诊断</h3>
+          <ul class="prelim-panel__disease-list">
+            <li
+              v-for="(item, index) in sortedDiseases"
+              :key="`${item.diseaseName}-${index}`"
+              class="prelim-panel__disease-card"
+              role="button"
+              tabindex="0"
+              @click="appendDiagnosis(item.diseaseName)"
+              @keydown.enter="appendDiagnosis(item.diseaseName)"
+            >
+              <div class="prelim-panel__disease-card-head">
+                <span class="prelim-panel__disease-rank">
+                  {{ parseRank(item.rank) === Number.MAX_SAFE_INTEGER ? index + 1 : parseRank(item.rank) }}
+                </span>
+                <div class="prelim-panel__disease-main">
+                  <div class="prelim-panel__disease-top">
+                    <span class="prelim-panel__disease-name">{{ item.diseaseName }}</span>
+                    <span class="prelim-panel__disease-pct">
+                      {{ parseConfidencePercent(item.confidenceLevel, index, sortedDiseases.length) }}%
+                    </span>
+                  </div>
+                  <div class="prelim-panel__progress" aria-hidden="true">
+                    <div
+                      class="prelim-panel__progress-fill"
+                      :style="{
+                        width: `${parseConfidencePercent(item.confidenceLevel, index, sortedDiseases.length)}%`,
+                      }"
+                    />
+                  </div>
+                  <template v-if="diseaseRationale(item)">
+                    <p
+                      class="prelim-panel__disease-rationale"
+                      :class="{
+                        'is-collapsed':
+                          shouldCollapseRationale(diseaseRationale(item)) && !isRationaleExpanded(index),
+                      }"
+                    >
+                      <span class="prelim-panel__basis-label">依据：</span>{{ diseaseRationale(item) }}
+                    </p>
+                    <button
+                      v-if="shouldCollapseRationale(diseaseRationale(item))"
+                      type="button"
+                      class="prelim-panel__expand-btn"
+                      @click.stop="toggleRationale(index)"
+                    >
+                      {{ isRationaleExpanded(index) ? '收起' : '展开' }}
+                    </button>
+                  </template>
+                </div>
+                <ElTag
+                  v-if="isPrimaryDisease(item, index)"
+                  size="small"
+                  type="primary"
+                  effect="plain"
+                  class="prelim-panel__primary-tag"
+                >
+                  首要
+                </ElTag>
+              </div>
+            </li>
+          </ul>
+        </section>
 
-        <ElCollapseItem
-          v-if="showKnowledgeBaseRecall || aiMeta.confidence != null || aiMeta.llmModel || aiMeta.modelId"
-          title="技术与审计信息"
-          name="audit"
-        >
-          <ElDescriptions :column="1" border size="small">
-            <ElDescriptionsItem v-if="showKnowledgeBaseRecall" label="知识库召回内容">
-              <pre class="prelim-panel__recall-text">{{ knowledgeBaseRecallDisplay }}</pre>
-            </ElDescriptionsItem>
-            <ElDescriptionsItem v-if="aiMeta.confidence != null" label="整体置信度">
-              {{ aiMeta.confidence }}%
-            </ElDescriptionsItem>
-            <ElDescriptionsItem v-if="aiMeta.llmModel" label="诊断模型">
-              {{ aiMeta.llmModel }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem v-else-if="aiMeta.modelId" label="来源">
-              {{ aiMeta.modelId }}
-            </ElDescriptionsItem>
-          </ElDescriptions>
-        </ElCollapseItem>
-      </ElCollapse>
+        <section class="prelim-panel__next-steps">
+          <h3 class="prelim-panel__next-steps-title">建议下一步</h3>
+          <ul class="prelim-panel__next-steps-list">
+            <li v-for="(step, idx) in nextSteps" :key="`step-${idx}`">
+              <ElIcon class="prelim-panel__next-steps-icon" :size="16"><CircleCheck /></ElIcon>
+              <span>{{ step }}</span>
+            </li>
+          </ul>
+        </section>
+
+        <ElCollapse class="prelim-panel__collapse">
+          <ElCollapseItem
+            v-if="aiMeta.excludedDiagnoses?.length"
+            title="已排除的诊断"
+            name="excluded"
+          >
+            <ul class="prelim-panel__excluded-list">
+              <li v-for="(item, idx) in aiMeta.excludedDiagnoses" :key="idx">
+                <strong>{{ item.diseaseName }}</strong>
+                <span v-if="item.reason"> — {{ item.reason }}</span>
+              </li>
+            </ul>
+          </ElCollapseItem>
+
+          <ElCollapseItem
+            v-if="aiMeta.diagnosisBasis?.trim()"
+            title="知识库召回内容"
+            name="reasoning"
+          >
+            <MarkdownContent :source="aiMeta.diagnosisBasis ?? ''" />
+          </ElCollapseItem>
+
+          <ElCollapseItem
+            v-if="showKnowledgeBaseRecall || aiMeta.confidence != null || aiMeta.llmModel || aiMeta.modelId"
+            title="技术与审计信息"
+            name="audit"
+          >
+            <ElDescriptions :column="1" border size="small">
+              <ElDescriptionsItem v-if="showKnowledgeBaseRecall" label="知识库召回内容">
+                <pre class="prelim-panel__recall-text">{{ knowledgeBaseRecallDisplay }}</pre>
+              </ElDescriptionsItem>
+              <ElDescriptionsItem v-if="aiMeta.confidence != null" label="整体置信度">
+                {{ aiMeta.confidence }}%
+              </ElDescriptionsItem>
+              <ElDescriptionsItem v-if="aiMeta.llmModel" label="诊断模型">
+                {{ aiMeta.llmModel }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem v-else-if="aiMeta.modelId" label="来源">
+                {{ aiMeta.modelId }}
+              </ElDescriptionsItem>
+            </ElDescriptions>
+          </ElCollapseItem>
+        </ElCollapse>
+      </template>
     </div>
 
     <section class="prelim-panel__confirm">
@@ -327,10 +328,6 @@ watch(
       </ElFormItem>
     </section>
   </div>
-
-  <p v-else class="prelim-panel__empty">
-    生成初步诊断后，将在此展示 AI 建议的疾病列表；完整推理长文默认折叠。
-  </p>
 </template>
 
 <style scoped>
@@ -640,7 +637,8 @@ watch(
 }
 
 .prelim-panel__empty {
-  margin: var(--space-4) 0 0;
+  margin: 0;
+  padding: var(--space-3) 0;
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
 }

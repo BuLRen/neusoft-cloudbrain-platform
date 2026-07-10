@@ -57,7 +57,7 @@ async function logout() {
   min-height: var(--header-height);
   padding: var(--space-2) var(--space-4);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-xl);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
   backdrop-filter: var(--blur-glass);

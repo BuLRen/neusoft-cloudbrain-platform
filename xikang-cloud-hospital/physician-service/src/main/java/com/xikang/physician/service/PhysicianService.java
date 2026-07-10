@@ -59,16 +59,25 @@ public class PhysicianService {
         this.notificationClient = notificationClient;
     }
 
-    public Map<String, Object> getPatients(String keyword, Integer page, Integer size) {
+    public Map<String, Object> getPatients(
+        String keyword,
+        Integer page,
+        Integer size,
+        boolean includeEnded,
+        List<Integer> visitStates
+    ) {
         int currentPage = page == null || page < 1 ? 1 : page;
         int pageSize = size == null || size < 1 ? 10 : size;
         int offset = (currentPage - 1) * pageSize;
         Long employeeId = PhysicianAuthContext.employeeIdOrNull();
-        List<Map<String, Object>> records = physicianMapper.selectPatients(keyword, employeeId, offset, pageSize).stream()
+        List<Integer> normalizedStates = visitStates == null || visitStates.isEmpty() ? null : visitStates;
+        List<Map<String, Object>> records = physicianMapper
+            .selectPatients(keyword, employeeId, includeEnded, normalizedStates, offset, pageSize)
+            .stream()
             .map(this::withAiConsultSummary)
             .map(this::syncExamStateIfNeeded)
             .toList();
-        long total = physicianMapper.countPatients(keyword, employeeId);
+        long total = physicianMapper.countPatients(keyword, employeeId, includeEnded, normalizedStates);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("records", records);

@@ -47,8 +47,27 @@
             ORDER BY acr.completion_time DESC NULLS LAST, acr.creation_time DESC
             LIMIT 1
         ) ac ON TRUE
-        WHERE ((r.visit_state = 1 AND r.check_in_time IS NOT NULL)
-           OR r.visit_state IN (2, 5, 6))
+        WHERE
+        <choose>
+            <when test="visitStates != null and visitStates.size() &gt; 0">
+                (
+                    r.visit_state IN
+                    <foreach collection="visitStates" item="state" open="(" separator="," close=")">
+                        #{state}
+                    </foreach>
+                    AND (r.visit_state &lt;&gt; 1 OR r.check_in_time IS NOT NULL)
+                )
+            </when>
+            <otherwise>
+                (
+                    (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
+                    OR r.visit_state IN (2, 5, 6)
+                    <if test="includeEnded">
+                    OR r.visit_state = 3
+                    </if>
+                )
+            </otherwise>
+        </choose>
         <include refid="ExcludeArchivedPatientRegister"/>
         <if test="employeeId != null">
             AND r.employee_id = #{employeeId}
@@ -56,15 +75,35 @@
         <if test="keyword != null and keyword != ''">
             AND (r.case_number ILIKE CONCAT('%', #{keyword}, '%') OR r.real_name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
-        ORDER BY r.visit_state DESC, r.check_in_time ASC NULLS LAST, r.id DESC
+        ORDER BY CASE WHEN r.visit_state = 3 THEN 1 ELSE 0 END,
+                 r.visit_state DESC, r.check_in_time ASC NULLS LAST, r.id DESC
         LIMIT #{size} OFFSET #{offset}
     </select>
 
     <select id="countPatients" resultType="long">
         SELECT COUNT(*)
         FROM register r
-        WHERE ((r.visit_state = 1 AND r.check_in_time IS NOT NULL)
-           OR r.visit_state IN (2, 5, 6))
+        WHERE
+        <choose>
+            <when test="visitStates != null and visitStates.size() &gt; 0">
+                (
+                    r.visit_state IN
+                    <foreach collection="visitStates" item="state" open="(" separator="," close=")">
+                        #{state}
+                    </foreach>
+                    AND (r.visit_state &lt;&gt; 1 OR r.check_in_time IS NOT NULL)
+                )
+            </when>
+            <otherwise>
+                (
+                    (r.visit_state = 1 AND r.check_in_time IS NOT NULL)
+                    OR r.visit_state IN (2, 5, 6)
+                    <if test="includeEnded">
+                    OR r.visit_state = 3
+                    </if>
+                )
+            </otherwise>
+        </choose>
         <include refid="ExcludeArchivedPatientRegister"/>
         <if test="employeeId != null">
             AND r.employee_id = #{employeeId}

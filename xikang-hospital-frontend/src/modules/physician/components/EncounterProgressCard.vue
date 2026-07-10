@@ -119,18 +119,6 @@ const currentStepIndex = computed(() => {
   return Math.max(fromTimeline, fromState)
 })
 
-const nextHint = computed(() => {
-  const state = props.visitState
-  if (state === VISIT_STATE.REGISTERED) return '建议进入病历与初步诊断'
-  if (state === VISIT_STATE.IN_PROGRESS) {
-    if (currentStepIndex.value >= 2) return '建议继续开立检查检验或查看已有进度'
-    return '建议继续填写病历与初步诊断'
-  }
-  if (state === VISIT_STATE.EXAM_PENDING) return '检查检验进行中，完成后可查看结果'
-  if (state === VISIT_STATE.EXAM_COMPLETED) return '结果已出，建议继续确诊开方'
-  return '点击「进入流程」继续本次诊疗'
-})
-
 const recentEvents = computed(() => {
   const events = [...timeline.value]
   return events.slice(-3).reverse()
@@ -150,7 +138,6 @@ function resolveEventIcon(eventType: string) {
   <section class="encounter-progress">
     <header class="encounter-progress__header">
       <h3 class="encounter-progress__title">就诊进度</h3>
-      <p class="encounter-progress__hint">{{ nextHint }}</p>
     </header>
 
     <ElSkeleton v-if="loading && !timeline.length" :rows="2" animated />
