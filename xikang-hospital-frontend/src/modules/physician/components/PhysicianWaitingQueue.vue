@@ -17,18 +17,16 @@ const emit = defineEmits<{
   refreshed: []
   'call-next': []
   'recall-current': [registerId: number]
+  answer: [registerId: number]
 }>()
 
 const items = ref<PhysicianQueueItem[]>([])
 const loading = ref(false)
 const busy = ref(false)
 
+const hasCalling = computed(() => Boolean(props.currentCalling?.hasCalling))
 const canRecall = computed(() =>
-  Boolean(
-    props.currentCalling?.hasCalling
-    && props.currentCalling?.registerId
-    && !props.callingBusy,
-  ),
+  Boolean(hasCalling.value && props.currentCalling?.registerId && !props.callingBusy),
 )
 
 function callStatusLabel(item: PhysicianQueueItem): string {
@@ -106,6 +104,12 @@ function onRecall() {
   emit('recall-current', id)
 }
 
+function onAnswer() {
+  const id = props.currentCalling?.registerId
+  if (id == null) return
+  emit('answer', id)
+}
+
 defineExpose({ refresh })
 
 void refresh()
@@ -117,7 +121,7 @@ void refresh()
       <h2>候诊队列</h2>
     </div>
 
-    <div class="waiting-queue__calling-pad">
+    <div class="waiting-queue__calling-pad" :class="{ 'is-calling': hasCalling }">
       <button
         type="button"
         class="call-btn call-btn--primary"
@@ -134,6 +138,15 @@ void refresh()
         @click="onRecall"
       >
         重呼当前
+      </button>
+      <button
+        v-if="hasCalling"
+        type="button"
+        class="call-btn call-btn--confirm"
+        :disabled="callingBusy"
+        @click="onAnswer"
+      >
+        确认
       </button>
     </div>
 
@@ -222,6 +235,10 @@ void refresh()
   gap: var(--space-2);
 }
 
+.waiting-queue__calling-pad.is-calling {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .call-btn {
   display: inline-flex;
   align-items: center;
@@ -271,6 +288,17 @@ void refresh()
 .call-btn--ghost:not(:disabled):hover {
   background: var(--color-control-hover);
   border-color: var(--color-border-strong);
+}
+
+.call-btn--confirm {
+  background: var(--color-success);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(32, 180, 134, 0.24);
+}
+
+.call-btn--confirm:not(:disabled):hover {
+  box-shadow: 0 6px 16px rgba(32, 180, 134, 0.34);
+  transform: translateY(-1px);
 }
 
 .waiting-queue__hint {
@@ -432,7 +460,8 @@ void refresh()
   }
 
   .call-btn:not(:disabled):active,
-  .call-btn--primary:not(:disabled):hover {
+  .call-btn--primary:not(:disabled):hover,
+  .call-btn--confirm:not(:disabled):hover {
     transform: none;
   }
 }
