@@ -1084,7 +1084,7 @@ public class MedtechService {
                 .filter(id -> id > 0)
                 .distinct()
                 .toList();
-        Map<String, Map<String, Object>> expenseIndex = paymentClient.loadExpenseIndex(registerIds);
+        Map<String, Map<String, Object>> expenseIndex = paymentClient.loadExpenseIndex(registerIds, itemCode);
         for (Map<String, Object> item : items) {
             Long registerId = toLong(item.get("registerId"));
             Long sourceId = toLong(item.get("id"));
@@ -1100,7 +1100,7 @@ public class MedtechService {
         }
         Long registerId = toLong(item.get("registerId"));
         Long sourceId = toLong(item.get("id"));
-        Map<String, Map<String, Object>> expenseIndex = paymentClient.loadExpenseIndex(List.of(registerId));
+        Map<String, Map<String, Object>> expenseIndex = paymentClient.loadExpenseIndex(List.of(registerId), itemCode);
         String key = PaymentClient.expenseKey(registerId, itemCode, sourceId);
         PaymentClient.applyPaymentFields(item, expenseIndex.get(key));
     }

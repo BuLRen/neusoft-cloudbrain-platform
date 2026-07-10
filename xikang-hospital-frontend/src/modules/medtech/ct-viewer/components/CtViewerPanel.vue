@@ -28,6 +28,7 @@ import CtPatientInfoPanel, { type CtPatientInfoField } from '@/modules/medtech/c
 import VtkVolumeViewer from '@/modules/medtech/ct-viewer/components/VtkVolumeViewer.vue'
 import '@/modules/medtech/ct-viewer/styles/ct-viewer-theme.css'
 import { parseNrrdArrayBuffer } from '@/modules/medtech/ct-viewer/lib/nrrdToVtkImageData'
+import { isSupportedVolumeFile, parseVolumeFile, type ParsedVolumeData } from '@/modules/medtech/ct-viewer/lib/volumeFileParser'
 import {
   extractAxialThumbnail,
   extractCoronalSlice,
@@ -91,8 +92,8 @@ const isLoading = ref(false)
 
 const sourceVolumeId = ref('')
 const filteredVolumeId = ref('')
-const originalVolume = ref<ReturnType<typeof parseNrrdArrayBuffer> | null>(null)
-const filteredVolume = ref<ReturnType<typeof parseNrrdArrayBuffer> | null>(null)
+const originalVolume = ref<ParsedVolumeData | null>(null)
+const filteredVolume = ref<ParsedVolumeData | null>(null)
 const originalMeta = ref<CtVolumeMeta | null>(null)
 const filteredMeta = ref<CtVolumeMeta | null>(null)
 const filteredIsMask = ref(false)
@@ -141,12 +142,6 @@ const metalMinComponentSize = ref(50)
 
 const nrrdInput = ref<HTMLInputElement | null>(null)
 const dicomInput = ref<HTMLInputElement | null>(null)
-
-/** macOS 文件选择器无法正确识别 accept=".nii.gz"，需在 JS 侧校验扩展名 */
-function isSupportedVolumeFile(name: string): boolean {
-  const lower = name.toLowerCase()
-  return lower.endsWith('.nrrd') || lower.endsWith('.nii.gz') || lower.endsWith('.nii')
-}
 
 const axialCanvas = ref<HTMLCanvasElement | null>(null)
 const coronalCanvas = ref<HTMLCanvasElement | null>(null)
@@ -314,29 +309,35 @@ async function checkBackend() {
   }
 }
 
+function applyLocalVolumeData(
+  volumeData: ParsedVolumeData,
+  meta: CtVolumeMeta | null | undefined,
+  target: 'original' | 'filtered',
+) {
+  if (target === 'original') {
+    originalVolume.value = volumeData
+    const [sx, sy, sz] = volumeData.spacing
+    const [dx, dy, dz] = volumeData.dimensions
+    if (meta) {
+      originalMeta.value = {
+        ...meta,
+        spacing_xyz: meta.spacing_xyz?.length ? meta.spacing_xyz : [sx, sy, sz],
+        size_xyz: meta.size_xyz?.length ? meta.size_xyz : [dx, dy, dz],
+      }
+    } else {
+      originalMeta.value = { spacing_xyz: [sx, sy, sz], size_xyz: [dx, dy, dz] }
+    }
+  } else {
+    filteredVolume.value = volumeData
+  }
+}
+
 async function loadVolumeById(volumeId: string, target: 'original' | 'filtered') {
   const fetchNrrd = props.nrrdFetcher ?? fetchCtVolumeNrrd
   const arrayBuffer = await fetchNrrd(volumeId)
   const volumeData = parseNrrdArrayBuffer(arrayBuffer)
   if (target === 'original') {
-    originalVolume.value = volumeData
-    // 从 NRRD 解析结果补全 spacing_xyz / size_xyz，
-    // 避免 loadBoundVolume 路径（仅传入 volumeId，无后端 meta 接口）
-    // 下 spacing_xyz 为 undefined，导致 spacingZ fallback 为 0.7mm，
-    // 冠状/矢状图的物理高度被严重低估、画面被压扁。
-    const [sx, sy, sz] = volumeData.spacing
-    const [dx, dy, dz] = volumeData.dimensions
-    if (originalMeta.value) {
-      if (!originalMeta.value.spacing_xyz?.length) {
-        originalMeta.value = {
-          ...originalMeta.value,
-          spacing_xyz: [sx, sy, sz],
-          size_xyz: originalMeta.value.size_xyz?.length ? originalMeta.value.size_xyz : [dx, dy, dz],
-        }
-      }
-    } else {
-      originalMeta.value = { spacing_xyz: [sx, sy, sz], size_xyz: [dx, dy, dz] }
-    }
+    applyLocalVolumeData(volumeData, originalMeta.value, 'original')
   } else {
     filteredVolume.value = volumeData
   }
@@ -388,11 +389,14 @@ async function handleNrrdUpload(event: Event) {
 
   isLoading.value = true
   try {
-    const result = await uploadCtNrrdFile(file)
+    statusText.value = '正在上传并本地解析影像（无需再从服务器下载）…'
+    const [result, volumeData] = await Promise.all([
+      uploadCtNrrdFile(file),
+      parseVolumeFile(file),
+    ])
     clearSegmentationOverlay()
     sourceVolumeId.value = result.volume_id
-    originalMeta.value = result.meta
-    await loadVolumeById(sourceVolumeId.value, 'original')
+    applyLocalVolumeData(volumeData, result.meta, 'original')
     applyDefaultWindow(result.meta)
     resetSlicePositions()
     statusText.value = `加载成功：${file.name}`
@@ -412,11 +416,13 @@ async function handleDicomFolderUpload(event: Event) {
 
   isLoading.value = true
   try {
+    statusText.value = '正在上传 DICOM 并在服务器转换（转换完成后需下载 NRRD）…'
     const result = await uploadCtDicomFiles(files)
     const sourceName = `DICOM (${result.meta.series_id || 'series'}, ${result.meta.file_count || files.length} files)`
     clearSegmentationOverlay()
     sourceVolumeId.value = result.volume_id
     originalMeta.value = result.meta
+    statusText.value = '正在从服务器下载转换后的影像…'
     await loadVolumeById(sourceVolumeId.value, 'original')
     applyDefaultWindow(result.meta)
     resetSlicePositions()

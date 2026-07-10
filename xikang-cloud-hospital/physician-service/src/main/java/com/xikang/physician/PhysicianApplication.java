@@ -4,6 +4,7 @@ import com.xikang.common.env.EnvLoader;
 import com.xikang.common.exception.GlobalExceptionHandler;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.annotation.EnableAsync;
 
@@ -13,6 +14,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @SpringBootApplication
 @Import(GlobalExceptionHandler.class)
 @EnableAsync
+@EnableFeignClients
 public class PhysicianApplication {
 
     public static void main(String[] args) {

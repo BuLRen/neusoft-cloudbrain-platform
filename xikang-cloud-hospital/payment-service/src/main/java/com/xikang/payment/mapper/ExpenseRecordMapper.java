@@ -55,6 +55,12 @@ public interface ExpenseRecordMapper {
                                      @Param("endTime") LocalDateTime endTime);
 
     /**
+     * 按多个挂号号批量查询费用行（医技列表缴费状态 enrichment 用）。
+     */
+    List<ExpenseRecord> selectByRegisterIds(@Param("registerIds") List<Long> registerIds,
+                                            @Param("itemCodes") List<String> itemCodes);
+
+    /**
      * 管理员订单列表：按 create_time 过滤与关键词搜索（患者姓名 / 挂号号）。
      */
     List<ExpenseRecord> selectForAdminOrderList(@Param("keyword") String keyword,

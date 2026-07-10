@@ -2,33 +2,24 @@ package com.xikang.physician.client;
 
 import com.xikang.common.exception.BusinessException;
 import com.xikang.common.result.Result;
+import feign.FeignException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * physician-service 调 payment-service 内部 API（开单出账、确诊/结束看诊卡点）。
+ * physician-service 调 payment-service 内部 API（Feign 直连，地址见 PAYMENT_SERVICE_URL）。
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class PaymentClient {
 
-    private final RestTemplate restTemplate;
-    private final String paymentBaseUrl;
-
-    public PaymentClient(
-            @Qualifier("paymentRestTemplate") RestTemplate restTemplate,
-            @Value("${services.payment-service.url:http://localhost:8096}") String paymentBaseUrl) {
-        this.restTemplate = restTemplate;
-        this.paymentBaseUrl = paymentBaseUrl;
-    }
+    private final PaymentFeignClient paymentFeignClient;
 
     public Map<String, Object> createTechFee(Long registerId, Long patientId, String patientName,
                                              String itemCode, Long sourceId, Long techId, String techName,
@@ -46,17 +37,9 @@ public class PaymentClient {
         body.put("quantity", 1);
         body.put("unitPrice", unitPrice != null ? unitPrice : BigDecimal.ZERO);
         body.put("totalAmount", unitPrice != null ? unitPrice : BigDecimal.ZERO);
-        return postForMap("/api/payment/internal/items", body, "推送医技费用失败");
+        return postForMap(body, "推送医技费用失败");
     }
 
-    /**
-     * 开完处方后推送药品费（幂等）。
-     * <p>category=2（药品费），与 pharmacy-service 保持一致；payment-service 走 ON CONFLICT DO NOTHING，
-     * 所以即使 patient 已经在"我的处方"页触发过 pharmacy-service 的 ensureMedicationFeeCreated，这里再调也只会返回既有行。
-     * <p>金额 ≤ 0 视为数据异常：payment-service 内部会判 amount 必须 ≥ 0，
-     * 所以此处给 0 时 payment-service 会落 status=1（已结清）—— 为了不让 endVisit 的 assertAllPaid 卡住，
-     * 这里也把 0 金额按 status=1 处理（与 pharmacy-service ensureMedicationFeeCreated 一致）。
-     */
     public Map<String, Object> createMedicationFee(Long registerId, Long patientId, String patientName,
                                                    BigDecimal amount) {
         boolean zeroAmount = amount == null || amount.compareTo(BigDecimal.ZERO) <= 0;
@@ -72,17 +55,13 @@ public class PaymentClient {
         body.put("quantity", 1);
         body.put("unitPrice", zeroAmount ? BigDecimal.ZERO : amount);
         body.put("totalAmount", zeroAmount ? BigDecimal.ZERO : amount);
-        // 金额为 0 直接视为已结清，避免 payMedication 因 amount<=0 抛异常卡死后续流程
         body.put("initialStatus", zeroAmount ? 1 : 0);
         body.put("remark", "医生开药后出账");
-        return postForMap("/api/payment/internal/items", body, "推送药品费失败");
+        return postForMap(body, "推送药品费失败");
     }
 
     public void assertAllPaid(Long registerId) {
-        Map<String, Object> status = getForMap(
-                "/api/payment/internal/check-paid/register/{registerId}",
-                Map.of("registerId", registerId),
-                "查询缴费状态失败");
+        Map<String, Object> status = getCheckPaidByRegister(registerId);
         Object allPaid = status.get("allPaid");
         if (Boolean.TRUE.equals(allPaid)) {
             return;
@@ -93,26 +72,20 @@ public class PaymentClient {
                 "该患者有待支付费用（¥" + amountText + "），请先完成缴费后再继续");
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private Map<String, Object> postForMap(String path, Map<String, Object> request, String failMessage) {
+    private Map<String, Object> postForMap(Map<String, Object> request, String failMessage) {
         try {
-            Map<String, Object> response = restTemplate.postForObject(
-                    paymentBaseUrl + path, request, Map.class);
-            return extractData(response, failMessage);
-        } catch (RestClientException e) {
-            log.warn("调 payment-service 失败 | path={}", path, e);
+            return extractData(paymentFeignClient.createItem(request), failMessage);
+        } catch (FeignException e) {
+            log.warn("调 payment-service 失败 | op=createItem", e);
             throw new BusinessException(500, "支付服务暂时不可用", e);
         }
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private Map<String, Object> getForMap(String pathTemplate, Map<String, ?> uriVars, String failMessage) {
+    private Map<String, Object> getCheckPaidByRegister(Long registerId) {
         try {
-            Map<String, Object> response = restTemplate.getForObject(
-                    paymentBaseUrl + pathTemplate, Map.class, uriVars);
-            return extractData(response, failMessage);
-        } catch (RestClientException e) {
-            log.warn("调 payment-service 失败 | path={}", pathTemplate, e);
+            return extractData(paymentFeignClient.checkPaidByRegister(registerId), "查询缴费状态失败");
+        } catch (FeignException e) {
+            log.warn("调 payment-service 失败 | op=checkPaid registerId={}", registerId, e);
             throw new BusinessException(500, "支付服务暂时不可用", e);
         }
     }

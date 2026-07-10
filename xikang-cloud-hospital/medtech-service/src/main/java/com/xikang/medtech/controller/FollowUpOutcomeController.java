@@ -2,6 +2,7 @@ package com.xikang.medtech.controller;
 
 import com.xikang.common.result.Result;
 import com.xikang.medtech.service.FollowUpOutcomeService;
+import com.xikang.medtech.service.FollowUpVisitReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +17,7 @@ import java.util.Map;
 public class FollowUpOutcomeController {
 
     private final FollowUpOutcomeService followUpOutcomeService;
+    private final FollowUpVisitReportService visitReportService;
 
     @GetMapping("/patients")
     public Result<List<Map<String, Object>>> listPatients(
@@ -77,5 +79,22 @@ public class FollowUpOutcomeController {
     public Result<Map<String, Object>> createInterviewSchedule(@RequestBody Map<String, Object> request) {
         Map<String, Object> created = followUpOutcomeService.createInterviewSchedule(request);
         return Result.success("已加入本周访谈日程", created);
+    }
+
+    @GetMapping("/visit-report/{registerId}/latest")
+    public Result<Map<String, Object>> getLatestVisitReport(@PathVariable Long registerId) {
+        return Result.success(visitReportService.getLatest(registerId));
+    }
+
+    @PostMapping("/visit-report")
+    public Result<Map<String, Object>> saveVisitReport(@RequestBody Map<String, Object> request) {
+        Map<String, Object> saved = visitReportService.saveDraft(request);
+        return Result.success("随访报告已保存", saved);
+    }
+
+    @PostMapping("/visit-report/{id}/finalize")
+    public Result<Map<String, Object>> finalizeVisitReport(@PathVariable Long id) {
+        Map<String, Object> finalized = visitReportService.finalizeReport(id);
+        return Result.success("随访报告已定稿", finalized);
     }
 }

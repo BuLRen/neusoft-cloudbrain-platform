@@ -37,6 +37,7 @@ import {
   type OutcomeRangePreset,
 } from '@/shared/utils/beijingDate'
 import LastVisitSnapshotPanel from '@/modules/medtech/follow-up/components/LastVisitSnapshotPanel.vue'
+import FollowUpVisitReportPanel from '@/modules/medtech/follow-up/components/FollowUpVisitReportPanel.vue'
 import HomeGlucoseMonitoringPanel from '@/modules/medtech/follow-up/components/HomeGlucoseMonitoringPanel.vue'
 import ContactRecordHistoryDialog from '@/modules/medtech/follow-up/components/ContactRecordHistoryDialog.vue'
 import { addToTodayInterview, getTodayInterviewScheduled } from '@/modules/medtech/follow-up/services/interviewSchedule'
@@ -610,8 +611,9 @@ void loadPatients().then(() => loadPatientData())
       </div>
     </GlassCard>
 
+    <div v-if="selectedRegisterId" class="outcome-body">
+      <div class="outcome-body__main">
     <LastVisitSnapshotPanel
-      v-if="selectedRegisterId"
       :register-id="selectedRegisterId"
       mode="doctor"
     />
@@ -684,6 +686,15 @@ void loadPatients().then(() => loadPatientData())
       </ElTable>
       <ElEmpty v-if="!historyRows.length && !records.length" description="暂无历史记录" />
     </GlassCard>
+      </div>
+
+      <FollowUpVisitReportPanel
+        class="outcome-body__aside"
+        :register-id="selectedRegisterId"
+        :last-visit-snapshot="lastVisitSnapshot"
+        :latest-metrics="latestMetrics"
+      />
+    </div>
 
     <ElDialog
       v-model="metricDialogVisible"
@@ -818,6 +829,33 @@ void loadPatients().then(() => loadPatientData())
 
 .outcome-card--secondary {
   background: color-mix(in srgb, var(--color-surface) 92%, var(--color-bg-soft));
+}
+
+.outcome-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.outcome-body__main {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.outcome-body__aside {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .outcome-body {
+    grid-template-columns: 1fr;
+  }
+
+  .outcome-body__aside :deep(.visit-report-panel) {
+    position: static;
+  }
 }
 
 .toolbar {

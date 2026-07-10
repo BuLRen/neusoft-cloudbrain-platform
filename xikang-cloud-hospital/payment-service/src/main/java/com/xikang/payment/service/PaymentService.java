@@ -519,6 +519,27 @@ public class PaymentService {
         return records.stream().map(this::toMap).collect(Collectors.toList());
     }
 
+    /**
+     * 按多个挂号号批量查询费用行（避免服务间 N 次 Feign 往返）。
+     */
+    public List<Map<String, Object>> queryRecordsByRegisterIds(List<Long> registerIds, List<String> itemCodes) {
+        if (registerIds == null || registerIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = registerIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        List<String> codes = itemCodes == null ? null
+                : itemCodes.stream().filter(code -> code != null && !code.isBlank()).distinct().toList();
+        if (codes != null && codes.isEmpty()) {
+            codes = null;
+        }
+        return expenseRecordMapper.selectByRegisterIds(ids, codes).stream()
+                .map(this::toMap)
+                .collect(Collectors.toList());
+    }
+
     public List<Map<String, Object>> dailyCharges(LocalDate startDate, LocalDate endDate) {
         return expenseRecordMapper.dailyCharges(startDate, endDate);
     }

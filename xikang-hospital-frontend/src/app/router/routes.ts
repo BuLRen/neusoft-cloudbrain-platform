@@ -379,8 +379,13 @@ export const routes: RouteRecordRaw[] = [
         ],
       },
       {
+        path: 'follow-up/overview',
+        redirect: '/dashboard',
+        meta: { hidden: true, roles: ['followup', 'admin'], requiresAuth: true },
+      },
+      {
         path: 'medtech/follow-up/:subpath(.*)',
-        redirect: (to) => `/follow-up/${String(to.params.subpath || 'outcome')}`,
+        redirect: (to) => `/follow-up/${String(to.params.subpath || 'dashboard')}`,
         meta: { hidden: true, roles: ['followup', 'admin'], requiresAuth: true },
       },
       {

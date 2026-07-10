@@ -31,6 +31,7 @@ import type {
   TriageChatResult,
   TriageHistoryRecord,
 } from '@/shared/types/ai'
+import { apiUrl } from '@/config/api'
 
 function parseJsonField<T>(value: unknown): T | null {
   if (value == null || value === '') {
@@ -151,7 +152,7 @@ export const aiApi = {
     signal?: AbortSignal,
   ): Promise<PrevisitChatMeta> {
     const token = getAccessToken()
-    const response = await fetch(`/api${url}`, {
+    const response = await fetch(apiUrl(url), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

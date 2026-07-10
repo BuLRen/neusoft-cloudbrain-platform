@@ -17,6 +17,13 @@ spring:
       - optional:file:./config/database.yml
       - optional:file:../config/database-secrets.yml
       - optional:file:./config/database-secrets.yml
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        file-extension: yaml
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml
@@ -40,4 +47,4 @@ logging:
 
 services:
   payment-service:
-    url: ${PAYMENT_SERVICE_URL:http://localhost:8096}
+    url: ${PAYMENT_SERVICE_URL:http://127.0.0.1:8096}

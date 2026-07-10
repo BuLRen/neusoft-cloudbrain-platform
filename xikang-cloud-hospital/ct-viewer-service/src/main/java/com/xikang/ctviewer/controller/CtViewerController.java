@@ -7,6 +7,7 @@ import com.xikang.ctviewer.dto.FilterResponseDto;
 import com.xikang.ctviewer.dto.LoadResponseDto;
 import com.xikang.ctviewer.dto.SegmentResponseDto;
 import com.xikang.ctviewer.service.CtViewerService;
+import com.xikang.ctviewer.util.GzipResponseUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -41,6 +42,15 @@ public class CtViewerController {
     @GetMapping("/volume/{volumeId}/nrrd")
     public ResponseEntity<byte[]> getVolumeNrrd(@PathVariable String volumeId) {
         byte[] payload = ctViewerService.getVolumeNrrd(volumeId);
+        if (GzipResponseUtils.shouldGzip(payload)) {
+            byte[] compressed = GzipResponseUtils.gzip(payload);
+            return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                .header(HttpHeaders.CONTENT_ENCODING, "gzip")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + volumeId + ".nrrd.gz\"")
+                .header("X-Uncompressed-Length", String.valueOf(payload.length))
+                .body(compressed);
+        }
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
             .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + volumeId + ".nrrd\"")

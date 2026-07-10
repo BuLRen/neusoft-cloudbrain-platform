@@ -34,7 +34,7 @@ import SimpleITK as sitk
 import torch
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from . import config
 from .model import build_model
@@ -308,6 +308,8 @@ async def health():
 
 
 class SegmentRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     src_nrrd_path: str
     out_nrrd_path: str
     source_name: str = ""

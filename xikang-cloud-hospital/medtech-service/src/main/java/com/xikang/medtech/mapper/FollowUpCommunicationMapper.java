@@ -18,6 +18,8 @@ public interface FollowUpCommunicationMapper {
 
     int insertSession(Map<String, Object> payload);
 
+    int updateSessionDepartment(@Param("id") Long id, @Param("departmentId") Long departmentId);
+
     int updateSessionDoctorActive(@Param("id") Long id);
 
     int updateAiEscalation(@Param("id") Long id, @Param("enabled") int enabled);

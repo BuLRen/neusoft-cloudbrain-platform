@@ -590,3 +590,28 @@ xikang-cloud-hospital/ct-viewer-algo/app/__pycache__/main.cpython-311.pyc
 xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/__init__.cpython-311.pyc
 xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/dicom_io.cpython-311.pyc
 xikang-cloud-hospital/ct-viewer-algo/ct_viewer/__pycache__/filters.cpython-311.pyc
+xikang-cloud-hospital/data/ct-viewer/volumes/27ca9c75-5655-4d9a-884b-b53bfe7ba3b1/data.nrrd
+xikang-cloud-hospital/data/ct-viewer/volumes/d06cbf0b-1008-41e9-a595-70cae101edbd/data.nrrd
+xikang-cloud-hospital/data/ct-viewer/volumes/d06cbf0b-1008-41e9-a595-70cae101edbd/src/upload.nii.gz
+
+# large service packages
+xikang-cloud-hospital/lung-nodule-seg-service.zip
+xikang-cloud-hospital/glucose-prediction-service.tar.gz
+
+# common large packages
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# model files
+segment-model/
+*.pt
+*.pth
+*.onnx
+*.h5
+*.pkl
+xikang-hospital-frontend/nifti-reader-js-0.8.0.tgz
+xikang-cloud-hospital/docker/init-db/migrate_039_follow_up_pool_align_and_report.sql
+xikang-cloud-hospital/docker/init-db/migrate_040_communication_message_type_varchar.sql
+xikang-cloud-hospital/medtech-service/src/main/resources/db/migrate_039_follow_up_pool_align_and_report.sql

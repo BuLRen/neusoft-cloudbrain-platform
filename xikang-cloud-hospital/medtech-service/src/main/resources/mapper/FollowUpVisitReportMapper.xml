@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpVisitReportMapper">
+
+    <select id="selectLatestByRegisterId" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            source_medical_record_id AS "sourceMedicalRecordId",
+            report_date AS "reportDate",
+            status AS "status",
+            last_visit_snapshot_json AS "lastVisitSnapshotJson",
+            observation_text AS "observationText",
+            conclusion_text AS "conclusionText",
+            recovery_status AS "recoveryStatus",
+            generated_by AS "generatedBy",
+            finalized_at AS "finalizedAt",
+            creation_time AS "creationTime"
+        FROM follow_up_visit_report
+        WHERE register_id = #{registerId}
+        ORDER BY creation_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectById" resultType="map">
+        SELECT
+            id AS "id",
+            register_id AS "registerId",
+            source_medical_record_id AS "sourceMedicalRecordId",
+            report_date AS "reportDate",
+            status AS "status",
+            last_visit_snapshot_json AS "lastVisitSnapshotJson",
+            observation_text AS "observationText",
+            conclusion_text AS "conclusionText",
+            recovery_status AS "recoveryStatus",
+            generated_by AS "generatedBy",
+            finalized_at AS "finalizedAt",
+            creation_time AS "creationTime"
+        FROM follow_up_visit_report
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <insert id="insertReport" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO follow_up_visit_report (
+            register_id, source_medical_record_id, report_date, status,
+            last_visit_snapshot_json, observation_text, conclusion_text,
+            recovery_status, generated_by
+        ) VALUES (
+            #{registerId}, #{sourceMedicalRecordId}, COALESCE(#{reportDate}, CURRENT_DATE),
+            COALESCE(#{status}, 'draft'),
+            #{lastVisitSnapshotJson}::jsonb, #{observationText}, #{conclusionText},
+            COALESCE(#{recoveryStatus}, 'unknown'), #{generatedBy}
+        )
+    </insert>
+
+    <update id="updateReport">
+        UPDATE follow_up_visit_report
+        SET observation_text = #{observationText},
+            conclusion_text = #{conclusionText},
+            recovery_status = COALESCE(#{recoveryStatus}, recovery_status),
+            last_visit_snapshot_json = COALESCE(#{lastVisitSnapshotJson}::jsonb, last_visit_snapshot_json),
+            source_medical_record_id = COALESCE(#{sourceMedicalRecordId}, source_medical_record_id)
+        WHERE id = #{id}
+          AND status = 'draft'
+    </update>
+
+    <update id="finalizeReport">
+        UPDATE follow_up_visit_report
+        SET status = 'finalized',
+            finalized_at = CURRENT_TIMESTAMP,
+            generated_by = COALESCE(#{generatedBy}, generated_by)
+        WHERE id = #{id}
+          AND status = 'draft'
+    </update>
+
+</mapper>
