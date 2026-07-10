@@ -394,8 +394,22 @@ export const physicianApi = {
   delete<T>(url: string) {
     return http<T>({ url, method: 'DELETE' })
   },
-  patients(params: { keyword?: string; page?: number; size?: number }) {
-    return http<PageResult<PhysicianPatient>>({ url: '/physician/patients', method: 'GET', params })
+  patients(params: {
+    keyword?: string
+    page?: number
+    size?: number
+    includeEnded?: boolean
+    visitStates?: number[]
+  }) {
+    const { visitStates, ...rest } = params
+    return http<PageResult<PhysicianPatient>>({
+      url: '/physician/patients',
+      method: 'GET',
+      params: {
+        ...rest,
+        ...(visitStates?.length ? { visitStates: visitStates.join(',') } : {}),
+      },
+    })
   },
   patient(registerId: number) {
     return http<PhysicianPatient>({ url: `/physician/patients/${registerId}`, method: 'GET' })

@@ -39,6 +39,7 @@ export const PHYSICIAN_PATH_TITLES: Record<string, string> = {
 export const VISIT_STATE_LABEL: Record<number, { text: string; tone: VisitStateTone }> = {
   [VISIT_STATE.REGISTERED]: { text: '待接诊', tone: 'warning' },
   [VISIT_STATE.IN_PROGRESS]: { text: '接诊中', tone: 'primary' },
+  [VISIT_STATE.ENDED]: { text: '已结束看诊', tone: 'neutral' },
   [VISIT_STATE.EXAM_PENDING]: { text: '检查检验中', tone: 'warning' },
   [VISIT_STATE.EXAM_COMPLETED]: { text: '检查检验完成', tone: 'success' },
 }
