@@ -47,7 +47,8 @@ logging:
 
 services:
   ai-pharmacy:
-    base-url: http://localhost:8104
+    # 留空走 Nacos 服务发现；本地单机调试可设 AI_PHARMACY_SERVICE_URL=http://localhost:8104
+    url: ${AI_PHARMACY_SERVICE_URL:}
   payment-service:
     url: ${PAYMENT_SERVICE_URL:http://127.0.0.1:8096}
 
