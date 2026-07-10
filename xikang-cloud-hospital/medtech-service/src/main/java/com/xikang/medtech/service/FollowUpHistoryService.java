@@ -309,6 +309,9 @@ public class FollowUpHistoryService {
         if ("diagnosis_card".equals(messageType)) {
             return "diagnosis_card";
         }
+        if ("registration_card".equals(messageType)) {
+            return "revisit_reminder";
+        }
         if ("case_summary".equals(messageType)) {
             return "case_summary";
         }
@@ -332,6 +335,13 @@ public class FollowUpHistoryService {
             }
             Object diseaseName = extraPayload != null ? extraPayload.get("diseaseName") : null;
             return diseaseName != null ? "可能病况：" + diseaseName : "发送病况卡片";
+        }
+        if ("registration_card".equals(messageType)) {
+            if (content != null) {
+                return content;
+            }
+            Object dept = extraPayload != null ? extraPayload.get("departmentName") : null;
+            return dept != null ? "复诊挂号：" + dept : "发送复诊挂号卡片";
         }
         if ("text".equals(messageType)) {
             return "医患文字沟通";
@@ -364,6 +374,12 @@ public class FollowUpHistoryService {
             }
             if (diseaseName != null) {
                 return "可能病况：" + diseaseName;
+            }
+        }
+        if ("registration_card".equals(messageType) && extraPayload != null) {
+            Object reminder = extraPayload.get("reminderText");
+            if (reminder != null) {
+                return String.valueOf(reminder);
             }
         }
         return "随访沟通消息已发送。";

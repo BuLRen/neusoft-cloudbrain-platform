@@ -5,6 +5,7 @@ import { useAuthStore } from '@/app/stores/auth'
 import AdminDashboard from '@/modules/admin/pages/AdminDashboard.vue'
 import PhysicianDashboard from '@/modules/physician/pages/PhysicianDashboard.vue'
 import MedtechDashboard from '@/modules/medtech/pages/MedtechDashboard.vue'
+import FollowUpOverviewPage from '@/modules/medtech/follow-up/pages/FollowUpOverviewPage.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
@@ -26,18 +27,7 @@ const modules = [
   <AdminDashboard v-if="isAdmin" />
   <PhysicianDashboard v-else-if="isPhysician" />
   <MedtechDashboard v-else-if="isMedtech" />
-  <div v-else-if="isFollowup" class="dashboard u-page-grid">
-    <PageHeader
-      title="随访工作台"
-      description="您已登录为随访人员，请进入随访系统管理在管患者。"
-      eyebrow="随访系统"
-    />
-    <GlassCard class="dashboard__card" @click="router.push('/follow-up/dashboard')">
-      <StatusTag tone="primary">随访</StatusTag>
-      <h2>进入随访系统</h2>
-      <p>工作台、疗效评估、医患沟通与随访记录。</p>
-    </GlassCard>
-  </div>
+  <FollowUpOverviewPage v-else-if="isFollowup" />
   <div v-else class="dashboard u-page-grid">
     <PageHeader
       title="前端框架仪表盘"

@@ -610,3 +610,6 @@ segment-model/
 *.h5
 *.pkl
 xikang-hospital-frontend/nifti-reader-js-0.8.0.tgz
+xikang-cloud-hospital/docker/init-db/migrate_039_follow_up_pool_align_and_report.sql
+xikang-cloud-hospital/docker/init-db/migrate_040_communication_message_type_varchar.sql
+xikang-cloud-hospital/medtech-service/src/main/resources/db/migrate_039_follow_up_pool_align_and_report.sql

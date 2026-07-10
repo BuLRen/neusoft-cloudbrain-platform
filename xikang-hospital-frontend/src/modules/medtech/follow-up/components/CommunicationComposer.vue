@@ -1,11 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { ElButton, ElInput, ElTag } from 'element-plus'
-
-const REVISIT_QUICK_TEMPLATES = [
-  '【复诊提醒】建议您近期到院复诊，请通过患者端「我的挂号」自行预约。',
-  '【复诊提醒】根据近期血糖监测，建议尽快复诊，请自行挂号。',
-] as const
+import { nextTick, ref } from 'vue'
+import { ElButton, ElInput } from 'element-plus'
 
 const props = defineProps<{
   disabled?: boolean
@@ -16,6 +11,7 @@ const emit = defineEmits<{
   send: [content: string]
   sendCard: [messageType: 'drug_card' | 'diagnosis_card', payload: Record<string, unknown>]
   openPicker: [mode: 'drug' | 'diagnosis']
+  openRevisitReminder: []
 }>()
 
 const draft = ref('')
@@ -27,44 +23,54 @@ function submit() {
   draft.value = ''
 }
 
-function sendQuickTemplate(text: string) {
-  if (props.disabled || props.sending) return
-  emit('send', text)
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter') return
+
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault()
+    const target = event.target as HTMLTextAreaElement | null
+    if (!target || target.selectionStart == null) return
+    const start = target.selectionStart
+    const end = target.selectionEnd ?? start
+    draft.value = `${draft.value.slice(0, start)}\n${draft.value.slice(end)}`
+    void nextTick(() => {
+      target.selectionStart = target.selectionEnd = start + 1
+    })
+    return
+  }
+
+  if (event.shiftKey || event.altKey) return
+
+  event.preventDefault()
+  submit()
 }
 </script>
 
 <template>
   <div class="comm-composer">
-    <div class="comm-composer__quick">
-      <span class="comm-composer__quick-label">复诊提醒话术</span>
-      <div class="comm-composer__chips">
-        <ElTag
-          v-for="item in REVISIT_QUICK_TEMPLATES"
-          :key="item"
-          class="comm-composer__chip"
-          :class="{ 'is-disabled': disabled || sending }"
-          effect="plain"
-          type="warning"
-          @click="sendQuickTemplate(item)"
-        >
-          {{ item }}
-        </ElTag>
-      </div>
-    </div>
     <ElInput
       v-model="draft"
       type="textarea"
       :rows="3"
       :disabled="disabled"
-      placeholder="输入消息发送给患者（复诊请使用上方话术，勿代患者挂号）..."
-      @keydown.ctrl.enter="submit"
+      placeholder="输入消息发送给患者..."
+      @keydown="onKeydown"
     />
     <div class="comm-composer__actions">
       <div class="comm-composer__extras">
+        <ElButton
+          size="small"
+          type="warning"
+          plain
+          :disabled="disabled || sending"
+          @click="emit('openRevisitReminder')"
+        >
+          复诊提醒
+        </ElButton>
         <ElButton size="small" :disabled="disabled || sending" @click="emit('openPicker', 'drug')">荐药卡片</ElButton>
         <ElButton size="small" :disabled="disabled || sending" @click="emit('openPicker', 'diagnosis')">病况卡片</ElButton>
       </div>
-      <span class="comm-composer__hint">Ctrl + Enter 发送 · 随访系统不参与挂号</span>
+      <span class="comm-composer__hint">Enter 发送 · Ctrl + Enter 换行</span>
       <ElButton type="primary" :disabled="disabled || !draft.trim()" :loading="sending" @click="submit">
         发送
       </ElButton>
@@ -79,35 +85,6 @@ function sendQuickTemplate(text: string) {
   flex-shrink: 0;
 }
 
-.comm-composer__quick {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.comm-composer__quick-label {
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.comm-composer__chips {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.comm-composer__chip {
-  cursor: pointer;
-  white-space: normal;
-  height: auto;
-  padding: var(--space-2) var(--space-3);
-  line-height: 1.5;
-}
-
-.comm-composer__chip.is-disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
 .comm-composer__actions {
   display: flex;
   align-items: center;
@@ -118,6 +95,7 @@ function sendQuickTemplate(text: string) {
 
 .comm-composer__extras {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
