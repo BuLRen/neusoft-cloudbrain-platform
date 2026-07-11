@@ -55,6 +55,8 @@ public class FollowUpShiftScheduleService {
         if (existing != null && !existing.isEmpty()) {
             planId = toLong(existing.get("id"));
             preservedTasks = shiftMapper.selectContactTasksByPlanId(planId);
+            shiftMapper.deleteContactTasksByPlanId(planId);
+            shiftMapper.deleteChangeRequestsByPlanId(planId);
             shiftMapper.deleteShiftsByPlanId(planId);
         } else {
             Map<String, Object> planPayload = new HashMap<>();

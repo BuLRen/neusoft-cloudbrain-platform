@@ -13,6 +13,7 @@ import type {
   FollowUpDashboardPatient,
   FollowUpDayScheduleItem,
   FollowUpHealthMetric,
+  FollowUpMedtechExamBundle,
   FollowUpHistoryEvent,
   FollowUpHistoryEventType,
   FollowUpEnrollPayload,
@@ -77,6 +78,13 @@ export const medtechFollowUpApi = {
       url: `${outcomeBase}/metrics/${registerId}`,
       method: 'GET',
       params,
+    })
+  },
+
+  getMedtechExams(registerId: number) {
+    return http<FollowUpMedtechExamBundle>({
+      url: `${outcomeBase}/medtech-exams/${registerId}`,
+      method: 'GET',
     })
   },
 

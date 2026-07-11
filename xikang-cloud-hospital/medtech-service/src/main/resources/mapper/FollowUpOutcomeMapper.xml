@@ -20,7 +20,21 @@
             COALESCE(
                 fe.priority_level,
                 (SELECT fp1.priority_level FROM follow_up_patient_profile fp1 WHERE fp1.register_id = r.id LIMIT 1)
-            ) AS "enrollmentPriority"
+            ) AS "enrollmentPriority",
+            (
+                EXISTS (
+                    SELECT 1 FROM inspection_request ir
+                    WHERE ir.register_id = r.id
+                      AND ir.inspection_result IS NOT NULL
+                      AND TRIM(ir.inspection_result) &lt;&gt; ''
+                )
+                OR EXISTS (
+                    SELECT 1 FROM check_request cr
+                    WHERE cr.register_id = r.id
+                      AND cr.check_result IS NOT NULL
+                      AND TRIM(cr.check_result) &lt;&gt; ''
+                )
+            ) AS "hasLabResults"
         FROM register r
         LEFT JOIN follow_up_enrollment fe
             ON fe.register_id = r.id AND fe.status = 'active'

@@ -79,6 +79,72 @@
         )
     </sql>
 
+    <select id="selectCommunicationCandidates" resultType="map">
+        SELECT
+            s.id AS "id",
+            r.id AS "registerId",
+            COALESCE(s.department_id, fe.managing_department_id, fp.department_id, r.deptment_id) AS "departmentId",
+            COALESCE(s.status, 'pending') AS "status",
+            s.ai_escalation_enabled AS "aiEscalationEnabled",
+            s.doctor_last_active_at AS "doctorLastActiveAt",
+            s.creation_time AS "creationTime",
+            r.real_name AS "realName",
+            r.case_number AS "caseNumber",
+            r.gender AS "gender",
+            r.age AS "age",
+            COALESCE(fe.priority_level, fp.priority_level) AS "priorityLevel",
+            COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) AS "monitoringEmployeeId",
+            (
+                SELECT e.realname FROM employee e
+                WHERE e.id = COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id)
+                LIMIT 1
+            ) AS "monitoringEmployeeName",
+            CASE WHEN s.id IS NULL THEN 0 ELSE (
+                SELECT COUNT(*) FROM follow_up_communication_message m
+                WHERE m.session_id = s.id
+                  AND m.sender_type IN ('patient', 'ai')
+                  AND m.id > COALESCE(s.doctor_last_read_message_id, 0)
+            ) END AS "unreadCount",
+            CASE WHEN s.id IS NULL THEN 0 ELSE (
+                SELECT COUNT(*) FROM follow_up_communication_message m
+                WHERE m.session_id = s.id AND m.sender_type = 'patient'
+            ) END AS "patientMessageCount",
+            (
+                SELECT m.content FROM follow_up_communication_message m
+                WHERE m.session_id = s.id
+                ORDER BY m.creation_time DESC, m.id DESC
+                LIMIT 1
+            ) AS "lastMessagePreview",
+            (
+                SELECT m.creation_time FROM follow_up_communication_message m
+                WHERE m.session_id = s.id
+                ORDER BY m.creation_time DESC, m.id DESC
+                LIMIT 1
+            ) AS "lastMessageTime",
+            (s.id IS NOT NULL) AS "hasSession"
+        FROM register r
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_communication_session s ON s.register_id = r.id
+        <where>
+            <include refid="poolVisibleRegisterCondition"/>
+            AND (
+                fe.register_id IS NOT NULL
+                OR fp.register_id IS NOT NULL
+            )
+            <if test="departmentId != null">
+                AND COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id) = #{departmentId}
+            </if>
+            <if test="employeeId != null">
+                AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) = #{employeeId}
+            </if>
+        </where>
+        ORDER BY
+            CASE WHEN s.id IS NOT NULL THEN 0 ELSE 1 END,
+            s.creation_time DESC NULLS LAST,
+            r.real_name ASC
+    </select>
+
     <select id="selectSessions" resultType="map">
         SELECT
             s.id AS "id",
@@ -352,11 +418,17 @@
         SELECT COUNT(*)
         FROM follow_up_communication_message m
         INNER JOIN follow_up_communication_session s ON s.id = m.session_id
+        INNER JOIN register r ON r.id = s.register_id
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
         WHERE m.sender_type IN ('patient', 'ai')
           AND m.id > COALESCE(s.doctor_last_read_message_id, 0)
           AND s.register_id NOT BETWEEN 1001 AND 1005
         <if test="departmentId != null">
             AND s.department_id = #{departmentId}
+        </if>
+        <if test="employeeId != null">
+            AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) = #{employeeId}
         </if>
     </select>
 
@@ -366,11 +438,17 @@
             COUNT(*) AS "unreadCount"
         FROM follow_up_communication_message m
         INNER JOIN follow_up_communication_session s ON s.id = m.session_id
+        INNER JOIN register r ON r.id = s.register_id
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
         WHERE m.sender_type IN ('patient', 'ai')
           AND m.id > COALESCE(s.doctor_last_read_message_id, 0)
           AND s.register_id NOT BETWEEN 1001 AND 1005
         <if test="departmentId != null">
             AND s.department_id = #{departmentId}
+        </if>
+        <if test="employeeId != null">
+            AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) = #{employeeId}
         </if>
         GROUP BY s.register_id
     </select>

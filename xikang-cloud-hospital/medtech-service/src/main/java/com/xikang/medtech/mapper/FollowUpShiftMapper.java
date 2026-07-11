@@ -26,6 +26,10 @@ public interface FollowUpShiftMapper {
 
     int deleteShiftsByPlanId(@Param("planId") Long planId);
 
+    int deleteContactTasksByPlanId(@Param("planId") Long planId);
+
+    int deleteChangeRequestsByPlanId(@Param("planId") Long planId);
+
     int insertStaffShift(Map<String, Object> payload);
 
     int insertContactTask(Map<String, Object> payload);

@@ -12,6 +12,11 @@ public interface FollowUpCommunicationMapper {
 
     List<Map<String, Object>> selectSessions(@Param("departmentId") Long departmentId);
 
+    List<Map<String, Object>> selectCommunicationCandidates(
+        @Param("departmentId") Long departmentId,
+        @Param("employeeId") Long employeeId
+    );
+
     Map<String, Object> selectSessionById(@Param("id") Long id);
 
     Map<String, Object> selectSessionByRegisterId(@Param("registerId") Long registerId);
@@ -68,9 +73,15 @@ public interface FollowUpCommunicationMapper {
 
     Map<String, Object> selectPatientBriefProfile(@Param("registerId") Long registerId);
 
-    int countDoctorUnreadTotal(@Param("departmentId") Long departmentId);
+    int countDoctorUnreadTotal(
+        @Param("departmentId") Long departmentId,
+        @Param("employeeId") Long employeeId
+    );
 
-    List<Map<String, Object>> selectDoctorUnreadByRegister(@Param("departmentId") Long departmentId);
+    List<Map<String, Object>> selectDoctorUnreadByRegister(
+        @Param("departmentId") Long departmentId,
+        @Param("employeeId") Long employeeId
+    );
 
     int countPatientUnread(@Param("registerId") Long registerId);
 
