@@ -12,11 +12,18 @@ public interface PhysicianMapper {
     List<Map<String, Object>> selectPatients(
         @Param("keyword") String keyword,
         @Param("employeeId") Long employeeId,
+        @Param("includeEnded") boolean includeEnded,
+        @Param("visitStates") List<Integer> visitStates,
         @Param("offset") int offset,
         @Param("size") int size
     );
 
-    long countPatients(@Param("keyword") String keyword, @Param("employeeId") Long employeeId);
+    long countPatients(
+        @Param("keyword") String keyword,
+        @Param("employeeId") Long employeeId,
+        @Param("includeEnded") boolean includeEnded,
+        @Param("visitStates") List<Integer> visitStates
+    );
 
     Map<String, Object> selectPatientStats(@Param("employeeId") Long employeeId);
 

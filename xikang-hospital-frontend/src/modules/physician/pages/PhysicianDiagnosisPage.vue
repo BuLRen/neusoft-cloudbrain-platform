@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
-import { ElAlert, ElButton, ElDialog, ElForm, ElFormItem, ElIcon, ElInput, ElMessage, ElTag } from 'element-plus'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import {
+  ElAlert,
+  ElButton,
+  ElDialog,
+  ElForm,
+  ElFormItem,
+  ElIcon,
+  ElInput,
+  ElMessage,
+  ElMessageBox,
+  ElTag,
+} from 'element-plus'
 import { CircleCheck, DocumentChecked, EditPen, Select, VideoPlay } from '@element-plus/icons-vue'
 import {
   physicianApi,
@@ -15,6 +26,7 @@ import { mapDiagnosisSuggestionsToW4Output, suggestionDisplayName } from '@/shar
 import { useEncounterStore } from '@/app/stores/encounter'
 import DiseaseSearchSelect from '../components/DiseaseSearchSelect.vue'
 import W4DiagnosisPanel from '../components/W4DiagnosisPanel.vue'
+import { physicianRoute } from '../constants/visitState'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 
 const CURE_MAX = 500
@@ -31,6 +43,7 @@ interface DiagnosisSnapshot {
 
 type LeaveAction = 'stay' | 'discard' | 'draft' | 'submit'
 
+const router = useRouter()
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
 
@@ -352,11 +365,29 @@ async function persistDiagnosisDraft(): Promise<boolean> {
   }
 }
 
+async function promptNextStepAfterSave() {
+  try {
+    await ElMessageBox.confirm(
+      '确诊已保存。下一步可前往「处方开立」为患者开具处方。',
+      '保存成功',
+      {
+        confirmButtonText: '前往处方开立',
+        cancelButtonText: '留在当前页',
+        distinguishCancelAndClose: true,
+        type: 'success',
+      },
+    )
+    await router.push(physicianRoute('/physician/prescription', registerId.value))
+  } catch {
+    ElMessage.success('确诊已保存')
+  }
+}
+
 async function submitDiagnosis() {
   const saved = await persistDiagnosis()
   if (saved) {
-    ElMessage.success('确诊已保存')
     await loadMedicalRecord()
+    await promptNextStepAfterSave()
   }
 }
 
@@ -721,7 +752,7 @@ onMounted(() => {
   width: 100%;
 }
 
-.diagnosis-form__select-wrap.is-confirmed :deep(.el-select__wrapper) {
+.diagnosis-form__select-wrap.is-confirmed :deep(.el-input__wrapper) {
   padding-inline-end: 36px;
   box-shadow: inset 0 0 0 1px rgba(32, 180, 134, 0.35);
 }

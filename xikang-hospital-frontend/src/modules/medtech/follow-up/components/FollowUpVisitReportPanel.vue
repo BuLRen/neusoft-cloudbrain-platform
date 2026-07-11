@@ -231,10 +231,7 @@ watch(
 
 <style scoped>
 .visit-report-panel {
-  position: sticky;
-  top: var(--space-4);
   padding: var(--space-4);
-  align-self: start;
 }
 
 .visit-report-panel__head {

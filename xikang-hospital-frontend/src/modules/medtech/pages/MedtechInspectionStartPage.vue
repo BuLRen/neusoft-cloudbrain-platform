@@ -36,7 +36,6 @@ const route = useRoute()
 const router = useRouter()
 
 const loading = ref(false)
-const specimenLoading = ref(false)
 const simulating = ref(false)
 const errorMessage = ref('')
 const simulateError = ref('')
@@ -45,7 +44,6 @@ const schema = ref<ResultFormSchema | null>(null)
 const formValues = ref<Record<string, unknown>>({})
 const formRef = ref<InstanceType<typeof DynamicResultForm>>()
 const started = ref(false)
-const specimenRecorded = ref(false)
 const isNormal = ref(false)
 const structuredOutput = ref<SimulatedCheckStructuredOutput | null>(null)
 const dialogVisible = ref(false)
@@ -67,7 +65,6 @@ function finishSubmitNavigation() {
 }
 
 const id = computed(() => Number(route.query.id || 0))
-const canRecordSpecimen = computed(() => started.value && !specimenLoading.value && !specimenRecorded.value && report.value?.paid !== false)
 const canSimulate = computed(() => started.value && !loading.value && !simulating.value && report.value?.paid !== false)
 const canSubmit = computed(() => started.value && !!schema.value && !loading.value && !simulating.value && report.value?.paid !== false)
 
@@ -98,7 +95,6 @@ async function loadPage() {
     report.value = await medtechApi.inspectionReport(id.value)
     schema.value = await resultFormApi.resolveInspectionForm({ inspectionRequestId: id.value })
     formValues.value = { ...(schema.value.existingValues ?? {}) }
-    specimenRecorded.value = !!report.value.inspectionTime
 
     if (report.value.paid === false) {
       errorMessage.value = '患者尚未支付检验费，请提醒患者先完成缴费后再执行'
@@ -126,20 +122,6 @@ async function loadPage() {
     errorMessage.value = msg || '检验申请加载失败，请返回列表重试'
   } finally {
     loading.value = false
-  }
-}
-
-async function recordSpecimen() {
-  if (!id.value || !canRecordSpecimen.value) return
-  specimenLoading.value = true
-  try {
-    await medtechApi.recordInspectionSpecimen(id.value)
-    specimenRecorded.value = true
-    ElMessage.success('采样已记录')
-  } catch {
-    ElMessage.error('采样记录失败，请稍后重试')
-  } finally {
-    specimenLoading.value = false
   }
 }
 
@@ -330,16 +312,15 @@ onMounted(() => {
               <h2 class="card-heading__title">检验执行</h2>
             </div>
             <p class="action-card__hint">
-              可先记录采样，再运行模拟检验生成初步结果，也可直接录入后提交。
+              可运行模拟检验生成初步结果，也可直接录入后提交。
             </p>
             <ElButton
               class="action-card__btn action-card__btn--outline"
-              :loading="specimenLoading"
-              :disabled="!canRecordSpecimen"
-              @click="recordSpecimen"
+              disabled
+              title="当前未开放采样记录功能"
             >
               <ElIcon><DocumentCopy /></ElIcon>
-              {{ specimenRecorded ? '已记录采样' : '记录采样' }}
+              记录采样
             </ElButton>
           </div>
         </GlassCard>

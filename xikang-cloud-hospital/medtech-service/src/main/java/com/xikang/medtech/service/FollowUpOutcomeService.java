@@ -20,6 +20,7 @@ public class FollowUpOutcomeService {
 
     private final FollowUpOutcomeMapper followUpOutcomeMapper;
     private final HealthObservationService healthObservationService;
+    private final FollowUpMedtechExamReadService medtechExamReadService;
     private final FollowUpClinicalSnapshotService clinicalSnapshotService;
     private final FollowUpHistoryService historyService;
     private final GlucoseForecastService glucoseForecastService;
@@ -62,7 +63,7 @@ public class FollowUpOutcomeService {
     }
 
     public List<Map<String, Object>> getMetrics(Long registerId, LocalDate from, LocalDate to, List<String> metricKeys) {
-        return healthObservationService.getMetrics(registerId, from, to, metricKeys);
+        return getMetrics(registerId, from, to, metricKeys, null);
     }
 
     public List<Map<String, Object>> getMetrics(
@@ -72,7 +73,52 @@ public class FollowUpOutcomeService {
         List<String> metricKeys,
         String sourceType
     ) {
-        return healthObservationService.getMetrics(registerId, from, to, metricKeys, sourceType, null);
+        List<Map<String, Object>> base = healthObservationService.getMetrics(
+            registerId, from, to, metricKeys, sourceType, null
+        );
+        if (sourceType != null && !sourceType.isBlank()
+            && !"inspection".equals(sourceType) && !"check".equals(sourceType)) {
+            return base;
+        }
+        List<Map<String, Object>> examMetrics = medtechExamReadService.listMetricObservations(
+            registerId, from, to, metricKeys
+        );
+        return mergeMetricRows(base, examMetrics);
+    }
+
+    public Map<String, Object> getMedtechExams(Long registerId) {
+        return medtechExamReadService.getMedtechExamBundle(registerId);
+    }
+
+    private List<Map<String, Object>> mergeMetricRows(
+        List<Map<String, Object>> base,
+        List<Map<String, Object>> examMetrics
+    ) {
+        if (examMetrics == null || examMetrics.isEmpty()) {
+            return base;
+        }
+        Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
+        for (Map<String, Object> row : base) {
+            merged.put(metricMergeKey(row), row);
+        }
+        for (Map<String, Object> row : examMetrics) {
+            merged.putIfAbsent(metricMergeKey(row), row);
+        }
+        return merged.values().stream()
+            .sorted((a, b) -> {
+                int dateCmp = String.valueOf(a.get("recordDate")).compareTo(String.valueOf(b.get("recordDate")));
+                if (dateCmp != 0) {
+                    return dateCmp;
+                }
+                return String.valueOf(a.get("metricKey")).compareTo(String.valueOf(b.get("metricKey")));
+            })
+            .toList();
+    }
+
+    private String metricMergeKey(Map<String, Object> row) {
+        return String.valueOf(row.get("recordDate")) + "|"
+            + String.valueOf(row.get("metricKey")) + "|"
+            + String.valueOf(row.get("source"));
     }
 
     public Map<String, Object> getLastVisit(Long registerId) {

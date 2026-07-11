@@ -72,9 +72,12 @@ public class FollowUpShiftDifyService {
                 return parsed;
             } catch (Exception ex) {
                 log.warn("Dify shift schedule failed, fallback to rule-based: {}", ex.getMessage());
+                String hint = ex.getMessage() != null && ex.getMessage().contains("256 characters")
+                    ? "（请在 Dify 工作流 Start 节点将 patients_json/staff_json 改为 Paragraph 长文本类型，Short Text 上限 256 字符）"
+                    : "";
                 scheduleNote = scheduleNote.isBlank()
-                    ? "Dify 调用失败: " + ex.getMessage()
-                    : scheduleNote + "；调用失败: " + ex.getMessage();
+                    ? "Dify 调用失败: " + ex.getMessage() + hint
+                    : scheduleNote + "；调用失败: " + ex.getMessage() + hint;
             }
         } else {
             log.info(
@@ -166,16 +169,24 @@ public class FollowUpShiftDifyService {
         inputs.put("department_name", departmentName != null ? departmentName : "");
         inputs.put("month", month);
         inputs.put("staff_json", toJson(staffList));
-        inputs.put("patients_json", toJson(patients));
+        List<Map<String, Object>> patientPayload = patients.stream().map(this::toPatientPayload).toList();
+        String patientsJson = toJson(patientPayload);
+        inputs.put("patients_json", patientsJson);
         inputs.put("rules_json", toJson(rules));
         inputs.put("holidays_json", "[]");
         inputs.put("planning_context_json", toJson(planningContext));
         inputs.put("work_dates_json", toJson(workDates));
         inputs.put("schedulable_dates_json", toJson(workDates));
         inputs.put("staff_list_json", toJson(staffList));
-        inputs.put("patients_list_json", toJson(patients));
+        inputs.put("patients_list_json", toJson(patientPayload));
         inputs.put("rules_obj_json", toJson(rules));
         inputs.put("scored_patients_json", toJson(scoredPatients));
+        log.info(
+            "Dify 排班入参长度 patients_json={} staff_json={} scored_patients_json={}",
+            patientsJson.length(),
+            String.valueOf(inputs.get("staff_json")).length(),
+            String.valueOf(inputs.get("scored_patients_json")).length()
+        );
         return inputs;
     }
 
@@ -195,6 +206,27 @@ public class FollowUpShiftDifyService {
         row.put("name", staff.get("name"));
         row.put("max_patients_per_day", 8);
         return row;
+    }
+
+    private Map<String, Object> toPatientPayload(Map<String, Object> patient) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("registerId", patient.get("registerId"));
+        row.put("priority", patient.getOrDefault("priority", "normal"));
+        row.put("monitorEmployeeId", patient.get("monitorEmployeeId"));
+        row.put("lastContactDate", formatDateOnly(patient.get("lastContactDate")));
+        row.put("deadlineDate", formatDateOnly(patient.get("deadlineDate")));
+        return row;
+    }
+
+    private String formatDateOnly(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.length() >= 10) {
+            return text.substring(0, 10);
+        }
+        return text.isEmpty() ? null : text;
     }
 
     @SuppressWarnings("unchecked")

@@ -134,6 +134,20 @@
         DELETE FROM follow_up_staff_shift WHERE plan_id = #{planId}
     </delete>
 
+    <delete id="deleteContactTasksByPlanId">
+        DELETE FROM follow_up_shift_contact_task t
+        USING follow_up_staff_shift s
+        WHERE t.shift_id = s.id
+          AND s.plan_id = #{planId}
+    </delete>
+
+    <delete id="deleteChangeRequestsByPlanId">
+        DELETE FROM follow_up_shift_change_request r
+        USING follow_up_staff_shift s
+        WHERE r.original_shift_id = s.id
+          AND s.plan_id = #{planId}
+    </delete>
+
     <insert id="insertStaffShift" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO follow_up_staff_shift (
             plan_id, employee_id, department_id, work_date, shift_type, status

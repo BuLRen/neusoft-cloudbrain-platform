@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -51,19 +52,10 @@ public class HealthObservationService {
             registerId, from, to, metricKeys, sourceType, sourceTypes
         );
         if (!production.isEmpty() || followUpProperties.isProductionMode()) {
-            if (production.isEmpty() && followUpProperties.preferProductionObservations()
-                && sourceType == null && (sourceTypes == null || sourceTypes.isEmpty())) {
-                syncFromLabResults(registerId);
-                production = loadProductionMetrics(registerId, from, to, metricKeys, sourceType, sourceTypes);
-            }
             return production;
         }
 
         if (followUpProperties.isHybridMode()) {
-            if (production.isEmpty() && sourceType == null && (sourceTypes == null || sourceTypes.isEmpty())) {
-                syncFromLabResults(registerId);
-                production = loadProductionMetrics(registerId, from, to, metricKeys, sourceType, sourceTypes);
-            }
             if (!production.isEmpty()) {
                 return production;
             }
@@ -207,52 +199,167 @@ public class HealthObservationService {
 
         try {
             JsonNode root = MAPPER.readTree(json);
-            if (root.isObject()) {
-                root.fields().forEachRemaining(entry -> {
-                    String key = entry.getKey();
-                    JsonNode valueNode = entry.getValue();
-                    persistMappedValue(registerId, sourceType, key, valueNode, observedAt, sourceRefId, mappingIndex);
-                });
+            for (MetricCandidate candidate : extractMetricCandidates(root)) {
+                persistCandidate(registerId, sourceType, candidate, observedAt, sourceRefId, mappingIndex);
             }
         } catch (Exception ex) {
             log.debug("跳过无法解析的检验 JSON registerId={}: {}", registerId, ex.getMessage());
         }
     }
 
-    private void persistMappedValue(
+    private List<MetricCandidate> extractMetricCandidates(JsonNode root) {
+        List<MetricCandidate> candidates = new ArrayList<>();
+        if (root == null || !root.isObject()) {
+            return candidates;
+        }
+
+        JsonNode structured = root.get("structuredOutput");
+        if (structured == null) {
+            structured = root.get("structured_output");
+        }
+        if (structured != null && structured.isObject()) {
+            JsonNode resultItems = structured.get("resultItems");
+            if (resultItems != null && resultItems.isArray()) {
+                for (JsonNode item : resultItems) {
+                    if (!item.isObject()) {
+                        continue;
+                    }
+                    String itemCode = textOrNull(item.get("itemCode"));
+                    String itemName = textOrNull(item.get("itemName"));
+                    String rawKey = itemCode != null ? itemCode : itemName;
+                    if (rawKey == null) {
+                        continue;
+                    }
+                    Double numeric = extractNumber(item.get("value"));
+                    if (numeric == null) {
+                        continue;
+                    }
+                    String unit = textOrNull(item.get("unit"));
+                    String note = itemName != null ? itemName : rawKey;
+                    candidates.add(new MetricCandidate(rawKey, numeric, unit, note));
+                }
+            }
+        }
+
+        JsonNode values = root.get("values");
+        if (values != null && values.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = values.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                String key = entry.getKey();
+                if (isMetaField(key)) {
+                    continue;
+                }
+                Double numeric = extractNumber(entry.getValue());
+                if (numeric != null) {
+                    candidates.add(new MetricCandidate(key, numeric, null, key));
+                }
+            }
+        }
+
+        Iterator<Map.Entry<String, JsonNode>> topLevel = root.fields();
+        while (topLevel.hasNext()) {
+            Map.Entry<String, JsonNode> entry = topLevel.next();
+            String key = entry.getKey();
+            if (isMetaField(key) || "values".equals(key) || "structuredOutput".equals(key) || "structured_output".equals(key)) {
+                continue;
+            }
+            Double numeric = extractNumber(entry.getValue());
+            if (numeric != null) {
+                candidates.add(new MetricCandidate(key, numeric, null, key));
+            }
+        }
+        return candidates;
+    }
+
+    private void persistCandidate(
         Long registerId,
         String sourceType,
-        String rawKey,
-        JsonNode valueNode,
+        MetricCandidate candidate,
         LocalDateTime observedAt,
         Long sourceRefId,
         Map<String, Map<String, Object>> mappingIndex
     ) {
-        if (valueNode == null || valueNode.isNull()) {
+        ResolvedMetric resolved = resolveMetric(sourceType, candidate.rawKey(), candidate.unit(), mappingIndex);
+        if (resolved == null) {
             return;
         }
-        Double numeric = extractNumber(valueNode);
-        if (numeric == null) {
-            return;
-        }
-
-        Map<String, Object> mapping = mappingIndex.get(sourceType + ":" + rawKey.toLowerCase(Locale.ROOT));
-        if (mapping == null) {
-            mapping = mappingIndex.get(sourceType + ":" + rawKey);
-        }
-        if (mapping == null) {
-            return;
-        }
-
-        String metricCode = String.valueOf(mapping.get("metricCode"));
-        String unit = mapping.get("unit") != null ? String.valueOf(mapping.get("unit")) : null;
         try {
             healthObservationMapper.insertObservation(
-                registerId, observedAt, metricCode, numeric, unit, sourceType, sourceRefId, rawKey
+                registerId,
+                observedAt,
+                resolved.metricCode(),
+                candidate.value(),
+                resolved.unit(),
+                sourceType,
+                sourceRefId,
+                candidate.note()
             );
         } catch (DataAccessException ex) {
             log.debug("指标写入跳过: {}", ex.getMessage());
         }
+    }
+
+    private ResolvedMetric resolveMetric(
+        String sourceType,
+        String rawKey,
+        String itemUnit,
+        Map<String, Map<String, Object>> mappingIndex
+    ) {
+        Map<String, Object> mapping = mappingIndex.get(sourceType + ":" + rawKey.toLowerCase(Locale.ROOT));
+        if (mapping == null) {
+            mapping = mappingIndex.get(sourceType + ":" + rawKey);
+        }
+        if (mapping != null) {
+            String metricCode = String.valueOf(mapping.get("metricCode"));
+            String unit = mapping.get("unit") != null ? String.valueOf(mapping.get("unit")) : itemUnit;
+            return new ResolvedMetric(metricCode, unit);
+        }
+        String normalized = normalizeMetricCode(rawKey);
+        if (normalized.isBlank()) {
+            return null;
+        }
+        return new ResolvedMetric(normalized, itemUnit);
+    }
+
+    private static boolean isMetaField(String key) {
+        if (key == null) {
+            return true;
+        }
+        String lower = key.toLowerCase(Locale.ROOT);
+        return lower.contains("remark")
+            || lower.contains("result")
+            || lower.contains("conclusion")
+            || lower.contains("notice")
+            || lower.contains("name")
+            || lower.contains("schema")
+            || lower.contains("category")
+            || lower.contains("tech")
+            || lower.contains("submitted");
+    }
+
+    private static String normalizeMetricCode(String rawKey) {
+        if (rawKey == null || rawKey.isBlank()) {
+            return "";
+        }
+        String normalized = rawKey.trim()
+            .replace('%', '_')
+            .replaceAll("[^A-Za-z0-9_\\u4e00-\\u9fff]+", "_")
+            .replaceAll("_+", "_")
+            .replaceAll("^_|_$", "")
+            .toLowerCase(Locale.ROOT);
+        if (normalized.isBlank() || normalized.length() > 64) {
+            return "";
+        }
+        return normalized;
+    }
+
+    private static String textOrNull(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        String text = node.asText().trim();
+        return text.isEmpty() ? null : text;
     }
 
     private Map<String, Map<String, Object>> buildMappingIndex(List<Map<String, Object>> mappings) {
@@ -267,6 +374,9 @@ public class HealthObservationService {
     }
 
     private Double extractNumber(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
         if (node.isNumber()) {
             return node.doubleValue();
         }
@@ -318,4 +428,8 @@ public class HealthObservationService {
         }
         return Long.parseLong(String.valueOf(value));
     }
+
+    private record MetricCandidate(String rawKey, Double value, String unit, String note) {}
+
+    private record ResolvedMetric(String metricCode, String unit) {}
 }

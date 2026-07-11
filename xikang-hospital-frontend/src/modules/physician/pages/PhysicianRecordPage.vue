@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import {
   ElButton,
   ElIcon,
@@ -33,6 +33,7 @@ import {
 import { useEncounterStore } from '@/app/stores/encounter'
 import PreliminaryDiagnosisPanel from '../components/PreliminaryDiagnosisPanel.vue'
 import PreliminaryModelDrawer from '../components/PreliminaryModelDrawer.vue'
+import { physicianRoute } from '../constants/visitState'
 import PhysicianStepLayout from '../layouts/PhysicianStepLayout.vue'
 import {
   DEFAULT_PRELIMINARY_AI_MODEL,
@@ -79,6 +80,7 @@ const RECORD_FIELDS: RecordFieldConfig[] = [
   },
 ]
 
+const router = useRouter()
 const encounterStore = useEncounterStore()
 const registerId = computed(() => encounterStore.registerId)
 
@@ -172,8 +174,9 @@ const hasPreliminaryAiResult = computed(
 )
 
 const doctorModified = computed(() => {
+  // 未跑过 AI 时，只要编辑区已有内容，重新生成前也需确认，避免覆盖手工填写
   if (!aiSnapshot.value.aiReasoningText && !aiSnapshot.value.doctorDiagnosis.trim()) {
-    return false
+    return Boolean(preliminaryForm.doctorDiagnosis.trim())
   }
   const reasoningChanged =
     preliminaryForm.aiReasoningText.trim() !== aiSnapshot.value.aiReasoningText.trim()
@@ -389,10 +392,28 @@ async function persistPreliminaryDiagnosis(): Promise<boolean> {
   }
 }
 
+async function promptNextStepAfterSave() {
+  try {
+    await ElMessageBox.confirm(
+      '初步诊断已保存。下一步可前往「开立检查检验」为患者开具检查/检验申请。',
+      '保存成功',
+      {
+        confirmButtonText: '前往开立检查检验',
+        cancelButtonText: '留在当前页',
+        distinguishCancelAndClose: true,
+        type: 'success',
+      },
+    )
+    await router.push(physicianRoute('/physician/orders', registerId.value))
+  } catch {
+    ElMessage.success('初步诊断已保存')
+  }
+}
+
 async function savePreliminaryDiagnosis() {
   const saved = await persistPreliminaryDiagnosis()
   if (saved) {
-    ElMessage.success('初步诊断已保存')
+    await promptNextStepAfterSave()
   }
 }
 

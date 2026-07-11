@@ -27,9 +27,34 @@ public class PhysicianController {
     public Result<Map<String, Object>> getPatients(
         @RequestParam(required = false) String keyword,
         @RequestParam(defaultValue = "1") Integer page,
-        @RequestParam(defaultValue = "10") Integer size
+        @RequestParam(defaultValue = "10") Integer size,
+        @RequestParam(defaultValue = "false") Boolean includeEnded,
+        @RequestParam(required = false) String visitStates
     ) {
-        return Result.success(physicianService.getPatients(keyword, page, size));
+        return Result.success(physicianService.getPatients(
+            keyword,
+            page,
+            size,
+            Boolean.TRUE.equals(includeEnded),
+            parseVisitStates(visitStates)
+        ));
+    }
+
+    private List<Integer> parseVisitStates(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        List<Integer> states = new java.util.ArrayList<>();
+        for (String part : raw.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) continue;
+            try {
+                states.add(Integer.valueOf(trimmed));
+            } catch (NumberFormatException ignored) {
+                // skip invalid token
+            }
+        }
+        return states.isEmpty() ? null : states;
     }
 
     @GetMapping("/patient-stats")

@@ -7,7 +7,7 @@ import type { FollowUpCommunicationSession } from '@/shared/types/medtechFollowU
 
 const props = defineProps<{
   sessions: FollowUpCommunicationSession[]
-  activeSessionId?: number
+  activeRegisterId?: number
 }>()
 
 const emit = defineEmits<{
@@ -38,10 +38,10 @@ function priorityTone(priority?: string) {
     <div class="comm-patient-list__items">
       <button
         v-for="item in filtered"
-        :key="item.id"
+        :key="item.registerId"
         type="button"
         class="comm-patient-list__item"
-        :class="{ 'comm-patient-list__item--active': item.id === activeSessionId }"
+        :class="{ 'comm-patient-list__item--active': item.registerId === activeRegisterId }"
         @click="emit('select', item)"
       >
         <div class="comm-patient-list__head">
@@ -52,7 +52,8 @@ function priorityTone(priority?: string) {
           </StatusTag>
         </div>
         <span class="comm-patient-list__meta">{{ item.caseNumber ?? item.registerId }}</span>
-        <p v-if="item.lastMessagePreview" class="comm-patient-list__preview">{{ item.lastMessagePreview }}</p>
+        <p v-if="!item.hasSession && !item.lastMessagePreview" class="comm-patient-list__preview">尚未建立会话，点击开始沟通</p>
+        <p v-else-if="item.lastMessagePreview" class="comm-patient-list__preview">{{ item.lastMessagePreview }}</p>
       </button>
     </div>
   </div>
