@@ -17,7 +17,7 @@ import {
   ElTableColumn,
   ElTag,
 } from 'element-plus'
-import MedtechStepLayout from '@/modules/medtech/layouts/MedtechStepLayout.vue'
+import PageHeader from '@/shared/components/PageHeader.vue'
 import GlassCard from '@/shared/components/GlassCard.vue'
 import StatusTag from '@/shared/components/StatusTag.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
@@ -39,6 +39,7 @@ import {
 import LastVisitSnapshotPanel from '@/modules/medtech/follow-up/components/LastVisitSnapshotPanel.vue'
 import FollowUpVisitReportPanel from '@/modules/medtech/follow-up/components/FollowUpVisitReportPanel.vue'
 import HomeGlucoseMonitoringPanel from '@/modules/medtech/follow-up/components/HomeGlucoseMonitoringPanel.vue'
+import MedtechExamResultsPanel from '@/modules/medtech/follow-up/components/MedtechExamResultsPanel.vue'
 import ContactRecordHistoryDialog from '@/modules/medtech/follow-up/components/ContactRecordHistoryDialog.vue'
 import { addToTodayInterview, getTodayInterviewScheduled } from '@/modules/medtech/follow-up/services/interviewSchedule'
 import type {
@@ -47,7 +48,7 @@ import type {
   FollowUpPatientDetail,
   FollowUpPatientOption,
   FollowUpPatientProfile,
-  LastVisitLabItem,
+  FollowUpMedtechExamReport,
   LastVisitSnapshot,
 } from '@/shared/types/medtechFollowUp'
 
@@ -65,8 +66,7 @@ const loading = ref(false)
 const scheduling = ref(false)
 const isGlucoseCohort = ref(false)
 const lastVisitSnapshot = ref<LastVisitSnapshot | null>(null)
-
-const VISIT_PRIORITY_KEYS = ['hba1c', 'fasting_glucose', 'postprandial_glucose', 'ldl_c']
+const medtechExams = ref<FollowUpMedtechExamReport[]>([])
 
 const selectedPatient = computed(() =>
   patients.value.find((item) => item.registerId === selectedRegisterId.value),
@@ -134,43 +134,6 @@ const allMetricDefs = computed(() =>
     (key) => latestMetrics.value.get(key)?.unit,
   ),
 )
-
-const visitKpiItems = computed(() => {
-  const snapshot = lastVisitSnapshot.value
-  if (!snapshot) return [] as Array<LastVisitLabItem & { key: string }>
-
-  const fromLab = (snapshot.labItems?.length ? snapshot.labItems : snapshot.labPanel ?? []).map((item) => ({
-    key: String(item.metricCode ?? item.code ?? item.label ?? ''),
-    label: item.label ?? item.metricCode ?? item.code ?? '指标',
-    metricValue: item.metricValue ?? item.value,
-    unit: item.unit,
-    refRange: item.refRange,
-    abnormalFlag: item.abnormalFlag ?? item.flag,
-  }))
-
-  let items = fromLab.filter((item) => item.key)
-  if (!items.length && snapshot.professionalMetrics) {
-    items = Object.entries(snapshot.professionalMetrics).map(([key, metric]) => ({
-      key,
-      label: metric.label ?? key,
-      metricValue: metric.value,
-      unit: metric.unit,
-      abnormalFlag: metric.abnormalFlag,
-    }))
-  }
-
-  const prioritized = VISIT_PRIORITY_KEYS.map((key) => items.find((item) => item.key === key)).filter(
-    (item): item is (typeof items)[number] => Boolean(item),
-  )
-  return (prioritized.length ? prioritized : items).slice(0, 6)
-})
-
-function visitFlagLabel(flag?: string) {
-  if (flag === 'high') return '偏高'
-  if (flag === 'low') return '偏低'
-  if (flag === 'critical') return '危急'
-  return '正常'
-}
 
 const selectedMetricDef = computed(() =>
   allMetricDefs.value.find((def) => def.key === selectedMetricKey.value),
@@ -384,7 +347,7 @@ async function loadPatientData() {
   loading.value = true
   try {
     const { from, to } = currentQueryRange()
-    const [profileRes, metricsRes, recordsRes, scheduleRes, observationRes, cohortRes, lastVisitRes] = await Promise.all([
+    const [profileRes, metricsRes, recordsRes, scheduleRes, observationRes, cohortRes, lastVisitRes, medtechRes] = await Promise.all([
       medtechFollowUpApi.getProfile(selectedRegisterId.value),
       medtechFollowUpApi.getMetrics(selectedRegisterId.value, { from, to }),
       medtechFollowUpApi.getRecords(selectedRegisterId.value),
@@ -396,6 +359,7 @@ async function loadPatientData() {
       })),
       medtechFollowUpApi.isGlucoseCohort(selectedRegisterId.value).catch(() => ({ registerId: selectedRegisterId.value!, glucoseCohort: false })),
       medtechFollowUpApi.getLastVisit(selectedRegisterId.value).catch(() => null),
+      medtechFollowUpApi.getMedtechExams(selectedRegisterId.value).catch(() => ({ registerId: selectedRegisterId.value!, exams: [], metrics: [] })),
     ])
     profile.value = profileRes
     metrics.value = metricsRes
@@ -404,6 +368,7 @@ async function loadPatientData() {
     observedToday.value = Boolean(observationRes.observed)
     isGlucoseCohort.value = Boolean(cohortRes.glucoseCohort)
     lastVisitSnapshot.value = lastVisitRes
+    medtechExams.value = medtechRes.exams ?? []
     await renderCharts()
   } catch {
     ElMessage.error('加载患者疗效数据失败')
@@ -453,7 +418,8 @@ async function handleScheduleInterview() {
 
 function patientLabel(item: FollowUpPatientOption) {
   const status = item.enrolled ? '已在管' : '待系统纳入'
-  return `${item.realName ?? '未知'}（${item.caseNumber ?? item.registerId}）· ${status}`
+  const lab = item.hasLabResults ? ' · 有医技结果' : ''
+  return `${item.realName ?? '未知'}（${item.caseNumber ?? item.registerId}）· ${status}${lab}`
 }
 
 function reliefLabel(value?: string) {
@@ -496,204 +462,176 @@ void loadPatients().then(() => loadPatientData())
 </script>
 
 <template>
-  <MedtechStepLayout
-    :show-steps="false"
-    :step="1"
-    :total-steps="1"
-    module-label="随访系统"
-    title="疗效评估"
-    description="基于模拟术后健康指标与随访反馈，按患者所患疾病匹配主视角图表，支持趋势筛查与加入每周访谈日程。"
-  >
-    <template #header-actions>
-      <ElButton class="outcome-header-back" @click="goToRecords">查看随访记录</ElButton>
-    </template>
+  <div class="outcome-page u-page-grid" v-loading="loading">
+    <PageHeader
+      title="疗效评估"
+      description="基于模拟术后健康指标与随访反馈，按患者所患疾病匹配主视角图表，支持趋势筛查与加入每周访谈日程。"
+      eyebrow="随访系统"
+    >
+      <template #actions>
+        <ElButton class="outcome-header-back" @click="goToRecords">查看随访记录</ElButton>
+      </template>
+    </PageHeader>
 
-    <GlassCard class="outcome-card" v-loading="loading">
-      <div class="toolbar">
-        <div class="toolbar__left">
-          <span class="toolbar__label">选择患者</span>
-          <ElSelect
-            v-model="selectedRegisterId"
-            class="toolbar__select"
-            filterable
-            placeholder="请选择随访患者"
-          >
-            <ElOption
-              v-for="item in patients"
-              :key="item.registerId"
-              :label="patientLabel(item)"
-              :value="item.registerId"
-            />
-          </ElSelect>
-          <ElSelect v-model="rangePreset" class="toolbar__range-preset" placeholder="时间范围">
-            <ElOption
-              v-for="item in OUTCOME_RANGE_OPTIONS"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </ElSelect>
-          <span class="toolbar__range-hint">{{ dateRangeLabel }}（截至北京时间今日）</span>
-          <ElButton @click="loadPatientData">刷新</ElButton>
-        </div>
-        <div class="toolbar__right">
-          <ElButton :disabled="!selectedRegisterId" @click="openPatientDetail">查看患者信息</ElButton>
-          <ElButton :disabled="!selectedRegisterId" @click="contactHistoryVisible = true">联系记录</ElButton>
-          <ElButton
-            :disabled="!selectedRegisterId || observedToday"
-            :loading="confirmingObservation"
-            @click="handleConfirmObservation"
-          >
-            {{ observedToday ? '今日已观察' : '确认今日已观察' }}
-          </ElButton>
-          <ElButton
-            type="primary"
-            :disabled="!selectedRegisterId || scheduleScheduled"
-            :loading="scheduling"
-            @click="handleScheduleInterview"
-          >
-            {{ scheduleScheduled ? '今日已排访谈' : '加入今日访谈' }}
-          </ElButton>
-        </div>
-      </div>
-
-      <div v-if="profile" class="profile-bar">
-        <div>
-          <strong>{{ profile.realName }}</strong>
-          <span class="profile-bar__meta">病历号 {{ profile.caseNumber }} · {{ profile.gender }} · {{ profile.age }}岁</span>
-        </div>
-        <div class="profile-bar__tags">
-          <ElTag v-for="disease in profile.diseases" :key="disease.diseaseId" type="info" effect="plain">
-            {{ disease.diseaseName }}
-          </ElTag>
-          <StatusTag tone="primary">{{ profile.primaryDiseaseCategory ?? '默认评估' }}</StatusTag>
-        </div>
-      </div>
-
-      <div class="kpi-section">
-        <div class="kpi-section__head">
-          <h3 class="kpi-section__title">健康指标概览</h3>
-          <span class="kpi-section__hint">
-            来自上次在院看诊检验
-            <template v-if="lastVisitSnapshot?.visitDate">（{{ lastVisitSnapshot.visitDate }}）</template>
-          </span>
-        </div>
-        <ElRow v-if="visitKpiItems.length" :gutter="16" class="kpi-row">
-          <ElCol
-            v-for="item in visitKpiItems"
-            :key="item.key"
-            :xs="12"
-            :sm="8"
-            :md="6"
-            :lg="4"
-          >
-            <div class="kpi-card kpi-card--static kpi-card--visit">
-              <span class="kpi-card__label">{{ item.label }}</span>
-              <strong class="kpi-card__value">
-                {{ item.metricValue ?? '—' }}
-                <small>{{ item.unit }}</small>
-              </strong>
-              <span class="kpi-card__date">
-                {{ item.refRange ? `参考 ${item.refRange}` : '院内检验' }}
-                · {{ visitFlagLabel(item.abnormalFlag) }}
-              </span>
+    <div class="outcome-page__layout">
+      <div class="outcome-page__main">
+        <GlassCard class="outcome-page__panel">
+          <div class="toolbar">
+            <div class="toolbar__left">
+              <span class="toolbar__label">选择患者</span>
+              <ElSelect
+                v-model="selectedRegisterId"
+                class="toolbar__select"
+                filterable
+                placeholder="请选择随访患者"
+              >
+                <ElOption
+                  v-for="item in patients"
+                  :key="item.registerId"
+                  :label="patientLabel(item)"
+                  :value="item.registerId"
+                />
+              </ElSelect>
+              <ElSelect v-model="rangePreset" class="toolbar__range-preset" placeholder="时间范围">
+                <ElOption
+                  v-for="item in OUTCOME_RANGE_OPTIONS"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+              <span class="toolbar__range-hint">{{ dateRangeLabel }}（截至北京时间今日）</span>
+              <ElButton @click="loadPatientData">刷新</ElButton>
             </div>
-          </ElCol>
-          <ElCol :xs="12" :sm="8" :md="6" :lg="4">
-            <div class="kpi-card kpi-card--static">
-              <span class="kpi-card__label">今日访谈</span>
-              <strong class="kpi-card__value">{{ scheduleScheduled ? '已安排' : '未安排' }}</strong>
-              <span class="kpi-card__date">用于医患沟通页联调</span>
+            <div class="toolbar__right">
+              <ElButton :disabled="!selectedRegisterId" @click="openPatientDetail">查看患者信息</ElButton>
+              <ElButton :disabled="!selectedRegisterId" @click="contactHistoryVisible = true">联系记录</ElButton>
+              <ElButton
+                :disabled="!selectedRegisterId || observedToday"
+                :loading="confirmingObservation"
+                @click="handleConfirmObservation"
+              >
+                {{ observedToday ? '今日已观察' : '确认今日已观察' }}
+              </ElButton>
+              <ElButton
+                type="primary"
+                :disabled="!selectedRegisterId || scheduleScheduled"
+                :loading="scheduling"
+                @click="handleScheduleInterview"
+              >
+                {{ scheduleScheduled ? '今日已排访谈' : '加入今日访谈' }}
+              </ElButton>
             </div>
-          </ElCol>
-        </ElRow>
-        <ElEmpty v-else description="暂无上次看诊检验数据，请运行种子脚本" />
-      </div>
-    </GlassCard>
-
-    <div v-if="selectedRegisterId" class="outcome-body">
-      <div class="outcome-body__main">
-    <LastVisitSnapshotPanel
-      :register-id="selectedRegisterId"
-      mode="doctor"
-    />
-
-    <HomeGlucoseMonitoringPanel
-      v-if="isGlucoseCohort && selectedRegisterId"
-      :register-id="selectedRegisterId"
-    />
-
-    <GlassCard class="outcome-card">
-      <h3 class="section-title">疾病适配主视角</h3>
-      <p class="section-desc">根据诊断分类「{{ profile?.primaryDiseaseCategory ?? '默认' }}」展示核心疗效指标趋势。</p>
-      <ElRow v-if="metrics.length" :gutter="16">
-        <ElCol
-          v-for="(def, index) in primaryChartDefs"
-          :key="def.key"
-          :xs="24"
-          :lg="primaryChartDefs.length > 1 ? 12 : 24"
-        >
-          <div class="chart-box" :ref="(el) => setPrimaryChartEl(el, index)" />
-        </ElCol>
-        <ElCol v-if="records.length" :xs="24" :lg="12">
-          <div class="chart-box" ref="reliefChartEl" />
-          <div class="relief-legend">
-            <span v-for="(label, key) in SYMPTOM_RELIEF_LABELS" :key="key" class="relief-legend__item">
-              <i class="relief-legend__dot" :style="{ background: SYMPTOM_RELIEF_COLORS[key] }" />
-              {{ label }}
-            </span>
           </div>
-        </ElCol>
-      </ElRow>
-      <ElEmpty v-else description="当前日期范围内暂无模拟指标数据" />
-    </GlassCard>
 
-    <GlassCard class="outcome-card outcome-card--secondary">
-      <h3 class="section-title">常规健康指标</h3>
-      <p class="section-desc">血压、血糖、心率、体重等辅助参考趋势；最新数值见上方指标卡片。</p>
-      <div v-if="metrics.length" class="chart-box chart-box--wide" ref="secondaryChartEl" />
-      <ElEmpty v-else description="暂无常规指标数据" />
-    </GlassCard>
+          <div v-if="profile" class="profile-bar">
+            <div>
+              <strong>{{ profile.realName }}</strong>
+              <span class="profile-bar__meta">病历号 {{ profile.caseNumber }} · {{ profile.gender }} · {{ profile.age }}岁</span>
+            </div>
+            <div class="profile-bar__tags">
+              <ElTag v-for="disease in profile.diseases" :key="disease.diseaseId" type="info" effect="plain">
+                {{ disease.diseaseName }}
+              </ElTag>
+              <StatusTag tone="primary">{{ profile.primaryDiseaseCategory ?? '默认评估' }}</StatusTag>
+            </div>
+          </div>
 
-    <GlassCard class="outcome-card">
-      <h3 class="section-title">历史记录</h3>
-      <ElTable v-if="historyRows.length" :data="historyRows" stripe>
-        <ElTableColumn prop="recordDate" label="记录日期" min-width="120" />
-        <ElTableColumn label="记录时间" min-width="168">
-          <template #default="{ row }">{{ formatBeijingDateTime(String(row.recordedAt || row.recordDate)) }}</template>
-        </ElTableColumn>
-        <ElTableColumn
-          v-for="key in historyMetricKeys"
-          :key="key"
-          :prop="key"
-          :label="metricLabel(key)"
-          min-width="110"
-        />
-      </ElTable>
+          <MedtechExamResultsPanel
+            :exams="medtechExams"
+            :loading="loading"
+            embedded
+          />
+        </GlassCard>
 
-      <h4 class="subsection-title">随访反馈摘要</h4>
-      <ElTable v-if="records.length" :data="records" stripe>
-        <ElTableColumn label="随访时间" min-width="168">
-          <template #default="{ row }">{{ formatBeijingDateTime(row.followUpTime) }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="症状缓解" min-width="100">
-          <template #default="{ row }">
-            <StatusTag :tone="reliefTone(row.symptomRelief)">{{ reliefLabel(row.symptomRelief) }}</StatusTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn prop="patientFeedback" label="患者反馈" min-width="180" show-overflow-tooltip />
-        <ElTableColumn prop="aiAssessment" label="AI 评估" min-width="220" show-overflow-tooltip />
-      </ElTable>
-      <ElEmpty v-if="!historyRows.length && !records.length" description="暂无历史记录" />
-    </GlassCard>
+        <template v-if="selectedRegisterId">
+          <LastVisitSnapshotPanel
+            :register-id="selectedRegisterId"
+            mode="doctor"
+          />
+
+          <HomeGlucoseMonitoringPanel
+            v-if="isGlucoseCohort"
+            :register-id="selectedRegisterId"
+          />
+
+          <GlassCard class="outcome-page__panel">
+            <h3 class="section-title">疾病适配主视角</h3>
+            <p class="section-desc">根据诊断分类「{{ profile?.primaryDiseaseCategory ?? '默认' }}」展示核心疗效指标趋势。</p>
+            <ElRow v-if="metrics.length" :gutter="16">
+              <ElCol
+                v-for="(def, index) in primaryChartDefs"
+                :key="def.key"
+                :xs="24"
+                :lg="primaryChartDefs.length > 1 ? 12 : 24"
+              >
+                <div class="chart-box" :ref="(el) => setPrimaryChartEl(el, index)" />
+              </ElCol>
+              <ElCol v-if="records.length" :xs="24" :lg="12">
+                <div class="chart-box" ref="reliefChartEl" />
+                <div class="relief-legend">
+                  <span v-for="(label, key) in SYMPTOM_RELIEF_LABELS" :key="key" class="relief-legend__item">
+                    <i class="relief-legend__dot" :style="{ background: SYMPTOM_RELIEF_COLORS[key] }" />
+                    {{ label }}
+                  </span>
+                </div>
+              </ElCol>
+            </ElRow>
+            <ElEmpty v-else description="当前日期范围内暂无指标数据（请确认患者已有医技检验/检查结果）" />
+          </GlassCard>
+
+          <GlassCard class="outcome-page__panel outcome-page__panel--secondary">
+            <h3 class="section-title">常规健康指标</h3>
+            <p class="section-desc">血压、血糖、心率、体重等辅助参考趋势；最新数值见上方医技检验结果。</p>
+            <div v-if="metrics.length" class="chart-box chart-box--wide" ref="secondaryChartEl" />
+            <ElEmpty v-else description="暂无常规指标数据" />
+          </GlassCard>
+
+          <GlassCard class="outcome-page__panel">
+            <h3 class="section-title">历史记录</h3>
+            <div v-if="historyRows.length" class="outcome-page__scroll-x">
+            <ElTable :data="historyRows" stripe>
+              <ElTableColumn prop="recordDate" label="记录日期" min-width="120" />
+              <ElTableColumn label="记录时间" min-width="168">
+                <template #default="{ row }">{{ formatBeijingDateTime(String(row.recordedAt || row.recordDate)) }}</template>
+              </ElTableColumn>
+              <ElTableColumn
+                v-for="key in historyMetricKeys"
+                :key="key"
+                :prop="key"
+                :label="metricLabel(key)"
+                min-width="110"
+              />
+            </ElTable>
+            </div>
+
+            <h4 class="subsection-title">随访反馈摘要</h4>
+            <div v-if="records.length" class="outcome-page__scroll-x">
+            <ElTable :data="records" stripe>
+              <ElTableColumn label="随访时间" min-width="168">
+                <template #default="{ row }">{{ formatBeijingDateTime(row.followUpTime) }}</template>
+              </ElTableColumn>
+              <ElTableColumn label="症状缓解" min-width="100">
+                <template #default="{ row }">
+                  <StatusTag :tone="reliefTone(row.symptomRelief)">{{ reliefLabel(row.symptomRelief) }}</StatusTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="patientFeedback" label="患者反馈" min-width="180" show-overflow-tooltip />
+              <ElTableColumn prop="aiAssessment" label="AI 评估" min-width="220" show-overflow-tooltip />
+            </ElTable>
+            </div>
+            <ElEmpty v-if="!historyRows.length && !records.length" description="暂无历史记录" />
+          </GlassCard>
+        </template>
       </div>
 
-      <FollowUpVisitReportPanel
-        class="outcome-body__aside"
-        :register-id="selectedRegisterId"
-        :last-visit-snapshot="lastVisitSnapshot"
-        :latest-metrics="latestMetrics"
-      />
+      <aside v-if="selectedRegisterId" class="outcome-page__sidebar">
+        <FollowUpVisitReportPanel
+          :register-id="selectedRegisterId"
+          :last-visit-snapshot="lastVisitSnapshot"
+          :latest-metrics="latestMetrics"
+        />
+      </aside>
     </div>
 
     <ElDialog
@@ -806,7 +744,7 @@ void loadPatients().then(() => loadPatientData())
       v-model="contactHistoryVisible"
       :register-id="selectedRegisterId"
     />
-  </MedtechStepLayout>
+  </div>
 </template>
 
 <style scoped>
@@ -822,48 +760,84 @@ void loadPatients().then(() => loadPatientData())
   letter-spacing: 0.02em;
 }
 
-.outcome-card {
-  padding: var(--space-5);
-  margin-block-end: var(--space-4);
+.outcome-page {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.outcome-card--secondary {
+.outcome-page__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 280px);
+  gap: var(--space-4);
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+.outcome-page__main {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.outcome-page__main > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.outcome-page__panel {
+  padding: var(--space-4);
+  overflow-x: auto;
+}
+
+.outcome-page__panel--secondary {
   background: color-mix(in srgb, var(--color-surface) 92%, var(--color-bg-soft));
 }
 
-.outcome-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-  gap: var(--space-5);
-  align-items: start;
+.outcome-page__panel :deep(.el-row) {
+  margin-inline: 0 !important;
+  max-width: 100%;
 }
 
-.outcome-body__main {
-  display: grid;
-  gap: 0;
+.outcome-page__panel :deep(.el-col) {
   min-width: 0;
 }
 
-.outcome-body__aside {
+.outcome-page__scroll-x {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.outcome-page__sidebar {
+  position: sticky;
+  top: var(--space-3);
+  align-self: start;
+  width: 100%;
   min-width: 0;
+  max-width: 280px;
+}
+
+.outcome-page__sidebar :deep(.visit-report-panel) {
+  position: static !important;
+  top: auto !important;
+  align-self: auto !important;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 @media (max-width: 1100px) {
-  .outcome-body {
+  .outcome-page__layout {
     grid-template-columns: 1fr;
-  }
-
-  .outcome-body__aside :deep(.visit-report-panel) {
-    position: static;
   }
 }
 
 .toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
+  display: grid;
+  gap: var(--space-3);
   margin-block-end: var(--space-4);
 }
 
@@ -872,6 +846,7 @@ void loadPatients().then(() => loadPatientData())
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .toolbar__right {
@@ -879,6 +854,7 @@ void loadPatients().then(() => loadPatientData())
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .toolbar__label {
@@ -905,6 +881,7 @@ void loadPatients().then(() => loadPatientData())
   justify-content: space-between;
   gap: var(--space-4);
   flex-wrap: wrap;
+  min-width: 0;
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--color-primary-soft);

@@ -47,6 +47,11 @@ public class FollowUpOutcomeController {
         return Result.success(followUpOutcomeService.getMetrics(registerId, from, to, metricKeys, sourceType));
     }
 
+    @GetMapping("/medtech-exams/{registerId}")
+    public Result<Map<String, Object>> getMedtechExams(@PathVariable Long registerId) {
+        return Result.success(followUpOutcomeService.getMedtechExams(registerId));
+    }
+
     @GetMapping("/last-visit/{registerId}")
     public Result<Map<String, Object>> getLastVisit(@PathVariable Long registerId) {
         return Result.success(followUpOutcomeService.getLastVisit(registerId));

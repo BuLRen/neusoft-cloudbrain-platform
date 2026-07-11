@@ -34,11 +34,16 @@ public class FollowUpCommunicationService {
     private final FollowUpEnrollmentBackfillService enrollmentBackfillService;
 
     public List<Map<String, Object>> listSessions(Long departmentIdOverride) {
-        return communicationMapper.selectSessions(resolveDepartmentId(departmentIdOverride));
+        Long employeeId = requireEmployeeIdForDoctorScope();
+        return communicationMapper.selectCommunicationCandidates(
+            resolveDepartmentId(departmentIdOverride),
+            employeeId
+        );
     }
 
     @Transactional
     public Map<String, Object> openSession(Long registerId, Long departmentIdOverride) {
+        assertDoctorCanAccessRegister(registerId);
         Long managingDepartmentId = dashboardMapper.selectManagingDepartmentId(registerId);
         if (managingDepartmentId == null) {
             throw new BusinessException("无法确定科室");
@@ -87,10 +92,12 @@ public class FollowUpCommunicationService {
         if (session == null || session.isEmpty()) {
             throw new BusinessException("会话不存在");
         }
+        assertDoctorCanAccessRegister(toLong(session.get("registerId")));
         return session;
     }
 
     public Map<String, Object> listMessages(Long sessionId, Integer limit, Integer offset) {
+        getSession(sessionId);
         int pageSize = limit != null && limit > 0 ? Math.min(limit, 500) : 100;
         int pageOffset = offset != null && offset >= 0 ? offset : 0;
         List<Map<String, Object>> items = communicationMapper.selectMessages(sessionId, pageSize, pageOffset);
@@ -133,10 +140,12 @@ public class FollowUpCommunicationService {
     }
 
     public List<Map<String, Object>> suggestDrugs(Long registerId, String keyword) {
+        assertDoctorCanAccessRegister(registerId);
         return clinicalSnapshotService.suggestDrugs(registerId, keyword);
     }
 
     public List<Map<String, Object>> suggestDiagnoses(Long registerId) {
+        assertDoctorCanAccessRegister(registerId);
         return clinicalSnapshotService.suggestDiagnoses(registerId);
     }
 
@@ -184,6 +193,7 @@ public class FollowUpCommunicationService {
     }
 
     public Map<String, Object> generateCaseSummary(Long registerId) {
+        assertDoctorCanAccessRegister(registerId);
         Map<String, Object> session = communicationMapper.selectSessionByRegisterId(registerId);
         if (session == null || session.isEmpty()) {
             session = openSession(registerId, null);
@@ -192,6 +202,7 @@ public class FollowUpCommunicationService {
     }
 
     public Map<String, Object> getLatestCaseSummary(Long registerId) {
+        assertDoctorCanAccessRegister(registerId);
         Map<String, Object> row = communicationMapper.selectLatestCaseSummary(registerId);
         return mapCaseSummary(row);
     }
@@ -244,6 +255,7 @@ public class FollowUpCommunicationService {
     }
 
     public Map<String, Object> getPatientBrief(Long registerId) {
+        assertDoctorCanAccessRegister(registerId);
         LocalDate today = LocalDate.now();
         Map<String, Object> brief = new LinkedHashMap<>(communicationMapper.selectPatientBriefProfile(registerId));
         brief.put("diseases", outcomeMapper.selectPatientDiseases(registerId));
@@ -264,9 +276,10 @@ public class FollowUpCommunicationService {
 
     public Map<String, Object> getDoctorUnreadSummary(Long departmentIdOverride) {
         Long departmentId = resolveDepartmentId(departmentIdOverride);
+        Long employeeId = requireEmployeeIdForDoctorScope();
         Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("totalUnread", communicationMapper.countDoctorUnreadTotal(departmentId));
-        summary.put("byRegisterId", communicationMapper.selectDoctorUnreadByRegister(departmentId));
+        summary.put("totalUnread", communicationMapper.countDoctorUnreadTotal(departmentId, employeeId));
+        summary.put("byRegisterId", communicationMapper.selectDoctorUnreadByRegister(departmentId, employeeId));
         return summary;
     }
 
@@ -432,6 +445,32 @@ public class FollowUpCommunicationService {
             return override;
         }
         return MedtechAuthContext.departmentIdOrNull();
+    }
+
+    private Long requireEmployeeIdForDoctorScope() {
+        if (MedtechAuthContext.isAdminAllAccess()) {
+            return null;
+        }
+        Long employeeId = MedtechAuthContext.employeeIdOrNull();
+        if (employeeId == null) {
+            throw new BusinessException(403, "当前账号未绑定员工，无法查看医患沟通");
+        }
+        return employeeId;
+    }
+
+    private void assertDoctorCanAccessRegister(Long registerId) {
+        if (registerId == null) {
+            throw new BusinessException("registerId 不能为空");
+        }
+        if (MedtechAuthContext.isAdminAllAccess()) {
+            return;
+        }
+        Long employeeId = requireEmployeeIdForDoctorScope();
+        Map<String, Object> monitoring = dashboardMapper.selectMonitoringByRegisterId(registerId);
+        Long monitorId = toLong(monitoring != null ? monitoring.get("monitoringEmployeeId") : null);
+        if (monitorId == null || !monitorId.equals(employeeId)) {
+            throw new BusinessException(403, "该患者不在您的负责范围内");
+        }
     }
 
     private Long toLong(Object value) {

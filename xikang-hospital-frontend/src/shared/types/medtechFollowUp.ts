@@ -7,6 +7,7 @@ export interface FollowUpPatientOption {
   visitState?: number
   enrolled?: boolean
   enrollmentPriority?: string
+  hasLabResults?: boolean
   diseases?: FollowUpDisease[]
 }
 
@@ -76,6 +77,39 @@ export interface FollowUpHealthMetric {
   unit?: string
   source?: string
   note?: string
+  displayLabel?: string
+}
+
+export interface FollowUpMedtechExamItem {
+  itemCode?: string
+  itemName?: string
+  value?: number | string
+  unit?: string
+  referenceRange?: string
+  status?: string
+  meaning?: string
+}
+
+export interface FollowUpMedtechExamReport {
+  requestId?: number
+  examType?: string
+  examTypeLabel?: string
+  techCode?: string
+  techName?: string
+  techType?: string
+  state?: string
+  observedAt?: string
+  conclusion?: string
+  notice?: string
+  isNormal?: boolean
+  resultItems?: FollowUpMedtechExamItem[]
+  sourceType?: string
+}
+
+export interface FollowUpMedtechExamBundle {
+  registerId: number
+  exams: FollowUpMedtechExamReport[]
+  metrics?: FollowUpHealthMetric[]
 }
 
 export interface FollowUpOutcomeRecord {
@@ -294,10 +328,11 @@ export type CommunicationMessageType = 'text' | 'case_summary' | 'notice' | 'dru
 export type CaseSummaryStatus = 'draft' | 'approved' | 'shared' | 'revoked'
 
 export interface FollowUpCommunicationSession {
-  id: number
+  id?: number
   registerId: number
   departmentId?: number
-  status?: 'active' | 'closed'
+  status?: 'active' | 'closed' | 'pending'
+  hasSession?: boolean
   aiEscalationEnabled?: boolean
   doctorLastActiveAt?: string
   creationTime?: string

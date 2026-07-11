@@ -42,7 +42,7 @@ const revisitDialogVisible = ref(false)
 
 const todayLabel = formatYmdWeekday(beijingTodayYmd())
 
-const activeSessionId = computed(() => activeSession.value?.id)
+const activeRegisterId = computed(() => activeSession.value?.registerId)
 const hasActiveSession = computed(() => Boolean(activeSession.value?.id))
 
 async function loadSessions() {
@@ -80,11 +80,22 @@ async function applyDeepLinkSelection() {
 }
 
 async function selectSession(session: FollowUpCommunicationSession) {
-  activeSession.value = session
-  await Promise.all([loadMessages(session.id), loadBrief(session.registerId)])
+  let target = session
+  if (!target.id) {
+    try {
+      target = await medtechFollowUpApi.openCommunicationSession(target.registerId)
+      const rest = sessions.value.filter((item) => item.registerId !== target.registerId)
+      sessions.value = [target, ...rest]
+    } catch {
+      ElMessage.error('无法建立沟通会话')
+      return
+    }
+  }
+  activeSession.value = target
+  await Promise.all([loadMessages(target.id!), loadBrief(target.registerId)])
   try {
-    await medtechFollowUpApi.markDoctorCommunicationRead(session.id)
-    session.unreadCount = 0
+    await medtechFollowUpApi.markDoctorCommunicationRead(target.id!)
+    target.unreadCount = 0
   } catch {
     // ignore mark-read errors
   }
@@ -273,7 +284,7 @@ onActivated(() => {
   <div class="comm-page u-page-grid" v-loading="loading">
     <PageHeader
       title="医患沟通"
-      description="与在管患者实时沟通，生成并审核 AI 病例总结，支持 AI 托管代答。"
+      description="仅显示您负责的在管患者；支持实时沟通、AI 病例总结审核与 AI 托管代答。"
       eyebrow="随访系统 / 第 3 步"
     >
       <template #actions>
@@ -284,10 +295,10 @@ onActivated(() => {
 
     <div class="comm-page__layout">
       <GlassCard class="comm-page__panel comm-page__panel--list">
-        <h3 class="comm-page__panel-title">患者列表</h3>
+        <h3 class="comm-page__panel-title">我负责的患者</h3>
         <CommunicationPatientList
           :sessions="sessions"
-          :active-session-id="activeSessionId"
+          :active-register-id="activeRegisterId"
           @select="selectSession"
         />
       </GlassCard>

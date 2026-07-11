@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xikang.medtech.mapper.FollowUpMedtechExamReadMapper">
+
+    <select id="selectExamMetricCatalog" resultType="map">
+        SELECT
+            source_type AS "sourceType",
+            source_key AS "sourceKey",
+            metric_code AS "metricCode",
+            display_label AS "displayLabel",
+            unit AS "unit"
+        FROM follow_up_exam_metric_catalog
+        ORDER BY source_type, source_key
+    </select>
+
+    <select id="selectInspectionExamRows" resultType="map">
+        SELECT
+            ir.id AS "requestId",
+            'inspection' AS "examType",
+            '检验' AS "examTypeLabel",
+            mt.tech_code AS "techCode",
+            mt.tech_name AS "techName",
+            mt.tech_type AS "techType",
+            ir.inspection_time AS "observedAt",
+            ir.inspection_state AS "state",
+            ir.inspection_result AS "resultJson"
+        FROM inspection_request ir
+        LEFT JOIN medical_technology mt ON mt.id = ir.medical_technology_id
+        WHERE ir.register_id = #{registerId}
+          AND ir.inspection_result IS NOT NULL
+          AND TRIM(ir.inspection_result) &lt;&gt; ''
+        ORDER BY ir.inspection_time DESC NULLS LAST, ir.id DESC
+    </select>
+
+    <select id="selectCheckExamRows" resultType="map">
+        SELECT
+            cr.id AS "requestId",
+            'check' AS "examType",
+            CASE
+                WHEN mt.tech_type = 'check' AND (mt.tech_name LIKE '%CT%' OR mt.tech_name LIKE '%MRI%' OR mt.tech_name LIKE '%放射%' OR mt.tech_name LIKE '%X%')
+                    THEN '放射'
+                ELSE '检查'
+            END AS "examTypeLabel",
+            mt.tech_code AS "techCode",
+            mt.tech_name AS "techName",
+            mt.tech_type AS "techType",
+            cr.check_time AS "observedAt",
+            cr.check_state AS "state",
+            cr.check_result AS "resultJson"
+        FROM check_request cr
+        LEFT JOIN medical_technology mt ON mt.id = cr.medical_technology_id
+        WHERE cr.register_id = #{registerId}
+          AND cr.check_result IS NOT NULL
+          AND TRIM(cr.check_result) &lt;&gt; ''
+        ORDER BY cr.check_time DESC NULLS LAST, cr.id DESC
+    </select>
+
+</mapper>
