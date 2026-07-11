@@ -56,9 +56,14 @@ public class FollowUpDashboardService {
             followUpProperties.includeUnenrolledEligible(),
             followUpProperties.isDemoMode()
         );
-        if (stats != null) {
-            context.put("stats", stats);
+        if (stats == null) {
+            stats = new LinkedHashMap<>();
         }
+        if (employeeId != null) {
+            List<Map<String, Object>> myPatients = listMyMonitoredPatients(date);
+            stats.putAll(buildMonitoringKpi(myPatients, date));
+        }
+        context.put("stats", stats);
         return context;
     }
 
@@ -88,7 +93,8 @@ public class FollowUpDashboardService {
         }
         List<Map<String, Object>> patients = followUpDashboardMapper.selectMyMonitoredDashboardPatients(
             employeeId,
-            date
+            date,
+            resolveDepartmentId(null)
         );
         List<Map<String, Object>> enriched = new ArrayList<>();
         for (Map<String, Object> patient : patients) {
@@ -323,11 +329,37 @@ public class FollowUpDashboardService {
             row.put("daysSinceLastContact", java.time.temporal.ChronoUnit.DAYS.between(lastContact, targetDate));
         }
 
+        LocalDate nextContact = parseDate(patient.get("nextContactDate"));
+        LocalDate nextPlannedInterview = parseDate(patient.get("nextPlannedInterviewDate"));
+        LocalDate nextInterviewByInterval = null;
+        if (lastInterview != null) {
+            nextInterviewByInterval = lastInterview.plusDays(intervalDays);
+            row.put("suggestedInterviewDate", nextInterviewByInterval.toString());
+            row.put(
+                "daysUntilSuggestedInterview",
+                java.time.temporal.ChronoUnit.DAYS.between(targetDate, nextInterviewByInterval)
+            );
+        }
+        // 下次随访时间仅以排班联系 / 待处理队列 / 计划访谈为准，不把「周期建议」当作已排班
+        LocalDate nextFollowUp = earliestDate(nextContact, nextPlannedInterview);
+        if (nextFollowUp != null) {
+            row.put("nextFollowUpDate", nextFollowUp.toString());
+            row.put("daysUntilNextFollowUp", java.time.temporal.ChronoUnit.DAYS.between(targetDate, nextFollowUp));
+            row.put("nextFollowUpType", resolveNextFollowUpType(nextFollowUp, nextContact, nextPlannedInterview));
+            row.put("scheduledFollowUpToday", targetDate.equals(nextFollowUp));
+        } else {
+            row.put("scheduledFollowUpToday", false);
+        }
+        if (nextContact != null) {
+            row.put("daysUntilNextContact", java.time.temporal.ChronoUnit.DAYS.between(targetDate, nextContact));
+        }
+        if (nextPlannedInterview != null) {
+            row.put("daysUntilNextInterview", java.time.temporal.ChronoUnit.DAYS.between(targetDate, nextPlannedInterview));
+        }
+
         boolean interviewDueToday = interviewScheduledToday;
         if (!interviewDueToday && lastInterview != null) {
             interviewDueToday = !lastInterview.plusDays(intervalDays).isAfter(targetDate);
-        } else if (!interviewDueToday && lastInterview == null) {
-            interviewDueToday = toBoolean(patient.get("enrolled"));
         }
 
         row.put("observedToday", observedToday);
@@ -358,6 +390,84 @@ public class FollowUpDashboardService {
             return "due";
         }
         return "within_limit";
+    }
+
+    private Map<String, Object> buildMonitoringKpi(List<Map<String, Object>> myPatients, LocalDate targetDate) {
+        Map<String, Object> kpi = new LinkedHashMap<>();
+        int total = myPatients.size();
+        int contactedToday = 0;
+        int contactDue = 0;
+        int contactOverdue = 0;
+        int nextFollowUpToday = 0;
+        int nextFollowUpThisWeek = 0;
+        int noNextFollowUp = 0;
+
+        for (Map<String, Object> patient : myPatients) {
+            String contactStatus = String.valueOf(patient.getOrDefault("contactStatus", ""));
+            if ("contacted_today".equals(contactStatus)) {
+                contactedToday++;
+            } else if ("due".equals(contactStatus)) {
+                contactDue++;
+            } else if ("overdue".equals(contactStatus)) {
+                contactOverdue++;
+            }
+
+            LocalDate nextContact = parseDate(patient.get("nextContactDate"));
+            LocalDate nextPlannedInterview = parseDate(patient.get("nextPlannedInterviewDate"));
+            if (Boolean.TRUE.equals(patient.get("scheduledFollowUpToday"))
+                || targetDate.equals(nextContact)
+                || targetDate.equals(nextPlannedInterview)) {
+                nextFollowUpToday++;
+            }
+
+            LocalDate scheduledNext = earliestDate(nextContact, nextPlannedInterview);
+            if (scheduledNext == null) {
+                noNextFollowUp++;
+            } else {
+                long daysUntil = java.time.temporal.ChronoUnit.DAYS.between(targetDate, scheduledNext);
+                if (daysUntil > 0 && daysUntil <= 7) {
+                    nextFollowUpThisWeek++;
+                }
+            }
+        }
+
+        kpi.put("myMonitoringCount", total);
+        kpi.put("todayContacted", contactedToday);
+        kpi.put("todayContactDue", Math.max(0, total - contactedToday));
+        kpi.put("contactDue", contactDue);
+        kpi.put("contactOverdue", contactOverdue);
+        kpi.put("nextFollowUpToday", nextFollowUpToday);
+        kpi.put("nextFollowUpThisWeek", nextFollowUpThisWeek);
+        kpi.put("noNextFollowUp", noNextFollowUp);
+        kpi.put("contactCompletionRate", total > 0 ? Math.round(100.0 * contactedToday / total) : 100);
+        return kpi;
+    }
+
+    private LocalDate earliestDate(LocalDate... candidates) {
+        LocalDate earliest = null;
+        for (LocalDate candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            if (earliest == null || candidate.isBefore(earliest)) {
+                earliest = candidate;
+            }
+        }
+        return earliest;
+    }
+
+    private String resolveNextFollowUpType(
+        LocalDate nextFollowUp,
+        LocalDate nextContact,
+        LocalDate nextPlannedInterview
+    ) {
+        if (nextContact != null && nextFollowUp.equals(nextContact)) {
+            return "contact";
+        }
+        if (nextPlannedInterview != null && nextFollowUp.equals(nextPlannedInterview)) {
+            return "interview";
+        }
+        return "follow_up";
     }
 
     private Long resolveDepartmentId(Long override) {

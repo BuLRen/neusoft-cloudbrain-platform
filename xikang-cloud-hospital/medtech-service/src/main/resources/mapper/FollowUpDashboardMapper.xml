@@ -7,8 +7,65 @@
         AND r.id NOT BETWEEN 1001 AND 1005
     </sql>
 
+    <!-- 工作台/排班/沟通列表：已纳入随访的患者在接诊中(2)仍应可见 -->
+    <sql id="poolVisibleVisitStateCondition">
+        (
+            r.visit_state IN (3, 5, 6)
+            OR (
+                r.visit_state = 2
+                AND (
+                    EXISTS (
+                        SELECT 1 FROM follow_up_enrollment fe_pool
+                        WHERE fe_pool.register_id = r.id AND fe_pool.status = 'active'
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM follow_up_patient_profile fp_pool
+                        WHERE fp_pool.register_id = r.id
+                    )
+                )
+            )
+        )
+        AND r.id NOT BETWEEN 1001 AND 1005
+    </sql>
+
     <sql id="eligibleRegisterCondition">
         <include refid="eligibleVisitStateCondition"/>
+        AND (
+            EXISTS (
+                SELECT 1 FROM follow_up_history_event he
+                WHERE he.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM medical_record mr
+                INNER JOIN medical_record_disease mrd ON mrd.medical_record_id = mr.id
+                WHERE mr.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM medical_record mr
+                WHERE mr.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM patient_health_observation pho
+                WHERE pho.register_id = r.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM inspection_request ir
+                WHERE ir.register_id = r.id
+                  AND ir.inspection_result IS NOT NULL
+                  AND TRIM(ir.inspection_result) &lt;&gt; ''
+            )
+            OR EXISTS (
+                SELECT 1 FROM check_request cr
+                WHERE cr.register_id = r.id
+                  AND cr.check_result IS NOT NULL
+                  AND TRIM(cr.check_result) &lt;&gt; ''
+            )
+        )
+    </sql>
+
+    <sql id="poolVisibleRegisterCondition">
+        <include refid="poolVisibleVisitStateCondition"/>
         AND (
             EXISTS (
                 SELECT 1 FROM follow_up_history_event he
@@ -88,6 +145,75 @@
         )
     </sql>
 
+    <sql id="enrolledDepartmentScopeUnified">
+        COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id) = #{departmentId}
+    </sql>
+
+    <sql id="assignedMonitoringCondition">
+        COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) IS NOT NULL
+    </sql>
+
+    <!-- 统一科室范围：在管科室 OR 本科室活跃沟通会话；未纳入时可选挂号科室 -->
+    <sql id="departmentPatientScopeUnified">
+        <if test="departmentId != null">
+            AND (
+                <include refid="enrolledDepartmentScopeUnified"/>
+                OR EXISTS (
+                    SELECT 1 FROM follow_up_communication_session cs
+                    WHERE cs.register_id = r.id
+                      AND cs.status = 'active'
+                      AND cs.department_id = #{departmentId}
+                )
+                <if test="includeUnenrolledEligible">
+                OR (
+                    NOT (
+                        EXISTS (
+                            SELECT 1 FROM follow_up_enrollment fe_n
+                            WHERE fe_n.register_id = r.id AND fe_n.status = 'active'
+                        )
+                        OR EXISTS (
+                            SELECT 1 FROM follow_up_patient_profile fp_n
+                            WHERE fp_n.register_id = r.id
+                        )
+                    )
+                    AND r.deptment_id = #{departmentId}
+                )
+                </if>
+            )
+        </if>
+    </sql>
+
+    <sql id="nextContactDateExpr">
+        (
+            SELECT MIN(upcoming.work_date)
+            FROM (
+                SELECT s.work_date
+                FROM follow_up_shift_contact_task t
+                INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
+                WHERE t.register_id = r.id
+                  AND t.status = 'planned'
+                  AND s.work_date &gt;= #{targetDate}
+                UNION ALL
+                SELECT p.work_date
+                FROM follow_up_pending_schedule p
+                WHERE p.register_id = r.id
+                  AND p.status = 'pending'
+                  AND p.work_date &gt;= #{targetDate}
+            ) upcoming(work_date)
+        )
+    </sql>
+
+    <sql id="nextPlannedInterviewDateExpr">
+        (
+            SELECT MIN(s.schedule_date)
+            FROM follow_up_day_schedule s
+            WHERE s.register_id = r.id
+              AND s.item_type = 'interview'
+              AND s.status = 'planned'
+              AND s.schedule_date &gt;= #{targetDate}
+        )
+    </sql>
+
     <select id="selectDashboardPatients" resultType="map">
         SELECT
             r.id AS "registerId",
@@ -150,28 +276,13 @@
                   AND s.item_type IN ('interview', 'observation')
                   AND s.status IN ('planned', 'completed')
             ) AS "lastTrackedDate",
-            (
-                SELECT MIN(upcoming.work_date)
-                FROM (
-                    SELECT s.work_date
-                    FROM follow_up_shift_contact_task t
-                    INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
-                    WHERE t.register_id = r.id
-                      AND t.status = 'planned'
-                      AND s.work_date &gt;= CURRENT_DATE
-                    UNION ALL
-                    SELECT p.work_date
-                    FROM follow_up_pending_schedule p
-                    WHERE p.register_id = r.id
-                      AND p.status = 'pending'
-                      AND p.work_date &gt;= CURRENT_DATE
-                ) upcoming(work_date)
-            ) AS "nextContactDate"
+            <include refid="nextContactDateExpr"/> AS "nextContactDate",
+            <include refid="nextPlannedInterviewDateExpr"/> AS "nextPlannedInterviewDate"
         FROM register r
         LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
         LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
         WHERE
-        <include refid="eligibleRegisterCondition"/>
+        <include refid="poolVisibleRegisterCondition"/>
         <choose>
             <when test="demoOnlyProfile">
                 AND EXISTS (
@@ -180,7 +291,7 @@
                 )
             </when>
             <otherwise>
-                <include refid="departmentPatientScope"/>
+                <include refid="departmentPatientScopeUnified"/>
             </otherwise>
         </choose>
         ORDER BY
@@ -189,6 +300,7 @@
                 WHEN 'high' THEN 2
                 ELSE 3
             END,
+            "nextContactDate" NULLS LAST,
             r.real_name
     </select>
 
@@ -311,7 +423,7 @@
                 FROM register r
                 LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
                 WHERE
-                <include refid="eligibleRegisterCondition"/>
+                <include refid="poolVisibleRegisterCondition"/>
                 <choose>
                     <when test="demoOnlyProfile">
                         AND EXISTS (
@@ -329,7 +441,7 @@
                 FROM register r
                 LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
                 WHERE
-                <include refid="eligibleRegisterCondition"/>
+                <include refid="poolVisibleRegisterCondition"/>
                 <choose>
                     <when test="demoOnlyProfile">
                         AND EXISTS (
@@ -356,7 +468,7 @@
                 FROM register r
                 LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
                 WHERE
-                <include refid="eligibleRegisterCondition"/>
+                <include refid="poolVisibleRegisterCondition"/>
                 <include refid="departmentPatientScope"/>
             ) - (
                 SELECT COUNT(*)
@@ -365,7 +477,7 @@
                   AND o.register_id IN (
                     SELECT r.id FROM register r
                     WHERE
-                    <include refid="eligibleRegisterCondition"/>
+                    <include refid="poolVisibleRegisterCondition"/>
                     <include refid="departmentPatientScope"/>
                   )
             ) AS "todayObservationPending"
@@ -385,6 +497,15 @@
 
     <select id="selectRegisterDepartmentId" resultType="long">
         SELECT deptment_id FROM register WHERE id = #{registerId} LIMIT 1
+    </select>
+
+    <select id="selectManagingDepartmentId" resultType="long">
+        SELECT COALESCE(fe.managing_department_id, fp.department_id, r.deptment_id)
+        FROM register r
+        LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
+        LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
+        WHERE r.id = #{registerId}
+        LIMIT 1
     </select>
 
     <select id="isEligiblePatient" resultType="boolean">
@@ -655,35 +776,33 @@
                 WHERE c.register_id = r.id
                   AND c.contact_date = #{targetDate}
             ) AS "contactedToday",
-            (
-                SELECT MIN(upcoming.work_date)
-                FROM (
-                    SELECT s.work_date
-                    FROM follow_up_shift_contact_task t
-                    INNER JOIN follow_up_staff_shift s ON s.id = t.shift_id
-                    WHERE t.register_id = r.id
-                      AND t.status = 'planned'
-                      AND s.work_date &gt;= CURRENT_DATE
-                    UNION ALL
-                    SELECT p.work_date
-                    FROM follow_up_pending_schedule p
-                    WHERE p.register_id = r.id
-                      AND p.status = 'pending'
-                      AND p.work_date &gt;= CURRENT_DATE
-                ) upcoming(work_date)
-            ) AS "nextContactDate"
+            <include refid="nextContactDateExpr"/> AS "nextContactDate",
+            <include refid="nextPlannedInterviewDateExpr"/> AS "nextPlannedInterviewDate"
         FROM register r
         LEFT JOIN follow_up_patient_profile fp ON fp.register_id = r.id
         LEFT JOIN follow_up_enrollment fe ON fe.register_id = r.id AND fe.status = 'active'
         WHERE
-        <include refid="eligibleRegisterCondition"/>
+        <include refid="poolVisibleRegisterCondition"/>
           AND COALESCE(fe.monitoring_employee_id, fp.monitoring_employee_id) = #{employeeId}
+        <if test="departmentId != null">
+          AND (
+            <include refid="enrolledDepartmentScopeUnified"/>
+            OR EXISTS (
+                SELECT 1 FROM follow_up_communication_session cs
+                WHERE cs.register_id = r.id
+                  AND cs.status = 'active'
+                  AND cs.department_id = #{departmentId}
+            )
+          )
+        </if>
         ORDER BY
             CASE COALESCE(fe.priority_level, fp.priority_level, 'normal')
                 WHEN 'critical' THEN 1
                 WHEN 'high' THEN 2
                 ELSE 3
             END,
+            "nextContactDate" NULLS LAST,
+            "nextPlannedInterviewDate" NULLS LAST,
             r.real_name
     </select>
 

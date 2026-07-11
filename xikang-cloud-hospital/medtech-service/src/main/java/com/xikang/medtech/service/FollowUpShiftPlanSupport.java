@@ -3,9 +3,11 @@ package com.xikang.medtech.service;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 归一化 Dify / 规则排班输出，并在联系任务稀疏时按患者池回填。
@@ -16,6 +18,38 @@ final class FollowUpShiftPlanSupport {
     private static final int SPARSE_EMPTY_RATIO_PERCENT = 30;
 
     private FollowUpShiftPlanSupport() {
+    }
+
+    static final class PatientPool {
+        private final Set<Long> registerIds = new HashSet<>();
+        private final Map<Long, Long> monitorByRegister = new HashMap<>();
+
+        static PatientPool from(List<Map<String, Object>> patients) {
+            PatientPool pool = new PatientPool();
+            if (patients == null) {
+                return pool;
+            }
+            for (Map<String, Object> patient : patients) {
+                Long registerId = toLong(firstValue(patient, "registerId", "register_id"));
+                if (registerId == null) {
+                    continue;
+                }
+                pool.registerIds.add(registerId);
+                Long monitorId = toLong(firstValue(patient, "monitorEmployeeId", "monitor_employee_id"));
+                if (monitorId != null) {
+                    pool.monitorByRegister.put(registerId, monitorId);
+                }
+            }
+            return pool;
+        }
+
+        boolean contains(Long registerId) {
+            return registerId != null && registerIds.contains(registerId);
+        }
+
+        Long monitorEmployeeId(Long registerId) {
+            return monitorByRegister.get(registerId);
+        }
     }
 
     static void normalizeShiftsOnly(
@@ -51,10 +85,11 @@ final class FollowUpShiftPlanSupport {
             return;
         }
 
+        PatientPool pool = PatientPool.from(patients);
         List<Map<String, Object>> normalized = new ArrayList<>();
         for (Object item : list) {
             if (item instanceof Map<?, ?> shiftMap) {
-                normalized.add(normalizeShift((Map<String, Object>) shiftMap));
+                normalized.add(normalizeShift((Map<String, Object>) shiftMap, pool));
             }
         }
         if (fillSparse) {
@@ -64,8 +99,13 @@ final class FollowUpShiftPlanSupport {
     }
 
     static Map<String, Object> normalizeShift(Map<String, Object> shift) {
+        return normalizeShift(shift, PatientPool.from(null));
+    }
+
+    static Map<String, Object> normalizeShift(Map<String, Object> shift, PatientPool pool) {
         Map<String, Object> normalized = new LinkedHashMap<>();
-        normalized.put("employee_id", firstValue(shift, "employee_id", "employeeId"));
+        Long employeeId = toLong(firstValue(shift, "employee_id", "employeeId"));
+        normalized.put("employee_id", employeeId);
         normalized.put("work_date", firstValue(shift, "work_date", "workDate"));
         normalized.put(
             "shift_type",
@@ -73,12 +113,24 @@ final class FollowUpShiftPlanSupport {
                 ? firstValue(shift, "shift_type", "shiftType")
                 : "full"
         );
-        normalized.put("contact_tasks", normalizeTasks(shift.get("contact_tasks"), shift.get("contactTasks")));
+        normalized.put(
+            "contact_tasks",
+            normalizeTasks(shift.get("contact_tasks"), shift.get("contactTasks"), employeeId, pool)
+        );
         return normalized;
     }
 
+    static Map<String, Object> normalizeShift(Map<String, Object> shift, List<Map<String, Object>> patients) {
+        return normalizeShift(shift, PatientPool.from(patients));
+    }
+
     @SuppressWarnings("unchecked")
-    private static List<Map<String, Object>> normalizeTasks(Object snakeTasks, Object camelTasks) {
+    private static List<Map<String, Object>> normalizeTasks(
+        Object snakeTasks,
+        Object camelTasks,
+        Long shiftEmployeeId,
+        PatientPool pool
+    ) {
         Object raw = snakeTasks != null ? snakeTasks : camelTasks;
         if (!(raw instanceof List<?> list)) {
             return new ArrayList<>();
@@ -91,6 +143,13 @@ final class FollowUpShiftPlanSupport {
             Map<String, Object> task = (Map<String, Object>) taskMap;
             Long registerId = toLong(firstValue(task, "register_id", "registerId"));
             if (registerId == null) {
+                continue;
+            }
+            if (!pool.registerIds.isEmpty() && !pool.contains(registerId)) {
+                continue;
+            }
+            Long monitorEmployeeId = pool.monitorEmployeeId(registerId);
+            if (monitorEmployeeId != null && shiftEmployeeId != null && !monitorEmployeeId.equals(shiftEmployeeId)) {
                 continue;
             }
             Object priority = firstValue(task, "priority", "priorityLevel");
@@ -146,6 +205,9 @@ final class FollowUpShiftPlanSupport {
                 continue;
             }
             Long monitorEmployeeId = toLong(firstValue(patient, "monitorEmployeeId", "monitor_employee_id"));
+            if (monitorEmployeeId == null) {
+                continue;
+            }
             String priority = String.valueOf(patient.getOrDefault("priority", "normal"));
 
             Integer slotIndex = findAssignableSlot(
@@ -157,17 +219,6 @@ final class FollowUpShiftPlanSupport {
                 maxPerDay,
                 roundRobin
             );
-            if (slotIndex == null) {
-                slotIndex = findAssignableSlot(
-                    shifts,
-                    taskLists,
-                    shiftIndexesByEmployee,
-                    null,
-                    registerId,
-                    maxPerDay,
-                    roundRobin
-                );
-            }
             if (slotIndex == null) {
                 continue;
             }
@@ -196,10 +247,6 @@ final class FollowUpShiftPlanSupport {
         List<Integer> candidates = new ArrayList<>();
         if (preferredEmployeeId != null && shiftIndexesByEmployee.containsKey(preferredEmployeeId)) {
             candidates.addAll(shiftIndexesByEmployee.get(preferredEmployeeId));
-        } else {
-            for (int i = 0; i < shifts.size(); i++) {
-                candidates.add(i);
-            }
         }
         if (candidates.isEmpty()) {
             return null;

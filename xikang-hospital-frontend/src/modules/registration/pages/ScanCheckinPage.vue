@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted, computed, watch } from 'vue'
 import { parseQrPayload } from '@/shared/utils/qrProtocol'
+import { apiUrl } from '@/config/api'
 import { http } from '@/shared/api/request'
 import type { CheckInResult } from '@/shared/types/registration'
 
@@ -45,7 +46,7 @@ function startCallingSubscription() {
   const doctorId = successResult.value?.doctorId
   if (!doctorId) return
   es?.close()
-  const url = `/api/registration/calling/stream/doctor/${doctorId}`
+  const url = apiUrl(`/registration/calling/stream/doctor/${doctorId}`)
   es = new EventSource(url)
   es.addEventListener('CALLED', (e: MessageEvent) => {
     try {

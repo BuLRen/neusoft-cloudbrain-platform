@@ -4,10 +4,11 @@ import { useAuthStore } from '@/app/stores/auth'
 import { loginRoutePath } from '@/shared/constants/app'
 import { canRefreshSession, refreshAccessToken } from '@/shared/api/authRefresh'
 import { getAccessToken } from '@/shared/auth/tokenStorage'
+import { getAxiosBaseURL } from '@/config/api'
 import type { ApiResult, RequestOptions } from './result'
 
 const request = axios.create({
-  baseURL: '/api',
+  baseURL: getAxiosBaseURL(),
   // 默认 15s 不够 AI 导诊（Chat + RAG 检索 + 解析常需 25-60s）
   // 提到 90s 让绝大多数正常请求能跑完；网络异常时仍会触发 axios 超时抛错，走前端 fallback。
   timeout: 90000,

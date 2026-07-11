@@ -2,6 +2,9 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { getDevProxyTarget } from './src/config/api'
+
+const devProxyTarget = getDevProxyTarget()
 
 export default defineConfig({
   plugins: [vue()],
@@ -14,12 +17,12 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: devProxyTarget,
         changeOrigin: true,
         timeout: 31 * 60 * 1000,
       },
       '/ws': {
-        target: 'http://localhost:8080',
+        target: devProxyTarget,
         ws: true,
       },
     },

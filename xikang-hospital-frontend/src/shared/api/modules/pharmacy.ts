@@ -1,10 +1,11 @@
 import { http } from '../request'
 import axios from 'axios'
 import { getAccessToken } from '@/shared/auth/tokenStorage'
+import { getAxiosBaseURL } from '@/config/api'
 
 // PDF 下载专用客户端：responseType=blob，自动携带 JWT token
 const blobClient = axios.create({
-  baseURL: '/api',
+  baseURL: getAxiosBaseURL(),
   timeout: 60_000,
   withCredentials: true,
 })

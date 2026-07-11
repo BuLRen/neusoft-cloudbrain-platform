@@ -35,6 +35,13 @@ public class CtViewerAlgoClient {
         return postInternal("/internal/convert", body);
     }
 
+    public Map<String, Object> meta(String nrrdPath, String sourceName) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("nrrd_path", nrrdPath);
+        body.put("source_name", sourceName);
+        return postInternal("/internal/meta", body);
+    }
+
     public Map<String, Object> filter(
         String srcNrrdPath,
         String outNrrdPath,

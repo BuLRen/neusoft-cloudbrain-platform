@@ -31,6 +31,7 @@ public class FollowUpCommunicationService {
     private final FollowUpMedicalAiService medicalAiService;
     private final FollowUpClinicalSnapshotService clinicalSnapshotService;
     private final FollowUpHistoryService historyService;
+    private final FollowUpEnrollmentBackfillService enrollmentBackfillService;
 
     public List<Map<String, Object>> listSessions(Long departmentIdOverride) {
         return communicationMapper.selectSessions(resolveDepartmentId(departmentIdOverride));
@@ -38,18 +39,31 @@ public class FollowUpCommunicationService {
 
     @Transactional
     public Map<String, Object> openSession(Long registerId, Long departmentIdOverride) {
+        Long managingDepartmentId = dashboardMapper.selectManagingDepartmentId(registerId);
+        if (managingDepartmentId == null) {
+            throw new BusinessException("无法确定科室");
+        }
+
+        if (dashboardMapper.isEligiblePatient(registerId) && !dashboardMapper.isEnrolledInFollowUpPool(registerId)) {
+            enrollmentBackfillService.processRegister(registerId);
+            Long refreshed = dashboardMapper.selectManagingDepartmentId(registerId);
+            if (refreshed != null) {
+                managingDepartmentId = refreshed;
+            }
+        }
+
         Map<String, Object> existing = communicationMapper.selectSessionByRegisterId(registerId);
         if (existing != null && !existing.isEmpty()) {
+            Long sessionDepartmentId = toLong(existing.get("departmentId"));
+            if (sessionDepartmentId == null || !sessionDepartmentId.equals(managingDepartmentId)) {
+                Long sessionId = toLong(existing.get("id"));
+                communicationMapper.updateSessionDepartment(sessionId, managingDepartmentId);
+                existing.put("departmentId", managingDepartmentId);
+            }
             return existing;
         }
 
-        Long departmentId = resolveDepartmentId(departmentIdOverride);
-        if (departmentId == null) {
-            departmentId = dashboardMapper.selectRegisterDepartmentId(registerId);
-        }
-        if (departmentId == null) {
-            throw new BusinessException("无法确定科室");
-        }
+        Long departmentId = managingDepartmentId;
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("registerId", registerId);
@@ -99,7 +113,7 @@ public class FollowUpCommunicationService {
 
     @Transactional
     public Map<String, Object> sendDoctorCard(Long sessionId, String messageType, Map<String, Object> cardPayload) {
-        if (!List.of("drug_card", "diagnosis_card").contains(messageType)) {
+        if (!List.of("drug_card", "diagnosis_card", "registration_card").contains(messageType)) {
             throw new BusinessException("不支持的卡片类型");
         }
         if (cardPayload == null || cardPayload.isEmpty()) {
@@ -376,6 +390,10 @@ public class FollowUpCommunicationService {
     }
 
     private String buildCardTitle(String messageType, Map<String, Object> cardPayload) {
+        if ("registration_card".equals(messageType)) {
+            Object dept = cardPayload.get("departmentName");
+            return dept != null ? "复诊挂号：" + dept : "复诊挂号提醒";
+        }
         if ("drug_card".equals(messageType)) {
             return "推荐药品：" + cardPayload.getOrDefault("drugName", "药品");
         }
@@ -383,6 +401,10 @@ public class FollowUpCommunicationService {
     }
 
     private String buildCardSummary(String messageType, Map<String, Object> cardPayload) {
+        if ("registration_card".equals(messageType)) {
+            Object reminder = cardPayload.get("reminderText");
+            return reminder != null ? String.valueOf(reminder) : "建议您近期到院复诊，请点击下方按钮自行预约。";
+        }
         if ("drug_card".equals(messageType)) {
             Object usage = cardPayload.get("drugUsage");
             return usage != null ? String.valueOf(usage) : "请遵医嘱用药";

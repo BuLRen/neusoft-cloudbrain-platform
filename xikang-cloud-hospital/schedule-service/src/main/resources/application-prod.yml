@@ -47,16 +47,16 @@ spring:
   # 和 remote profile 用同一套变量，确保切换 profile 不会丢数据库配置
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${DB_HOST:43.139.102.203}:${DB_PORT:5432}/${DB_NAME:xikang_hospital}
+    url: jdbc:postgresql://${DB_HOST:43.139.102.203}:${DB_PORT:5432}/${DB_NAME:xikang_hospital}?tcpKeepAlive=true
     username: ${DB_USERNAME:xikang_hospital}
     password: ${DB_PASSWORD:changeme}
     hikari:
-      maximum-pool-size: 3
-      minimum-idle: 1
-      connection-timeout: 10000
-      idle-timeout: 300000
-      max-lifetime: 1800000
-      keepalive-time: 30000
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 0
+      max-lifetime: 1740000
+      keepalive-time: 60000
       leak-detection-threshold: 60000
 
 # MyBatis

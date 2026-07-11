@@ -17,6 +17,13 @@ spring:
       - optional:file:./config/database.yml
       - optional:file:../config/database-secrets.yml
       - optional:file:./config/database-secrets.yml
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        file-extension: yaml
   data:
     redis:
       host: ${REDIS_HOST:localhost}

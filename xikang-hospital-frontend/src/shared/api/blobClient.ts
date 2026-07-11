@@ -1,14 +1,15 @@
-import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios'
+import axios, { AxiosError, AxiosHeaders, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { useAuthStore } from '@/app/stores/auth'
 import { loginRoutePath } from '@/shared/constants/app'
 import { canRefreshSession, refreshAccessToken } from '@/shared/api/authRefresh'
 import { getAccessToken } from '@/shared/auth/tokenStorage'
+import { getAxiosBaseURL } from '@/config/api'
 import type { ApiResult } from './result'
 
 const sessionExpiredMessage = '登录已过期，请重新登录'
 let sessionExpiredRedirecting = false
 export const blobClient = axios.create({
-  baseURL: '/api',
+  baseURL: getAxiosBaseURL(),
   timeout: 60_000,
   withCredentials: true,
 })
@@ -94,7 +95,9 @@ blobClient.interceptors.response.use(
         if (originalRequest.headers) {
           const nextToken = getAccessToken()
           if (nextToken) {
-            originalRequest.headers.set('Authorization', `Bearer ${nextToken}`)
+            const headers = AxiosHeaders.from(originalRequest.headers)
+            headers.set('Authorization', `Bearer ${nextToken}`)
+            originalRequest.headers = headers
           }
         }
         return blobClient.request(originalRequest)

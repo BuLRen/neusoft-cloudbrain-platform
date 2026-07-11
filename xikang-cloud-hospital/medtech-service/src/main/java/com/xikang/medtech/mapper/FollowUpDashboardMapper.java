@@ -61,6 +61,8 @@ public interface FollowUpDashboardMapper {
 
     Long selectRegisterDepartmentId(@Param("registerId") Long registerId);
 
+    Long selectManagingDepartmentId(@Param("registerId") Long registerId);
+
     boolean isEligiblePatient(@Param("registerId") Long registerId);
 
     int upsertPatientProfile(Map<String, Object> payload);
@@ -108,7 +110,8 @@ public interface FollowUpDashboardMapper {
 
     List<Map<String, Object>> selectMyMonitoredDashboardPatients(
         @Param("employeeId") Long employeeId,
-        @Param("targetDate") LocalDate targetDate
+        @Param("targetDate") LocalDate targetDate,
+        @Param("departmentId") Long departmentId
     );
 
     List<Long> selectUnassignedEnrolledRegisterIds(@Param("departmentId") Long departmentId);

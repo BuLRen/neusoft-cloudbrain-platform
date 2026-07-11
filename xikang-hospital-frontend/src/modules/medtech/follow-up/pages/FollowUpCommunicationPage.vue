@@ -11,6 +11,7 @@ import CommunicationCardPicker from '@/modules/medtech/follow-up/components/Comm
 import CommunicationPatientBrief from '@/modules/medtech/follow-up/components/CommunicationPatientBrief.vue'
 import ContactRecordPanel from '@/modules/medtech/follow-up/components/ContactRecordPanel.vue'
 import CaseSummaryReviewDialog from '@/modules/medtech/follow-up/components/CaseSummaryReviewDialog.vue'
+import RevisitReminderDialog from '@/modules/medtech/follow-up/components/RevisitReminderDialog.vue'
 import { medtechFollowUpApi } from '@/shared/api/modules/medtechFollowUp'
 import { beijingTodayYmd, formatYmdWeekday } from '@/shared/utils/beijingDate'
 import type {
@@ -37,6 +38,7 @@ const latestSummary = ref<FollowUpCaseSummary | null>(null)
 const summaryDialogVisible = ref(false)
 const cardPickerVisible = ref(false)
 const cardPickerMode = ref<'drug' | 'diagnosis'>('drug')
+const revisitDialogVisible = ref(false)
 
 const todayLabel = formatYmdWeekday(beijingTodayYmd())
 
@@ -130,7 +132,7 @@ async function handleSend(content: string) {
   }
 }
 
-async function handleSendCard(messageType: 'drug_card' | 'diagnosis_card', payload: Record<string, unknown>) {
+async function handleSendCard(messageType: 'drug_card' | 'diagnosis_card' | 'registration_card', payload: Record<string, unknown>) {
   if (!activeSession.value) return
   sending.value = true
   try {
@@ -188,8 +190,40 @@ async function handleApproveSummary(payload: { doctorContent: string; sharedToPa
   }
 }
 
+async function handleSendRegistrationCard(reminderText?: string) {
+  if (!activeSession.value) return
+  sending.value = true
+  try {
+    const context = await medtechFollowUpApi.getDashboardContext().catch(() => null)
+    const payload: Record<string, unknown> = {
+      action: 'open_registration',
+      linkPath: '/patient/registration',
+      departmentId: activeSession.value.departmentId,
+      departmentName: context?.departmentName ?? '复诊科室',
+      sourceRegisterId: activeSession.value.registerId,
+      reminderText: reminderText ?? '建议您近期到院复诊，请点击下方按钮自行预约。',
+    }
+    await medtechFollowUpApi.sendDoctorCard(activeSession.value.id, 'registration_card', payload)
+    await Promise.all([
+      loadMessages(activeSession.value.id),
+      loadSessions(),
+    ])
+    ElMessage.success('复诊挂号卡片已发送')
+    revisitDialogVisible.value = false
+  } catch {
+    ElMessage.error('发送复诊卡片失败')
+  } finally {
+    sending.value = false
+  }
+}
+
+function openRevisitReminderDialog() {
+  if (!activeSession.value) return
+  revisitDialogVisible.value = true
+}
+
 async function handleSendRevisitReminder() {
-  await handleSend('【复诊提醒】建议您近期到院复诊，请通过患者端「我的挂号」自行预约。')
+  openRevisitReminderDialog()
 }
 
 async function handleToggleAi(enabled: boolean) {
@@ -284,6 +318,7 @@ onActivated(() => {
             <CommunicationComposer
               :sending="sending"
               @send="handleSend"
+              @open-revisit-reminder="openRevisitReminderDialog"
               @open-picker="openCardPicker"
             />
           </div>
@@ -321,6 +356,13 @@ onActivated(() => {
       :register-id="activeSession?.registerId"
       :mode="cardPickerMode"
       @select="handleSendCard"
+    />
+
+    <RevisitReminderDialog
+      v-model:visible="revisitDialogVisible"
+      :sending="sending"
+      :patient-name="activeSession?.realName ?? brief?.realName"
+      @send="handleSendRegistrationCard"
     />
   </div>
 </template>

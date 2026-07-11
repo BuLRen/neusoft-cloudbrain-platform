@@ -13,6 +13,13 @@ spring:
       - optional:file:./config/database-secrets.yml
   application:
     name: schedule-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        file-extension: yaml
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml

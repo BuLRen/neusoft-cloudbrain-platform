@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: ai-gateway-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        file-extension: yaml
   ai:
     openai:
       api-key: ${OPENAI_API_KEY:your-api-key}

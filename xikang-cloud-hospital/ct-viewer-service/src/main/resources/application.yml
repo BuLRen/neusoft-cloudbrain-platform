@@ -13,6 +13,20 @@ spring:
       - optional:file:./config/database.yml
       - optional:file:../config/database-secrets.yml
       - optional:file:./config/database-secrets.yml
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        enabled: ${NACOS_DISCOVERY_ENABLED:false}
+        register-enabled: ${NACOS_DISCOVERY_ENABLED:false}
+        # 跨机部署：在 .env 设 NACOS_DISCOVERY_IP 为 gateway 可达的公网/内网 IP
+        ip: ${NACOS_DISCOVERY_IP:}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        enabled: false
+    service-registry:
+      auto-registration:
+        enabled: ${NACOS_DISCOVERY_ENABLED:false}
   servlet:
     multipart:
       max-file-size: 1GB

@@ -205,6 +205,8 @@ function toVtkImageData(parsed: Record<string, unknown>) {
   }
 }
 
+export type ParsedVolumeData = ReturnType<typeof toVtkImageData>
+
 export function parseNrrdArrayBuffer(arrayBuffer: ArrayBuffer) {
   const parsed = nrrd.parse(arrayBuffer) as Record<string, unknown>
   return toVtkImageData(parsed)
