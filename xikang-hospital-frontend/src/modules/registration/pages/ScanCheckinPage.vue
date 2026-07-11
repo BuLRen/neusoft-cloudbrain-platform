@@ -194,7 +194,7 @@ const checkinMethods = [
 ]
 
 const flowSteps = [
-  { icon: 'scan', title: '扫描二维码/身份证/就诊卡', desc: '将证件对准扫描区' },
+  { icon: 'scan', title: '扫描二维码', desc: '将证件对准扫描区' },
   { icon: 'verify', title: '核对就诊信息', desc: '确认个人就诊信息' },
   { icon: 'done', title: '完成报到', desc: '打印或获取报到凭证' },
 ]
@@ -321,7 +321,7 @@ const isNight = computed(() => {
               ref="inputEl"
               v-model="input"
               class="scan-input"
-              placeholder="扫描二维码 / 身份证 / 就诊卡"
+              placeholder="扫描二维码"
               autocomplete="off"
               @keyup.enter="handleScanned"
               @click.stop
@@ -333,7 +333,7 @@ const isNight = computed(() => {
           </div>
 
           <div class="scan-hero__footer">
-            <p class="scan-tip">将就诊二维码/身份证/就诊卡对准扫码口，扫码枪扫入上方输入框后回车</p>
+            <p class="scan-tip">将就诊二维码对准扫码口，扫码枪扫入上方输入框后回车</p>
             <div v-if="status !== 'idle'" class="scan-again-hint">
               <span class="pulse-ring pulse-ring--sm"></span>
               <span>已显示报到结果，下一位请直接继续扫码</span>
@@ -2165,6 +2165,234 @@ const isNight = computed(() => {
 
   .tip-bar {
     max-width: 100%;
+  }
+}
+
+/* ===== final calibration: match the provided kiosk reference screen ===== */
+.checkin-page {
+  height: 100vh;
+  min-height: 760px;
+  padding: 36px 40px 104px;
+  background:
+    radial-gradient(circle at 43% 2%, rgba(255, 255, 255, .98) 0, rgba(255, 255, 255, 0) 360px),
+    radial-gradient(circle at 0 0, rgba(255, 255, 255, .95) 0, rgba(255, 255, 255, 0) 520px),
+    linear-gradient(112deg, #edf6ff 0%, #f8fbff 44%, #ddecff 100%);
+}
+
+.checkin-page::after {
+  right: -54px;
+  top: 88px;
+  width: 420px;
+  height: 590px;
+  opacity: .9;
+}
+
+.top-bar {
+  height: 66px;
+}
+
+.hospital-logo {
+  width: 64px;
+  height: 64px;
+}
+
+.hospital-name {
+  font-size: 28px;
+}
+
+.hospital-slogan {
+  font-size: 16px;
+}
+
+.datetime__clock {
+  font-size: 44px;
+}
+
+.datetime__date,
+.datetime__weather {
+  font-size: 16px;
+}
+
+.hero-title {
+  height: 142px;
+  padding-top: 20px;
+  margin: 0;
+}
+
+.hero-title h1 {
+  font-size: 64px;
+  letter-spacing: 6px;
+}
+
+.hero-title p {
+  margin-top: 10px;
+  font-size: 23px;
+}
+
+.hero-title__line {
+  width: 78px;
+  margin-top: 51px;
+}
+
+.main-layout {
+  height: calc(100vh - 392px);
+  min-height: 560px;
+  grid-template-columns: 425px minmax(760px, 1fr) 425px;
+  gap: 28px;
+}
+
+.side-panel {
+  padding: 30px 22px 20px;
+  border-radius: 26px;
+}
+
+.panel-title {
+  margin-bottom: 24px;
+  font-size: 24px;
+}
+
+.method-list {
+  gap: 20px;
+}
+
+.method-item {
+  min-height: 112px;
+  padding: 18px 20px;
+}
+
+.method-icon {
+  width: 80px;
+  height: 80px;
+}
+
+.method-title {
+  font-size: 25px;
+}
+
+.method-desc {
+  font-size: 16px;
+}
+
+.center-core {
+  gap: 24px;
+}
+
+.scan-hero {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 58px 55px 0;
+  border-radius: 28px;
+}
+
+.scan-frame {
+  width: 230px;
+  height: 168px;
+}
+
+.scan-pill {
+  max-width: 700px;
+  min-height: 112px;
+  padding: 22px 38px;
+  border-radius: 28px;
+}
+
+.scan-pill::before {
+  font-size: 30px;
+  letter-spacing: 11px;
+}
+
+.scan-input,
+.scan-input::placeholder {
+  font-size: 30px;
+}
+
+.scan-input {
+  width: 380px;
+}
+
+.scan-tip {
+  max-width: 730px;
+  margin-inline: auto;
+  font-size: 19px;
+}
+
+.device-status,
+.scan-again-hint {
+  font-size: 21px;
+}
+
+.scan-result-panel {
+  flex: 0 0 132px;
+  min-height: 132px;
+  padding: 24px 34px;
+  border-radius: 28px;
+}
+
+.scan-result-icon {
+  width: 72px;
+  height: 72px;
+}
+
+.scan-result-copy h3 {
+  font-size: 27px;
+}
+
+.scan-result-copy p {
+  font-size: 17px;
+}
+
+.flow-list {
+  margin-top: 40px;
+}
+
+.flow-item {
+  min-height: 126px;
+}
+
+.flow-icon {
+  width: 74px;
+  height: 74px;
+}
+
+.flow-title {
+  font-size: 22px;
+  line-height: 1.35;
+}
+
+.flow-desc {
+  font-size: 16px;
+}
+
+.page-footer {
+  height: 100px;
+  padding: 16px 220px;
+}
+
+.tip-bar {
+  flex-basis: 760px;
+}
+
+.history-btn {
+  min-width: 330px;
+  height: 68px;
+}
+
+@media (max-width: 1500px) {
+  .main-layout {
+    grid-template-columns: 350px minmax(560px, 1fr) 350px;
+  }
+
+  .hero-title h1 {
+    font-size: 56px;
+  }
+
+  .scan-input,
+  .scan-input::placeholder {
+    font-size: 25px;
+  }
+
+  .page-footer {
+    padding-inline: 120px;
   }
 }
 </style>
