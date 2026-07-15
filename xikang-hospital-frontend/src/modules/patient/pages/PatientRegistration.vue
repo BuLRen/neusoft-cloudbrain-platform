@@ -951,7 +951,10 @@ async function onScheduleDateChange() {
  *
  * 前端置灰用同一套规则，避免"前端能点，后端拒"的体验断层。
  */
-function isScheduleExpired(schedule: any): boolean {
+function isScheduleExpired(_schedule: any): boolean {
+  // TODO(test): 临时解除挂号截止限制，测完后恢复原判定逻辑
+  return false
+  /*
   if (!schedule?.workDate) return false
   // workDate 形如 "2026-07-02"，可能带时间，统一只取日期部分
   const dayStr = String(schedule.workDate).slice(0, 10)
@@ -971,6 +974,7 @@ function isScheduleExpired(schedule: any): boolean {
   if (slot === '下午') return hour >= 18
   // 兜底（系统无晚上号，万一出现按 22 点处理）
   return hour >= 22
+  */
 }
 
 function selectSchedule(schedule: any) {

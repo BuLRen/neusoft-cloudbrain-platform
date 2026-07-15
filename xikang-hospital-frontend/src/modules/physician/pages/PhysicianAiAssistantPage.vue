@@ -1570,13 +1570,15 @@ onMounted(() => {
 }
 
 .agent-chat__bubble {
-  max-width: min(760px, 96%);
+  /* 对话列内尽量用满宽度，避免宽屏中间大片留白（表格/确认卡尤其需要） */
+  inline-size: 100%;
+  max-inline-size: 100%;
   margin-bottom: 14px;
   padding: 12px 16px;
   border-radius: 14px;
   line-height: 1.75;
   overflow-wrap: anywhere;
-  min-width: 0;
+  min-inline-size: 0;
 }
 
 .agent-chat__text {
@@ -1590,10 +1592,19 @@ onMounted(() => {
 }
 
 .agent-chat__bubble.is-user {
+  inline-size: fit-content;
+  max-inline-size: min(92%, 960px);
   margin-inline-start: auto;
   color: #1f5c91;
   background: #dceeff;
   box-shadow: inset 0 0 0 1px rgba(119, 183, 246, 0.28);
+}
+
+.agent-chat__bubble.is-assistant,
+.agent-chat__bubble.is-action_result {
+  /* 右侧留白，标明这是左侧系统回复，而非全宽通栏 */
+  max-inline-size: calc(100% - 48px);
+  margin-inline-end: 48px;
 }
 
 .agent-chat__bubble.is-assistant {

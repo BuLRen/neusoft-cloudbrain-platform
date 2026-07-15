@@ -9,7 +9,6 @@ import {
   ElMessageBox,
   ElRadio,
   ElRadioGroup,
-  ElTag,
 } from 'element-plus'
 import {
   CirclePlusFilled,
@@ -475,6 +474,7 @@ onMounted(() => {
     prev-path="/physician/queue"
     next-path="/physician/orders"
     content-variant="split"
+    content-width="wide"
   >
     <div class="record-page">
       <section class="record-card patient-record">
@@ -525,7 +525,7 @@ onMounted(() => {
         </div>
       </section>
 
-      <section class="record-card ai-panel" :class="{ 'ai-panel--has-results': hasPreliminaryAiResult }">
+      <section class="record-card ai-panel">
         <div class="ai-panel__controls">
           <header class="ai-panel__header">
             <div class="ai-panel__intro">
@@ -596,39 +596,33 @@ onMounted(() => {
 
 <style scoped>
 .record-page {
-  --record-sticky-top: calc(var(--header-height) + var(--space-6));
-  --record-panel-max-height: calc(100vh - var(--record-sticky-top) - 120px);
+  /* 预留顶栏、页头、患者摘要、底栏导航与间距后的工作区高度 */
+  --record-workspace-height: clamp(520px, calc(100dvh - 300px), 880px);
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   gap: var(--space-5);
-  align-items: start;
+  align-items: stretch;
 }
 
 .record-card {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  block-size: var(--record-workspace-height);
+  max-block-size: var(--record-workspace-height);
   padding: var(--space-5) var(--space-6);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: #fff;
   box-shadow: 0 2px 12px rgba(31, 73, 125, 0.06);
-}
-
-.patient-record {
-  position: sticky;
-  top: var(--record-sticky-top);
-  align-self: start;
-  max-height: var(--record-panel-max-height);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 .ai-panel {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-}
-
-.ai-panel--has-results {
-  max-height: var(--record-panel-max-height);
+  min-block-size: 0;
 }
 
 .ai-panel__controls {
@@ -637,7 +631,7 @@ onMounted(() => {
 
 .ai-panel__body {
   flex: 1;
-  min-height: 0;
+  min-block-size: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -645,6 +639,7 @@ onMounted(() => {
 
 .patient-record__header {
   display: flex;
+  flex-shrink: 0;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
@@ -709,8 +704,15 @@ onMounted(() => {
 
 .patient-record__grid {
   display: grid;
+  flex: 1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-5) var(--space-6);
+  align-content: start;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-block-end: var(--space-2);
 }
 
 .patient-record__field--full {
@@ -839,7 +841,8 @@ onMounted(() => {
 
 .ai-panel__toolbar {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-3);
   margin-block-end: 0;
   padding-block-end: var(--space-4);
@@ -847,7 +850,7 @@ onMounted(() => {
 }
 
 .ai-panel__model-btn {
-  width: 100%;
+  flex: 1 1 180px;
   justify-content: flex-start;
   border-radius: 8px;
   border-color: #e2e8f0;
@@ -857,6 +860,7 @@ onMounted(() => {
 
 .ai-panel__toolbar-btns {
   display: grid;
+  flex: 1 1 240px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
@@ -899,19 +903,29 @@ onMounted(() => {
   gap: var(--space-2);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1200px) {
   .record-page {
     grid-template-columns: 1fr;
   }
 
+  .record-card {
+    block-size: auto;
+    max-block-size: none;
+  }
+
   .patient-record {
-    position: static;
-    max-height: none;
     overflow: visible;
   }
 
-  .ai-panel--has-results {
-    max-height: min(72vh, 720px);
+  .patient-record__grid {
+    flex: none;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .ai-panel {
+    max-block-size: min(72dvh, 720px);
+    overflow: hidden;
   }
 }
 
@@ -922,6 +936,10 @@ onMounted(() => {
 
   .patient-record__field--full {
     grid-column: auto;
+  }
+
+  .ai-panel__toolbar-btns {
+    grid-template-columns: 1fr;
   }
 }
 </style>
