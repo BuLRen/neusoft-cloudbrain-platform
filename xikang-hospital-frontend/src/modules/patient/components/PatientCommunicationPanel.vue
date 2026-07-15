@@ -43,7 +43,7 @@ async function loadCommunication() {
     const sessionRes = await medtechFollowUpApi.getPatientCommunicationSession(props.registerId, {
       patientId: props.patientId,
     })
-    session.value = sessionRes
+    session.value = sessionRes?.id ? sessionRes : null
     const [summaryRes, messagesRes] = await Promise.all([
       medtechFollowUpApi
         .getPatientSharedCaseSummary(props.registerId, { patientId: props.patientId })
@@ -112,7 +112,7 @@ watch(
       </section>
       <p v-else class="patient-comm__placeholder">医生审核发布病例总结后，您可在此查看。</p>
 
-      <template v-if="session">
+      <template v-if="session?.id">
         <CommunicationThread :messages="messages" viewer-role="patient" />
         <div class="patient-comm__composer">
           <ElInput

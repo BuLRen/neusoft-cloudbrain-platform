@@ -5,4 +5,4 @@ SEQ_LEN = 48
 HORIZON = 24
 N_FEATURES = 4
 FEATURE_NAMES = ["blood_glucose", "insulin_total", "meal_flag", "exercise_flag"]
-PORT = int(os.getenv("GLUCOSE_PREDICTION_PORT", "8107"))
+PORT = int(os.getenv("GLUCOSE_PREDICTION_PORT", "8111"))
