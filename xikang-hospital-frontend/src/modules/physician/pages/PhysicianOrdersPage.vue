@@ -317,6 +317,7 @@ onMounted(() => {
     title="开验检查单"
     prev-path="/physician/record"
     next-path="/physician/results"
+    content-width="wide"
   >
     <ClinicalContextPanel :record="medicalRecord" :loading="contextLoading" />
 
@@ -333,6 +334,7 @@ onMounted(() => {
             </div>
           </header>
 
+          <div class="orders-page__card-body">
           <section class="orders-section orders-section--form">
             <h3 class="orders-section__title">申请信息</h3>
 
@@ -433,6 +435,7 @@ onMounted(() => {
               </ElTableColumn>
             </ElTable>
           </section>
+          </div>
         </GlassCard>
 
         <GlassCard class="orders-page__card orders-page__card--ai">
@@ -527,43 +530,60 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.orders-page {
+  margin-block-start: var(--space-5);
+}
+
 .orders-page__grid {
-  --orders-sticky-top: calc(var(--header-height) + var(--space-6));
-  --orders-panel-max-height: calc(100vh - var(--orders-sticky-top) - 120px);
+  /* 预留顶栏、页头、患者摘要、病历摘要与底栏后的双栏工作区高度 */
+  --orders-workspace-height: clamp(480px, calc(100dvh - 380px), 820px);
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
-  gap: var(--space-6);
-  align-items: start;
-}
-
-.orders-page__card--ai {
-  position: sticky;
-  top: var(--orders-sticky-top);
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  max-height: var(--orders-panel-max-height);
-  min-height: 0;
-}
-
-.orders-ai__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: var(--space-5);
+  align-items: stretch;
 }
 
 .orders-page__card {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  block-size: var(--orders-workspace-height);
+  max-block-size: var(--orders-workspace-height);
   padding: var(--space-5);
+  overflow: hidden;
 }
 
 .orders-page__card-head {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--space-4);
   margin-block-end: var(--space-5);
   padding-block-end: var(--space-5);
   border-block-end: 1px solid var(--color-border);
+}
+
+.orders-page__card-body {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.orders-page__card--ai {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.orders-ai__body {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .orders-page__card-logo {
@@ -934,9 +954,20 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 
+  .orders-page__card {
+    block-size: auto;
+    max-block-size: none;
+  }
+
+  .orders-page__card-body {
+    flex: none;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
   .orders-page__card--ai {
-    position: static;
-    max-height: min(72vh, 720px);
+    max-block-size: min(72dvh, 720px);
+    overflow: hidden;
   }
 
   .orders-form__row {

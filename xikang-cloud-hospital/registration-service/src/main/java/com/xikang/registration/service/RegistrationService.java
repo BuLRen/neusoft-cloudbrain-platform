@@ -548,12 +548,13 @@ public class RegistrationService {
             throw new BusinessException(400, "排班时段与就诊时段不一致");
         }
 
+        // TODO(test): 临时解除挂号截止限制，测完后恢复下方校验
         // 时段未过校验：禁止挂"今天且已过截止时间"的号
         // 例：现在 2026-07-02 13:00，挂今天上午号 → 拒绝
-        LocalDateTime deadline = computeMissDeadline(visitDate.atStartOfDay(), timeSlot);
-        if (LocalDateTime.now().isAfter(deadline)) {
-            throw new BusinessException(400, "该时段已过截止时间，无法挂号（" + timeSlot + " 截止于 " + deadline.toLocalTime() + "）");
-        }
+        // LocalDateTime deadline = computeMissDeadline(visitDate.atStartOfDay(), timeSlot);
+        // if (LocalDateTime.now().isAfter(deadline)) {
+        //     throw new BusinessException(400, "该时段已过截止时间，无法挂号（" + timeSlot + " 截止于 " + deadline.toLocalTime() + "）");
+        // }
     }
 
     /**

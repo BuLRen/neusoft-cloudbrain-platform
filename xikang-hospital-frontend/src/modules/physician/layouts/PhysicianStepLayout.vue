@@ -19,6 +19,8 @@ const props = defineProps<{
   nextPath?: string
   /** 双栏内容区：透明底、无外层卡片，便于左右独立白卡片布局 */
   contentVariant?: 'default' | 'split'
+  /** 宽屏工作台：放宽内容区最大宽度，减少左右留白 */
+  contentWidth?: 'default' | 'wide'
 }>()
 
 const router = useRouter()
@@ -42,7 +44,7 @@ const patientBadge = computed(() => {
 </script>
 
 <template>
-  <div class="u-page-grid">
+  <div class="u-page-grid" :class="{ 'step-layout--wide': contentWidth === 'wide' }">
     <PageHeader :title="title" :description="description" :eyebrow="eyebrow">
       <template #actions>
         <slot name="headerActions" />
@@ -139,6 +141,10 @@ const patientBadge = computed(() => {
 </template>
 
 <style scoped>
+.step-layout--wide {
+  max-width: min(1760px, 100%);
+}
+
 .step-layout__summary,
 .step-layout__panel {
   padding: var(--space-5);
