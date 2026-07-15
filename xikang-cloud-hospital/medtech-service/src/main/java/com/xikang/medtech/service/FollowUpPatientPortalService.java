@@ -194,7 +194,7 @@ public class FollowUpPatientPortalService {
         if (sessionId == null) {
             throw new BusinessException("沟通会话不存在");
         }
-        return followUpCommunicationService.listMessages(sessionId, limit, offset);
+        return followUpCommunicationService.listPatientMessages(sessionId, limit, offset);
     }
 
     public Map<String, Object> getSharedCaseSummary(Long patientId, Long registerId) {

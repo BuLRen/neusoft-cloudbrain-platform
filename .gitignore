@@ -639,3 +639,4 @@ xikang-cloud-hospital/data/ct-viewer/volumes/1b7507f1-00cc-471a-a7dd-07781aaceb5
 xikang-cloud-hospital/data/ct-viewer/volumes/264b1fe6-7af5-4a29-bc46-3b8f54511816/data.nrrd
 xikang-cloud-hospital/data/ct-viewer/volumes/264b1fe6-7af5-4a29-bc46-3b8f54511816/src/upload.nii.gz
 xikang-cloud-hospital/data/ct-viewer/volumes/40ab24db-5afe-4b9c-953d-f6074060cad0/data.nrrd
+xikang-cloud-hospital/docker/init-db/init.sql
