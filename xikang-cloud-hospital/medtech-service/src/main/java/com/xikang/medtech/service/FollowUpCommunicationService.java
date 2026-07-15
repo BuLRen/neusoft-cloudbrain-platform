@@ -98,6 +98,15 @@ public class FollowUpCommunicationService {
 
     public Map<String, Object> listMessages(Long sessionId, Integer limit, Integer offset) {
         getSession(sessionId);
+        return listMessagesInternal(sessionId, limit, offset);
+    }
+
+    public Map<String, Object> listPatientMessages(Long sessionId, Integer limit, Integer offset) {
+        requireExistingSession(sessionId);
+        return listMessagesInternal(sessionId, limit, offset);
+    }
+
+    private Map<String, Object> listMessagesInternal(Long sessionId, Integer limit, Integer offset) {
         int pageSize = limit != null && limit > 0 ? Math.min(limit, 500) : 100;
         int pageOffset = offset != null && offset >= 0 ? offset : 0;
         List<Map<String, Object>> items = communicationMapper.selectMessages(sessionId, pageSize, pageOffset);
@@ -152,15 +161,14 @@ public class FollowUpCommunicationService {
     @Transactional
     public Map<String, Object> sendPatientMessage(Long sessionId, String content, boolean autoAiReply) {
         validateContent(content);
-        getSession(sessionId);
+        Map<String, Object> session = requireExistingSession(sessionId);
         Map<String, Object> payload = messagePayload(sessionId, "patient", "text", content.trim(), null);
         communicationMapper.insertMessage(payload);
 
         if (autoAiReply) {
-            Map<String, Object> session = communicationMapper.selectSessionById(sessionId);
             int aiEnabled = session.get("aiEscalationEnabled") instanceof Number n ? n.intValue() : 1;
             if (aiEnabled == 1) {
-                return triggerAiReply(sessionId);
+                return triggerAiReplyInternal(sessionId, session);
             }
         }
         return payload;
@@ -168,7 +176,10 @@ public class FollowUpCommunicationService {
 
     @Transactional
     public Map<String, Object> triggerAiReply(Long sessionId) {
-        Map<String, Object> session = getSession(sessionId);
+        return triggerAiReplyInternal(sessionId, getSession(sessionId));
+    }
+
+    private Map<String, Object> triggerAiReplyInternal(Long sessionId, Map<String, Object> session) {
         Long registerId = toLong(session.get("registerId"));
         List<Map<String, Object>> recent = communicationMapper.selectMessages(sessionId, 10, Math.max(0, communicationMapper.countMessages(sessionId) - 10));
 
@@ -269,7 +280,7 @@ public class FollowUpCommunicationService {
     public Map<String, Object> getPatientSession(Long registerId) {
         Map<String, Object> session = communicationMapper.selectSessionByRegisterId(registerId);
         if (session == null || session.isEmpty()) {
-            return openSession(registerId, null);
+            return new LinkedHashMap<>();
         }
         return session;
     }
@@ -456,6 +467,14 @@ public class FollowUpCommunicationService {
             throw new BusinessException(403, "当前账号未绑定员工，无法查看医患沟通");
         }
         return employeeId;
+    }
+
+    private Map<String, Object> requireExistingSession(Long sessionId) {
+        Map<String, Object> session = communicationMapper.selectSessionById(sessionId);
+        if (session == null || session.isEmpty()) {
+            throw new BusinessException("会话不存在");
+        }
+        return session;
     }
 
     private void assertDoctorCanAccessRegister(Long registerId) {

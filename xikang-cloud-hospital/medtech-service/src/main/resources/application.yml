@@ -117,10 +117,10 @@ follow-up:
   data-source: ${FOLLOW_UP_DATA_SOURCE:production}
 
 # =============================================================================
-# 血糖 LSTM 预测微服务（Python FastAPI :8107）
+# 血糖 LSTM 预测微服务（Python FastAPI :8111）
 # =============================================================================
 glucose-prediction:
-  base-url: ${GLUCOSE_PREDICTION_BASE_URL:http://127.0.0.1:8107}
+  base-url: ${GLUCOSE_PREDICTION_BASE_URL:http://127.0.0.1:8111}
   connect-timeout-ms: 5000
   read-timeout-ms: 15000
 
